@@ -1,10 +1,10 @@
 import { LIST_NEEDS_REPAIR, agoLabel, updatedAgo } from '@shared/friendGists'
 import { dailyMark as groupsDailyMark, localDay as sharedLocalDay } from '@shared/friendGroups'
 import { daysReviewed, rememberedPercent, type FriendDay, type FriendMark, type FriendStats } from '@shared/friendStats'
-import { average7Day, filterSharedCards, formatMinutes, sinceDayKey, type LeaderboardSort } from '@shared/friendsBoard'
+import { average7Day, buildPeriodGoalHero, filterSharedCards, formatMinutes, periodConsistency, periodContext, sinceDayKey, type LeaderboardSort } from '@shared/friendsBoard'
 import type { FriendsSendState } from '../sender'
 
-export { average7Day, filterSharedCards, formatMinutes, sinceDayKey, type LeaderboardSort }
+export { average7Day, buildPeriodGoalHero, filterSharedCards, formatMinutes, periodConsistency, periodContext, sinceDayKey, type LeaderboardSort }
 
 /** Formats study duration in minutes: `< 60` -> `51 min`, `>= 60` -> `2hr 55min` / `2hr` (YAZ-6263). */
 export function formatStudyDuration(minutes: number): string {
@@ -56,10 +56,10 @@ export const addDays = (day: string, n: number): string => {
   const d = dateOf(day)
   return keyOf(new Date(d.getFullYear(), d.getMonth(), d.getDate() + n))
 }
-/** The Monday of the local week of `day` (a week is Monday to Sunday, as 2C's `addedThisWeek` and `bestWeek`). */
-const mondayOf = (day: string): string => {
+/** The Sunday of the local week of `day` (Sun–Sat). */
+const sundayOf = (day: string): string => {
   const d = dateOf(day)
-  return addDays(day, -((d.getDay() + 6) % 7))
+  return addDays(day, -d.getDay())
 }
 /** The start of the local day after the day after `t`: when a seen cheer goes (decision 24). */
 export const endOfNextDay = (t: number): number => {
@@ -156,7 +156,7 @@ export function periodNumbers(stats: Pick<FriendStats, 'days'>, period: Period, 
       }
     }
     case 'week': {
-      const s = sumOf(stats.days, mondayOf(today), today)
+      const s = sumOf(stats.days, sundayOf(today), today)
       return { cards: s.cards, minutes: minutesOf(s.seconds), mark: null }
     }
     case 'month': {
@@ -194,12 +194,20 @@ export function boardRows<E extends BoardEntry>(entries: readonly E[], period: P
     i,
     streak: entry.streak ?? entry.stats?.totals?.streak ?? 0,
     numbers: entry.stats === null ? null : periodNumbers(entry.stats, period, now),
+    consistency:
+      entry.stats !== null && (period === 'week' || period === 'month')
+        ? periodConsistency(entry.stats, period, now)
+        : null,
   }))
   withNumbers.sort((a, b) => {
     if (a.numbers === null || b.numbers === null) return (a.numbers === null ? 1 : 0) - (b.numbers === null ? 1 : 0) || a.i - b.i
     if (a.numbers.mark !== null && b.numbers.mark !== null) {
       const tierDiff = (a.numbers.mark === 'finished' ? 0 : 1) - (b.numbers.mark === 'finished' ? 0 : 1)
       if (tierDiff !== 0) return tierDiff
+    }
+    if ((period === 'week' || period === 'month') && a.consistency !== null && b.consistency !== null && sort === 'cards') {
+      const daysDiff = b.consistency.finishedDays - a.consistency.finishedDays
+      if (daysDiff !== 0) return daysDiff
     }
     if (sort === 'time') {
       return b.numbers.minutes - a.numbers.minutes || b.numbers.cards - a.numbers.cards || a.entry.name.localeCompare(b.entry.name) || a.i - b.i

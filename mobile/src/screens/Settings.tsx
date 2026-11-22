@@ -29,6 +29,8 @@ const GithubPart = lazyScreen(() => import('../settings/GithubPart'))
 const DeckPermissionsPart = lazyScreen(() => import('../friends/ui/DeckPermissionsPart'))
 /** YAZ-6300: Settings › Friends › Profile picture, its own chunk. */
 const ProfilePictureRow = lazyScreen(() => import('../friends/ui/ProfilePictureRow'))
+/** Settings › Friends › Notifications (Web Push), its own chunk. */
+const NotificationsPart = lazyScreen(() => import('../friends/ui/NotificationsPart'))
 
 /**
  * Settings (decisions 7, 22; round 13, item 4; round 10, item 19; YAZ-5659): first the vaults (switch, add, replace the
@@ -494,6 +496,7 @@ function FriendsPart() {
           displayName={displayedName === 'From GitHub' ? githubFirstName || 'You' : displayedName}
           fallbackAvatarUrl={githubAvatar}
         />
+        <NotificationsPart />
         <li>
           <div className="row">
             <button type="button" className="row__button btn--danger" aria-expanded={editing === 'delete'} onClick={() => toggle('delete')}>

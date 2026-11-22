@@ -112,13 +112,13 @@ describe('the Friends tab (decisions 21, 25; YAZ-6271..6274)', () => {
     expect(plain(h.host.querySelector('[role="tab"][aria-selected="true"]')?.textContent)).toBe('Friends')
     expect(rows(h)).toEqual([
       '🥇 S Sam 2h ago ✓ 44 cards 8d 🔥 · 1hr 6min',
-      'D Demo Person 31 cards 2d 🔥 · 55 min',
+      'D Demo Person now 31 cards 2d 🔥 · 55 min',
       'P Priya 43m ago 12 cards 49 min',
       'L Leo no update yet 0 cards 0 min',
     ])
     expect(plain(h.host.querySelector('.fr-name--you')?.textContent)).toBe('Demo Person')
     expect(labels(h)[0]).toBe('Sam, 44 cards, 66 minutes, Finished the due cards, 2h ago')
-    expect(labels(h)[1]).toBe('You, 31 cards, 55 minutes, Started, due cards left')
+    expect(labels(h)[1]).toBe('You, 31 cards, 55 minutes, Started, due cards left, now')
   })
 
   it('Today, Yesterday, Week and Month change the numbers; Week and Month have no medal or mark', async () => {
@@ -128,10 +128,12 @@ describe('the Friends tab (decisions 21, 25; YAZ-6271..6274)', () => {
     expect(plain(h.host.querySelector('[aria-pressed="true"]')?.textContent)).toBe('Yesterday')
     await tap(h, 'Week')
     expect(h.host.querySelectorAll('.fr-mark')).toHaveLength(0)
-    expect(h.host.querySelectorAll('.fr-rank')).toHaveLength(0)
+    expect(h.host.querySelectorAll('.fr-rank--medal')).toHaveLength(0)
+    expect([...h.host.querySelectorAll('.fr-rank')].map((el) => el.textContent)).toEqual(['1', '2', '3', '4'])
     await tap(h, 'Month')
     expect(h.host.querySelectorAll('.fr-mark')).toHaveLength(0)
-    expect(h.host.querySelectorAll('.fr-rank')).toHaveLength(0)
+    expect(h.host.querySelectorAll('.fr-rank--medal')).toHaveLength(0)
+    expect([...h.host.querySelectorAll('.fr-rank')].map((el) => el.textContent)).toEqual(['1', '2', '3', '4'])
   })
 
   it('no friend yet: centered empty state card and what a friend sees', async () => {
@@ -170,7 +172,7 @@ describe('the Friends tab (decisions 21, 25; YAZ-6271..6274)', () => {
     let s: FakeService
     ;({ h, s } = await open(board))
     expect(rows(h)).toEqual([
-      'D Demo Person 31 cards 2d 🔥 · 55 min',
+      'D Demo Person now 31 cards 2d 🔥 · 55 min',
       'A Ana Waiting for Ana to add you · 2h ago 10 cards 10 min',
       'B Ben No longer shares with you Remove',
       'C Cy Needs a newer app',

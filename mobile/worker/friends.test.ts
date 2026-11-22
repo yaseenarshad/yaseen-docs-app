@@ -5,21 +5,25 @@ import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
 import type { FriendStats } from '../../shared/friendStatsFormat'
 import type { D1Database, D1PreparedStatement, D1Result } from './d1Types'
-import { mergeStatsNeverLower } from './friends'
+import { handleFriends, mergeStatsNeverLower, type WorkerExecutionContext } from './friends'
 import { handle, type Env } from './index'
+import { runDailyReminders } from './pushNotify'
+import { base64UrlEncode } from './webPush'
 
 const MIGRATION_SQL = readFileSync(join(__dirname, 'migrations/0001_friends.sql'), 'utf8')
 const MIGRATION_0002_SQL = readFileSync(join(__dirname, 'migrations/0002_drop_marks.sql'), 'utf8')
 const MIGRATION_0003_SQL = readFileSync(join(__dirname, 'migrations/0003_shared_decks.sql'), 'utf8')
 const MIGRATION_0004_SQL = readFileSync(join(__dirname, 'migrations/0004_custom_avatar.sql'), 'utf8')
+const MIGRATION_0005_SQL = readFileSync(join(__dirname, 'migrations/0005_push_notifications.sql'), 'utf8')
 
-/** Real SQLite-backed D1 adapter executing the exact production migrations (0001 + 0002 + 0003 + 0004). */
+/** Real SQLite-backed D1 adapter executing the exact production migrations (0001..0005). */
 function makeSqliteD1(): D1Database {
   const sqlite = new DatabaseSync(':memory:')
   sqlite.exec(MIGRATION_SQL)
   sqlite.exec(MIGRATION_0002_SQL)
   sqlite.exec(MIGRATION_0003_SQL)
   sqlite.exec(MIGRATION_0004_SQL)
+  sqlite.exec(MIGRATION_0005_SQL)
 
   const makeStmt = (sql: string, params: unknown[] = []): D1PreparedStatement => {
     const cleanParams = () => params.map((p) => (p === undefined ? null : p)) as (string | number | Uint8Array | null)[]
@@ -798,5 +802,392 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
     const leftAvatarB = await db.prepare('SELECT COUNT(*) AS cnt FROM user_avatars WHERE github_id = ?').bind(20).first<{ cnt: number }>()
     expect(leftAvatarB?.cnt).toBe(0)
     expect((await handle(req('/api/friends/avatar/20', { method: 'GET' }, null), env, ghFetch)).status).toBe(404)
+  })
+
+  it('supports push config, subscribe/unsubscribe, prefs, test push with 410 pruning, and DELETE /api/friends/me cleanup', async () => {
+    const db = makeSqliteD1()
+    const vapidKp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    const vapidPub = base64UrlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', vapidKp.publicKey)))
+    const vapidPriv = (await crypto.subtle.exportKey('jwk', vapidKp.privateKey)).d!
+
+    const subKp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])
+    const subP256dh = base64UrlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', subKp.publicKey)))
+    const subAuth = base64UrlEncode(crypto.getRandomValues(new Uint8Array(16)))
+
+    const ghFetch = fakeGithubFetch({ gh_a: { id: 101, login: 'alice', name: 'Alice' } })
+
+    // 1. Graceful 200 with vapidPublicKey: null when VAPID env is unset
+    const unsetEnv: Env = { FRIENDS_DB: db, FRIENDS_TOKEN_SECRET: SECRET }
+    const { token } = (await (
+      await handle(req('/api/friends/session', { method: 'POST', body: JSON.stringify({ githubToken: 'gh_a' }) }), unsetEnv, ghFetch)
+    ).json()) as { token: string }
+    const auth = { authorization: `Bearer ${token}` }
+
+    const cfgUnset = await handle(req('/api/friends/push/config', { method: 'GET', headers: auth }), unsetEnv, ghFetch)
+    expect(cfgUnset.status).toBe(200)
+    expect(await cfgUnset.json()).toEqual({ vapidPublicKey: null })
+
+    // 2. Configured VAPID returns public key
+    const env: Env = { ...unsetEnv, VAPID_PUBLIC_KEY: vapidPub, VAPID_PRIVATE_KEY: vapidPriv }
+    const cfgSet = await handle(req('/api/friends/push/config', { method: 'GET', headers: auth }), env, ghFetch)
+    expect(cfgSet.status).toBe(200)
+    expect(await cfgSet.json()).toEqual({ vapidPublicKey: vapidPub })
+
+    // 3. Rejects non-HTTPS / private push endpoints
+    const badEp = await handle(
+      req('/api/friends/push/subscribe', {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ endpoint: 'http://localhost:8080/push', keys: { p256dh: subP256dh, auth: subAuth } }),
+      }),
+      env,
+      ghFetch,
+    )
+    expect(badEp.status).toBe(400)
+
+    // 4. Subscribe two devices (one healthy, one that will return 410 Gone)
+    const ep1 = 'https://fcm.googleapis.com/fcm/send/dev-1'
+    const ep2 = 'https://fcm.googleapis.com/fcm/send/dev-gone'
+    expect(
+      (
+        await handle(
+          req('/api/friends/push/subscribe', { method: 'POST', headers: auth, body: JSON.stringify({ endpoint: ep1, keys: { p256dh: subP256dh, auth: subAuth } }) }),
+          env,
+          ghFetch,
+        )
+      ).status,
+    ).toBe(200)
+    expect(
+      (
+        await handle(
+          req('/api/friends/push/subscribe', { method: 'POST', headers: auth, body: JSON.stringify({ endpoint: ep2, keys: { p256dh: subP256dh, auth: subAuth } }) }),
+          env,
+          ghFetch,
+        )
+      ).status,
+    ).toBe(200)
+
+    // 5. Default prefs + subscribedCount = 2, then update prefs
+    const prefsGet1 = (await (await handle(req('/api/friends/push/prefs', { method: 'GET', headers: auth }), env, ghFetch)).json()) as {
+      prefs: Record<string, unknown>
+      subscribedCount: number
+    }
+    expect(prefsGet1.subscribedCount).toBe(2)
+    expect(prefsGet1.prefs).toEqual({
+      dailyReminder: true,
+      reminderHour: 20,
+      friendFinishedMode: 'all',
+      friendFinishedIds: [],
+      buddyStreak: true,
+      sharedCards: true,
+    })
+
+    const prefsPut = await handle(
+      req('/api/friends/push/prefs', {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify({ reminderHour: 19, friendFinishedMode: 'selected', friendFinishedIds: [202, 303], buddyStreak: false }),
+      }),
+      env,
+      ghFetch,
+    )
+    expect(prefsPut.status).toBe(200)
+    expect(await prefsPut.json()).toEqual({
+      ok: true,
+      prefs: {
+        dailyReminder: true,
+        reminderHour: 19,
+        friendFinishedMode: 'selected',
+        friendFinishedIds: [202, 303],
+        buddyStreak: false,
+        sharedCards: true,
+      },
+    })
+
+    // 6. Test push sends to both, prunes the 410 subscription automatically
+    const pushFetch = async (url: string, init: RequestInit): Promise<Response> => {
+      if (url === ep1) return new Response(null, { status: 201 })
+      if (url === ep2) return new Response(null, { status: 410 })
+      return ghFetch(url, init)
+    }
+    const testRes = await handle(req('/api/friends/push/test', { method: 'POST', headers: auth }), env, pushFetch)
+    expect(testRes.status).toBe(200)
+    expect(await testRes.json()).toEqual({ ok: true, sent: 1, failed: 1 })
+
+    const prefsGet2 = (await (await handle(req('/api/friends/push/prefs', { method: 'GET', headers: auth }), env, ghFetch)).json()) as {
+      subscribedCount: number
+    }
+    expect(prefsGet2.subscribedCount).toBe(1)
+
+    // 7. Unsubscribe removes remaining endpoint, re-subscribe, then DELETE /api/friends/me cleans both tables
+    await handle(req('/api/friends/push/unsubscribe', { method: 'POST', headers: auth, body: JSON.stringify({ endpoint: ep1 }) }), env, ghFetch)
+    const prefsGet3 = (await (await handle(req('/api/friends/push/prefs', { method: 'GET', headers: auth }), env, ghFetch)).json()) as {
+      subscribedCount: number
+    }
+    expect(prefsGet3.subscribedCount).toBe(0)
+
+    await handle(
+      req('/api/friends/push/subscribe', { method: 'POST', headers: auth, body: JSON.stringify({ endpoint: ep1, keys: { p256dh: subP256dh, auth: subAuth } }) }),
+      env,
+      ghFetch,
+    )
+    await handle(req('/api/friends/me', { method: 'DELETE', headers: auth }), env, ghFetch)
+    const subLeft = await db.prepare('SELECT COUNT(*) AS cnt FROM push_subscriptions WHERE user_id = ?').bind(101).first<{ cnt: number }>()
+    const prefLeft = await db.prepare('SELECT COUNT(*) AS cnt FROM notification_prefs WHERE user_id = ?').bind(101).first<{ cnt: number }>()
+    expect(subLeft?.cnt).toBe(0)
+    expect(prefLeft?.cnt).toBe(0)
+  })
+
+  it('triggers buddy-streak nudges, friend-finished filters, and shared-card / invite notifications on transitions', async () => {
+    const db = makeSqliteD1()
+    const vapidKp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    const vapidPub = base64UrlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', vapidKp.publicKey)))
+    const vapidPriv = (await crypto.subtle.exportKey('jwk', vapidKp.privateKey)).d!
+    const env: Env = { FRIENDS_DB: db, FRIENDS_TOKEN_SECRET: SECRET, VAPID_PUBLIC_KEY: vapidPub, VAPID_PRIVATE_KEY: vapidPriv }
+
+    const makeSub = async () => {
+      const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])
+      const pubBytes = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey))
+      const authSecret = crypto.getRandomValues(new Uint8Array(16))
+      return {
+        privateKey: kp.privateKey,
+        pubBytes,
+        authSecret,
+        keys: { p256dh: base64UrlEncode(pubBytes), auth: base64UrlEncode(authSecret) },
+      }
+    }
+
+    const decryptPush = async (body: Uint8Array, sub: Awaited<ReturnType<typeof makeSub>>) => {
+      const salt = new Uint8Array(body.slice(0, 16))
+      const idlen = body[20]
+      const asPub = new Uint8Array(body.slice(21, 21 + idlen))
+      const ct = new Uint8Array(body.slice(21 + idlen))
+      const asKey = await crypto.subtle.importKey('raw', asPub, { name: 'ECDH', namedCurve: 'P-256' }, false, [])
+      const ecdh = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: asKey }, sub.privateKey, 256))
+      const enc = new TextEncoder()
+      const prefix = enc.encode('WebPush: info\0')
+      const info = new Uint8Array(prefix.byteLength + sub.pubBytes.byteLength + asPub.byteLength)
+      info.set(prefix, 0)
+      info.set(sub.pubBytes, prefix.byteLength)
+      info.set(asPub, prefix.byteLength + sub.pubBytes.byteLength)
+      const ecdhKey = await crypto.subtle.importKey('raw', ecdh, 'HKDF', false, ['deriveBits'])
+      const ikm = new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: sub.authSecret, info }, ecdhKey, 256))
+      const ikmKey = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits'])
+      const cek = new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info: enc.encode('Content-Encoding: aes128gcm\0') }, ikmKey, 128))
+      const nonce = new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info: enc.encode('Content-Encoding: nonce\0') }, ikmKey, 96))
+      const cekKey = await crypto.subtle.importKey('raw', cek, { name: 'AES-GCM' }, false, ['decrypt'])
+      const pt = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce, tagLength: 128 }, cekKey, ct))
+      return JSON.parse(new TextDecoder().decode(pt.slice(0, -1))) as { title: string; body: string }
+    }
+
+    const subA = await makeSub()
+    const subB = await makeSub()
+    const subC = await makeSub()
+    const subByEp = new Map([
+      ['https://push.example/alice', subA],
+      ['https://push.example/bob', subB],
+      ['https://push.example/charlie', subC],
+    ])
+
+    const ghFetch = fakeGithubFetch({
+      gh_a: { id: 1, login: 'alice', name: 'Alice' },
+      gh_b: { id: 2, login: 'bob', name: 'Bob' },
+      gh_c: { id: 3, login: 'charlie', name: 'Charlie' },
+    })
+
+    const sentPushes: { endpoint: string; payload: { title: string; body: string } }[] = []
+    const combinedFetch = async (url: string, init: RequestInit): Promise<Response> => {
+      const sub = subByEp.get(url)
+      if (sub) {
+        sentPushes.push({ endpoint: url, payload: await decryptPush(init.body as Uint8Array, sub) })
+        return new Response(null, { status: 201 })
+      }
+      return ghFetch(url, init)
+    }
+
+    const pending: Promise<unknown>[] = []
+    const ctx: WorkerExecutionContext = { waitUntil: (p) => pending.push(p) }
+    const flush = async () => {
+      await Promise.all(pending.splice(0))
+    }
+    const fixedNow = () => Date.parse('2026-11-22T18:00:00.000Z')
+
+    const signIn = async (tok: string) =>
+      ((await (await handleFriends(req('/api/friends/session', { method: 'POST', body: JSON.stringify({ githubToken: tok }) }), env, combinedFetch, fixedNow, ctx)).json()) as { token: string }).token
+
+    const authA = { authorization: `Bearer ${await signIn('gh_a')}` }
+    const authB = { authorization: `Bearer ${await signIn('gh_b')}` }
+    const authC = { authorization: `Bearer ${await signIn('gh_c')}` }
+
+    await handleFriends(req('/api/friends/push/subscribe', { method: 'POST', headers: authA, body: JSON.stringify({ endpoint: 'https://push.example/alice', keys: subA.keys }) }), env, combinedFetch, fixedNow, ctx)
+    await handleFriends(req('/api/friends/push/subscribe', { method: 'POST', headers: authB, body: JSON.stringify({ endpoint: 'https://push.example/bob', keys: subB.keys }) }), env, combinedFetch, fixedNow, ctx)
+    await handleFriends(req('/api/friends/push/subscribe', { method: 'POST', headers: authC, body: JSON.stringify({ endpoint: 'https://push.example/charlie', keys: subC.keys }) }), env, combinedFetch, fixedNow, ctx)
+
+    // Alice invites Bob & Charlie -> invite accept notifies Alice
+    const inv1 = (await (await handleFriends(req('/api/friends/invites', { method: 'POST', headers: authA }), env, combinedFetch, fixedNow, ctx)).json()) as { code: string }
+    await handleFriends(req('/api/friends/invites/accept', { method: 'POST', headers: authB, body: JSON.stringify({ code: inv1.code }) }), env, combinedFetch, fixedNow, ctx)
+    await flush()
+    expect(sentPushes).toHaveLength(1)
+    expect(sentPushes[0]).toMatchObject({ endpoint: 'https://push.example/alice', payload: { body: 'Bob accepted your friend invite' } })
+    sentPushes.length = 0
+
+    const inv2 = (await (await handleFriends(req('/api/friends/invites', { method: 'POST', headers: authA }), env, combinedFetch, fixedNow, ctx)).json()) as { code: string }
+    await handleFriends(req('/api/friends/invites/accept', { method: 'POST', headers: authC, body: JSON.stringify({ code: inv2.code }) }), env, combinedFetch, fixedNow, ctx)
+    await flush()
+    sentPushes.length = 0
+
+    // Charlie disables buddyStreak and sets friendFinishedMode = 'selected' for [1] (Alice)
+    await handleFriends(
+      req('/api/friends/push/prefs', {
+        method: 'PUT',
+        headers: authC,
+        body: JSON.stringify({ buddyStreak: false, friendFinishedMode: 'selected', friendFinishedIds: [1], sharedCards: false }),
+      }),
+      env,
+      combinedFetch,
+      fixedNow,
+      ctx,
+    )
+
+    // Bob already has a 2-day streak ending yesterday (Nov 20 & Nov 21), NOT done today yet (Nov 22)
+    const bobInitial: FriendStats = {
+      ...sampleStats('2026-11-22', 3, 60, 2, false),
+      days: [
+        { day: '2026-11-22', cards: 3, seconds: 60, remembered: 3, forgot: 0, newCards: 0, done: false },
+        { day: '2026-11-21', cards: 15, seconds: 300, remembered: 14, forgot: 1, newCards: 2, done: true },
+        { day: '2026-11-20', cards: 12, seconds: 240, remembered: 12, forgot: 0, newCards: 1, done: true },
+      ],
+    }
+    await handleFriends(req('/api/friends/stats', { method: 'PUT', headers: authB, body: JSON.stringify({ stats: bobInitial }) }), env, combinedFetch, fixedNow, ctx)
+    await flush()
+    expect(sentPushes).toHaveLength(0)
+
+    // Alice finishes today (Nov 22) with 18 cards and also finished Nov 20 & Nov 21 ->
+    // Bob gets buddy-streak nudge ("finish yours to hit a 3-day buddy streak!"),
+    // Charlie gets friend-finished ("Alice just finished due cards (18 cards)").
+    const aliceDone: FriendStats = {
+      ...sampleStats('2026-11-22', 18, 420, 3, true),
+      days: [
+        { day: '2026-11-22', cards: 18, seconds: 420, remembered: 17, forgot: 1, newCards: 3, done: true },
+        { day: '2026-11-21', cards: 14, seconds: 280, remembered: 14, forgot: 0, newCards: 2, done: true },
+        { day: '2026-11-20', cards: 10, seconds: 200, remembered: 10, forgot: 0, newCards: 1, done: true },
+      ],
+    }
+    await handleFriends(req('/api/friends/stats', { method: 'PUT', headers: authA, body: JSON.stringify({ stats: aliceDone }) }), env, combinedFetch, fixedNow, ctx)
+    await flush()
+
+    const byEp = new Map(sentPushes.map((p) => [p.endpoint, p.payload.body]))
+    expect(byEp.get('https://push.example/bob')).toBe('Alice finished today — finish yours to hit a 3-day buddy streak!')
+    expect(byEp.get('https://push.example/charlie')).toBe('Alice just finished due cards (18 cards)')
+    sentPushes.length = 0
+
+    // Re-uploading Alice's stats when already done today must NOT re-trigger notifications
+    await handleFriends(req('/api/friends/stats', { method: 'PUT', headers: authA, body: JSON.stringify({ stats: aliceDone }) }), env, combinedFetch, fixedNow, ctx)
+    await flush()
+    expect(sentPushes).toHaveLength(0)
+
+    // Now Bob finishes today -> Alice gets "🎉 You & Bob hit a 3-day buddy streak!"
+    const bobDone: FriendStats = {
+      ...bobInitial,
+      days: [
+        { day: '2026-11-22', cards: 22, seconds: 500, remembered: 20, forgot: 2, newCards: 1, done: true },
+        ...bobInitial.days.slice(1),
+      ],
+    }
+    await handleFriends(req('/api/friends/stats', { method: 'PUT', headers: authB, body: JSON.stringify({ stats: bobDone }) }), env, combinedFetch, fixedNow, ctx)
+    await flush()
+    expect(sentPushes).toHaveLength(1)
+    expect(sentPushes[0]).toMatchObject({
+      endpoint: 'https://push.example/alice',
+      payload: { body: '🎉 You & Bob hit a 3-day buddy streak!' },
+    })
+    sentPushes.length = 0
+
+    // Alice shares a card to Bob (sharedCards=true) and Charlie (sharedCards=false) -> only Bob is notified
+    await handleFriends(
+      req('/api/friends/cards/share', {
+        method: 'POST',
+        headers: authA,
+        body: JSON.stringify({ toUserIds: [2, 3], cards: [{ title: 'Renal', markdown: 'Q\n---\nA' }] }),
+      }),
+      env,
+      combinedFetch,
+      fixedNow,
+      ctx,
+    )
+    await flush()
+    expect(sentPushes).toHaveLength(1)
+    expect(sentPushes[0].endpoint).toBe('https://push.example/bob')
+    expect(sentPushes[0].payload.body).toContain('Alice shared "Renal"')
+  })
+
+  it('runDailyReminders respects local hour, skips done/zero-due users, and deduplicates via last_reminder_day', async () => {
+    const db = makeSqliteD1()
+    const vapidKp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    const vapidPub = base64UrlEncode(new Uint8Array(await crypto.subtle.exportKey('raw', vapidKp.publicKey)))
+    const vapidPriv = (await crypto.subtle.exportKey('jwk', vapidKp.privateKey)).d!
+    const env: Env = { FRIENDS_DB: db, FRIENDS_TOKEN_SECRET: SECRET, VAPID_PUBLIC_KEY: vapidPub, VAPID_PRIVATE_KEY: vapidPriv }
+
+    const subKp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])
+    const subPub = new Uint8Array(await crypto.subtle.exportKey('raw', subKp.publicKey))
+    const subAuth = crypto.getRandomValues(new Uint8Array(16))
+    const subKeys = { p256dh: base64UrlEncode(subPub), auth: base64UrlEncode(subAuth) }
+
+    const ghFetch = fakeGithubFetch({
+      gh_due: { id: 10, login: 'dueuser', name: 'Due' },
+      gh_done: { id: 20, login: 'doneuser', name: 'Done' },
+      gh_ny: { id: 30, login: 'nyuser', name: 'NY' },
+    })
+
+    const signIn = async (tok: string) =>
+      ((await (await handle(req('/api/friends/session', { method: 'POST', body: JSON.stringify({ githubToken: tok }) }), env, ghFetch)).json()) as { token: string }).token
+
+    const authDue = { authorization: `Bearer ${await signIn('gh_due')}` }
+    const authDone = { authorization: `Bearer ${await signIn('gh_done')}` }
+    const authNy = { authorization: `Bearer ${await signIn('gh_ny')}` }
+
+    await handle(req('/api/friends/push/subscribe', { method: 'POST', headers: authDue, body: JSON.stringify({ endpoint: 'https://push.example/due', keys: subKeys }) }), env, ghFetch)
+    await handle(req('/api/friends/push/subscribe', { method: 'POST', headers: authDone, body: JSON.stringify({ endpoint: 'https://push.example/done', keys: subKeys }) }), env, ghFetch)
+    await handle(req('/api/friends/push/subscribe', { method: 'POST', headers: authNy, body: JSON.stringify({ endpoint: 'https://push.example/ny', keys: subKeys }) }), env, ghFetch)
+
+    // 2026-11-23T03:00:00Z = 2026-11-22 20:00 America/Phoenix (UTC-7) and 2026-11-22 22:00 America/New_York (UTC-5)
+    const phoenix8pmMs = Date.parse('2026-11-23T03:00:00.000Z')
+
+    // User 10: no zone set (falls back to America/Phoenix, default reminder_hour = 20), NOT done, 7 dueLeft, 12-day streak -> SHOULD notify
+    const dueStats: FriendStats = {
+      ...sampleStats('2026-11-22', 5, 100, 12, false),
+      totals: { ...sampleStats('2026-11-22', 5, 100, 12, false).totals, dueLeft: 7 },
+    }
+    await handle(req('/api/friends/stats', { method: 'PUT', headers: authDue, body: JSON.stringify({ stats: dueStats }) }), env, ghFetch)
+
+    // User 20: America/Phoenix, ALREADY done today -> MUST skip
+    await handle(
+      req('/api/friends/stats', { method: 'PUT', headers: authDone, body: JSON.stringify({ stats: sampleStats('2026-11-22', 20, 400, 5, true), zone: 'America/Phoenix' }) }),
+      env,
+      ghFetch,
+    )
+
+    // User 30: America/New_York (22:00 != default 20:00) -> MUST skip at this hour
+    await handle(
+      req('/api/friends/stats', { method: 'PUT', headers: authNy, body: JSON.stringify({ stats: dueStats, zone: 'America/New_York' }) }),
+      env,
+      ghFetch,
+    )
+
+    const hitEndpoints: string[] = []
+    const pushFetch = async (url: string): Promise<Response> => {
+      hitEndpoints.push(url)
+      return new Response(null, { status: 201 })
+    }
+
+    const r1 = await runDailyReminders(env, phoenix8pmMs, pushFetch)
+    expect(r1).toEqual({ checked: 3, sent: 1, failed: 0 })
+    expect(hitEndpoints).toEqual(['https://push.example/due'])
+
+    // Running again in the same hour/day must NOT re-send (last_reminder_day dedup)
+    hitEndpoints.length = 0
+    const r2 = await runDailyReminders(env, phoenix8pmMs + 10 * 60_000, pushFetch)
+    expect(r2).toEqual({ checked: 3, sent: 0, failed: 0 })
+    expect(hitEndpoints).toEqual([])
   })
 })

@@ -25,10 +25,18 @@ import { CALLBACK_ORIGINS } from '../src/auth/githubAppConfig'
 import type { D1Database } from './d1Types'
 import { cardFileTitle } from '../../shared/cardFileFormat'
 import { computeBuddyStreak, displayNameFor } from '../../shared/friendsBoard'
-import type { DeckShareMode } from '../../shared/friendsApi'
+import type { DeckShareMode, FriendFinishedMode } from '../../shared/friendsApi'
 import { extractRelativeAssetPaths, sanitizeSharedMarkdown } from '../../shared/friendsShare'
 import { FRIENDS_TOKEN_TTL_S, fetchGithubProfile, signFriendsToken, upsertUserProfile, verifyFriendsToken } from './friendsAuth'
 import { mintReadOnlyRepoToken, verifyInstallationRepoOwnership } from './githubAppJwt'
+import {
+  notifyFriendInviteAccepted,
+  notifyFriendsOnDoneTransition,
+  notifySharedCardsRecipients,
+  notifyUser,
+  parseNotificationPrefsRow,
+} from './pushNotify'
+import { isValidPushEndpoint, isValidPushKeys } from './webPush'
 import type { FriendDay, FriendStats } from '../../shared/friendStatsFormat'
 
 export interface FriendsEnv {
@@ -36,6 +44,18 @@ export interface FriendsEnv {
   FRIENDS_DB?: D1Database
   GITHUB_APP_ID?: string
   GITHUB_APP_PRIVATE_KEY?: string
+  VAPID_PUBLIC_KEY?: string
+  VAPID_PRIVATE_KEY?: string
+  VAPID_SUBJECT?: string
+}
+
+export interface WorkerExecutionContext {
+  waitUntil(promise: Promise<unknown>): void
+}
+
+function runInBackground(ctx: WorkerExecutionContext | undefined, work: Promise<unknown>): void {
+  const safe = work.catch(() => {})
+  if (ctx) ctx.waitUntil(safe)
 }
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>
@@ -294,6 +314,7 @@ export async function handleFriends(
   env: FriendsEnv,
   fetch: Fetch = (u, init) => globalThis.fetch(u, init),
   now: () => number = Date.now,
+  ctx?: WorkerExecutionContext,
 ): Promise<Response> {
   const url = new URL(request.url)
   if (!isOriginAllowed(request, url)) return refuse(403, 'wrong_origin')
@@ -681,7 +702,10 @@ export async function handleFriends(
     if (incoming.v !== 1 || !Array.isArray(incoming.days) || typeof incoming.totals !== 'object') return refuse(400, 'bad_stats')
 
     const force = body.force === true
-    const existing = await db.prepare('SELECT stats_json FROM users WHERE github_id = ?').bind(meId).first<{ stats_json: string | null }>()
+    const existing = await db
+      .prepare('SELECT stats_json, nickname, name, login FROM users WHERE github_id = ?')
+      .bind(meId)
+      .first<{ stats_json: string | null; nickname: string | null; name: string | null; login: string | null }>()
     const prevStats = existing?.stats_json ? (safeParseJson(existing.stats_json) as FriendStats | null) : null
     const merged = force ? incoming : mergeStatsNeverLower(prevStats, incoming)
 
@@ -733,6 +757,8 @@ export async function handleFriends(
       )
     }
     await db.batch(stmts)
+    const meName = displayNameFor(existing?.nickname, existing?.name, String(existing?.login ?? claims.login))
+    runInBackground(ctx, notifyFriendsOnDoneTransition(env, db, meId, meName, prevStats, merged, nowMs, fetch))
     return answer(200, { ok: true, statsAt: nowIso })
   }
 
@@ -859,6 +885,17 @@ export async function handleFriends(
         db.prepare('INSERT OR IGNORE INTO friendships (user_a, user_b, created_at) VALUES (?, ?, ?)').bind(a, b, nowIso),
         db.prepare('DELETE FROM invites WHERE code = ?').bind(code),
       ])
+      runInBackground(
+        ctx,
+        (async () => {
+          const meUser = await db
+            .prepare('SELECT nickname, name, login FROM users WHERE github_id = ?')
+            .bind(meId)
+            .first<{ nickname: string | null; name: string | null; login: string | null }>()
+          const meName = displayNameFor(meUser?.nickname, meUser?.name, String(meUser?.login ?? claims.login))
+          await notifyFriendInviteAccepted(env, db, otherId, meId, meName, fetch, nowMs)
+        })(),
+      )
       return answer(200, { kind: 'friend', friendId: otherId })
     }
 
@@ -1098,6 +1135,35 @@ export async function handleFriends(
     }
 
     await db.batch(stmts)
+    runInBackground(
+      ctx,
+      (async () => {
+        const recipientIds = [...toUserIds]
+        if (groupId) {
+          const members = await db
+            .prepare("SELECT user_id FROM group_members WHERE group_id = ? AND status = 'active' AND user_id != ?")
+            .bind(groupId, meId)
+            .all<{ user_id: number }>()
+          for (const m of members.results) recipientIds.push(Number(m.user_id))
+        }
+        if (recipientIds.length === 0) return
+        const meUser = await db
+          .prepare('SELECT nickname, name, login FROM users WHERE github_id = ?')
+          .bind(meId)
+          .first<{ nickname: string | null; name: string | null; login: string | null }>()
+        const meName = displayNameFor(meUser?.nickname, meUser?.name, String(meUser?.login ?? claims.login))
+        await notifySharedCardsRecipients(
+          env,
+          db,
+          recipientIds,
+          meName,
+          folderName,
+          cleanCards.map((c) => c.title),
+          fetch,
+          nowMs,
+        )
+      })(),
+    )
     return answer(200, { ok: true, folderId: createdFolderId, cardIds: createdCardIds, count: createdCardIds.length })
   }
 
@@ -1408,10 +1474,166 @@ export async function handleFriends(
     })
   }
 
+  // 17b. Web Push routes: config, subscribe, unsubscribe, prefs, test
+  if (path === '/api/friends/push/config') {
+    if (method !== 'GET') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'GET' } })
+    const vapidPublicKey = env.VAPID_PUBLIC_KEY?.trim() || null
+    return answer(200, { vapidPublicKey })
+  }
+
+  if (path === '/api/friends/push/subscribe') {
+    if (method !== 'POST') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'POST' } })
+    const body = await readJsonBody(request)
+    if (!body) return refuse(400, 'bad_request')
+    const endpoint = typeof body.endpoint === 'string' ? body.endpoint.trim() : ''
+    const keys = body.keys && typeof body.keys === 'object' && !Array.isArray(body.keys) ? (body.keys as Record<string, unknown>) : null
+    const p256dh = typeof keys?.p256dh === 'string' ? keys.p256dh.trim() : ''
+    const auth = typeof keys?.auth === 'string' ? keys.auth.trim() : ''
+    if (!isValidPushEndpoint(endpoint)) return refuse(400, 'bad_endpoint')
+    if (!isValidPushKeys({ p256dh, auth })) return refuse(400, 'bad_keys')
+
+    const ua = request.headers.get('user-agent')?.slice(0, 256) ?? null
+    await db
+      .prepare(
+        `INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, user_agent, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(endpoint) DO UPDATE SET
+           user_id = excluded.user_id,
+           p256dh = excluded.p256dh,
+           auth = excluded.auth,
+           user_agent = excluded.user_agent,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(randomId(), meId, endpoint, p256dh, auth, ua, nowIso, nowIso)
+      .run()
+    return answer(200, { ok: true })
+  }
+
+  if (path === '/api/friends/push/unsubscribe') {
+    if (method !== 'POST') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'POST' } })
+    const body = await readJsonBody(request)
+    const endpoint = typeof body?.endpoint === 'string' ? body.endpoint.trim() : ''
+    if (!endpoint || endpoint.length > 2048) return refuse(400, 'bad_endpoint')
+    await db.prepare('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?').bind(meId, endpoint).run()
+    return answer(200, { ok: true })
+  }
+
+  if (path === '/api/friends/push/prefs') {
+    if (method === 'GET') {
+      const prefRow = await db
+        .prepare('SELECT daily_reminder, reminder_hour, friend_finished_mode, friend_finished_ids_json, buddy_streak, shared_cards FROM notification_prefs WHERE user_id = ?')
+        .bind(meId)
+        .first<Record<string, unknown>>()
+      const subCountRow = await db
+        .prepare('SELECT COUNT(*) AS cnt FROM push_subscriptions WHERE user_id = ?')
+        .bind(meId)
+        .first<{ cnt: number }>()
+      return answer(200, {
+        prefs: parseNotificationPrefsRow(prefRow),
+        subscribedCount: Number(subCountRow?.cnt ?? 0),
+      })
+    }
+    if (method === 'PUT') {
+      const body = await readJsonBody(request)
+      if (!body) return refuse(400, 'bad_request')
+      const curRow = await db
+        .prepare('SELECT daily_reminder, reminder_hour, friend_finished_mode, friend_finished_ids_json, buddy_streak, shared_cards FROM notification_prefs WHERE user_id = ?')
+        .bind(meId)
+        .first<Record<string, unknown>>()
+      const cur = parseNotificationPrefsRow(curRow)
+
+      let dailyReminder = cur.dailyReminder
+      if (body.dailyReminder !== undefined) {
+        if (typeof body.dailyReminder !== 'boolean') return refuse(400, 'bad_request')
+        dailyReminder = body.dailyReminder
+      }
+
+      let reminderHour = cur.reminderHour
+      if (body.reminderHour !== undefined) {
+        if (typeof body.reminderHour !== 'number' || !Number.isInteger(body.reminderHour) || body.reminderHour < 0 || body.reminderHour > 23) {
+          return refuse(400, 'bad_reminder_hour')
+        }
+        reminderHour = body.reminderHour
+      }
+
+      let friendFinishedMode: FriendFinishedMode = cur.friendFinishedMode
+      if (body.friendFinishedMode !== undefined) {
+        if (body.friendFinishedMode !== 'off' && body.friendFinishedMode !== 'all' && body.friendFinishedMode !== 'selected') {
+          return refuse(400, 'bad_mode')
+        }
+        friendFinishedMode = body.friendFinishedMode
+      }
+
+      let friendFinishedIds = cur.friendFinishedIds
+      if (body.friendFinishedIds !== undefined) {
+        if (!Array.isArray(body.friendFinishedIds)) return refuse(400, 'bad_request')
+        friendFinishedIds = [
+          ...new Set(body.friendFinishedIds.filter((id): id is number => typeof id === 'number' && Number.isInteger(id) && id > 0 && id !== meId)),
+        ].slice(0, 500)
+      }
+
+      let buddyStreak = cur.buddyStreak
+      if (body.buddyStreak !== undefined) {
+        if (typeof body.buddyStreak !== 'boolean') return refuse(400, 'bad_request')
+        buddyStreak = body.buddyStreak
+      }
+
+      let sharedCards = cur.sharedCards
+      if (body.sharedCards !== undefined) {
+        if (typeof body.sharedCards !== 'boolean') return refuse(400, 'bad_request')
+        sharedCards = body.sharedCards
+      }
+
+      await db
+        .prepare(
+          `INSERT INTO notification_prefs (user_id, daily_reminder, reminder_hour, friend_finished_mode, friend_finished_ids_json, buddy_streak, shared_cards, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(user_id) DO UPDATE SET
+             daily_reminder = excluded.daily_reminder,
+             reminder_hour = excluded.reminder_hour,
+             friend_finished_mode = excluded.friend_finished_mode,
+             friend_finished_ids_json = excluded.friend_finished_ids_json,
+             buddy_streak = excluded.buddy_streak,
+             shared_cards = excluded.shared_cards,
+             updated_at = excluded.updated_at`,
+        )
+        .bind(
+          meId,
+          dailyReminder ? 1 : 0,
+          reminderHour,
+          friendFinishedMode,
+          JSON.stringify(friendFinishedIds),
+          buddyStreak ? 1 : 0,
+          sharedCards ? 1 : 0,
+          nowIso,
+        )
+        .run()
+
+      const prefs = { dailyReminder, reminderHour, friendFinishedMode, friendFinishedIds, buddyStreak, sharedCards }
+      return answer(200, { ok: true, prefs })
+    }
+    return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'GET, PUT' } })
+  }
+
+  if (path === '/api/friends/push/test') {
+    if (method !== 'POST') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'POST' } })
+    const res = await notifyUser(
+      env,
+      db,
+      meId,
+      { title: 'Yaseen Docs', body: 'Push notifications are working!', url: '/friends', tag: 'push-test' },
+      fetch,
+      nowMs,
+    )
+    return answer(200, { ok: true, sent: res.sent, failed: res.failed })
+  }
+
   // 18. DELETE /api/friends/me — Delete my Friends data cleanly (Item 10)
   if (path === '/api/friends/me') {
     if (method !== 'DELETE') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'DELETE' } })
     await db.batch([
+      db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').bind(meId),
+      db.prepare('DELETE FROM notification_prefs WHERE user_id = ?').bind(meId),
       db.prepare('DELETE FROM friendships WHERE user_a = ? OR user_b = ?').bind(meId, meId),
       db.prepare('DELETE FROM deck_permissions WHERE owner_id = ? OR friend_id = ?').bind(meId, meId),
       db.prepare('DELETE FROM deck_vaults WHERE owner_id = ?').bind(meId),

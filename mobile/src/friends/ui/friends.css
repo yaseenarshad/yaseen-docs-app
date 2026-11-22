@@ -1470,3 +1470,147 @@
   object-fit: cover;
   display: block;
 }
+
+/* StepUp-style Consistency-First Hero Card above Friends / Groups bar (Light + Dark native tokens) */
+.fr-hero-card {
+  background: color-mix(in srgb, var(--accent) 4%, var(--bg-side));
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+  border-radius: 16px;
+  padding: 10px 12px 16px;
+  margin-bottom: 14px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.fr-hero-card--done {
+  border-color: color-mix(in srgb, var(--fr-done) 42%, var(--border));
+  background: color-mix(in srgb, var(--fr-done) 9%, var(--bg-side));
+}
+.fr-hero-card .fr-seg {
+  margin-bottom: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 3px;
+  gap: 2px;
+}
+.fr-hero-card .fr-seg button {
+  min-height: 36px;
+  border-radius: 9px;
+  font-weight: 500;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.fr-hero-card .fr-seg button[aria-pressed='true'] {
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+}
+.fr-hero-card__body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: 14px;
+  gap: 4px;
+}
+.fr-hero-card__sub {
+  font-size: 13px;
+  color: var(--fr-muted);
+  font-weight: 500;
+}
+.fr-hero-card__num {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  margin: 2px 0 4px;
+}
+.fr-hero-card__num--done {
+  color: var(--fr-done);
+}
+.fr-hero-card__meta {
+  font-size: 13px;
+  color: var(--fr-muted);
+  font-weight: 500;
+}
+
+/* Settings › Friends › Notifications (Web Push) 2-click sheet */
+.fr-notif-sheet {
+  gap: 12px;
+}
+
+.fr-notif-tip {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.fr-notif-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.fr-notif-heading {
+  margin-bottom: 4px;
+}
+
+.fr-notif-sub {
+  padding-left: 28px;
+}
+
+.fr-notif-helper {
+  display: block;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--fr-muted);
+  margin-top: 2px;
+}
+
+.fr-notif-note {
+  margin: 4px 0;
+}
+
+.fr-notif-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.fr-notif-status {
+  margin: 0;
+}
+
+.fr-hero-card__paren {
+  font-size: 0.62em;
+  font-weight: 500;
+  color: var(--fr-muted);
+  vertical-align: baseline;
+}
+.fr-cons-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.fr-cons-badge--perfect {
+  background: color-mix(in srgb, var(--fr-done) 14%, transparent);
+  color: var(--fr-done);
+}
+.fr-cons-badge--beat {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
