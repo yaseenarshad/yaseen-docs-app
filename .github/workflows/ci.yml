@@ -159,10 +159,16 @@ jobs:
           path: desktop/.cache/drawio
           key: drawio-${{ runner.os }}-${{ hashFiles('shared/drawio.ts', 'tools/packDrawio.mjs', 'tools/lib/drawioPack.mjs', 'desktop/drawio-overlay/**') }}
       - run: npm run drawio:pack
+      - name: Add swap for Monaco + electron-builder on 7 GB runner
+        run: |
+          sudo fallocate -l 4G /tmp/ci-swapfile
+          sudo chmod 600 /tmp/ci-swapfile
+          sudo mkswap /tmp/ci-swapfile
+          sudo swapon /tmp/ci-swapfile
       - run: npm run desktop:build:linux
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          NODE_OPTIONS: --max-old-space-size=6144
+          NODE_OPTIONS: --max-old-space-size=5120
       - name: Smoke-test packaged Linux CLI (offline + xvfb cold-start)
         run: |
           set -euo pipefail
