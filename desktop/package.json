@@ -1,7 +1,8 @@
 {
   "name": "desktop",
   "private": true,
-  "author": "Yasin Arshad",
+  "author": "Yasin Arshad <yasin@yaseenarshad.com>",
+  "homepage": "https://github.com/yaseenarshad/yaseen-docs-app",
   "version": "0.4.4",
   "description": "Yaseen Docs — Electron shell (main + preload); the renderer is ../client",
   "main": "out/main/index.js",
@@ -38,6 +39,7 @@
     },
     "linux": {
       "executableName": "yaseen-docs",
+      "maintainer": "Yasin Arshad <yasin@yaseenarshad.com>",
       "target": [
         { "target": "tar.gz" },
         { "target": "deb" },

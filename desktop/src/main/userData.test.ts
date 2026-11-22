@@ -26,6 +26,7 @@ describe("userDataDir (YAZ-2556 D2, YAZ-6314: the app's user-data folder, withou
     expect(userDataDir({}, 'linux', '/home/me')).toBe('/home/me/.config/Yaseen Docs')
     expect(userDataDir({ XDG_CONFIG_HOME: '/srv/xdg' }, 'linux', '/home/me')).toBe('/srv/xdg/Yaseen Docs')
     expect(userDataDir({ XDG_CONFIG_HOME: '   ' }, 'linux', '/home/me')).toBe('/home/me/.config/Yaseen Docs')
+    expect(userDataDir({ XDG_CONFIG_HOME: 'relative/path' }, 'linux', '/home/me')).toBe('/home/me/.config/Yaseen Docs')
   })
 
   it("S13: YASEEN_DOCS_USER_DATA_DIR wins on each platform, by applyUserDataOverride's rule: trimmed, and blank is no override", () => {

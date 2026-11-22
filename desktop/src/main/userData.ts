@@ -30,7 +30,7 @@ export function userDataDir(env: Record<string, string | undefined>, platform: N
   if (platform === 'win32') return win32.join(env.APPDATA ?? win32.join(home, 'AppData', 'Roaming'), APP_NAME)
   if (platform === 'linux') {
     const xdg = env.XDG_CONFIG_HOME?.trim()
-    return posix.join(xdg || posix.join(home, '.config'), APP_NAME)
+    return posix.join(xdg && posix.isAbsolute(xdg) ? xdg : posix.join(home, '.config'), APP_NAME)
   }
   return posix.join(home, 'Library', 'Application Support', APP_NAME)
 }

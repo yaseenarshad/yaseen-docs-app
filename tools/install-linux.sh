@@ -30,31 +30,48 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
 fi
 
 RELEASE_JSON="$(curl "${CURL_ARGS[@]}" "$API_URL")"
-PARSED="$(python3 - "$ARCH" <<'PY' <<< "$RELEASE_JSON"
+PARSED="$(python3 -c '
 import json, sys
 arch = sys.argv[1]
 data = json.load(sys.stdin)
-tag = data["tag_name"]
-suffix = f"-linux-{arch}.tar.gz"
-asset = next((a for a in data.get("assets", []) if a["name"].endswith(suffix)), None)
-if not asset:
-    sys.stderr.write(f"No {suffix} asset found in release {tag}\n")
+tag = data.get("tag_name") or ""
+suffixes = (f"-linux-{arch}.tar.gz", "-linux-x86_64.tar.gz" if arch == "x64" else "-linux-aarch64.tar.gz")
+asset = next((a for a in data.get("assets", []) if str(a.get("name", "")).endswith(suffixes)), None)
+if not tag or not asset:
+    label = tag or "<unknown>"
+    sys.stderr.write(f"No {suffixes[0]} asset found in release {label}\n")
     sys.exit(1)
-digest = (asset.get("digest") or "").removeprefix("sha256:")
+digest = str(asset.get("digest") or "")
+if digest.startswith("sha256:"):
+    digest = digest[len("sha256:"):]
 print(tag)
 print(asset["name"])
 print(asset["browser_download_url"])
 print(digest)
-PY
-)"
+' "$ARCH" <<< "$RELEASE_JSON")"
 
 TAG="$(printf '%s\n' "$PARSED" | sed -n '1p')"
 NAME="$(printf '%s\n' "$PARSED" | sed -n '2p')"
 URL="$(printf '%s\n' "$PARSED" | sed -n '3p')"
 EXPECTED_SHA="$(printf '%s\n' "$PARSED" | sed -n '4p')"
 
+# Validate single-segment TAG and NAME before any filesystem operations.
+case "$TAG" in
+  ""|.|..|*/*) echo "Refusing unsafe release tag: $TAG" >&2; exit 1 ;;
+esac
+case "$NAME" in
+  ""|.|..|*/*) echo "Refusing unsafe asset name: $NAME" >&2; exit 1 ;;
+esac
+
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+STAGE_DIR=""
+cleanup() {
+  rm -rf "$TMP"
+  if [ -n "$STAGE_DIR" ]; then
+    rm -rf "$STAGE_DIR"
+  fi
+}
+trap cleanup EXIT
 
 echo "Downloading $NAME ($TAG)..."
 curl -fsSL -o "$TMP/$NAME" "$URL"
@@ -73,6 +90,7 @@ mkdir -p "$STAGE_DIR" "$BIN_DIR"
 tar -xzf "$TMP/$NAME" -C "$STAGE_DIR" --strip-components=1
 rm -rf "$TARGET_DIR"
 mv "$STAGE_DIR" "$TARGET_DIR"
+STAGE_DIR=""
 
 ln -sfn "$TARGET_DIR/resources/bin/yaseendocs" "$BIN_DIR/yaseendocs"
 ln -sfn "$TARGET_DIR/yaseen-docs" "$BIN_DIR/yaseen-docs"

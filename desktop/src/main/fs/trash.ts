@@ -31,7 +31,8 @@ export async function trashFolderOf(p: string, dev: number, devOf: DevOf = stat)
   const isLinux = process.platform === 'linux'
   if ((await devOf(home).catch(() => null))?.dev === dev) {
     if (isLinux) {
-      const dataHome = process.env.XDG_DATA_HOME?.trim() || path.join(home, '.local', 'share')
+      const rawDataHome = process.env.XDG_DATA_HOME?.trim()
+      const dataHome = rawDataHome && path.isAbsolute(rawDataHome) ? rawDataHome : path.join(home, '.local', 'share')
       return path.join(dataHome, 'Trash', 'files')
     }
     return path.join(home, '.Trash')
