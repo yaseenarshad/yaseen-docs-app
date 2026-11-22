@@ -1422,7 +1422,7 @@
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 .fr-hero-card .fr-seg button[aria-pressed='true'] {
-  background: var(--accent, #5e6ad2);
+  background: #4a5ae8;
   color: #ffffff;
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);

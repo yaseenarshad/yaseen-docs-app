@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import type { FriendDay, FriendStats } from './friendStatsFormat'
-import { average7Day, computeBuddyStreak, computeGroupStreak, dailyMarkOf, displayNameFor, firstNameOf, sinceDayKey, sortLeaderboard } from './friendsBoard'
+import {
+  average7Day,
+  buildPeriodGoalHero,
+  computeBuddyStreak,
+  computeGroupStreak,
+  dailyMarkOf,
+  displayNameFor,
+  firstNameOf,
+  periodConsistency,
+  periodContext,
+  sinceDayKey,
+  sortLeaderboard,
+} from './friendsBoard'
 
 function makeDay(day: string, done: boolean, cards = done ? 20 : 0): FriendDay {
   return { day, cards, seconds: cards * 25, remembered: cards, forgot: 0, newCards: 2, done }
@@ -135,5 +147,108 @@ describe('friendsBoard shared helpers (YAZ-6200, YAZ-6222)', () => {
     expect(displayNameFor('   ', 'Yaseen Arshad', 'yaseen')).toBe('Yaseen')
     expect(displayNameFor(null, 'Yaseen Arshad', 'yaseen')).toBe('Yaseen')
     expect(displayNameFor(undefined, null, 'yaseen')).toBe('yaseen')
+  })
+
+  it('periodContext computes Sun–Sat week and Calendar Month bounds (YAZ-6305)', () => {
+    // Sun 2026-11-22 12:00 local time
+    const sunNoon = new Date(2026, 10, 22, 12, 0, 0).getTime()
+    const wkSun = periodContext('week', sunNoon)
+    expect(wkSun.fromDay).toBe('2026-11-22')
+    expect(wkSun.toDay).toBe('2026-11-22')
+    expect(wkSun.rangeLabel).toBe('Sun, Nov 22 – Sat, 28')
+
+    // Wed 2026-11-25 12:00 local time -> Sun Nov 22 through Wed Nov 25
+    const wedNoon = new Date(2026, 10, 25, 12, 0, 0).getTime()
+    const wkWed = periodContext('week', wedNoon)
+    expect(wkWed.fromDay).toBe('2026-11-22')
+    expect(wkWed.toDay).toBe('2026-11-25')
+
+    const mo = periodContext('month', wedNoon)
+    expect(mo.fromDay).toBe('2026-11-01')
+    expect(mo.toDay).toBe('2026-11-25')
+    expect(mo.rangeLabel).toBe('November 2026')
+    expect(mo.totalDays).toBe(25)
+  })
+
+  it('periodConsistency clamps denominator to earliest active day for new users and counts prior period (YAZ-6305)', () => {
+    const wedNoon = new Date(2026, 10, 25, 12, 0, 0).getTime()
+    // New user started on Tue 2026-11-24 (2 possible days in Sun Nov 22 – Wed Nov 25)
+    const newUser = {
+      days: [makeDay('2026-11-25', true), makeDay('2026-11-24', true)],
+    }
+    const newCons = periodConsistency(newUser, 'week', wedNoon)
+    expect(newCons.finishedDays).toBe(2)
+    expect(newCons.possibleDays).toBe(2)
+    expect(newCons.priorFinishedDays).toBeNull()
+    expect(newCons.daysLeftInPeriod).toBe(3) // Thu, Fri, Sat
+
+    // Established user with 2 finished days last week (Sun Nov 15 – Sat Nov 21) and 3 this week
+    const established = {
+      days: [
+        makeDay('2026-11-25', true),
+        makeDay('2026-11-24', true),
+        makeDay('2026-11-22', true),
+        makeDay('2026-11-20', true),
+        makeDay('2026-11-18', true),
+      ],
+    }
+    const estCons = periodConsistency(established, 'week', wedNoon)
+    expect(estCons.finishedDays).toBe(3)
+    expect(estCons.possibleDays).toBe(4) // Sun, Mon, Tue, Wed
+    expect(estCons.priorFinishedDays).toBe(2)
+  })
+
+  it('buildPeriodGoalHero covers beat, tie, already-beat, already-tied, unreachable, and no-prior branches (YAZ-6305)', () => {
+    const sunNov22 = new Date(2026, 10, 22, 12, 0, 0).getTime() // 8 days left in Nov (Nov 23–30)
+    const statsWithDays = (days: FriendDay[], streak = 4): FriendStats => ({
+      ...makeStats('2026-11-22', 20, 300, streak, false),
+      days,
+    })
+
+    // 1. Can beat prev month: 20 finished in Nov (today done), 23 in Oct -> need 4 more days, 8 left
+    const octDays = Array.from({ length: 23 }, (_, i) => makeDay(`2026-10-${String(i + 1).padStart(2, '0')}`, true))
+    const nov20 = Array.from({ length: 20 }, (_, i) => makeDay(`2026-11-${String(i + 3).padStart(2, '0')}`, true))
+    const beatHero = buildPeriodGoalHero(statsWithDays([...nov20, ...octDays]), 'month', 400, '2h 10m', sunNov22)
+    expect(beatHero.heroPrimary).toBe('4 more days')
+    expect(beatHero.heroParen).toBe('(beat prev month)')
+    expect(beatHero.heroDone).toBe(false)
+    expect(beatHero.line3).toContain('Prev month: 23 days')
+
+    // 2. Already beat prev month: 12 finished in Nov vs 10 in Oct
+    const oct10 = Array.from({ length: 10 }, (_, i) => makeDay(`2026-10-${String(i + 1).padStart(2, '0')}`, true))
+    const nov12 = Array.from({ length: 12 }, (_, i) => makeDay(`2026-11-${String(i + 1).padStart(2, '0')}`, true))
+    const alreadyBeat = buildPeriodGoalHero(statsWithDays([...nov12, ...oct10]), 'month', 300, '1h 30m', sunNov22)
+    expect(alreadyBeat.heroPrimary).toBe('🎉 Beat prev month')
+    expect(alreadyBeat.heroParen).toBe('(12 vs 10)')
+    expect(alreadyBeat.heroDone).toBe(true)
+
+    // 3. Can only tie prev week: Sun Nov 22 (today not done -> 7 remaining days), prev week = 7 days, 0 done so far
+    const prevWk7 = [15, 16, 17, 18, 19, 20, 21].map((d) => makeDay(`2026-11-${d}`, true))
+    const canTie = buildPeriodGoalHero(statsWithDays(prevWk7), 'week', 0, '0m', sunNov22)
+    expect(canTie.heroPrimary).toBe('7 more days')
+    expect(canTie.heroParen).toBe('(tie prev week)')
+    expect(canTie.heroDone).toBe(false)
+
+    // 4. Already tied prev week on Saturday (0 days left, today done, 5 vs 5)
+    const satNov28 = new Date(2026, 10, 28, 12, 0, 0).getTime()
+    const thisWk5 = [22, 23, 24, 25, 28].map((d) => makeDay(`2026-11-${d}`, true))
+    const prevWk5 = [15, 16, 17, 18, 19].map((d) => makeDay(`2026-11-${d}`, true))
+    const tied = buildPeriodGoalHero(statsWithDays([...thisWk5, ...prevWk5]), 'week', 100, '40m', satNov28)
+    expect(tied.heroPrimary).toBe('🎉 Tied prev week')
+    expect(tied.heroParen).toBe('(5)')
+    expect(tied.heroDone).toBe(true)
+
+    // 5. Cannot tie or beat prev week on Saturday (2 done vs 5 prev, today done -> 0 remaining)
+    const thisWk2 = [22, 28].map((d) => makeDay(`2026-11-${d}`, true))
+    const unreachable = buildPeriodGoalHero(statsWithDays([...thisWk2, ...prevWk5]), 'week', 40, '15m', satNov28)
+    expect(unreachable.heroPrimary).toBe('2 of 7 days')
+    expect(unreachable.heroParen).toBeNull()
+    expect(unreachable.heroDone).toBe(false)
+
+    // 6. No prior history (new user): falls back to perfect-period or streak
+    const newUserPerfect = buildPeriodGoalHero(statsWithDays([makeDay('2026-11-22', true)], 1), 'week', 20, '10m', sunNov22)
+    expect(newUserPerfect.heroPrimary).toBe('🎉 1 of 1 day')
+    expect(newUserPerfect.heroDone).toBe(true)
+    expect(newUserPerfect.line3).toContain('1-day streak')
   })
 })
