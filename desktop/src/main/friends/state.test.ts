@@ -48,7 +48,7 @@ describe('friends:status (YAZ-5086)', () => {
   it('answers the view as it is: numbers and a status word', async () => {
     vi.mocked(ipcMain.handle).mockClear()
     const view: FriendsSendView = { status: 'sent', lastSentAt: 1, retryAt: null, friends: 3, groups: 1, missing: 0 }
-    registerFriendsIpc(async () => view)
+    registerFriendsIpc({ look: async () => view, service: {} as never })
     expect(await registered(CONTRACT.friends.status)({ sender: { id: 1 } })).toEqual({ ok: true, value: view })
   })
 })

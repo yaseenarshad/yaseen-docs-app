@@ -328,8 +328,11 @@ describe('Settings: Friends (decision 22; round 13, item 4)', () => {
     expect(text).toContain('Vaults that count')
     expect(text).toContain('All vaults')
     expect(text).toMatch(/Name\s*Yaseen/)
-    // No sharing switch (YAZ-5666: "This vault on mobile" has none either, its rows are choice rows).
-    expect([...h.host.querySelectorAll('input[type="checkbox"]')].filter((b) => b.closest('.settings-mobile') === null)).toEqual([])
+    // No global sharing switch (YAZ-6275 adds the per-vault "Count this vault in Friends" checkbox).
+    const otherChecks = [...h.host.querySelectorAll('input[type="checkbox"]')].filter(
+      (b) => b.closest('.settings-mobile') === null && !(b.closest('label')?.textContent ?? '').includes('Count this vault in Friends'),
+    )
+    expect(otherChecks).toEqual([])
     expect(text).not.toMatch(/share my numbers|sharing/i)
   })
 

@@ -1,4 +1,6 @@
 import { CALLBACK_ORIGINS, CALLBACK_PATH, GITHUB_APP_CLIENT_ID, WORKER_REFRESH, WORKER_REVOKE, WORKER_TOKEN } from '../src/auth/githubAppConfig'
+import type { D1Database } from './d1Types'
+import { handleFriends } from './friends'
 
 /**
  * THE WORKER OF docs.yaseenarshad.com (YAZ-5645, slice 1; decision D3): the app's static files, as before, plus three
@@ -17,6 +19,10 @@ import { CALLBACK_ORIGINS, CALLBACK_PATH, GITHUB_APP_CLIENT_ID, WORKER_REFRESH, 
 export interface Env {
   /** A Worker secret (`wrangler secret put GITHUB_CLIENT_SECRET`), or `.dev.vars` on a computer. Never in git. */
   GITHUB_CLIENT_SECRET?: string
+  /** HMAC signing secret for 8-hour Friends session tokens (`wrangler secret put FRIENDS_TOKEN_SECRET`). */
+  FRIENDS_TOKEN_SECRET?: string
+  /** Cloudflare D1 database for Friends stats, invites, marks, groups, and shared cards. */
+  FRIENDS_DB?: D1Database
   /** The static files (`assets.binding`). */
   ASSETS?: { fetch(request: Request): Promise<Response> }
 }
@@ -49,6 +55,7 @@ export async function handle(request: Request, env: Env, fetch: Fetch = (url, in
     }
     return Response.redirect(target.href, 302)
   }
+  if (url.pathname.startsWith('/api/friends/')) return handleFriends(request, env, fetch)
   if (!url.pathname.startsWith('/api/github/')) return env.ASSETS ? env.ASSETS.fetch(request) : refuse(404, 'not_found')
   const route = url.pathname === WORKER_TOKEN ? 'token' : url.pathname === WORKER_REFRESH ? 'refresh' : url.pathname === WORKER_REVOKE ? 'revoke' : null
   if (route === null) return refuse(404, 'not_found')

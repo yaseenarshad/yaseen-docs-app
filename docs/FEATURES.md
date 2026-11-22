@@ -462,9 +462,9 @@ The phone app is a web app at `https://docs.yaseenarshad.com` (`mobile/`; `mobil
 - **A repo taken off on GitHub:** the vault says "Yaseen Docs can no longer see <owner/repo>. It was taken off the list on GitHub." Its pages stay readable. **Add it again on GitHub** opens GitHub's repo page, and the vault syncs again after you save.
 - The Mac does not use this sign-in. Mac sync uses the computer's own git, and the Mac keeps its **GitHub token** row in Settings › Cards › GitHub.
 
-### Friends (off for now)
+### Friends (YAZ-6200)
 
-Friends (review numbers that you share with friends, kept in gists) is off for now (YAZ-5652). The GitHub App of the sign-in has no Gists permission. One switch turns it off on the Mac and on the phone: `FRIENDS_ENABLED = false` in `shared/features.ts`. The code stays. With the switch off, the phone has no Friends tab and no Friends part in Settings, and a friend link opens "Friends is off for now". The Mac has no Friends row in Settings and starts no friends sender. Neither makes a gist call.
+Friends is enabled on Mac and Phone (`FRIENDS_ENABLED = true` in `shared/features.ts`) and backed by Cloudflare Worker + D1 (`yaseen-docs-friends` via `/api/friends/*`), reusing the `yaseen-docs` GitHub App sign-in (no Gists permission or separate account). Users open Friends from the `👥` icon in the Mac Cards Inbox bar or the Phone `Friends` tab to view Today/Yesterday/Week/Month leaderboards (gold medal `🥇` + green `✓` for every user who finishes due cards with at least 1 reviewed card), track 1:1 Buddy Streaks (`🤝 Nd` with daily `🔔` confetti reveal on Today and 30-day chronological history in `You vs Friend`), join study groups via instant invite links + QR code (with 30-day Group Streak detail and `Group Settings` rename/ban/leave/delete), share individual cards or folders into a unified `Shared (N)` view with Explore preview and `Shared Cards/` auto-creation, and control Display name, per-vault inclusion, and `Delete my Friends data` in Settings › Cards › Friends.
 
 ## Out of scope
 

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useApp } from '../app/AppState'
 import { deviceZone, isTimeZone } from '@shared/timeZone'
 import { FRIENDS_ENABLED } from '@shared/features'
@@ -8,7 +8,7 @@ import { BUILD, buildLine, versionWords } from '../settings/buildInfo'
 import { AppearancePart } from '../settings/AppearancePart'
 import { UpdateCheck } from '../settings/UpdateCheck'
 import { vaultTitle } from '../settings/vaultTitle'
-import { vaultId, type PhoneVault } from '../store'
+import { PHONE, vaultId, type PhoneVault } from '../store'
 import { Confirm } from './Confirm'
 import { eraseQuestion, unsentOnPhone, waitingRemoves } from './eraseWords'
 import { Frame, Problem } from './Frame'
@@ -227,11 +227,45 @@ function VaultRow({ vault, more, onMore, busy, run }: { vault: PhoneVault; more:
  * Decision 22: no sharing switch. The first friend starts the sharing; Settings keeps "Vaults that count" and "Name".
  * Round 13, item 4: "Friends use @login", which the person can change, and the two alerts of 3E.
  */
+const EXCLUDED_VAULTS_KEY = 'yaseendocs.friends.excludedVaults'
+
 function FriendsPart() {
   const app = useApp()
-  const [editing, setEditing] = useState<'account' | 'vaults' | 'name' | 'zone' | null>(null)
-  const toggle = (part: 'account' | 'vaults' | 'name' | 'zone') => setEditing(editing === part ? null : part)
+  const [editing, setEditing] = useState<'account' | 'vaults' | 'name' | 'zone' | 'delete' | null>(null)
+  const toggle = (part: 'account' | 'vaults' | 'name' | 'zone' | 'delete') => setEditing(editing === part ? null : part)
   const [zoneSaid, setZoneSaid] = useState<string | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteSaid, setDeleteSaid] = useState<string | null>(null)
+  const [excludedVaults, setExcludedVaults] = useState<string[]>([])
+  const currentVault = app.list.vaults.find((v) => vaultId(v) === app.vaultKey) ?? app.list.vaults[0] ?? null
+  const currentSlug = currentVault?.repo.toLowerCase() ?? null
+  const thisVaultIncluded = currentSlug === null || !excludedVaults.some((s) => s.toLowerCase() === currentSlug)
+
+  useEffect(() => {
+    let live = true
+    void app.services.store
+      .getState<string[]>(PHONE, EXCLUDED_VAULTS_KEY)
+      .then((saved) => {
+        if (!live) return
+        if (Array.isArray(saved)) setExcludedVaults(saved.filter((s): s is string => typeof s === 'string'))
+      })
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [app.services.store])
+
+  const setThisVaultIncluded = (included: boolean) => {
+    if (currentVault === null) return
+    const slug = currentVault.repo.toLowerCase()
+    const next = included
+      ? excludedVaults.filter((s) => s.toLowerCase() !== slug)
+      : excludedVaults.some((s) => s.toLowerCase() === slug)
+      ? excludedVaults
+      : [...excludedVaults, currentVault.repo]
+    setExcludedVaults(next)
+    void app.services.store.setState(PHONE, EXCLUDED_VAULTS_KEY, next).catch(() => undefined)
+  }
   const fa = app.friendsAccount
   const alert = friendsMessage(fa)
   const choices = app.list.vaults.filter((v) => app.accounts[vaultId(v)]?.gists === 'yes')
@@ -288,6 +322,22 @@ function FriendsPart() {
                 })}
               </div>
             )}
+          </li>
+        )}
+        {currentVault !== null && (
+          <li>
+            <label className="row">
+              <input
+                type="checkbox"
+                className="check"
+                checked={thisVaultIncluded}
+                onChange={(e) => setThisVaultIncluded(e.target.checked)}
+              />
+              <span className="row__main">
+                Count this vault in Friends
+                {!thisVaultIncluded && <span className="row__side"> (paused for {currentVault.repo})</span>}
+              </span>
+            </label>
           </li>
         )}
         <li>
@@ -369,6 +419,38 @@ function FriendsPart() {
                 Save name
               </button>
             </form>
+          )}
+        </li>
+        <li>
+          <div className="row">
+            <button type="button" className="row__button btn--danger" aria-expanded={editing === 'delete'} onClick={() => toggle('delete')}>
+              Delete my Friends data
+            </button>
+          </div>
+          {deleteSaid !== null && editing !== 'delete' && (
+            <p className="muted" role="status">
+              {deleteSaid}
+            </p>
+          )}
+          {editing === 'delete' && (
+            <div className="sheet">
+              <Confirm
+                question="Delete all your Friends data? This removes your profile, friendships, invites, cheers, and shared cards from the Friends server. Your vault and cards on GitHub are not touched."
+                yes="Delete my Friends data"
+                busy={deleteBusy}
+                onYes={() => {
+                  setDeleteBusy(true)
+                  setDeleteSaid(null)
+                  void (app.services.friends.deleteMe?.() ?? Promise.resolve({ ok: false as const, error: 'unavailable' }))
+                    .then((res) => {
+                      setDeleteSaid(res.ok ? 'Your Friends data has been deleted.' : 'Could not delete your Friends data. Try again.')
+                      setEditing(null)
+                    })
+                    .finally(() => setDeleteBusy(false))
+                }}
+                onNo={() => setEditing(null)}
+              />
+            </div>
           )}
         </li>
       </ul>

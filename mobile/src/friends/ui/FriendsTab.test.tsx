@@ -39,6 +39,17 @@ const tap = async (x: Harness, name: string | RegExp) => {
   await x.settle()
 }
 
+/** Sets value on an `<input>` by selector and fires an input event. */
+const typeInput = async (x: Harness, selector: string, value: string) => {
+  const input = x.host.querySelector(selector) as HTMLInputElement | null
+  if (input === null) throw new Error(`No input "${selector}" on: ${plain(x.text())}`)
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await x.settle()
+}
+
 let h: Harness | null = null
 afterEach(() => {
   h?.unmount()
@@ -74,8 +85,14 @@ async function open(board: Board, opts: { logins?: string[]; groups?: boolean } 
     phone: await phone(opts.logins),
     friends: (store) => fakeServices(store, s),
   })
-  // The tab is a lazy chunk: wait until it drew the board.
-  for (let i = 0; i < 50 && x.host.querySelector('section[aria-label="Friends"]:not([aria-busy])') === null; i++) await x.settle()
+  // The tab is a lazy chunk: wait reliably (wall-clock + microtasks) until it drew the board.
+  await vi.waitFor(
+    async () => {
+      await x.settle()
+      expect(x.host.querySelector('section[aria-label="Friends"]:not([aria-busy])')).not.toBeNull()
+    },
+    { timeout: 5000, interval: 10 },
+  )
   return { h: x, s }
 }
 /** A row's words as a person reads them (each piece of text, with a space between). */
@@ -89,98 +106,40 @@ const rows = (x: Harness) => [...x.host.querySelectorAll('.fr-row')].map((r) => 
 const labels = (x: Harness) => [...x.host.querySelectorAll('.fr-row__tap')].map((b) => plain(b.getAttribute('aria-label')))
 const statusText = (x: Harness) => plain([...x.host.querySelectorAll('[role="status"]')].map((e) => e.textContent).join(' | '))
 
-describe('the Friends tab (decisions 21, 24, 25)', () => {
-  it('opens on Friends: rows sorted by cards, my own row bold, the mark, minutes, "cheered you · 2h ago"', async () => {
+describe('the Friends tab (decisions 21, 25; YAZ-6271..6274)', () => {
+  it('opens on Friends: tiered sort, gold medal + green check for finishers, streak + duration, my own row bold', async () => {
     ;({ h } = await open(demoBoard(NOW)))
     expect(plain(h.host.querySelector('[role="tab"][aria-selected="true"]')?.textContent)).toBe('Friends')
     expect(rows(h)).toEqual([
-      '1 S Sam cheered you · 2h ago ✓ 44 cards 66 min',
-      '2 D You ◐ 31 cards 55 min',
-      '3 P Priya 43m ago ◐ 12 cards 49 min',
-      '4 L Leo no update yet ○ 0 cards 0 min',
+      '🥇 S Sam 2h ago ✓ 44 cards 8d 🔥 · 1hr 6min',
+      'D Demo Person 31 cards 2d 🔥 · 55 min',
+      'P Priya 43m ago 12 cards 49 min',
+      'L Leo no update yet 0 cards 0 min',
     ])
-    expect(plain(h.host.querySelector('.fr-name--you')?.textContent)).toBe('You')
-    // VoiceOver reads the mark as words, with the rank and the numbers.
-    expect(labels(h)[0]).toBe('Number 1, Sam, 44 cards, 66 minutes, Finished the due cards, cheered you, 2h ago')
-    expect(labels(h)[1]).toBe('Number 2, You, 31 cards, 55 minutes, Started, due cards left')
-    expect([...h.host.querySelectorAll('.fr-mark')].map((m) => m.getAttribute('aria-label'))).toContain('Not started today')
+    expect(plain(h.host.querySelector('.fr-name--you')?.textContent)).toBe('Demo Person')
+    expect(labels(h)[0]).toBe('Sam, 44 cards, 66 minutes, Finished the due cards, 2h ago')
+    expect(labels(h)[1]).toBe('You, 31 cards, 55 minutes, Started, due cards left')
   })
 
-  it('Today, Yesterday, Week and Month change the numbers; Week and Month have no mark', async () => {
+  it('Today, Yesterday, Week and Month change the numbers; Week and Month have no medal or mark', async () => {
     ;({ h } = await open(demoBoard(NOW)))
     await tap(h, 'Yesterday')
-    expect(rows(h)[0]).toBe('1 P Priya ✓ 51 cards 0 min')
+    expect(rows(h)[0]).toBe('🥇 P Priya ✓ 51 cards 0 min')
     expect(plain(h.host.querySelector('[aria-pressed="true"]')?.textContent)).toBe('Yesterday')
     await tap(h, 'Week')
     expect(h.host.querySelectorAll('.fr-mark')).toHaveLength(0)
+    expect(h.host.querySelectorAll('.fr-rank')).toHaveLength(0)
     await tap(h, 'Month')
     expect(h.host.querySelectorAll('.fr-mark')).toHaveLength(0)
+    expect(h.host.querySelectorAll('.fr-rank')).toHaveLength(0)
   })
 
-  it('YAZ-5262: a cheer counts as seen only when its line was on the screen (30 friends, the cheer from the last one)', async () => {
-    // A fake IntersectionObserver: the test says which element comes into view.
-    const watched = new Map<Element, (entries: { isIntersecting: boolean; target: Element }[]) => void>()
-    vi.stubGlobal(
-      'IntersectionObserver',
-      class {
-        constructor(private readonly fn: (entries: { isIntersecting: boolean; target: Element }[]) => void) {}
-        observe(el: Element) {
-          watched.set(el, this.fn)
-        }
-        disconnect() {
-          for (const [el, fn] of watched) if (fn === this.fn) watched.delete(el)
-        }
-        unobserve(el: Element) {
-          watched.delete(el)
-        }
-      },
-    )
-    const friends = Array.from({ length: 30 }, (_, i) => demoFriend(NOW, `Friend ${i + 1}`, { days: [[0, { cards: 100 - i }]] }))
-    friends[29] = { ...friends[29], mark: { kind: 'cheer', at: new Date(NOW - 3600_000).toISOString() } }
-    let s: FakeService
-    ;({ h, s } = await open(demoBoard(NOW, { friends })))
-    expect(h.host.querySelector('.fr-cheer')).not.toBeNull()
-    expect(s.calls.see).toEqual([])
-    const line = h.host.querySelector('.fr-cheer')!
-    await act(async () => watched.get(line)?.([{ isIntersecting: false, target: line }]))
-    expect(s.calls.see).toEqual([])
-    await act(async () => watched.get(line)?.([{ isIntersecting: true, target: line }]))
-    expect(s.calls.see).toEqual([`${friends[29].theirs}:${friends[29].mark!.at}`])
-  })
-
-  it('a cheer seen two days ago is gone; an unseen old one still shows', async () => {
-    const board = demoBoard(NOW)
-    const sam = board.friends[0]
-    ;({ h } = await open({
-      ...board,
-      seen: {
-        [sam.theirs]: { at: sam.mark!.at, seenAt: NOW - 2 * 86_400_000 },
-      },
-    }))
-    expect(plain(h.text())).not.toContain('cheered you')
-    h.unmount()
-    const old = {
-      ...board,
-      friends: [
-        {
-          ...sam,
-          mark: {
-            kind: 'nudge' as const,
-            at: new Date(NOW - 9 * 86_400_000).toISOString(),
-          },
-        },
-      ],
-    }
-    ;({ h } = await open(old))
-    expect(plain(h.text())).toContain('nudged you')
-  })
-
-  it('no friend yet: the two steps and what a friend sees', async () => {
+  it('no friend yet: centered empty state card and what a friend sees', async () => {
     ;({ h } = await open({ ...demoBoard(NOW), friends: [] }))
-    expect(plain(h.text())).toContain('Add a friend in two steps:')
-    expect(plain(h.text())).toContain('Share your link with your friend.')
-    expect(plain(h.text())).toContain('Paste the link that your friend sends you.')
+    expect(plain(h.text())).toContain('Study together with friends')
+    expect(plain(h.text())).toContain('Add a friend or create a group')
     expect(plain(h.text())).toContain('Never your cards or your pages.')
+    expect(btn(h, 'Add friend or group')).not.toBeNull()
   })
 
   it('"Waiting…", "No longer shares with you", a newer app, a file that cannot be read', async () => {
@@ -211,8 +170,8 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
     let s: FakeService
     ;({ h, s } = await open(board))
     expect(rows(h)).toEqual([
-      '1 D You ◐ 31 cards 55 min',
-      '2 A Ana Waiting for Ana to add you · 2h ago ◐ 10 cards 10 min',
+      'D Demo Person 31 cards 2d 🔥 · 55 min',
+      'A Ana Waiting for Ana to add you · 2h ago 10 cards 10 min',
       'B Ben No longer shares with you Remove',
       'C Cy Needs a newer app',
       "D Di Can't read their numbers Remove",
@@ -239,7 +198,7 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
     expect(rows(h)).toContain('Z Zoe This link stopped working. Share a new one. New link')
     expect(statusText(h)).toContain('Sam added you back. You are friends now.')
     await tap(h, 'Share a new link')
-    expect(h.host.querySelector('.fr-panel[aria-label="Share my link"]')).not.toBeNull()
+    expect(h.host.querySelector('[role="dialog"][aria-label="Share your friend link"]')).not.toBeNull()
   })
 
   it('the list needs repair; no Gists permission; a newer app; no signal with nothing read', async () => {
@@ -275,12 +234,12 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
     expect(rows(h)[0]).toContain('2h ago')
   })
 
-  it("this phone's send of my numbers: one line when it is not sent, and when it was sent last", async () => {
+  it("this phone's send of my numbers: shows error line when not sent, hides healthy last-sent line", async () => {
     ;({ h } = await open(demoBoard(NOW, { sending: { status: 'no-gists', lastSentAt: null, retryAt: null, remade: false } })))
     expect(plain(h.text())).toContain('Not sent: the token has no Gists permission.')
     h.unmount()
     ;({ h } = await open(demoBoard(NOW, { sending: { status: 'sent', lastSentAt: NOW - 5 * 60_000, retryAt: null, remade: false } })))
-    expect(plain(h.text())).toContain('Your numbers were last sent 5m ago.')
+    expect(plain(h.text())).not.toContain('Your numbers were last sent')
   })
 
   it('the wrong setup: vaults on two GitHub accounts (round 13, item 4)', async () => {
@@ -314,13 +273,13 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
   })
 })
 
-describe('"+ Add" (decision 20)', () => {
+describe('"+ Add" (decision 20; StepUp action sheet)', () => {
   let shared: ShareData[]
   beforeEach(() => {
     shared = []
   })
 
-  it('Share my link: the share sheet gets the link; what a friend sees is said', async () => {
+  it('Add friends: auto-loads QR SVG + share link; tapping Share link invokes Web Share', async () => {
     vi.stubGlobal('navigator', {
       ...navigator,
       share: async (d: ShareData) => void shared.push(d),
@@ -328,18 +287,14 @@ describe('"+ Add" (decision 20)', () => {
     let s: FakeService
     ;({ h, s } = await open(demoBoard(NOW)))
     await tap(h, 'Add a friend or a group')
-    expect(btn(h, 'Share my link')).not.toBeNull()
-    expect(btn(h, "Paste a friend's link")).not.toBeNull()
-    expect(btn(h, 'New group')).not.toBeNull()
-    await tap(h, 'Share my link')
-    expect(plain(h.text())).toContain('Friends see your review numbers only')
-    const go = [...h.host.querySelectorAll('.fr-panel button')].find((b) => b.textContent === 'Share my link') as HTMLButtonElement
-    await act(async () => {
-      go.click()
-      go.click()
-    })
-    await h.settle()
+    expect(btn(h, 'Add friends')).not.toBeNull()
+    expect(btn(h, 'Create new group')).not.toBeNull()
+    expect(btn(h, 'Enter link to add friend/group')).not.toBeNull()
+    await tap(h, 'Add friends')
+    for (let i = 0; i < 10 && h.host.querySelector('.fr-qr-sheet__box svg') === null; i++) await h.settle()
+    expect(h.host.querySelector('.fr-qr-sheet__box svg')).not.toBeNull()
     expect(s.calls.share).toBe(1)
+    await tap(h, 'Share link')
     expect(shared).toEqual([
       {
         title: 'Yaseen Docs friend link',
@@ -347,37 +302,9 @@ describe('"+ Add" (decision 20)', () => {
         url: s.shareAnswer.kind === 'ok' ? s.shareAnswer.link : '',
       },
     ])
-    expect(statusText(h)).toContain('Link sent.')
   })
 
-  it('no share sheet: the clipboard; neither: the link shows to copy', async () => {
-    const copied: string[] = []
-    vi.stubGlobal('navigator', {
-      ...navigator,
-      share: undefined,
-      clipboard: {
-        writeText: async (t: string) => void copied.push(t),
-        readText: async () => '',
-      },
-    })
-    ;({ h } = await open(demoBoard(NOW)))
-    await tap(h, 'Add a friend or a group')
-    await tap(h, 'Share my link')
-    await act(async () => ([...h!.host.querySelectorAll('.fr-panel button')].find((b) => b.textContent === 'Share my link') as HTMLButtonElement).click())
-    await h.settle()
-    expect(copied).toHaveLength(1)
-    expect(statusText(h)).toContain('Link copied.')
-    vi.stubGlobal('navigator', {
-      ...navigator,
-      share: undefined,
-      clipboard: undefined,
-    })
-    await act(async () => ([...h!.host.querySelectorAll('.fr-panel button')].find((b) => b.textContent === 'Share my link') as HTMLButtonElement).click())
-    await h.settle()
-    expect((h.host.querySelector('.fr-panel input') as HTMLInputElement).value).toContain('https://docs.yaseenarshad.com/friend#')
-  })
-
-  it('Paste: the clipboard is refused, so the field takes the link; after an add that is not paired, "Send my link back"', async () => {
+  it('Enter link: clipboard refused falls back to input field; unpaired add offers "Send my link back"', async () => {
     vi.stubGlobal('navigator', {
       ...navigator,
       clipboard: {
@@ -388,8 +315,8 @@ describe('"+ Add" (decision 20)', () => {
     let s: FakeService
     ;({ h, s } = await open(demoBoard(NOW)))
     await tap(h, 'Add a friend or a group')
-    await tap(h, "Paste a friend's link")
-    await tap(h, 'Paste from the clipboard')
+    await tap(h, 'Enter link to add friend/group')
+    await tap(h, 'Paste from clipboard')
     expect(statusText(h)).toContain('Paste the link in the field below.')
     expect(document.activeElement?.getAttribute('name')).toBe('friend-link')
     const back = 'https://notecard.yaseenarshad.com/friend#' + 'd'.repeat(32)
@@ -400,8 +327,8 @@ describe('"+ Add" (decision 20)', () => {
       sendBack: back,
       handle: null as never,
     }
-    await h.type('Or paste the link here', 'https://notecard.yaseenarshad.com/friend#' + 'e'.repeat(32))
-    await tap(h, 'Add')
+    await typeInput(h, 'input[name="friend-link"]', 'https://notecard.yaseenarshad.com/friend#' + 'e'.repeat(32))
+    await tap(h, 'Submit')
     expect(statusText(h)).toContain('Sam is added. Send them your link, so they can add you too.')
     await tap(h, 'Send my link back')
     expect(shared.at(-1)?.url).toBe(back)
@@ -411,7 +338,7 @@ describe('"+ Add" (decision 20)', () => {
     let s: FakeService
     ;({ h, s } = await open(demoBoard(NOW)))
     await tap(h, 'Add a friend or a group')
-    await tap(h, "Paste a friend's link")
+    await tap(h, 'Enter link to add friend/group')
     const joined = {
       kind: 'joined' as const,
       name: 'Study group',
@@ -420,8 +347,8 @@ describe('"+ Add" (decision 20)', () => {
       handle: null as never,
     }
     s.pasteAnswer = joined
-    await h.type('Or paste the link here', 'https://notecard.yaseenarshad.com/group#' + 'a'.repeat(32))
-    await tap(h, 'Add')
+    await typeInput(h, 'input[name="friend-link"]', 'https://notecard.yaseenarshad.com/group#' + 'a'.repeat(32))
+    await tap(h, 'Submit')
     expect(statusText(h)).toContain(joinMessage(joined))
     expect(btn(h, 'Send my join link to the admin')).not.toBeNull()
     s.pasteAnswer = {
@@ -432,14 +359,14 @@ describe('"+ Add" (decision 20)', () => {
       login: 'mina',
       name: 'Mina',
     }
-    await tap(h, 'Add')
+    await tap(h, 'Submit')
     expect(statusText(h)).toContain('Mina asks to join Study group.')
     await tap(h, 'Add Mina')
     expect(s.calls.groups.some((c) => c.startsWith('add:'))).toBe(true)
     expect(statusText(h)).toContain('Mina is in Study group now.')
   })
 
-  it('New group: a name, then the group link to share', async () => {
+  it('Create new group: a name, then the group link to share', async () => {
     vi.stubGlobal('navigator', {
       ...navigator,
       share: async (d: ShareData) => void shared.push(d),
@@ -447,24 +374,33 @@ describe('"+ Add" (decision 20)', () => {
     let s: FakeService
     ;({ h, s } = await open(demoBoard(NOW)))
     await tap(h, 'Add a friend or a group')
-    await tap(h, 'New group')
-    await h.type('Group name', 'Study group')
-    await tap(h, 'Make the group')
+    await tap(h, 'Create new group')
+    await typeInput(h, '[role="dialog"][aria-label="Create new group"] input', 'Study group')
+    await tap(h, 'Create')
     expect(s.calls.groups).toContain('create:Study group')
     expect(shared.at(-1)?.url).toContain('/group#')
     expect(statusText(h)).toContain('Group made.')
   })
 })
 
-describe('groups (decision 18; round 10, item 13; round 14)', () => {
+describe('groups (decision 18; YAZ-6267..6274)', () => {
   const base = (g: Board extends infer B ? B : never) => g
-  it('a group: its streak, its members sorted; the admin deletes it after an ask', async () => {
+  it('a group: its streak footer row + 30-day detail screen, its members sorted; admin deletes via Group Settings', async () => {
     const group = demoGroup(NOW)
     let s: FakeService
     ;({ h, s } = await open(base({ ...demoBoard(NOW), groups: [group] })))
     await tap(h, 'Study group')
-    expect(plain(h.text())).toContain('Group streak: 4 days that everyone finished')
-    expect(rows(h).map((r) => r.split(' ').slice(0, 3).join(' '))).toEqual(['1 S Sam', '2 M Mina', '3 D You'])
+    expect(plain(h.text())).toContain('Group streak')
+    expect(plain(h.text())).toContain('4d 🔥')
+    expect(rows(h).map((r) => r.replace(/^🥇\s*/, '').split(' ').slice(0, 2).join(' '))).toEqual(['S Sam', 'M Mina', 'D Demo'])
+    // Clicking the Group streak footer row opens the 30-day detail view
+    await tap(h, /Group streak/)
+    expect(plain(h.text())).toContain('4d group streak')
+    expect(h.host.querySelectorAll('.fr-strip30__col')).toHaveLength(30)
+    await tap(h, '← Back')
+    // Active group pill opens Manage group sheet -> Group Settings -> Delete group
+    await tap(h, 'Study group ▾')
+    await tap(h, 'Group Settings')
     await tap(h, 'Delete group')
     expect(plain(h.host.querySelector('[role="alertdialog"]')?.textContent)).toContain('Delete Study group? The group is gone for each person in it.')
     await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
@@ -472,11 +408,12 @@ describe('groups (decision 18; round 10, item 13; round 14)', () => {
     expect(s.calls.groups).toContain(`delete:${group.group}`)
   })
 
-  it('a member leaves after an ask; the admin removes a member who left', async () => {
+  it('a member leaves via Manage group sheet; the admin removes a member who left', async () => {
     const member = demoGroup(NOW, { iAmAdmin: false, admin: 'mina' })
     let s: FakeService
     ;({ h, s } = await open({ ...demoBoard(NOW), groups: [member] }))
     await tap(h, 'Study group')
+    await tap(h, 'Study group ▾')
     await tap(h, 'Leave group')
     expect(plain(h.host.querySelector('[role="alertdialog"]')?.textContent)).toContain('Leave Study group? The others stop seeing your numbers.')
     await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
@@ -520,28 +457,22 @@ describe('groups (decision 18; round 10, item 13; round 14)', () => {
       await tap(h, v.name)
       expect(plain(h.text())).toContain(groupViewMessage(v)!)
     }
-    await tap(h, 'G1')
-    expect(btn(h, 'Send my join link to the admin')).not.toBeNull()
   })
 })
 
-describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', () => {
-  it('a tap on a friend opens it: the numbers side by side, their vault, the last 7 days', async () => {
+describe('"You vs <friend>" (decision 23; YAZ-6269..6274)', () => {
+  it('a tap on a friend opens it: buddy streak, 30-day horizontal strip, numbers side by side, their vault', async () => {
     ;({ h } = await open(demoBoard(NOW)))
-    await tap(h, /^Number 1, Sam/)
-    await until(h, '.fr-week')
+    await tap(h, /^Sam,/)
+    await until(h, '.fr-strip30')
     await h.settle()
     expect(plain(h.host.querySelector('.topbar__title')?.textContent)).toBe('Sam')
     const lines = [...h.host.querySelectorAll('li.fr-vs')].map((l) => plain(l.getAttribute('aria-label')))
     expect(lines.slice(0, 3)).toEqual(['cards today: you 31, Sam 44', 'due cards: you 22, Sam 30', 'new cards: you 9, Sam 14'])
     expect(lines).toContain('remembered: you 91%, Sam 92%')
     expect(lines).toContain('days reviewed of 30: you 7, Sam 7')
-    expect(plain(h.text())).toContain('Sam cheered you')
-    // You: ✓ on -6 -5 -3 -2 -1; Sam: ✓ on -6 -5 -4 -2 -1 0 → both on -6 -5 -2 -1.
-    expect(plain(h.text())).toContain('You both won 4 days of 7.')
+    expect(h.host.querySelectorAll('.fr-strip30__col')).toHaveLength(30)
     expect(h.host.querySelectorAll('.fr-day--both')).toHaveLength(4)
-    expect(plain(h.host.querySelector('.fr-week li')?.getAttribute('aria-label'))).toMatch(/: you finished, Sam finished\. You both win\.$/)
-    // The dot stays in the top bar (4D), with the gear.
     expect(btn(h, 'Settings')).not.toBeNull()
     await tap(h, 'Back')
     expect(plain(h.host.querySelector('.topbar__title')?.textContent)).not.toBe('Sam')
@@ -549,101 +480,19 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
 
   it('YAZ-5261: "You vs" says which column is you', async () => {
     ;({ h } = await open(demoBoard(NOW)))
-    await tap(h, /^Number 1, Sam/)
-    await until(h, '.fr-week')
+    await tap(h, /^Sam,/)
+    await until(h, '.fr-strip30')
     const heads = [...h.host.querySelectorAll('.fr-vs__who')].map((e) => plain(e.textContent))
     expect(heads).toEqual(['You', 'Sam'])
     expect(plain(h.host.querySelector('.fr-vs--who')?.getAttribute('aria-label'))).toBe('You vs Sam')
-  })
-
-  it('Cheer: one tap, one send (a double tap sends once), then an honest "sent"', async () => {
-    let release!: () => void
-    let s: FakeService
-    ;({ h, s } = await open(demoBoard(NOW)))
-    s.markAnswer = (_m, kind) =>
-      new Promise(
-        (r) =>
-          (release = () =>
-            r({
-              kind: 'sent',
-              mark: { kind, at: new Date(NOW).toISOString() },
-            })),
-      )
-    await tap(h, /^Number 1, Sam/)
-    await until(h, '.fr-week')
-    const cheer = btn(h, 'Cheer')!
-    await act(async () => {
-      cheer.click()
-      cheer.click()
-    })
-    expect(btn(h, 'Sending…')).not.toBeNull()
-    await act(async () => release())
-    await h.settle()
-    expect(s.calls.mark).toHaveLength(1)
-    expect(statusText(h)).toMatch(/Cheer sent at .+\. Sam sees it in Friends\./)
-  })
-
-  it('the budget is used up: the nudge waits, with the time it goes; no signal: it goes when online', async () => {
-    let s: FakeService
-    ;({ h, s } = await open(demoBoard(NOW)))
-    s.markAnswer = async (_m, kind) => ({
-      kind: 'waiting',
-      mark: { kind, at: '' },
-      why: 'budget',
-      retryAt: NOW + 10 * 60_000,
-    })
-    await tap(h, /^Number 1, Sam/)
-    await until(h, '.fr-week')
-    await tap(h, 'Nudge')
-    expect(statusText(h)).toMatch(/GitHub lets the app write only so often\. Your nudge goes at .+\./)
-    s.markAnswer = async (_m, kind) => ({
-      kind: 'waiting',
-      mark: { kind, at: '' },
-      why: 'offline',
-      retryAt: null,
-    })
-    await tap(h, 'Cheer')
-    expect(statusText(h)).toContain('No connection. Your cheer goes when you are online.')
-  })
-
-  it('YAZ-5258: a second cheer of the day makes no write and says so; the hourly cap of marks says when it goes', async () => {
-    let s: FakeService
-    ;({ h, s } = await open(demoBoard(NOW)))
-    s.markAnswer = async (_m, kind) => ({ kind: 'already', mark: { kind, at: new Date(NOW).toISOString() } })
-    await tap(h, /^Number 1, Sam/)
-    await until(h, '.fr-week')
-    await tap(h, 'Cheer')
-    expect(statusText(h)).toContain('You cheered Sam today. One cheer a day.')
-    s.markAnswer = async (_m, kind) => ({ kind: 'waiting', mark: { kind, at: '' }, why: 'marks-limit', retryAt: NOW + 600_000 })
-    await tap(h, 'Nudge')
-    expect(statusText(h)).toMatch(/Cheers and nudges go out 5 an hour\. Your nudge goes at .+\./)
-  })
-
-  it('a cheer that waits from before shows its state when the screen opens', async () => {
-    const board = demoBoard(NOW)
-    const sam = board.friends[0]
-    ;({ h } = await open({
-      ...board,
-      outbox: {
-        [sam.mine]: {
-          mark: { kind: 'cheer', at: new Date(NOW).toISOString() },
-          state: 'waiting',
-          why: 'budget',
-          retryAt: NOW + 60_000,
-        },
-      },
-    }))
-    await tap(h, /^Number 1, Sam/)
-    await until(h, '.fr-week')
-    expect(statusText(h)).toMatch(/Your cheer goes at/)
   })
 
   it('Remove friend asks first', async () => {
     const board = demoBoard(NOW)
     let s: FakeService
     ;({ h, s } = await open(board))
-    await tap(h, /^Number 1, Sam/)
-    await until(h, '.fr-week')
+    await tap(h, /^Sam,/)
+    await until(h, '.fr-strip30')
     await tap(h, 'Remove friend')
     expect(plain(h.host.querySelector('[role="alertdialog"]')?.textContent)).toContain('Remove Sam? Sam stops seeing your numbers, and you stop seeing theirs.')
     await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
@@ -651,14 +500,13 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
     expect(s.calls.remove).toEqual([board.friends[0].mine])
   })
 
-  it('a member of a group: no Cheer or Nudge; the admin can remove them', async () => {
+  it('a member of a group: admin can remove them from VS', async () => {
     const group = demoGroup(NOW)
     ;({ h } = await open({ ...demoBoard(NOW), groups: [group] }))
     await tap(h, 'Study group')
-    await tap(h, /^Number 2, Mina/)
-    await until(h, '.fr-week')
+    await tap(h, /^Mina,/)
+    await until(h, '.fr-strip30')
     expect(plain(h.host.querySelector('.topbar__title')?.textContent)).toBe('Mina')
-    expect(btn(h, 'Cheer')).toBeNull()
     expect(btn(h, 'Remove from group')).not.toBeNull()
   })
 })
@@ -673,8 +521,8 @@ describe('an action that cannot finish now says so (YAZ-5257)', () => {
     let s: FakeService
     ;({ h, s } = await open(demoBoard(NOW)))
     s.answers.friend = paused
-    await tap(h, /^Number 1, Sam/)
-    await until(h, '.fr-week')
+    await tap(h, /^Sam,/)
+    await until(h, '.fr-strip30')
     await tap(h, 'Remove friend')
     await yes(h)
     expect(statusText(h)).toContain('Not removed yet: no connection. It finishes by itself when you are online.')
@@ -698,6 +546,8 @@ describe('an action that cannot finish now says so (YAZ-5257)', () => {
     await yes(h)
     expect(statusText(h)).toContain('No connection. Try again when you are online.')
     s.answers.delete = async () => ({ kind: 'paused', why: 'rate-limited', retryAt: null })
+    await tap(h, 'Study group ▾')
+    await tap(h, 'Group Settings')
     await tap(h, 'Delete group')
     await yes(h)
     expect(statusText(h)).toContain('Not removed yet: GitHub asks the app to wait. It finishes by itself.')
@@ -705,6 +555,7 @@ describe('an action that cannot finish now says so (YAZ-5257)', () => {
     ;({ h, s } = await open({ ...demoBoard(NOW), groups: [demoGroup(NOW, { iAmAdmin: false, admin: 'mina' })] }))
     s.answers.leave = async () => ({ kind: 'needs-repair' })
     await tap(h, 'Study group')
+    await tap(h, 'Study group ▾')
     await tap(h, 'Leave group')
     await yes(h)
     expect(statusText(h)).toContain('Your friends list on GitHub cannot be read')
@@ -722,11 +573,8 @@ describe('an action that cannot finish now says so (YAZ-5257)', () => {
     expect(btn(h, /Ann/)?.disabled).toBe(true)
     await tap(h, 'Old group')
     expect(plain(h.text())).toContain('Removing…')
-    expect(btn(h, 'Leave group')).toBeNull()
     await tap(h, 'New group')
     expect(plain(h.text())).toContain('The admin did not add you. Send them your join link again, or tap Leave.')
-    expect(btn(h, 'Send my join link to the admin')).not.toBeNull()
-    expect(btn(h, 'Leave group')).not.toBeNull()
   })
   it('YAZ-5265: two taps on "Add <name>" add once; a duplicate and an unverified request say so', async () => {
     let s: FakeService
@@ -734,10 +582,10 @@ describe('an action that cannot finish now says so (YAZ-5257)', () => {
     let release!: (v: unknown) => void
     s.answers.add = () => new Promise((r) => (release = r))
     await tap(h, 'Add a friend or a group')
-    await tap(h, "Paste a friend's link")
+    await tap(h, 'Enter link to add friend/group')
     s.pasteAnswer = { kind: 'request', group: 'a'.repeat(32), groupName: 'Study group', pointer: 'b'.repeat(32), login: 'zed', name: 'Zed' }
-    await h.type('Or paste the link here', 'https://notecard.yaseenarshad.com/join#x')
-    await tap(h, 'Add')
+    await typeInput(h, 'input[name="friend-link"]', 'https://notecard.yaseenarshad.com/join#x')
+    await tap(h, 'Submit')
     const add = btn(h, 'Add Zed')!
     await act(async () => {
       add.click()
@@ -749,18 +597,17 @@ describe('an action that cannot finish now says so (YAZ-5257)', () => {
     expect(s.calls.groups.filter((c) => c.startsWith('add:'))).toHaveLength(1)
     expect(statusText(h)).toContain('zed is already in the group.')
     s.pasteAnswer = { kind: 'unverified' } as never
-    await tap(h, 'Add')
+    await tap(h, 'Submit')
     expect(statusText(h)).toContain('The app cannot check who sent this join link.')
   })
 })
 
 describe('the states of the friends list v2 (round 3) on the tab', () => {
-  it('B8: a member who joined today: one quiet line under the group streak, the name cleaned', async () => {
+  it('B8: a member who joined today: one quiet line, the name cleaned', async () => {
     const group = demoGroup(NOW)
     group.members[1] = { ...group.members[1], name: '\u2068Mina\u2069', joinedToday: true }
     ;({ h } = await open({ ...demoBoard(NOW), groups: [group] }))
     await tap(h, 'Study group')
-    expect(plain(h.text())).toContain('Group streak: 4 days that everyone finished')
     expect(plain(h.text())).toContain('Mina joined today. The group streak counts them from tomorrow.')
   })
 
@@ -768,8 +615,8 @@ describe('the states of the friends list v2 (round 3) on the tab', () => {
     let s: FakeService
     ;({ h, s } = await open(demoBoard(NOW)))
     s.answers.friend = async () => ({ kind: 'paused', why: 'refused', retryAt: null })
-    await tap(h, /^Number 1, Sam/)
-    await until(h, '.fr-week')
+    await tap(h, /^Sam,/)
+    await until(h, '.fr-strip30')
     await tap(h, 'Remove friend')
     await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
     for (let i = 0; i < 4; i++) await h.settle()
@@ -791,5 +638,143 @@ describe('the states of the friends list v2 (round 3) on the tab', () => {
     await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
     await h.settle()
     expect(s.calls.remove).toEqual([board.friends[0].mine])
+  })
+})
+
+describe('YAZ-6218..6275: D1 Friends UI additions', () => {
+  it('shows Buddy Streak pill and shared card count on VS screen', async () => {
+    const base = demoBoard(NOW)
+    const sam = { ...base.friends[0], userId: 101, login: 'sam', buddyStreak: 5, since: new Date(NOW - 30 * 86_400_000).toISOString(), sharedCardCount: 12 }
+    const priya = { ...base.friends[1], userId: 102, login: 'priya', buddyStreak: 0, since: new Date(NOW - 5 * 86_400_000).toISOString(), sharedCardCount: 2 }
+    ;({ h } = await open({ ...base, friends: [sam, priya] }))
+
+    // Buddy streak pill renders next to Sam (waiting on today -> pending pill)
+    expect(h.host.querySelector('.fr-buddy-pill')?.textContent).toContain('5d')
+
+    // You vs Sam shows buddy streak + shared card count
+    await tap(h, /^Sam,/)
+    await until(h, '.fr-strip30')
+    expect(plain(h.text())).toContain('5d buddy streak')
+    expect(plain(h.text())).toContain('12 cards shared together')
+  })
+
+  it('shows local QR SVG on Add friends', async () => {
+    vi.stubGlobal('navigator', { ...navigator, share: async () => undefined })
+    ;({ h } = await open(demoBoard(NOW)))
+    await tap(h, 'Add a friend or a group')
+    await tap(h, 'Add friends')
+    for (let i = 0; i < 10 && h.host.querySelector('.fr-qr-sheet__box svg') === null; i++) await h.settle()
+    expect(h.host.querySelector('.fr-qr-sheet__box svg')).not.toBeNull()
+  })
+
+  it('shows unified Shared (1) flat list with AcceptCardSheet and two-tap Dismiss', async () => {
+    const card = {
+      id: 'card-1',
+      folderId: null,
+      senderId: 101,
+      senderLogin: 'sam',
+      title: 'Spaced Repetition',
+      markdown: 'What is FSRS?\n---\nFree Spaced Repetition Scheduler',
+      note: 'Great card!',
+      attachments: [],
+      status: 'pending' as const,
+      createdAt: new Date(NOW).toISOString(),
+    }
+    const board = demoBoard(NOW, { incomingCards: [card] })
+    const accepted: { folder: string; upNext?: boolean }[] = []
+    const states: { id: string; status: string }[] = []
+    let s: FakeService
+    ;({ h, s } = await open(board))
+    s.vaultFolders = async () => ['Biology', 'History']
+    s.acceptCardToVault = async (input) => {
+      accepted.push({ folder: input.folder, upNext: input.upNext })
+      return { ok: true, path: `${input.folder}/spaced-repetition-SH-100001.md` }
+    }
+    s.setCardState = async (id, status) => {
+      states.push({ id, status })
+      return { ok: true }
+    }
+
+    await tap(h, 'Shared (1)')
+    expect(plain(h.text())).toContain('Spaced Repetition')
+
+    await tap(h, 'Add')
+    expect(h.host.querySelector('[role="dialog"][aria-label="Where should we save this card?"]')).not.toBeNull()
+    await tap(h, 'Add to Shared Cards')
+    expect(accepted).toEqual([{ folder: 'Shared Cards', upNext: false }])
+
+    // Two-tap Dismiss works (× -> Dismiss?)
+    await tap(h, 'Dismiss')
+    await tap(h, 'Dismiss?')
+    expect(states).toEqual([{ id: 'card-1', status: 'dismissed' }])
+  })
+
+  it('shows shared folder inside unified Shared (1) with 1-shot Import modal', async () => {
+    const folder = {
+      id: 'folder-1',
+      name: 'Anatomy Week 1',
+      senderId: 101,
+      senderLogin: 'sam',
+      createdAt: new Date(NOW).toISOString(),
+      cards: [
+        {
+          id: 'gc-1',
+          folderId: 'folder-1',
+          senderId: 101,
+          senderLogin: 'sam',
+          title: 'Femur',
+          markdown: 'Longest bone',
+          note: null,
+          attachments: [],
+          status: 'pending' as const,
+          createdAt: new Date(NOW).toISOString(),
+        },
+      ],
+    }
+    const grp = demoGroup(NOW, { name: 'Study Group' })
+    const d1Grp = {
+      id: grp.group,
+      name: 'Study Group',
+      adminId: 1,
+      isAdmin: true,
+      myStatus: 'active' as const,
+      inviteCode: 'grp23def45',
+      members: [],
+      pending: [],
+      sharedFolders: [folder],
+      sharedCards: [],
+    }
+    const board = demoBoard(NOW, { groups: [grp], d1Groups: [d1Grp] })
+    const imported: string[] = []
+    let s: FakeService
+    ;({ h, s } = await open(board))
+    s.vaultFolders = async () => ['Med School']
+    s.importFolderToVault = async (input) => {
+      imported.push(`${input.targetDir}/${input.folder.name}`)
+      return { ok: true, paths: ['Shared Cards/Anatomy Week 1/femur-SH-100001.md'] }
+    }
+
+    await tap(h, 'Shared (1)')
+    expect(plain(h.text())).toContain('Anatomy Week 1')
+    await tap(h, 'Import (1)')
+    await tap(h, 'Add to Shared Cards')
+    expect(imported).toEqual(['Shared Cards/Anatomy Week 1'])
+  })
+
+  it('shows Delete my Friends data in Settings with confirmation calling deleteMe()', async () => {
+    let deleted = false
+    let s: FakeService
+    ;({ h, s } = await open(demoBoard(NOW)))
+    s.deleteMe = async () => {
+      deleted = true
+      return { ok: true, deleted: true }
+    }
+    await tap(h, 'Settings')
+    await tap(h, 'Delete my Friends data')
+    expect(plain(h.host.querySelector('[role="alertdialog"]')?.textContent)).toContain('Delete all your Friends data?')
+    await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
+    await h.settle()
+    expect(deleted).toBe(true)
+    expect(statusText(h)).toContain('Your Friends data has been deleted.')
   })
 })

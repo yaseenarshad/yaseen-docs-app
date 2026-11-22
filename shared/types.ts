@@ -2147,6 +2147,8 @@ export interface FriendsSendView {
   login?: string | null
   /** For `list-elsewhere` (YAZ-5083): the vault (`owner/name`) that holds the friends list. */
   home?: string | null
+  /** Known vaults on this Mac with per-vault Friends include/exclude state (YAZ-6275). */
+  knownVaults?: { path: string; name: string; included: boolean }[]
 }
 
 /** The choices of each Settings › Folder pages row that is not a switch (YAZ-4585). The first is the default. */

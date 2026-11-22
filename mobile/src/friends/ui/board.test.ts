@@ -164,7 +164,7 @@ describe('the four periods and the order (decision 21)', () => {
     expect(periodNumbers(YOU, 'month', NOW).cards).toBe(239)
   })
 
-  it('sorts by cards, then minutes; equal rows share a rank; rows with no numbers go last', () => {
+  it('sorts by finished tier, then cards desc, then name asc; rows with no numbers go last', () => {
     const e = (key: string, cards: number, minutes: number, you = false) => ({
       key,
       name: key,
@@ -185,9 +185,9 @@ describe('the four periods and the order (decision 21)', () => {
     )
     expect(rows.map((r) => [r.entry.key, r.rank])).toEqual([
       ['sam', 1],
-      ['you', 2],
-      ['leo', 3],
-      ['mina', 3],
+      ['leo', 2],
+      ['mina', 2],
+      ['you', 4],
       ['priya', 5],
       ['gone', null],
     ])

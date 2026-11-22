@@ -70,11 +70,13 @@ interface CardInboxBarProps {
   showInSidebar?: () => void
   /** The folder pick for new cards (YAZ-5322): the picker's rows and its save; without it the row has no "from". */
   pick?: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders' | 'setOrder'>
+  /** Optional Friends icon button (YAZ-6220 D5): sits directly between SessionCount and View sliders. */
+  friendsButton?: ReactNode
   /** The row's right end after the count (YAZ-5689): the one "View" icon (`ReviewViewButton`: Time, Zoom, Focus mode). */
   view?: ReactNode
 }
 
-export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, showInSidebar, pick, view }: CardInboxBarProps) {
+export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, showInSidebar, pick, friendsButton, view }: CardInboxBarProps) {
   const button = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const picker = useNewCardsPicker(pick ?? NO_PICK, session)
@@ -143,6 +145,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             <SessionCount session={session} icon={<current.icon />} />
           </HoverTip>
         )}
+        {friendsButton}
         {view}
         {menu !== null && (
           <ContextMenuSurface x={menu.x} y={menu.y} onClose={closeMenu} className="card-inbox__filter-menu">

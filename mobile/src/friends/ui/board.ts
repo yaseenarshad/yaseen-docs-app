@@ -1,7 +1,25 @@
 import { LIST_NEEDS_REPAIR, agoLabel, updatedAgo } from '@shared/friendGists'
 import { dailyMark as groupsDailyMark, localDay as sharedLocalDay } from '@shared/friendGroups'
 import { daysReviewed, rememberedPercent, type FriendDay, type FriendMark, type FriendStats } from '@shared/friendStats'
+import { filterSharedCards, formatMinutes, type LeaderboardSort } from '@shared/friendsBoard'
 import type { FriendsSendState } from '../sender'
+
+export { filterSharedCards, formatMinutes, type LeaderboardSort }
+
+/** Formats study duration in minutes: `< 60` -> `51 min`, `>= 60` -> `2hr 55min` / `2hr` (YAZ-6263). */
+export function formatStudyDuration(minutes: number): string {
+  const m = Math.max(0, Math.round(minutes))
+  if (m < 60) return `${m} min`
+  const h = Math.floor(m / 60)
+  const rem = m % 60
+  return rem === 0 ? `${h}hr` : `${h}hr ${rem}min`
+}
+
+export const SORTS: readonly { id: LeaderboardSort; label: string }[] = [
+  { id: 'cards', label: 'Cards' },
+  { id: 'time', label: 'Time' },
+  { id: 'streak', label: 'Streak' },
+]
 
 /**
  * THE RULES OF THE FRIENDS SCREENS (4E4; decisions 21, 23, 24 and 25 on YAZ-5057; round 10, items 12 and 13).
@@ -119,18 +137,22 @@ export function periodNumbers(stats: Pick<FriendStats, 'days'>, period: Period, 
   switch (period) {
     case 'today': {
       const d = dayIn(stats, today)
+      const cards = d?.cards ?? 0
+      const rawMark = dailyMark(stats, now)
       return {
-        cards: d?.cards ?? 0,
+        cards,
         minutes: minutesOf(d?.seconds ?? 0),
-        mark: dailyMark(stats, now),
+        mark: rawMark === 'finished' && cards <= 0 ? 'not-started' : rawMark,
       }
     }
     case 'yesterday': {
       const d = dayIn(stats, addDays(today, -1))
+      const cards = d?.cards ?? 0
+      const rawMark = yesterdayMark(stats, now)
       return {
-        cards: d?.cards ?? 0,
+        cards,
         minutes: minutesOf(d?.seconds ?? 0),
-        mark: yesterdayMark(stats, now),
+        mark: rawMark === 'finished' && cards <= 0 ? 'not-started' : rawMark,
       }
     }
     case 'week': {
@@ -149,7 +171,8 @@ export interface BoardEntry {
   key: string
   name: string
   you: boolean
-  stats: Pick<FriendStats, 'days'> | null
+  stats: (Pick<FriendStats, 'days'> & Partial<Pick<FriendStats, 'totals'>>) | null
+  streak?: number
 }
 export interface BoardRow<E extends BoardEntry = BoardEntry> {
   entry: E
@@ -158,23 +181,48 @@ export interface BoardRow<E extends BoardEntry = BoardEntry> {
   numbers: PeriodNumbers | null
 }
 
-/** The rows sorted by cards, then minutes (decision 21); rows with no numbers go last, in the order given. */
-export function boardRows<E extends BoardEntry>(entries: readonly E[], period: Period, now: number): BoardRow<E>[] {
+/**
+ * The rows sorted in two tiers:
+ * - Tier 1: Finished (`finished`), sorted by cards descending, then name alphabetically.
+ * - Tier 2: Not finished, sorted by cards descending, then name alphabetically.
+ * (Week/Month have no daily mark, so all rows sort by cards descending, then name alphabetically.)
+ * Rows with no numbers go last, in the order given.
+ */
+export function boardRows<E extends BoardEntry>(entries: readonly E[], period: Period, now: number, sort: LeaderboardSort = 'cards'): BoardRow<E>[] {
   const withNumbers = entries.map((entry, i) => ({
     entry,
     i,
+    streak: entry.streak ?? entry.stats?.totals?.streak ?? 0,
     numbers: entry.stats === null ? null : periodNumbers(entry.stats, period, now),
   }))
   withNumbers.sort((a, b) => {
     if (a.numbers === null || b.numbers === null) return (a.numbers === null ? 1 : 0) - (b.numbers === null ? 1 : 0) || a.i - b.i
-    return b.numbers.cards - a.numbers.cards || b.numbers.minutes - a.numbers.minutes || a.i - b.i
+    if (a.numbers.mark !== null && b.numbers.mark !== null) {
+      const tierDiff = (a.numbers.mark === 'finished' ? 0 : 1) - (b.numbers.mark === 'finished' ? 0 : 1)
+      if (tierDiff !== 0) return tierDiff
+    }
+    if (sort === 'time') {
+      return b.numbers.minutes - a.numbers.minutes || b.numbers.cards - a.numbers.cards || a.entry.name.localeCompare(b.entry.name) || a.i - b.i
+    }
+    if (sort === 'streak') {
+      return b.streak - a.streak || b.numbers.cards - a.numbers.cards || a.entry.name.localeCompare(b.entry.name) || a.i - b.i
+    }
+    return b.numbers.cards - a.numbers.cards || a.entry.name.localeCompare(b.entry.name) || a.i - b.i
   })
   let rank = 0
-  let last: PeriodNumbers | null = null
+  let last: { numbers: PeriodNumbers; streak: number } | null = null
+  const sameScore = (a: { numbers: PeriodNumbers; streak: number }, b: { numbers: PeriodNumbers; streak: number }) =>
+    a.numbers.mark === b.numbers.mark &&
+    (sort === 'streak'
+      ? a.streak === b.streak && a.numbers.cards === b.numbers.cards
+      : sort === 'time'
+      ? a.numbers.minutes === b.numbers.minutes && a.numbers.cards === b.numbers.cards
+      : a.numbers.cards === b.numbers.cards && a.numbers.minutes === b.numbers.minutes)
   return withNumbers.map((r, k) => {
     if (r.numbers === null) return { entry: r.entry, rank: null, numbers: null }
-    if (last === null || r.numbers.cards !== last.cards || r.numbers.minutes !== last.minutes) rank = k + 1
-    last = r.numbers
+    const cur = { numbers: r.numbers, streak: r.streak }
+    if (last === null || !sameScore(cur, last)) rank = k + 1
+    last = cur
     return { entry: r.entry, rank, numbers: r.numbers }
   })
 }

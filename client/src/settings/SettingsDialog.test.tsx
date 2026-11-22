@@ -14,6 +14,7 @@ import { setExploreZoom } from '../explore/exploreZoom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { FRIENDS_ENABLED } from '@shared/features'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { ShowIdsSettings } from '../search/showIds'
 import { MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
@@ -186,9 +187,9 @@ const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderVie
 const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'loopArrows', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
 /**
  * Settings › Cards › GitHub (YAZ-5098, YAZ-5652): the token row. The Mac's send of the numbers (YAZ-5086, `friendsSend`)
- * shows only with Friends on (`shared/features.ts`, off for now; `friendsSend.test.tsx` turns it on).
+ * shows only with Friends on (`shared/features.ts`).
  */
-const FRIENDS_ROWS: string[] = []
+const FRIENDS_ROWS: string[] = FRIENDS_ENABLED ? ['friendsSend'] : []
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
@@ -1786,7 +1787,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(reviewRows(el)).toEqual([...ALL, ...FRIENDS_ROWS])
     expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Use cards in this vault', undefined, 'Card skill in the sidebar', 'Card course', 'Card tips', 'New cards a day', 'Up next a day', 'New cards order', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Inbox: O opens the page at', 'Arrow keys at the ends', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card text size', 'Card title size', 'Show card titles', 'Title mark in the card head', 'Title room', 'Card tables', 'Card sides in pages', 'Card sides on card pages', 'Card sides in Explore', 'Card spacing'])
     // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look. (YAZ-6190 D4: GitHub moved to Sync.)
-    expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look'])
+    expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look', ...(FRIENDS_ENABLED ? ['GitHub'] : [])])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why. YAZ-5708: the
     // rules of now (YAZ-5655, consolidated): days only, only misses come back, a new card's first ✓ joins today's reviews.
     const how = row(el, 'howCardsComeBack')!.querySelector('details')!

@@ -322,6 +322,7 @@ export function fakeServices(store: VaultStore, service: FriendsService, hasFrie
   return {
     ...localFriends(store),
     hasFriends: async () => hasFriends,
+    deleteMe: async () => service.deleteMe?.() ?? { ok: true, deleted: true },
     service: async () => service,
     stop: async () => undefined,
   }

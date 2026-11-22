@@ -41,6 +41,7 @@ export type CardMenuAction =
   | 'title-choice'
   | 'copy-id'
   | 'copy-link'
+  | 'share-friend'
   | 'reset'
 
 /** The card's marks now (off its card line); `reviews`: how many reviews it has (Reset history needs one). */
@@ -101,6 +102,8 @@ export interface CardMenuPlace {
   /** Copy card ID: the ID, once the card has one. */
   copyId?: string | null
   copyLink?: boolean
+  /** Share with friend or group (YAZ-6200 D10): shown when FRIENDS_ENABLED is on. */
+  shareFriend?: boolean
   /** Reset history (with marks that hold a review). */
   reset?: boolean
   /** The vault's word for a page (YAZ-4938): "Open page", "Turn into a page". Default: the word "page". */
@@ -150,6 +153,7 @@ export function cardMenu(place: CardMenuPlace): CardMenuItem[][] {
   const copy: CardMenuItem[] = []
   if (place.copyId != null) copy.push({ action: 'copy-id', label: 'Copy card ID', hint: place.copyId })
   if (place.copyId != null && place.copyLink === true) copy.push({ action: 'copy-link', label: 'Copy card link', hint: `[[${place.copyId}]]`, tour: 'card-copy-link' })
+  if (place.shareFriend === true) copy.push({ action: 'share-friend', label: 'Share with friend or group…' })
 
   // LAST, alone (YAZ-5376): it asks by typing first.
   const reset: CardMenuItem[] = place.reset === true && m !== null && m.reviews > 0 ? [{ action: 'reset', label: 'Reset history', danger: true, disabled: place.locked === true ? true : undefined }] : []

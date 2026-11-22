@@ -1,5 +1,6 @@
 import { FRIENDS_ENABLED } from '@shared/features'
 import { startAppearance } from '../settings/appearance'
+import { savePendingInvite } from '../store/pendingInvitePref'
 import { landingCodeFrom, landingCopy, type LandingKind } from './friendLink'
 import { HOME_SCREEN, THREE_LINES, safariLine, splitThreeLines } from './homeScreen'
 
@@ -68,6 +69,17 @@ function showFriendsOff(): void {
 /** Friends on: the code of the link, its Copy, and the steps. */
 function showLanding(): void {
   const landing = landingCodeFrom(location.pathname, location.hash)
+  // YAZ-6218: also accept 6–32 char alphanumeric D1 invite codes on /friend and /group.
+  let code = landing.code
+  if (code === null && (landing.kind === 'friend' || landing.kind === 'group')) {
+    let raw = ''
+    try {
+      raw = decodeURIComponent(location.hash.replace(/^#/, '')).trim()
+    } catch {
+      raw = ''
+    }
+    if (/^[a-z0-9]{6,32}$/i.test(raw)) code = raw
+  }
   const words = WORDS[landing.kind]
   const byId = (id: string) => document.getElementById(id)!
   const show = (id: string) => byId(id).removeAttribute('hidden')
@@ -89,15 +101,23 @@ function showLanding(): void {
     }),
   )
 
-  if (landing.code === null) {
+  if (code === null) {
     byId('no-code-text').textContent = words.missing
     show('no-code')
   } else {
     show('has-code')
-    const copy = landingCopy({ kind: landing.kind, code: landing.code }, location.origin)
+    const copy = landingCopy({ kind: landing.kind, code }, location.origin)
     const field = byId('code') as HTMLInputElement
     const said = byId('copied')
     field.value = copy
+    const macBtn = document.getElementById('open-mac') as HTMLAnchorElement | null
+    if (landing.kind === 'friend' || landing.kind === 'group') {
+      savePendingInvite({ kind: landing.kind, code, url: copy })
+    }
+    if (macBtn !== null && (landing.kind === 'friend' || landing.kind === 'group')) {
+      macBtn.href = `yaseendocs://${landing.kind}#${code}`
+      macBtn.removeAttribute('hidden')
+    }
     byId('copy').addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(copy)

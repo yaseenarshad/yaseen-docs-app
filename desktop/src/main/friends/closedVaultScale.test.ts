@@ -12,10 +12,7 @@ import { cpus, loadavg, tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { CardRecord } from '@shared/cardLine'
-import { makePointer, type WriteOptions } from '@shared/friendGists'
-import { ensureFriendsFiles, writeFriendsIndex } from '@shared/friendListHome'
-import { fakeGistWorld } from '@shared/friendGistsFake'
-import { macRepoPort } from './repoHttp'
+import type { FriendsBoardPayload } from '@shared/friendsApi'
 import { PUBLISH_EVERY_MS } from '@shared/friendSend'
 import type { FriendVault } from '@shared/friendStats'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
@@ -23,9 +20,8 @@ import { budgetMs, median } from '../../../../client/src/test-perf'
 import { git, resolveGit } from '../git/exec'
 import { gitFolderFacts, knownClosedVaults } from './closedVaults'
 import { COUNT_LIMIT_MS, countPayload, makeCounter } from './countJob'
-import { macGistsApi, readProfile } from './gistsHttp'
 import { createMacSender, type MacSendSaved } from './macSender'
-import { buildCountWorker, worldFetch } from './testing'
+import { buildCountWorker } from './testing'
 
 const TZ = process.env.TZ
 beforeAll(() => void (process.env.TZ = 'America/New_York'))
@@ -135,28 +131,27 @@ describe('the main thread, the whole path of one try (YAZ-5252)', () => {
       })),
       settings: DEFAULT_REVIEW_SETTINGS,
     } as unknown as FriendVault
-    const PHONE = 'github_pat_11SCALE_phone000000000000000000000000000000000000000000000000000000000000'
-    const MAC = 'github_pat_11SCALE_mac00000000000000000000000000000000000000000000000000000000000000'
-    const world = fakeGistWorld({ accounts: { [PHONE]: { login: 'yaseen' }, [MAC]: { login: 'yaseen' } }, start: NOW })
-    const wire = worldFetch(world, { [MAC]: { login: 'yaseen', name: 'Y', avatar_url: 'https://avatars.githubusercontent.com/u/7' } })
-    const opts: WriteOptions = { describe: (k) => `scale ${k}`, sleep: async () => {} }
-    const made = await ensureFriendsFiles(world.api(PHONE), { vaults: ['yaseen/notes', 'yaseen/cards'], nickname: null }, opts)
-    if (made.kind !== 'ok') throw new Error(made.kind)
-    const p = await makePointer(world.api(PHONE), made.handle.index.stats!, opts)
-    await writeFriendsIndex(world.api(PHONE), made.handle, { ...made.handle.index, friends: [{ name: 'F', theirs: p, mine: p }] })
+    let clockNow = NOW
+    const fakeBoard: FriendsBoardPayload = {
+      me: { id: 1, login: 'yaseen', name: 'Y', nickname: null, avatarUrl: 'https://avatars.githubusercontent.com/u/7', zone: null, vaults: ['yaseen/notes', 'yaseen/cards'], stats: null, statsAt: null },
+      friends: [{ id: 2, login: 'friend', name: 'F', avatarUrl: null, since: '2026-11-01T00:00:00Z', stats: null, statsAt: null, sharedCardCount: 0 }],
+      invites: [],
+      groups: [],
+      incomingCards: [],
+    }
     const saved: { value: MacSendSaved | null } = { value: null }
     const counter = makeCounter(worker, { scanDir: path.join(dir, 'scan-cache-main') })
     const sender = createMacSender({
-      readToken: async () => MAC,
-      api: (token) => macGistsApi(token, wire.fetch, () => world.now()),
-      profile: (token) => readProfile(token, wire.fetch),
+      readToken: async () => 'ghu_scale_token',
+      client: {
+        board: async () => fakeBoard,
+        sendStats: async () => ({ ok: true as const, statsAt: new Date(clockNow).toISOString() }),
+        clearSession: () => undefined,
+      },
       vaults: async () => new Map([['yaseen/notes', '/open/notes']]),
-      // YAZ-5083: the list in the vault repo, read (only) with the Mac's own HTTP calls.
-      repo: async (token, repo) => macRepoPort(token, wire.fetch, repo, 'main'),
       count: async () => open,
       state: { load: async () => saved.value, save: async (s) => void (saved.value = structuredClone(s)) },
-      clock: { now: () => world.now(), setTimeout: () => 0, clearTimeout: () => undefined },
-      sleep: async () => {},
+      clock: { now: () => clockNow, setTimeout: () => 0, clearTimeout: () => undefined },
       stats: (text, now, closed, zone) => counter(text, now, closed, zone),
       closed: () => knownClosedVaults([path.join(dir, 'gone'), closedRoot], new Set(), gitFolderFacts(bin!), new Set(['yaseen/cards'])),
     })
@@ -165,7 +160,7 @@ describe('the main thread, the whole path of one try (YAZ-5252)', () => {
     for (let i = 0; i < 3; i++) {
       // A new change in the closed vault each run (a new key: the worker scans it), and new numbers (a send).
       await writeFile(path.join(closedRoot, 'Folder 0', `New ${i}.md`), `\`\`\`card\nQ\n\`\`\`\n<!-- card: WIKI-${900_000 + i}, 2026-11-14T14:0${i}:00.000Z good 3s -->\n`)
-      world.advance(PUBLISH_EVERY_MS + 1)
+      clockNow += PUBLISH_EVERY_MS + 1
       const [view, block] = await longestBlock(() => sender.attempt('pass'))
       expect(view.status).toBe('sent')
       cpu.push(block.cpu)

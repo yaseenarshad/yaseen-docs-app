@@ -5,8 +5,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { FRIENDS_ENABLED } from '@shared/features'
 import { DEFAULT_SETTINGS } from '@shared/types'
+
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: false }))
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { api } from '../api'
 import { SettingsDialog } from './SettingsDialog'
@@ -35,9 +36,10 @@ afterEach(() => {
   el?.remove()
 })
 
-describe('Friends off (YAZ-5652)', () => {
-  it('the switch is off in the app', () => {
-    expect(FRIENDS_ENABLED).toBe(false)
+describe('Friends off (YAZ-5652, YAZ-6200)', () => {
+  it('the switch is enabled by default in the app (YAZ-6200)', async () => {
+    const actual = await vi.importActual<typeof import('@shared/features')>('@shared/features')
+    expect(actual.FRIENDS_ENABLED).toBe(true)
   })
 
   it('Settings › Cards: no Friends row, no friends:status call, and GitHub sign-in lives in Settings › Sync (YAZ-5652, YAZ-6190 D4)', async () => {

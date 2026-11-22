@@ -21,8 +21,16 @@
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/github/*", "/auth/callback"],
+    "run_worker_first": ["/api/github/*", "/api/friends/*", "/auth/callback"],
     "not_found_handling": "single-page-application",
     "html_handling": "auto-trailing-slash"
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "FRIENDS_DB",
+      "database_name": "yaseen-docs-friends",
+      "database_id": "a8d84afa-db89-454d-b03b-03aaf91de7b3",
+      "migrations_dir": "./worker/migrations"
+    }
+  ]
 }

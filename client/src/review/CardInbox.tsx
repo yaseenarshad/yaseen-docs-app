@@ -124,8 +124,15 @@ import type { InboxOpenAt } from '@shared/types'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreLinkPreview, ExploreVault } from '../explore/ExplorePage'
 import type { WikilinkHover } from '../editor/wikilink/wikilinkHover'
+import { FRIENDS_ENABLED } from '@shared/features'
+import { dailyMarkOf } from '@shared/friendsBoard'
+import type { FriendsBoardPayload } from '@shared/friendsApi'
+import { api } from '../api'
+import { FRIENDS_INBOX_VISIBILITY_EVENT, readShowFriendsInInbox } from '../settings/FriendsSendControl'
 
 const InboxLinkPreview = lazy(() => import('./InboxLinkPreview').then((m) => ({ default: m.InboxLinkPreview })))
+const FriendsPane = lazy(() => import('../friends/FriendsPane').then((m) => ({ default: m.FriendsPane })))
+const ShareCardModal = lazy(() => import('../friends/ShareCardModal').then((m) => ({ default: m.ShareCardModal })))
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { CardBand, CardId, CardNextChip, CardStrip, cardWait } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, bandTitle, bandTitleStep, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
@@ -242,12 +249,75 @@ interface LastAnswer {
 // The done screen's words moved to `cardWords.ts` (YAZ-5078), so the phone's Review screen says them too.
 export { addedLine, resetLine, waitingLine } from './cardWords'
 
+/** Compact two-people icon for the Friends toggle in CardInboxBar (YAZ-6220 D5). */
+function FriendsIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="6" cy="5.5" r="2.2" />
+      <path d="M2 13c.4-2.2 2-3.5 4-3.5s3.6 1.3 4 3.5" />
+      <circle cx="11.2" cy="6" r="1.7" />
+      <path d="M11 9.7c1.4.2 2.6 1.3 3 3.3" />
+    </svg>
+  )
+}
+
 export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, showInSidebar, focusMode = false, onFocusMode, courseOffer, hotkeys, linkPreview }: CardInboxProps) {
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
   const card = session.card
   const pageText = card?.page?.text ?? null
+
+  // YAZ-6220: Friends in-place toggle inside CardInbox (zero extra sidebar rows).
+  const [showFriendsBtn, setShowFriendsBtn] = useState(() => FRIENDS_ENABLED && readShowFriendsInInbox())
+  const [friendsOpen, setFriendsOpen] = useState(false)
+  const [pendingInvite, setPendingInvite] = useState<{ kind: 'friend' | 'group'; code: string } | null>(null)
+  const [shareCard, setShareCard] = useState<{ title: string; markdown: string } | null>(null)
+  const [friendsMeta, setFriendsMeta] = useState<{ friendsCount: number; finishedToday: number; myStreak: number } | null>(null)
+
+  const updateFriendsMeta = useCallback((board: FriendsBoardPayload) => {
+    const now = Date.now()
+    setFriendsMeta({
+      friendsCount: board.friends.length,
+      finishedToday: board.friends.filter((f) => dailyMarkOf(f.stats, now) === 'finished').length,
+      myStreak: board.me.stats?.totals.streak ?? 0,
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!FRIENDS_ENABLED) return
+    const onVis = () => {
+      const next = readShowFriendsInInbox()
+      setShowFriendsBtn(next)
+      if (!next) setFriendsOpen(false)
+    }
+    window.addEventListener(FRIENDS_INBOX_VISIBILITY_EVENT, onVis)
+    return () => window.removeEventListener(FRIENDS_INBOX_VISIBILITY_EVENT, onVis)
+  }, [])
+
+  useEffect(() => {
+    if (!FRIENDS_ENABLED || !showFriendsBtn || !shown) return
+    let live = true
+    if (typeof api.friends?.board === 'function') {
+      api.friends.board(false).then(
+        (res) => {
+          if (live && res.ok) updateFriendsMeta(res.board)
+        },
+        () => undefined,
+      )
+    }
+    const unsub =
+      typeof api.friends?.onInviteLink === 'function'
+        ? api.friends.onInviteLink((payload) => {
+            setPendingInvite(payload)
+            setFriendsOpen(true)
+          })
+        : undefined
+    return () => {
+      live = false
+      unsub?.()
+    }
+  }, [showFriendsBtn, shown, updateFriendsMeta])
   // The Inbox's card (YAZ-5152: shared with the Preview, `inboxCard.tsx`): the front, and the head's title off the card
   // line (YAZ-5308), which waits for the last step where it is hidden on the front (YAZ-5030).
   const { text, title: headTitle } = useCardFront(pageText, card?.page ?? { title: '' }, review.settings.titleAt)
@@ -263,8 +333,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
     (at: { path: string; id: string; index: number }, file: boolean) => (openAt === 'card' && !file ? openFile(at.path, { id: at.id, index: at.index }) : openFile(at.path)),
     [openAt, openFile],
   )
-  // YAZ-5033: the active seconds on this card, from the moment its text shows; read at the answer.
-  const answerSeconds = useAnswerTimer(card?.page == null ? null : cardKey, shown, review.settings.pauseAfter)
+  // YAZ-5033: the active seconds on this card, from the moment its text shows; read at the answer. Paused while Friends is open.
+  const answerSeconds = useAnswerTimer(card?.page == null ? null : cardKey, shown && !friendsOpen, review.settings.pauseAfter)
   // Time so far (YAZ-5130): the View panel's Time row (YAZ-5689), behind a "Show" by default.
   const time = review.settings.timeSoFar
 
@@ -334,8 +404,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
     setMoreAt({ x: box.left, y: box.bottom + 4 })
     setMore(moreWhich === which || cardKey === null ? null : { key: cardKey, which })
   }
-  const live = useRef({ steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile, focusMode, onFocusMode, hotkeys })
-  live.current = { steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile, focusMode, onFocusMode, hotkeys }
+  const live = useRef({ steps, card, session, review, ratings, moreOpen, shown, friendsOpen, answerSeconds, cardFile, focusMode, onFocusMode, hotkeys })
+  live.current = { steps, card, session, review, ratings, moreOpen, shown, friendsOpen, answerSeconds, cardFile, focusMode, onFocusMode, hotkeys }
 
   // The last answer's line (YAZ-5025 round 2): its words fixed when the answer is given, shown once the session counts
   // it (`count`: the session's answers with it), and only while that answer is still the session's last (an undo clears it).
@@ -393,7 +463,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (!live.current.shown || !isInboxKeyTarget(event, rootRef.current)) return
+      if (!live.current.shown || live.current.friendsOpen || !isInboxKeyTarget(event, rootRef.current)) return
       const key = cardInboxKey(event, live.current.review.settings.buttons, live.current.hotkeys)
       if (key === null) return
       const { card, session, review, ratings, moreOpen, focusMode, onFocusMode } = live.current
@@ -505,6 +575,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
           change: (change) => void review.setMark(card.path, card.id, change),
           onNotice,
           openCard: () => openCard(card, cardFile),
+          shareFriend: FRIENDS_ENABLED ? () => setShareCard({ title: headTitle || card.id, markdown: text ?? '' }) : undefined,
           runOwn: (item) => {
             if (item.action === 'off' && item.on === true) {
               setArchivedAt({})
@@ -531,9 +602,39 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
         openPlace={(part) => (part.kind === 'page' ? (card !== null && part.path === card.path ? openCard(card, cardFile) : openFile(part.path)) : openPlace?.(part.path))}
         showInSidebar={card !== null && showInSidebar !== undefined ? () => showInSidebar(card.path) : undefined}
         pick={review}
+        friendsButton={
+          showFriendsBtn ? (
+            <button
+              type="button"
+              className="card-inbox__friends-btn"
+              aria-label="Friends"
+              aria-pressed={friendsOpen}
+              title={friendsOpen ? 'Back to Review' : 'Friends'}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+              }}
+              onClick={() => setFriendsOpen((open) => !open)}
+            >
+              <FriendsIcon />
+            </button>
+          ) : undefined
+        }
         view={<ReviewViewButton seconds={session.today.seconds} time={time} zoom={zoom} setZoom={setZoom} focusMode={focusMode} onFocusMode={onFocusMode} />}
       />
-      <div ref={columnRef} className="card-inbox__column" style={cardColumnStyle(width)}>
+      {friendsOpen && (
+        <Suspense fallback={null}>
+          <FriendsPane
+            vaultRoot={vaultOf(card?.path ?? '').root}
+            onBack={() => setFriendsOpen(false)}
+            onNotice={onNotice}
+            onBoardLoaded={updateFriendsMeta}
+            pendingInvite={pendingInvite}
+            onClearPendingInvite={() => setPendingInvite(null)}
+          />
+        </Suspense>
+      )}
+      <div ref={columnRef} className="card-inbox__column" hidden={friendsOpen} style={friendsOpen ? { display: 'none' } : cardColumnStyle(width)}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move. YAZ-5051 (Yaseen: "so that the card is just pure"):
             the head sits here too, after the chip — the ID (a click copies it) — with "Up next ×"; the title is in the
@@ -617,6 +718,16 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
                   }
                   unit={unit}
                   offer={courseOffer !== undefined ? <CourseOffer {...courseOffer} /> : undefined}
+                  friendsSummary={
+                    showFriendsBtn && friendsMeta && friendsMeta.friendsCount > 0
+                      ? {
+                          friendsCount: friendsMeta.friendsCount,
+                          finishedToday: friendsMeta.finishedToday,
+                          myStreak: friendsMeta.myStreak,
+                          onOpenFriends: () => setFriendsOpen(true),
+                        }
+                      : null
+                  }
                 />
               </div>
             ) : (
@@ -722,6 +833,15 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
       {linkPreview !== undefined && (
         <Suspense fallback={null}>
           <InboxLinkPreview linkPreview={linkPreview} hotkeys={hotkeys} hoverRef={linkHoverRef} />
+        </Suspense>
+      )}
+      {shareCard !== null && (
+        <Suspense fallback={null}>
+          <ShareCardModal
+            card={shareCard}
+            onShared={(msg) => onNotice(msg)}
+            onClose={() => setShareCard(null)}
+          />
         </Suspense>
       )}
     </div>
