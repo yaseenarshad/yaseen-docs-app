@@ -8,16 +8,21 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { splitFrontmatter } from '@shared/frontmatter'
 import type {
   BrowsableVault,
   DeckFilePayload,
   DeckTreeFile,
   FriendBoardMember,
 } from '@shared/friendsApi'
+import { NO_LINK_PILLS } from '@shared/linkPills'
+import { readCardSides, readPageSwitches } from '@shared/pageSwitches'
 import { api } from '../api'
-import { renderCard } from '../editor/card/cardRender'
+import { useReadOnlyPage } from '../editor/useReadOnlyPage'
+import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { useUnit } from '../vault/unitWord'
 import { AcceptCardSheet, type AcceptCardTarget } from './AcceptCardSheet'
+import '../search/quickLook.css'
 
 export interface BrowseDeckModalProps {
   friend: FriendBoardMember
@@ -116,6 +121,16 @@ function resolveRelativePath(baseFilePath: string, href: string): string {
   return baseParts.join('/')
 }
 
+function base64ToBlobUrl(mime: string, dataBase64: string): { url: string; revoke: boolean } {
+  if (typeof URL.createObjectURL !== 'function' || typeof atob !== 'function') {
+    return { url: `data:${mime};base64,${dataBase64}`, revoke: false }
+  }
+  const binary = atob(dataBase64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return { url: URL.createObjectURL(new Blob([bytes], { type: mime })), revoke: true }
+}
+
 function DeckMarkdownPreview({
   markdown,
   filePath,
@@ -129,29 +144,115 @@ function DeckMarkdownPreview({
   allMdFiles: readonly DeckTreeFile[]
   onOpenFile: (file: { path: string; title: string }) => void
 }) {
+  const unit = useUnit()
   const hostRef = useRef<HTMLDivElement>(null)
 
+  const { body, switches, cardSides } = useMemo(() => {
+    const stripped = splitFrontmatter(markdown).body
+    return {
+      body: stripped,
+      switches: readPageSwitches(markdown),
+      cardSides: readCardSides(markdown),
+    }
+  }, [markdown])
+
+  const { wikilinks, findByTarget } = useMemo(() => {
+    const byPath = new Map<string, DeckTreeFile>()
+    const byTitle = new Map<string, DeckTreeFile>()
+    for (const f of allMdFiles) {
+      const lowPath = f.path.toLowerCase()
+      byPath.set(lowPath, f)
+      byPath.set(lowPath.replace(/\.md$/i, ''), f)
+      const lowTitle = f.title.toLowerCase()
+      if (!byTitle.has(lowTitle)) byTitle.set(lowTitle, f)
+    }
+    const find = (rawTarget: string): DeckTreeFile | null => {
+      const clean = rawTarget.split('#')[0].split('|')[0].trim().toLowerCase()
+      if (!clean) return null
+      return byPath.get(clean) ?? byTitle.get(clean) ?? null
+    }
+    const source: WikilinkResolveSource = {
+      resolve: (target: string) => find(target)?.path ?? null,
+      records: [],
+      folders: [],
+      ids: false,
+      letters: [],
+      pills: NO_LINK_PILLS,
+      vault: null,
+      subscribe: () => () => undefined,
+    }
+    return { wikilinks: source, findByTarget: find }
+  }, [allMdFiles])
+
+  // Exact same read-only Crepe renderer used by Desktop Search QuickLook / ReadOnlyPage
+  useReadOnlyPage(hostRef, body.trim() === '' ? null : body, wikilinks, switches)
+
+  // Hydrate relative <img> sources rendered by Crepe via proxied on-demand Blob URLs (revoked on cleanup)
   useEffect(() => {
     const el = hostRef.current
     if (!el) return
-    el.innerHTML = ''
-    el.appendChild(renderCard(markdown))
+    const assetKeys = Object.keys(assets)
+    if (assetKeys.length === 0) return
 
-    // Rewrite relative <img> sources to loaded proxied data URLs
-    const imgs = el.querySelectorAll('img')
-    for (const img of imgs) {
-      const rawSrc = img.getAttribute('src') ?? ''
-      if (!rawSrc || /^https?:|^data:/i.test(rawSrc)) continue
-      const resolved = resolveRelativePath(filePath, rawSrc)
-      const asset = assets[resolved] ?? assets[rawSrc]
-      if (asset) {
-        img.src = asset.dataUrl
+    const urlCache = new Map<string, { url: string; revoke: boolean }>()
+    const getUrl = (key: string, asset: LoadedAsset): string => {
+      const existing = urlCache.get(key)
+      if (existing) return existing.url
+      const created = base64ToBlobUrl(asset.mime, asset.dataBase64)
+      urlCache.set(key, created)
+      return created.url
+    }
+
+    const hydrate = () => {
+      const imgs = el.querySelectorAll('img')
+      for (const img of imgs) {
+        const rawSrc = img.dataset.browseOrigSrc ?? img.getAttribute('src') ?? ''
+        if (!rawSrc || /^https?:|^data:|^blob:/i.test(rawSrc)) continue
+        const resolved = resolveRelativePath(filePath, rawSrc)
+        const key = assets[resolved] ? resolved : assets[rawSrc] ? rawSrc : null
+        if (!key) continue
+        img.dataset.browseOrigSrc = rawSrc
+        const nextUrl = getUrl(key, assets[key])
+        if (img.getAttribute('src') !== nextUrl) img.src = nextUrl
       }
     }
 
-    // Intercept clicks on relative .md links to push another stacked Explore preview panel
+    hydrate()
+    const observer = typeof MutationObserver !== 'undefined' ? new MutationObserver(hydrate) : null
+    observer?.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] })
+    return () => {
+      observer?.disconnect()
+      for (const entry of urlCache.values()) {
+        if (entry.revoke) URL.revokeObjectURL(entry.url)
+      }
+    }
+  }, [filePath, assets])
+
+  // Intercept clicks on rendered [[wikilink]] pills and relative .md <a> links to push another stacked panel
+  useEffect(() => {
+    const el = hostRef.current
+    if (!el) return
     const handleClick = (e: MouseEvent) => {
-      const anchor = (e.target as HTMLElement | null)?.closest('a')
+      const targetEl = e.target as HTMLElement | null
+      if (!targetEl) return
+
+      const wikiEl = targetEl.closest<HTMLElement>('.wikilink, .wikilink__group')
+      if (wikiEl) {
+        const rawText = wikiEl.textContent?.trim() ?? ''
+        // If the link is inside a paragraph with `[[target|alias]]`, extract the target before `|` if present
+        const bracketMatch = /\[\[([^\]]+)\]\]/.exec(wikiEl.parentElement?.textContent ?? '')
+        const candidate =
+          findByTarget(rawText) ??
+          (bracketMatch ? findByTarget(bracketMatch[1]) : null)
+        if (candidate) {
+          e.preventDefault()
+          e.stopPropagation()
+          onOpenFile({ path: candidate.path, title: candidate.title })
+          return
+        }
+      }
+
+      const anchor = targetEl.closest('a')
       if (!anchor) return
       const href = anchor.getAttribute('href') ?? ''
       if (!href || /^https?:|^mailto:/i.test(href)) return
@@ -161,14 +262,23 @@ function DeckMarkdownPreview({
       )
       if (target) {
         e.preventDefault()
+        e.stopPropagation()
         onOpenFile({ path: target.path, title: target.title })
       }
     }
     el.addEventListener('click', handleClick)
     return () => el.removeEventListener('click', handleClick)
-  }, [markdown, filePath, assets, allMdFiles, onOpenFile])
+  }, [filePath, allMdFiles, findByTarget, onOpenFile])
 
-  return <div ref={hostRef} className="card-inbox__body fr-browse-preview__body" />
+  return (
+    <div
+      ref={hostRef}
+      className="quicklook__page fr-browse-preview__body"
+      data-card-sides={cardSides ?? undefined}
+    >
+      {body.trim() === '' && <p className="editor-msg">{unit('Empty page')}</p>}
+    </div>
+  )
 }
 
 function relativeAssetName(filePath: string, assetPath: string): string {

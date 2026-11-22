@@ -398,31 +398,31 @@ function createDemoFriendsService(deps: FriendsServiceDeps): FriendsService {
     'Biochem/ATP Synthase.md': {
       title: 'ATP Synthase',
       markdown:
-        'How does **ATP Synthase** ($F_0 F_1$ complex) couple the proton gradient to ATP synthesis?\n---\nProtons flow down their electrochemical gradient through the $F_0$ channel, spinning the $c$-ring and $\\gamma$-stalk. Conformational changes in the three $F_1$ $\\beta$-subunits cycle through **Open → Loose → Tight** states to phosphorylate ADP + $P_i$ → ATP.\n\n- Inhibited by **oligomycin** (blocks $F_0$ proton channel)\n- Uncouplers (e.g., DNP, thermogenin/UCP1) dissipate the gradient as heat',
+        '# ATP Synthase\n\nHow does **ATP Synthase** (F₀F₁ complex) couple the proton gradient to ATP synthesis?\n\n---\n\nProtons flow down their electrochemical gradient through the F₀ channel, spinning the c-ring and γ-stalk. Conformational changes in the three F₁ β-subunits cycle through **Open → Loose → Tight** states to phosphorylate ADP + Pᵢ → ATP.\n\n- Inhibited by **oligomycin** (blocks F₀ proton channel)\n- Uncouplers (e.g., DNP, thermogenin/UCP1) dissipate the gradient as heat\n- Related: [[PFK-1 Regulation]]',
       assetPaths: [],
     },
     'Biochem/PFK-1 Regulation.md': {
       title: 'PFK-1 Regulation',
       markdown:
-        'What are the key allosteric regulators of **PFK-1** (the committed step of glycolysis)?\n---\n- **Activators:** Fructose-2,6-bisphosphate (most potent), AMP, ADP\n- **Inhibitors:** ATP, Citrate, low pH ($H^+$)\n\nRemember: insulin raises F-2,6-BP via PFK-2 activation; glucagon lowers it via PKA phosphorylation.',
+        '# PFK-1 Regulation\n\nWhat are the key allosteric regulators of **PFK-1** (the committed step of glycolysis)?\n\n---\n\n- **Activators:** Fructose-2,6-bisphosphate (most potent), AMP, ADP\n- **Inhibitors:** ATP, Citrate, low pH (H⁺)\n\nRemember: insulin raises F-2,6-BP via PFK-2 activation; glucagon lowers it via PKA phosphorylation.',
       assetPaths: [],
     },
     'Biochem/Henderson-Hasselbalch.md': {
       title: 'Henderson-Hasselbalch',
       markdown:
-        'Write the **Henderson-Hasselbalch equation** and state what happens when $[A^-] = [HA]$.\n---\n$$\\text{pH} = \\text{p}K_a + \\log_{10}\\frac{[A^-]}{[HA]}$$\n\nWhen $[A^-] = [HA]$, $\\log_{10}(1) = 0$, so **$\\text{pH} = \\text{p}K_a$** (maximum buffering capacity).',
+        '# Henderson-Hasselbalch\n\nWrite the **Henderson-Hasselbalch equation** and state what happens when [A⁻] = [HA].\n\n---\n\n**pH = pKₐ + log₁₀([A⁻] / [HA])**\n\nWhen [A⁻] = [HA], log₁₀(1) = 0, so **pH = pKₐ** (maximum buffering capacity).',
       assetPaths: [],
     },
     'Spanish/Subjunctive Triggers.md': {
       title: 'Subjunctive Triggers',
       markdown:
-        'What does the **WEIRDO** acronym stand for in Spanish subjunctive triggers?\n---\n- **W**ishes / desires (*esperar que*, *querer que*)\n- **E**motions (*alegrarse de que*, *temer que*)\n- **I**mpersonal expressions (*es importante que*)\n- **R**ecommendations (*sugerir que*, *recomendar que*)\n- **D**oubt / denial (*dudar que*, *no creer que*)\n- **O**jalá (*ojalá que*)',
+        '# Subjunctive Triggers\n\nWhat does the **WEIRDO** acronym stand for in Spanish subjunctive triggers?\n\n---\n\n- **W**ishes / desires (*esperar que*, *querer que*)\n- **E**motions (*alegrarse de que*, *temer que*)\n- **I**mpersonal expressions (*es importante que*)\n- **R**ecommendations (*sugerir que*, *recomendar que*)\n- **D**oubt / denial (*dudar que*, *no creer que*)\n- **O**jalá (*ojalá que*)',
       assetPaths: [],
     },
     'README.md': {
       title: 'README',
       markdown:
-        '# Maya\'s Med Notes\n\nHigh-yield spaced repetition cards for **Biochemistry** and **Spanish**.\n\n- `Biochem/` — Metabolism, bioenergetics, and acid-base equilibrium\n- `Spanish/` — Subjunctive mood & verb drills',
+        '# Maya\'s Med Notes\n\nHigh-yield spaced repetition cards for **Biochemistry** and **Spanish**.\n\n- `Biochem/` — [[ATP Synthase]], [[PFK-1 Regulation]], [[Henderson-Hasselbalch]]\n- `Spanish/` — [[Subjunctive Triggers]]',
       assetPaths: [],
     },
   }

@@ -1,15 +1,23 @@
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { makeAssetResolver } from '@shared/assetLookup'
 import type { BrowsableVault, DeckFilePayload, DeckTreeFile, SharedCardItem } from '@shared/friendsApi'
+import { splitFrontmatter } from '@shared/frontmatterSplit'
 import { NO_LINK_PILLS } from '@shared/linkPills'
 import '@client/editor/card/card.css'
 import '@client/review/cardScreens.css'
+import { CARD_LINK_ATTR } from '@client/editor/card/cardRender'
 import type { WikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
 import { swipeIsOurs } from '../../app/edgeSwipe'
 import { sheetMotion, type SheetMotion } from '../../explore/sheetMotion'
 import '../../explore/explore.css'
 import '../../search/search.css'
+import '../../media/mediaLine.css'
+import '../../page/reader.css'
 import { drawLocalCard } from '../../media/ui/cardDraw'
+import { attachFolds, type PageFolds } from '../../page/folds'
+import { renderPage, type PageLook } from '../../page/pageRender'
+import { uiSlicer } from '../../sync/yieldToUi'
 import { browserFacts, whereAmI } from '../../pwa/homeScreen'
 import { AcceptCardSheet, type AcceptTarget } from './AcceptCardSheet'
 import { gistText } from './board'
@@ -555,7 +563,9 @@ function DeckFilePreview({
   const [file, setFile] = useState<DeckFilePayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [sameTitle, setSameTitle] = useState(false)
   const host = useRef<HTMLDivElement>(null)
+  const foldsRef = useRef<PageFolds | null>(null)
 
   useEffect(() => {
     if (!service.browseDeckFile) {
@@ -582,9 +592,27 @@ function DeckFilePreview({
     }
   }, [ownerId, repo, path, service])
 
+  const resolveDeckFile = useCallback(
+    (rawTarget: string): DeckTreeFile | null => {
+      const bare = rawTarget.split('|')[0].split('#')[0].trim()
+      if (!bare) return null
+      const lower = bare.toLowerCase()
+      const noExt = lower.replace(/\.(md|markdown)$/i, '')
+      return (
+        mdFiles.find(
+          (f) =>
+            f.path.toLowerCase() === lower ||
+            f.path.toLowerCase().replace(/\.(md|markdown)$/i, '') === noExt ||
+            f.title.toLowerCase() === noExt,
+        ) ?? null
+      )
+    },
+    [mdFiles],
+  )
+
   const wikilinkSource = useMemo<WikilinkResolveSource>(
     () => ({
-      resolve: null,
+      resolve: (target: string) => resolveDeckFile(target)?.path ?? null,
       records: [],
       folders: [],
       ids: false,
@@ -593,28 +621,24 @@ function DeckFilePreview({
       vault: '',
       subscribe: () => () => {},
     }),
-    [],
+    [resolveDeckFile],
   )
+
+  const isCardFile = useMemo(() => {
+    if (!file) return false
+    const fm = splitFrontmatter(file.markdown)
+    return /(?:^|\n)[ \t]*(?:kind|type)[ \t]*:[ \t]*["']?card["']?[ \t]*(?:\r?\n|$)/i.test(fm.frontmatter)
+  }, [file])
 
   useEffect(() => {
     const el = host.current
     if (!el || !file) return
-    const drawn = drawLocalCard(
-      file.markdown,
-      { sides: 99, shown: 99, next: null },
-      {
-        links: wikilinkSource,
-        files: allPaths,
-        holder: file.path,
-      },
-    )
-    el.replaceChildren(drawn)
-
-    // Hydrate proxied images on demand from the friend's repo via the Worker.
     const urls: string[] = []
     let live = true
-    if (service.browseDeckAsset) {
-      const imgs = [...el.querySelectorAll<HTMLImageElement>('img[data-vault-src]')]
+
+    const hydrateAssets = (root: HTMLElement) => {
+      if (!service.browseDeckAsset) return
+      const imgs = [...root.querySelectorAll<HTMLImageElement>('img[data-vault-src]')]
       for (const img of imgs) {
         const assetPath = img.dataset.vaultSrc
         if (!assetPath) continue
@@ -632,24 +656,112 @@ function DeckFilePreview({
       }
     }
 
+    const fm = splitFrontmatter(file.markdown)
+    if (isCardFile) {
+      foldsRef.current?.destroy()
+      foldsRef.current = null
+      setSameTitle(false)
+      const drawn = drawLocalCard(
+        fm.body,
+        { sides: 99, shown: 99, next: null },
+        {
+          links: wikilinkSource,
+          files: allPaths,
+          holder: file.path,
+        },
+      )
+      el.replaceChildren(drawn)
+      hydrateAssets(el)
+    } else {
+      const resolveAsset = makeAssetResolver(allPaths)
+      const holderFolder = folderOfPath(file.path)
+      const asset = (src: string): string | null => {
+        if (!src || /^[a-z][a-z0-9+.-]*:/i.test(src)) return null
+        const fromRoot = src.startsWith('/')
+        const target = src
+          .replace(/^\/+/, '')
+          .split('/')
+          .map((part) => {
+            try {
+              return decodeURIComponent(part)
+            } catch {
+              return part
+            }
+          })
+          .join('/')
+        return resolveAsset(target, fromRoot ? undefined : holderFolder)
+      }
+      const look: PageLook = {
+        link(inner) {
+          const pipe = inner.indexOf('|')
+          const rawTarget = pipe >= 0 ? inner.slice(0, pipe).trim() : inner.trim()
+          const alias = pipe >= 0 ? inner.slice(pipe + 1).trim() : ''
+          const hit = resolveDeckFile(rawTarget)
+          if (hit !== null) {
+            return {
+              label: alias || hit.title,
+              open: { kind: 'page', path: hit.path },
+            }
+          }
+          return {
+            label: alias || rawTarget.split('#')[0].trim() || inner,
+            open: null,
+            missing: `Missing page · ${rawTarget}`,
+          }
+        },
+        embed(inner) {
+          const rawTarget = inner.split('|')[0].trim()
+          const resolved = asset(rawTarget)
+          if (resolved !== null && /\.(?:png|jpe?g|webp|gif|svg|avif)$/i.test(resolved)) {
+            return { kind: 'picture', path: resolved, alt: rawTarget }
+          }
+          return { kind: 'text', text: inner }
+        },
+        asset,
+        card(cardText) {
+          return drawLocalCard(
+            cardText,
+            { sides: 99, shown: 99, next: null },
+            { links: wikilinkSource, files: allPaths, holder: file.path },
+          )
+        },
+      }
+      void (async () => {
+        await renderPage(fm.body, look, el, uiSlicer(), () => live)
+        if (!live) return
+        foldsRef.current?.destroy()
+        foldsRef.current = attachFolds(el, { title: file.title })
+        foldsRef.current.apply()
+        const head = el.firstElementChild
+        setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === file.title.trim().toLowerCase())
+        hydrateAssets(el)
+      })()
+    }
+
     return () => {
       live = false
+      foldsRef.current?.destroy()
+      foldsRef.current = null
       for (const u of urls) URL.revokeObjectURL(u)
     }
-  }, [file, allPaths, wikilinkSource, ownerId, repo, service])
+  }, [file, isCardFile, allPaths, wikilinkSource, resolveDeckFile, ownerId, repo, service])
 
   const handleTap = (e: React.MouseEvent) => {
-    const target = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-path], [data-target], .wikilink') : null
-    if (!target) return
-    const rawTarget = target.dataset.path ?? target.dataset.target ?? target.textContent?.trim() ?? ''
+    const el = e.target instanceof Element ? e.target.closest<HTMLElement>(`a, [${CARD_LINK_ATTR}], [data-path], [data-target], .wikilink`) : null
+    if (!el) return
+    if (el instanceof HTMLAnchorElement && el.target === '_blank') return
+    const openKind = el.dataset.open
+    if (openKind === 'page' && el.dataset.path) {
+      const hit = resolveDeckFile(el.dataset.path)
+      if (hit) {
+        e.preventDefault()
+        onOpenLinkedFile(hit)
+      }
+      return
+    }
+    const rawTarget = el.getAttribute(CARD_LINK_ATTR) ?? el.dataset.path ?? el.dataset.target ?? el.textContent?.trim() ?? ''
     if (!rawTarget) return
-    const lower = rawTarget.toLowerCase().replace(/\.md$/i, '')
-    const hit = mdFiles.find(
-      (f) =>
-        f.path.toLowerCase() === rawTarget.toLowerCase() ||
-        f.path.toLowerCase().replace(/\.md$/i, '') === lower ||
-        f.title.toLowerCase() === lower,
-    )
+    const hit = resolveDeckFile(rawTarget)
     if (hit) {
       e.preventDefault()
       onOpenLinkedFile(hit)
@@ -660,7 +772,7 @@ function DeckFilePreview({
     <article className="reader explore-sheet__reader fr-browse-preview" aria-label={title}>
       <div className="fr-browse-preview__bar">
         <div className="fr-browse-preview__meta">
-          <h2 className="reader__title" style={{ margin: 0 }}>
+          <h2 className={sameTitle ? 'reader__title reader__title--same' : 'reader__title'} style={{ margin: 0 }}>
             {file?.title ?? title}
           </h2>
           <span className="muted" style={{ fontSize: 12 }}>
@@ -679,7 +791,7 @@ function DeckFilePreview({
           {error}
         </p>
       )}
-      <div className="reader__body card__body" ref={host} onClick={handleTap} />
+      <div className={isCardFile ? 'card-view__card card__body' : 'reader__body'} ref={host} onClick={handleTap} />
     </article>
   )
 }
