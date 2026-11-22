@@ -9,6 +9,7 @@ describe('packConfig', () => {
     expect(config.extraMetadata.version).toBe('2.10.0')
     expect(config.dmg.artifactName).toBe('${productName}-2.10-arm64.dmg')
     expect(config.nsis.artifactName).toBe('${productName}-2.10-win-x64-setup.${ext}')
+    expect(config.linux.artifactName).toBe('${productName}-2.10-linux-${arch}.${ext}')
   })
 
   it('keeps all three numbers when the third is not 0', () => {

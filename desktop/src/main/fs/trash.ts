@@ -1,4 +1,4 @@
-import { lstat, rename, stat } from 'node:fs/promises'
+import { lstat, rename, stat, unlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import type { PutBackResponse } from '@shared/types'
@@ -28,13 +28,21 @@ type DevOf = (p: string) => Promise<{ dev: number }>
  */
 export async function trashFolderOf(p: string, dev: number, devOf: DevOf = stat): Promise<string> {
   const home = homedir()
-  if ((await devOf(home).catch(() => null))?.dev === dev) return path.join(home, '.Trash')
+  const isLinux = process.platform === 'linux'
+  if ((await devOf(home).catch(() => null))?.dev === dev) {
+    if (isLinux) {
+      const dataHome = process.env.XDG_DATA_HOME?.trim() || path.join(home, '.local', 'share')
+      return path.join(dataHome, 'Trash', 'files')
+    }
+    return path.join(home, '.Trash')
+  }
   let mount = path.dirname(p)
   for (let up = path.dirname(mount); up !== mount; up = path.dirname(mount)) {
     if ((await devOf(up).catch(() => null))?.dev !== dev) break
     mount = up
   }
-  return path.join(mount, '.Trashes', String(process.getuid?.() ?? 0))
+  const uid = String(process.getuid?.() ?? 0)
+  return isLinux ? path.join(mount, `.Trash-${uid}`, 'files') : path.join(mount, '.Trashes', uid)
 }
 
 /** How far before the delete began, and after it ended, the Trash's time stamp of a clash may be. */
@@ -115,6 +123,10 @@ export async function putBack(req: unknown): Promise<PutBackResponse> {
     if (src === null) throw new BridgeFailure('NOT_FOUND', 'it is no longer in the Trash', { path: from })
     await requireFreeTarget(src, dest)
     await rename(from, dest)
+    if (process.platform === 'linux') {
+      const infoFile = path.join(path.dirname(path.dirname(from)), 'info', `${path.basename(from)}.trashinfo`)
+      await unlink(infoFile).catch(() => {})
+    }
     return { path: dest, kind: src.isDirectory() ? 'dir' : 'file' }
   })
 }

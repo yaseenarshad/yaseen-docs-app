@@ -1,6 +1,32 @@
 #!/bin/sh
-# The `yaseendocs` command (YAZ-1617): the app's own Electron run as plain Node — VS Code's `code` pattern.
-# Lives at Contents/Resources/bin/yaseendocs; a symlink from anywhere resolves back here.
+# The `yaseendocs` command (YAZ-1617, YAZ-6314): the app's own Electron run as plain Node — VS Code's `code` pattern.
+# macOS:  Contents/Resources/bin/yaseendocs -> Contents/MacOS/Yaseen Docs
+# Linux:  <appDir>/resources/bin/yaseendocs -> <appDir>/yaseen-docs
+# A symlink from anywhere (e.g. /usr/local/bin/yaseendocs or ~/.local/bin/yaseendocs) resolves back here.
 SELF="$(readlink -f "$0")"
-CONTENTS="$(dirname "$(dirname "$(dirname "$SELF")")")"
-ELECTRON_RUN_AS_NODE=1 exec "$CONTENTS/MacOS/Yaseen Docs" "$CONTENTS/Resources/app.asar/out/main/cli.js" "$@"
+BIN_DIR="$(dirname "$SELF")"
+RES_DIR="$(dirname "$BIN_DIR")"
+ROOT_DIR="$(dirname "$RES_DIR")"
+
+if [ -x "$ROOT_DIR/MacOS/Yaseen Docs" ]; then
+  APP_BIN="$ROOT_DIR/MacOS/Yaseen Docs"
+elif [ -x "$ROOT_DIR/yaseen-docs" ]; then
+  APP_BIN="$ROOT_DIR/yaseen-docs"
+elif [ -n "${YASEEN_DOCS_EXECUTABLE:-}" ] && [ -x "$YASEEN_DOCS_EXECUTABLE" ]; then
+  APP_BIN="$YASEEN_DOCS_EXECUTABLE"
+else
+  echo "yaseendocs: could not find Yaseen Docs executable next to $ROOT_DIR" >&2
+  exit 1
+fi
+
+if [ -f "$RES_DIR/app.asar" ]; then
+  CLI_ENTRY="$RES_DIR/app.asar/out/main/cli.js"
+elif [ -f "$RES_DIR/app/out/main/cli.js" ]; then
+  CLI_ENTRY="$RES_DIR/app/out/main/cli.js"
+else
+  echo "yaseendocs: could not find cli.js under $RES_DIR" >&2
+  exit 1
+fi
+
+export YASEEN_DOCS_EXECUTABLE="${YASEEN_DOCS_EXECUTABLE:-$APP_BIN}"
+ELECTRON_RUN_AS_NODE=1 exec "$APP_BIN" "$CLI_ENTRY" "$@"

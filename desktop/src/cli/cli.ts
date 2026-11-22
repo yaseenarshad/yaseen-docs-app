@@ -567,13 +567,15 @@ function report(io: Io, flags: Map<string, string | true>, page: FoundPage): voi
 }
 
 /**
- * macOS `open`, Windows `explorer.exe` (no shell, so a `&` in a path is a letter): the link goes to the app as a click
- * on it would. `explorer.exe` answers 1 also when it opened the link, so on Windows only a failed start counts.
+ * macOS `open`, Windows `explorer.exe`, Linux `xdg-open` (no shell, so a `&` in a path is a letter): the link goes
+ * to the app as a click on it would. `explorer.exe` answers 1 also when it opened the link, so on Windows only a
+ * failed start counts.
  */
 const openLink = (link: string): Promise<void> =>
   new Promise((done, fail) => {
     const win = process.platform === 'win32'
-    execFile(win ? 'explorer.exe' : 'open', [link], (err) =>
+    const opener = win ? 'explorer.exe' : process.platform === 'linux' ? 'xdg-open' : 'open'
+    execFile(opener, [link], (err) =>
       err === null || (win && typeof err.code === 'number') ? done() : fail(new Error(`the page is ready, but the app could not be asked to open it: ${err.message}`)),
     )
   })

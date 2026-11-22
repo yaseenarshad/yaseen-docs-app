@@ -14,6 +14,7 @@ export function packConfig(version) {
       mac: { bundleShortVersion: short },
       dmg: { artifactName: `\${productName}-${short}-arm64.dmg` },
       nsis: { artifactName: `\${productName}-${short}-win-x64-setup.\${ext}` },
+      linux: { artifactName: `\${productName}-${short}-linux-\${arch}.\${ext}` },
     },
   }
 }

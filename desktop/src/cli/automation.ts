@@ -91,7 +91,7 @@ async function inputText(value: string, io: Io): Promise<string> {
 /** Launch this CLI's owning executable, never an app found by name or a user's shell command. */
 async function startApp(profile: string): Promise<void> {
   const executable = process.env.YASEEN_DOCS_EXECUTABLE ?? process.execPath
-  if (!isAbsolute(executable) || (!process.env.YASEEN_DOCS_EXECUTABLE && !/^(Yaseen Docs|Yaseen Docs\.exe|Electron|electron\.exe)$/.test(basename(executable)))) {
+  if (!isAbsolute(executable) || (!process.env.YASEEN_DOCS_EXECUTABLE && !/^(Yaseen Docs|Yaseen Docs\.exe|yaseen-docs|Electron|electron|electron\.exe)$/.test(basename(executable)))) {
     throw new AutomationFailure('START_UNAVAILABLE', 'Start the dev app with this profile, or set YASEEN_DOCS_EXECUTABLE to its executable.')
   }
   const env: NodeJS.ProcessEnv = { ...process.env, YASEEN_DOCS_USER_DATA_DIR: profile }
@@ -100,7 +100,12 @@ async function startApp(profile: string): Promise<void> {
   if (/^Electron(?:\.exe)?$/i.test(basename(executable)) && !entry) {
     throw new AutomationFailure('START_UNAVAILABLE', 'Start the dev app with HMR first, or supply YASEEN_DOCS_APP_ENTRY.')
   }
-  const child = spawn(executable, entry ? [entry] : [], { detached: true, stdio: 'ignore', env })
+  const args: string[] = []
+  if (process.platform === 'linux' && (process.env.YASEEN_DOCS_NO_SANDBOX === '1' || process.getuid?.() === 0)) {
+    args.push('--no-sandbox')
+  }
+  if (entry) args.push(entry)
+  const child = spawn(executable, args, { detached: true, stdio: 'ignore', env })
   await new Promise<void>((done, failed) => {
     child.once('spawn', done)
     child.once('error', () => failed(new AutomationFailure('START_FAILED', 'Docs could not start. Check that its executable exists and can run.')))

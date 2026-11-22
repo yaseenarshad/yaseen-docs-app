@@ -127,8 +127,9 @@ function handleLink(url: string): void {
   manager.routeToFile(parsed.path, parsed.root)
 }
 
-/** macOS fires `open-url` before `ready` on cold start: queue until `restore()` ran, then flush. */
+/** macOS fires `open-url` before `ready` on cold start; Linux/Windows pass protocol URLs in `process.argv`. */
 const links = createLinkQueue(handleLink)
+for (const url of process.argv.slice(1).filter(isAppLink)) links.push(url)
 app.on('open-url', (event, url) => {
   event.preventDefault()
   links.push(url)

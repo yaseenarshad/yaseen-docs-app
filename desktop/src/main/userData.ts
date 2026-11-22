@@ -19,14 +19,18 @@ export function applyUserDataOverride(app: UserDataPathOwner, value: string | un
 }
 
 /**
- * The app's user-data folder WITHOUT Electron (YAZ-2556 D2), for the `yaseendocs` command: what
- * `app.getPath('userData')` answers in `index.ts`. The override when it is set, else where
+ * The app's user-data folder WITHOUT Electron (YAZ-2556 D2, YAZ-6314), for the `yaseendocs` command:
+ * what `app.getPath('userData')` answers in `index.ts`. The override when it is set, else where
  * Electron puts an app of this name — `~/Library/Application Support/Yaseen Docs` on macOS,
- * `%APPDATA%\Yaseen Docs` on Windows, the two systems the app ships for.
+ * `%APPDATA%\Yaseen Docs` on Windows, and `${XDG_CONFIG_HOME:-~/.config}/Yaseen Docs` on Linux.
  */
 export function userDataDir(env: Record<string, string | undefined>, platform: NodeJS.Platform, home: string): string {
   const override = overridePath(env.YASEEN_DOCS_USER_DATA_DIR)
   if (override !== null) return override
   if (platform === 'win32') return win32.join(env.APPDATA ?? win32.join(home, 'AppData', 'Roaming'), APP_NAME)
+  if (platform === 'linux') {
+    const xdg = env.XDG_CONFIG_HOME?.trim()
+    return posix.join(xdg || posix.join(home, '.config'), APP_NAME)
+  }
   return posix.join(home, 'Library', 'Application Support', APP_NAME)
 }
