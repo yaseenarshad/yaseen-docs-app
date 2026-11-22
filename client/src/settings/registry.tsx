@@ -34,7 +34,7 @@ import type { SystemHotkey } from '@shared/macosHotkeys'
 import { DocumentZoom } from '../editor/DocumentZoom'
 import { useExploreZoom } from '../explore/exploreZoom'
 import { api } from '../api'
-import { CloudSyncSheet } from './CloudSyncSheet'
+import { CardsSetupWizard } from './CardsSetupWizard'
 import { SyncVaultControl, type SettingsSyncCtx } from './SyncVaultControl'
 import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, EXPLORE_WIDTH_MAX, EXPLORE_WIDTH_MIN, EXPLORE_WIDTH_START, PAGE_WIDTH_MAX, PAGE_WIDTH_MIN, PAGE_WIDTH_START, type AutoSyncStatus, type ContentStep, type ContentWidth, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, CELL_NOTE_PREVIEW_LINES_MAX, CELL_NOTE_PREVIEW_LINES_MIN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type FolderPagesSettings, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
 import type { IconRule } from '@shared/vaultIcons'
@@ -820,29 +820,35 @@ function CardsControl({
   vault,
   sync,
   root,
+  readOnlyVault,
+  settings,
+  onChange,
+  openCourse,
 }: {
   review: NonNullable<SettingsCtx['review']>
   ids: SettingsCtx['ids']
   vault?: string
   sync?: SettingsCtx['sync']
   root?: string
+  readOnlyVault?: SettingsCtx['readOnlyVault']
+  settings: SettingsState
+  onChange: (next: SettingsState) => void
+  openCourse?: () => void
 }) {
   const [asking, setAsking] = useState(false)
-  const [cloudCheck, setCloudCheck] = useState<AutoSyncStatus | null>(null)
+  const [wizard, setWizard] = useState<{ autoSync: AutoSyncStatus; alreadySynced: boolean } | null>(null)
   const on = review.settings.enabled && ids?.enabled !== false
 
-  // YAZ-6190 D5: 3rd check after IDs and Cards — if neither Docs App Sync nor GitHub AutoSync syncs this vault, educate + offer 1-click setup.
-  const checkCloudSync = async () => {
-    if (sync?.status?.enabled === true) return
-    if (sync?.autoSync?.vaultSynced === true) return
+  // YAZ-6225: 5-step Cards onboarding walkthrough after Page IDs and Cards turn on.
+  const openWizard = async () => {
     const vaultRoot = root ?? sync?.status?.root
     const auto: AutoSyncStatus =
       sync?.autoSync ??
       (vaultRoot !== undefined && typeof api.github.autoSyncStatus === 'function'
         ? await api.github.autoSyncStatus(vaultRoot).catch(() => ({ installed: false, vaultSynced: false, supportsDeepLink: false }))
         : { installed: false, vaultSynced: false, supportsDeepLink: false })
-    if (auto.vaultSynced) return
-    setCloudCheck(auto)
+    const alreadySynced = sync?.status?.enabled === true || auto.vaultSynced === true
+    setWizard({ autoSync: auto, alreadySynced })
   }
 
   return (
@@ -855,7 +861,7 @@ function CardsControl({
           if (next && ids?.enabled === false) setAsking(true)
           else {
             review.save({ ...review.settings, enabled: next })
-            if (next) void checkCloudSync()
+            if (next) void openWizard()
           }
         }}
         ariaLabel="Use cards in this vault"
@@ -871,14 +877,26 @@ function CardsControl({
             void Promise.resolve(ids.set(true, letters)).then((saved) => {
               if (saved !== false) {
                 review.save({ ...review.settings, enabled: true })
-                void checkCloudSync()
+                void openWizard()
               }
             })
           }}
           onCancel={() => setAsking(false)}
         />
       )}
-      {cloudCheck !== null && <CloudSyncSheet autoSync={cloudCheck} sync={sync} onClose={() => setCloudCheck(null)} />}
+      {wizard !== null && (
+        <CardsSetupWizard
+          autoSync={wizard.autoSync}
+          alreadySynced={wizard.alreadySynced}
+          sync={sync}
+          root={root ?? sync?.status?.root}
+          readOnlyVault={readOnlyVault}
+          settings={settings}
+          onChange={onChange}
+          openCourse={openCourse}
+          onClose={() => setWizard(null)}
+        />
+      )}
     </>
   )
 }
@@ -2481,7 +2499,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             label: 'Use cards in this vault',
             hint: 'Cards in this vault come back in the Inbox when they are due. An archived card does not: find it in a folder page\'s table (+ › Card table, Status), and unarchive it there or from its ⋯ menu.',
             keywords: REVIEW_KEYWORDS,
-            render: ({ review, ids, vaultName, sync, textFormatting }) => review && <CardsControl review={review} ids={ids} vault={vaultName} sync={sync} root={sync?.status?.root ?? textFormatting?.activeRoot} />,
+            render: ({ review, ids, vaultName, sync, textFormatting, readOnlyVault, settings, onChange, openCourse }) =>
+              review && (
+                <CardsControl
+                  review={review}
+                  ids={ids}
+                  vault={vaultName}
+                  sync={sync}
+                  root={sync?.status?.root ?? textFormatting?.activeRoot}
+                  readOnlyVault={readOnlyVault}
+                  settings={settings}
+                  onChange={onChange}
+                  openCourse={openCourse}
+                />
+              ),
           },
           {
             // YAZ-5154: what the switch adds, closed by default; there with Cards off too, as it says what On would show.
