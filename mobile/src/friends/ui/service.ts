@@ -786,7 +786,6 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
   const own: OwnNumbers = options.numbers ?? createOwnNumbers(store)
   const baseOrigin = origin.replace(/\/+$/, '')
   const allowedAvatarOrigins = new Set([baseOrigin, DEFAULT_FRIENDS_ORIGIN.replace(/\/+$/, '')])
-  const doFetch = (options.fetch as ((url: string, init?: RequestInit) => Promise<Response>) | undefined) ?? ((u: string, init?: RequestInit) => globalThis.fetch(u, init))
   let forceNextBoard = false
   let stopped = false
 
@@ -808,26 +807,6 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       return null
     }
     return null
-  }
-
-  async function authedAvatarRequest<T>(method: 'PUT' | 'DELETE', body?: unknown, retry = true): Promise<T> {
-    const token = await api.ensureSession()
-    const headers: Record<string, string> = { authorization: `Bearer ${token}` }
-    if (body !== undefined) headers['content-type'] = 'application/json'
-    const res = await doFetch(`${baseOrigin}/api/friends/avatar`, {
-      method,
-      headers,
-      ...(body !== undefined && { body: JSON.stringify(body) }),
-    })
-    if (res.status === 401 && retry) {
-      api.clearSession()
-      return authedAvatarRequest<T>(method, body, false)
-    }
-    if (!res.ok) {
-      const errBody = (await res.json().catch(() => null)) as { error?: string } | null
-      throw new FriendsApiError(res.status, errBody?.error ?? 'request_failed')
-    }
-    return (await res.json()) as T
   }
   let lastSentJson: string | null = null
   let lastSentAt: number | null = null
@@ -1435,26 +1414,18 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     },
     async uploadAvatar(payload) {
       try {
-        const ext = api as FriendsApiClient & {
-          uploadAvatar?: (p: { contentType: string; dataBase64: string }) => Promise<{ ok: true; avatarUrl: string; hasCustomAvatar: true }>
-        }
-        const res = ext.uploadAvatar
-          ? await ext.uploadAvatar(payload)
-          : await authedAvatarRequest<{ ok: true; avatarUrl: string; hasCustomAvatar: true }>('PUT', payload)
+        const res = await api.uploadAvatar(payload)
         forceNextBoard = true
-        return { ok: true, avatarUrl: safeAvatar(res.avatarUrl) ?? res.avatarUrl, hasCustomAvatar: true }
+        const url = safeAvatar(res.avatarUrl)
+        if (url === null) return { ok: false, error: 'invalid_avatar_url' }
+        return { ok: true, avatarUrl: url, hasCustomAvatar: true }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'upload_failed' }
       }
     },
     async deleteAvatar() {
       try {
-        const ext = api as FriendsApiClient & {
-          deleteAvatar?: () => Promise<{ ok: true; avatarUrl: string | null; hasCustomAvatar: false }>
-        }
-        const res = ext.deleteAvatar
-          ? await ext.deleteAvatar()
-          : await authedAvatarRequest<{ ok: true; avatarUrl: string | null; hasCustomAvatar: false }>('DELETE')
+        const res = await api.deleteAvatar()
         forceNextBoard = true
         return { ok: true, avatarUrl: safeAvatar(res.avatarUrl), hasCustomAvatar: false }
       } catch (err) {
