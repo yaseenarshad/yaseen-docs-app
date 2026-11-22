@@ -189,7 +189,7 @@ jobs:
             "$1" open --root "$2" --profile "$3" --wait-ms 25000
             STATUS="$("$1" app status --profile "$3" --json)"
             echo "$STATUS"
-            echo "$STATUS" | grep -q "\"running\": true"
+            echo "$STATUS" | jq -e '.ok == true and .value.running == true and .value.packaged == true' > /dev/null
           ' _ "$CLI" "$TMP/vault" "$TMP/profile"
 
   # The required status. `if: always()` so a failed or cancelled job above fails this one instead of skipping it.
