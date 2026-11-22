@@ -123,6 +123,91 @@ export type MintRepoTokenResult =
   | { ok: true; token: string; expiresAt: string | null }
   | { ok: false; status: number; error: string }
 
+export type VerifyInstallationResult =
+  | { ok: true }
+  | { ok: false; status: number; error: string }
+
+const STRICT_REPO_SLUG_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
+
+/**
+ * Verifies with GitHub (using the App JWT) that:
+ * 1. `installationId` exists and belongs to `ownerGithubLogin` (and `ownerGithubId` when present),
+ * 2. `repoSlug` is owned by `ownerGithubLogin` (`repoOwner === ownerGithubLogin`), and
+ * 3. `repoName` is actually accessible under `installationId` (verified via a scoped read-only token check).
+ *
+ * Always fails closed (returns 403) if GitHub App credentials are missing or any check fails.
+ */
+export async function verifyInstallationRepoOwnership(
+  env: GithubAppEnv,
+  installationId: number,
+  repoSlug: string,
+  ownerGithubId: number,
+  ownerGithubLogin: string,
+  fetchFn: Fetch = (u, init) => globalThis.fetch(u, init),
+  nowSec: number = Math.floor(Date.now() / 1000),
+): Promise<VerifyInstallationResult> {
+  const appId = env.GITHUB_APP_ID?.trim()
+  const privateKey = env.GITHUB_APP_PRIVATE_KEY?.trim()
+  if (!appId || !privateKey) {
+    return { ok: false, status: 403, error: 'github_app_not_configured' }
+  }
+  if (!Number.isInteger(installationId) || installationId <= 0 || !STRICT_REPO_SLUG_RE.test(repoSlug)) {
+    return { ok: false, status: 400, error: 'bad_vault' }
+  }
+  const [repoOwner, repoName] = repoSlug.split('/')
+  const expectedLogin = ownerGithubLogin.trim().toLowerCase()
+  if (!expectedLogin || repoOwner.toLowerCase() !== expectedLogin) {
+    return { ok: false, status: 403, error: 'repo_owner_mismatch' }
+  }
+
+  let jwt: string
+  try {
+    jwt = await signGithubAppJwt(appId, privateKey, nowSec)
+  } catch {
+    return { ok: false, status: 403, error: 'github_app_key_invalid' }
+  }
+
+  let instRes: Response
+  try {
+    instRes = await fetchFn(`${GITHUB_API}/app/installations/${installationId}`, {
+      method: 'GET',
+      headers: {
+        accept: 'application/vnd.github+json',
+        authorization: `Bearer ${jwt}`,
+        'user-agent': 'yaseen-docs-worker',
+        'x-github-api-version': '2022-11-28',
+      },
+    })
+  } catch {
+    return { ok: false, status: 403, error: 'installation_verification_failed' }
+  }
+  if (!instRes.ok) {
+    return { ok: false, status: 403, error: 'installation_forbidden' }
+  }
+
+  let instData: { account?: { id?: unknown; login?: unknown } }
+  try {
+    instData = (await instRes.json()) as { account?: { id?: unknown; login?: unknown } }
+  } catch {
+    return { ok: false, status: 403, error: 'installation_forbidden' }
+  }
+  const accountLogin = typeof instData?.account?.login === 'string' ? instData.account.login.trim().toLowerCase() : ''
+  const accountId = typeof instData?.account?.id === 'number' ? instData.account.id : null
+  if (accountLogin !== expectedLogin) {
+    return { ok: false, status: 403, error: 'installation_owner_mismatch' }
+  }
+  if (accountId !== null && accountId !== ownerGithubId) {
+    return { ok: false, status: 403, error: 'installation_owner_mismatch' }
+  }
+
+  // Verify the specific repo is actually granted to this installation
+  const tokenCheck = await mintReadOnlyRepoToken(env, installationId, repoName, fetchFn, nowSec)
+  if (!tokenCheck.ok) {
+    return { ok: false, status: 403, error: 'repo_not_accessible' }
+  }
+  return { ok: true }
+}
+
 /**
  * Mints a short-lived, single-repo, read-only (`contents: read`) GitHub App installation access token.
  */

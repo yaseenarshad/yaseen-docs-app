@@ -16,6 +16,7 @@ import type {
 } from '@shared/friendsApi'
 import { api } from '../api'
 import { renderCard } from '../editor/card/cardRender'
+import { useUnit } from '../vault/unitWord'
 import { AcceptCardSheet, type AcceptCardTarget } from './AcceptCardSheet'
 
 export interface BrowseDeckModalProps {
@@ -170,7 +171,20 @@ function DeckMarkdownPreview({
   return <div ref={hostRef} className="card-inbox__body fr-browse-preview__body" />
 }
 
+function relativeAssetName(filePath: string, assetPath: string): string {
+  const cleanAsset = assetPath.replace(/\\/g, '/').replace(/^\/+/, '')
+  const dirParts = filePath.replace(/\\/g, '/').split('/').slice(0, -1)
+  const dirPrefix = dirParts.length > 0 ? `${dirParts.join('/')}/` : ''
+  const rel = dirPrefix && cleanAsset.startsWith(dirPrefix) ? cleanAsset.slice(dirPrefix.length) : cleanAsset
+  const safeParts = rel
+    .split('/')
+    .map((s) => s.trim())
+    .filter((s) => s !== '' && s !== '.' && s !== '..' && !s.startsWith('.'))
+  return safeParts.join('/') || cleanAsset.split('/').pop() || cleanAsset
+}
+
 export function BrowseDeckModal({ friend, vaultRoot, onNotice, onClose }: BrowseDeckModalProps) {
+  const unit = useUnit()
   const vaults: BrowsableVault[] = useMemo(() => friend.browsableVaults ?? [], [friend.browsableVaults])
   const [activeRepo, setActiveRepo] = useState<string>(() => vaults[0]?.repo ?? '')
   const [treeLoading, setTreeLoading] = useState(true)
@@ -276,7 +290,7 @@ export function BrowseDeckModal({ friend, vaultRoot, onNotice, onClose }: Browse
               loadedFile.assetPaths.map(async (assetPath) => {
                 const aRes = await api.friends.browseDeckAsset!(friend.id, activeRepo, assetPath).catch(() => null)
                 if (!aRes || !aRes.ok) return null
-                const name = assetPath.split('/').pop() || assetPath
+                const name = relativeAssetName(loadedFile.path, assetPath)
                 const asset: LoadedAsset = {
                   path: assetPath,
                   name,
@@ -325,7 +339,7 @@ export function BrowseDeckModal({ friend, vaultRoot, onNotice, onClose }: Browse
           const aRes = await api.friends.browseDeckAsset(friend.id, panel.repo, assetPath).catch(() => null)
           if (aRes?.ok) {
             attachments.push({
-              name: assetPath.split('/').pop() || assetPath,
+              name: relativeAssetName(panel.file.path, assetPath),
               mime: aRes.mime,
               dataBase64: aRes.dataBase64,
             })
@@ -472,7 +486,7 @@ export function BrowseDeckModal({ friend, vaultRoot, onNotice, onClose }: Browse
               </div>
             )
           ) : mdFiles.length === 0 ? (
-            <p className="fr-line">No cards or pages in this vault yet.</p>
+            <p className="fr-line">{unit('No cards or pages in this vault yet.')}</p>
           ) : (
             <div className="fr-browse-tree" role="tree" aria-label="Deck files">
               {renderTreeNodes(folderTree)}

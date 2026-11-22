@@ -16,8 +16,8 @@ afterEach(() => {
 const HOME = 'America/New_York'
 const profile = { login: 'yaseen', name: 'Yaseen', avatar: '', nickname: null }
 /** `n` cards, each answered once at `at` (a UTC ms), one second apart. */
-const answered = (n: number, at: number): CardRecord[] =>
-  Array.from({ length: n }, (_, i) => ({ id: `C${i}`, off: false, next: false, reviews: [{ at: new Date(at + i * 1000).toISOString().slice(0, 16) + ':00.000Z', rating: 'good' as const }] }))
+const answered = (n: number, at: number, offset = 0): CardRecord[] =>
+  Array.from({ length: n }, (_, i) => ({ id: `C${offset + i}`, off: false, next: false, reviews: [{ at: new Date(at + i * 1000).toISOString().slice(0, 16) + ':00.000Z', rating: 'good' as const }] }))
 const vaultWith = (cards: CardRecord[]): FriendVault => ({ pages: [{ cards }], settings: DEFAULT_REVIEW_SETTINGS })
 const sum = (s: Pick<FriendStats, 'days'>) => s.days.reduce((n, d) => n + d.cards, 0)
 const daysWithCards = (s: Pick<FriendStats, 'days'>) => s.days.filter((d) => d.cards > 0).map((d) => [d.day, d.cards])
@@ -53,12 +53,12 @@ describe('YAZ-5251: a phone and a Mac in two time zones', () => {
     // The phone is in Los Angeles at 22:30 on 14 November; at home (New York) it is 01:30 on 15 November.
     process.env.TZ = 'America/Los_Angeles'
     const now = Date.parse('2026-11-15T06:30:00Z')
-    const s = friendStats([vaultWith([...answered(3, Date.parse('2026-11-15T04:30:00Z')), ...answered(2, Date.parse('2026-11-15T05:10:00Z'))])], now, HOME)
+    const s = friendStats([vaultWith([...answered(3, Date.parse('2026-11-15T04:30:00Z')), ...answered(2, Date.parse('2026-11-15T05:10:00Z'), 3)])], now, HOME)
     // 23:30 New York (14 Nov) and 00:10 New York (15 Nov): two home days. Today is the home day 15 November.
     expect(s.days[0].day).toBe('2026-11-15')
     expect(daysWithCards(s)).toEqual([['2026-11-15', 2], ['2026-11-14', 3]])
     // The same answers on the phone's own clock are all on 14 November.
-    expect(daysWithCards(friendStats([vaultWith([...answered(3, Date.parse('2026-11-15T04:30:00Z')), ...answered(2, Date.parse('2026-11-15T05:10:00Z'))])], now))).toEqual([['2026-11-14', 5]])
+    expect(daysWithCards(friendStats([vaultWith([...answered(3, Date.parse('2026-11-15T04:30:00Z')), ...answered(2, Date.parse('2026-11-15T05:10:00Z'), 3)])], now))).toEqual([['2026-11-14', 5]])
   })
 
   it('a zone change in Settings: the days already sent stay ("never lower"); the new days follow the new zone', () => {

@@ -348,6 +348,12 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
         const p = profiles[tok]
         return p ? new Response(JSON.stringify(p), { status: 200 }) : new Response(null, { status: 401 })
       }
+      if (url === 'https://api.github.com/app/installations/9001') {
+        return new Response(JSON.stringify({ id: 9001, account: { id: 1, login: 'alice', type: 'User' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
       if (url === 'https://api.github.com/app/installations/9001/access_tokens') {
         mintedCount++
         expect(JSON.parse(String(init.body))).toEqual({ repositories: ['med-notes'], permissions: { contents: 'read' } })
@@ -500,7 +506,7 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
     expect(bobAsset.headers.get('content-type')).toBe('image/png')
     expect(bobAsset.headers.get('cache-control')).toBe('private, max-age=300')
     expect(new Uint8Array(await bobAsset.arrayBuffer())).toEqual(pngBytes)
-    expect(mintedCount).toBe(4)
+    expect(mintedCount).toBe(5)
 
     // DELETE /api/friends/me cleans up deck_vaults and deck_permissions
     const delA = await handle(req('/api/friends/me', { method: 'DELETE', headers: authA }), env, mockFetch)
@@ -509,5 +515,119 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
     const leftPerms = await db.prepare('SELECT COUNT(*) AS cnt FROM deck_permissions WHERE owner_id = ?').bind(1).first<{ cnt: number }>()
     expect(leftVaults?.cnt).toBe(0)
     expect(leftPerms?.cnt).toBe(0)
+  })
+
+  it('rejects confused-deputy installation/repo registration in PUT /api/friends/decks/settings (YAZ-6290)', async () => {
+    const db = makeSqliteD1()
+    const pair = generateKeyPairSync('rsa', { modulusLength: 2048 })
+    const pkcs1Pem = pair.privateKey.export({ type: 'pkcs1', format: 'pem' }) as string
+    const env: Env = {
+      FRIENDS_DB: db,
+      FRIENDS_TOKEN_SECRET: SECRET,
+      GITHUB_APP_ID: '555000',
+      GITHUB_APP_PRIVATE_KEY: pkcs1Pem,
+    }
+
+    const profiles: Record<string, { id: number; login: string; name: string }> = {
+      gh_a: { id: 1, login: 'alice', name: 'Alice' },
+      gh_b: { id: 2, login: 'bob', name: 'Bob' },
+    }
+    const mockFetch = async (url: string, init: RequestInit): Promise<Response> => {
+      if (url === 'https://api.github.com/user') {
+        const tok = ((init.headers as Record<string, string>)?.authorization ?? '').replace(/^Bearer\s+/i, '')
+        const p = profiles[tok]
+        return p ? new Response(JSON.stringify(p), { status: 200 }) : new Response(null, { status: 401 })
+      }
+      if (url === 'https://api.github.com/app/installations/9001') {
+        return new Response(JSON.stringify({ id: 9001, account: { id: 1, login: 'alice', type: 'User' } }), { status: 200 })
+      }
+      if (url === 'https://api.github.com/app/installations/9001/access_tokens') {
+        const parsed = JSON.parse(String(init.body)) as { repositories?: string[] }
+        if (parsed.repositories?.[0] === 'med-notes') {
+          return new Response(JSON.stringify({ token: 'ghs_inst_readonly', expires_at: '2026-11-22T06:00:00Z' }), { status: 201 })
+        }
+        return new Response(JSON.stringify({ message: 'Repository not accessible' }), { status: 422 })
+      }
+      return new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 })
+    }
+
+    const signIn = async (tok: string) =>
+      ((await (await handle(req('/api/friends/session', { method: 'POST', body: JSON.stringify({ githubToken: tok }) }), env, mockFetch)).json()) as { token: string }).token
+
+    const authA = { authorization: `Bearer ${await signIn('gh_a')}` }
+    const authB = { authorization: `Bearer ${await signIn('gh_b')}` }
+
+    // Attack 1: Malicious Bob tries to register Alice's repo + Alice's installationId -> 403, NOT saved
+    const stealAliceRepo = await handle(
+      req('/api/friends/decks/settings', {
+        method: 'PUT',
+        headers: authB,
+        body: JSON.stringify({
+          mode: 'all',
+          vaults: [{ repo: 'alice/med-notes', installationId: 9001, name: 'Stolen' }],
+          allowedFriendIds: [],
+        }),
+      }),
+      env,
+      mockFetch,
+    )
+    expect(stealAliceRepo.status).toBe(403)
+
+    // Attack 2: Malicious Bob tries to pair his own repo name with Alice's installationId -> 403, NOT saved
+    const stealAliceInst = await handle(
+      req('/api/friends/decks/settings', {
+        method: 'PUT',
+        headers: authB,
+        body: JSON.stringify({
+          mode: 'all',
+          vaults: [{ repo: 'bob/med-notes', installationId: 9001, name: 'Spoofed' }],
+          allowedFriendIds: [],
+        }),
+      }),
+      env,
+      mockFetch,
+    )
+    expect(stealAliceInst.status).toBe(403)
+
+    // Verify deck_vaults has 0 rows for Bob and Bob cannot browse via own ownerId
+    const bobVaults = await db.prepare('SELECT COUNT(*) AS cnt FROM deck_vaults WHERE owner_id = ?').bind(2).first<{ cnt: number }>()
+    expect(bobVaults?.cnt).toBe(0)
+    const bobTree = await handle(req('/api/friends/decks/2/tree?repo=alice/med-notes', { method: 'GET', headers: authB }), env, mockFetch)
+    expect(bobTree.status).toBe(403)
+
+    // Attack 3: Unconfigured GitHub App credentials must fail closed (403), never silently trust installationId
+    const noAppEnv: Env = { FRIENDS_DB: db, FRIENDS_TOKEN_SECRET: SECRET }
+    const noAppRes = await handle(
+      req('/api/friends/decks/settings', {
+        method: 'PUT',
+        headers: authA,
+        body: JSON.stringify({
+          mode: 'all',
+          vaults: [{ repo: 'alice/med-notes', installationId: 9001, name: 'Med Notes' }],
+          allowedFriendIds: [],
+        }),
+      }),
+      noAppEnv,
+      mockFetch,
+    )
+    expect(noAppRes.status).toBe(403)
+
+    // Legitimate owner Alice registering her own repo + installationId succeeds (200)
+    const legit = await handle(
+      req('/api/friends/decks/settings', {
+        method: 'PUT',
+        headers: authA,
+        body: JSON.stringify({
+          mode: 'all',
+          vaults: [{ repo: 'alice/med-notes', installationId: 9001, name: 'Med Notes' }],
+          allowedFriendIds: [],
+        }),
+      }),
+      env,
+      mockFetch,
+    )
+    expect(legit.status).toBe(200)
+    const aliceVaults = await db.prepare('SELECT COUNT(*) AS cnt FROM deck_vaults WHERE owner_id = ?').bind(1).first<{ cnt: number }>()
+    expect(aliceVaults?.cnt).toBe(1)
   })
 })

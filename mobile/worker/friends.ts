@@ -28,7 +28,7 @@ import { computeBuddyStreak } from '../../shared/friendsBoard'
 import type { DeckShareMode } from '../../shared/friendsApi'
 import { extractRelativeAssetPaths, sanitizeSharedMarkdown } from '../../shared/friendsShare'
 import { FRIENDS_TOKEN_TTL_S, fetchGithubProfile, signFriendsToken, upsertUserProfile, verifyFriendsToken } from './friendsAuth'
-import { mintReadOnlyRepoToken } from './githubAppJwt'
+import { mintReadOnlyRepoToken, verifyInstallationRepoOwnership } from './githubAppJwt'
 import type { FriendDay, FriendStats } from '../../shared/friendStatsFormat'
 
 export interface FriendsEnv {
@@ -84,7 +84,7 @@ async function sha256Hex(text: string): Promise<string> {
 /** Canonicalizes `owner/repo` (stripping any `@branch` suffix and lowercasing). */
 export function normalizeRepoSlug(raw: string): string | null {
   const stripped = raw.trim().replace(/@[^/\s]+$/, '')
-  if (!/^[^/\s@]+\/[^/\s@]+$/.test(stripped)) return null
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(stripped)) return null
   return stripped.toLowerCase()
 }
 
@@ -1057,6 +1057,24 @@ export async function handleFriends(
         cleanVaultMap.set(repo, { repo, installationId, name: name || fallbackName })
       }
       const cleanVaults = [...cleanVaultMap.values()].slice(0, 50)
+
+      // YAZ-6290: Verify with GitHub that the signed-in user actually owns each installation + repo
+      if (cleanVaults.length > 0) {
+        const meRow = await db.prepare('SELECT login FROM users WHERE github_id = ?').bind(meId).first<{ login?: string }>()
+        if (!meRow?.login) return refuse(401, 'unauthorized')
+        for (const v of cleanVaults) {
+          const verified = await verifyInstallationRepoOwnership(
+            env,
+            v.installationId,
+            v.repo,
+            meId,
+            String(meRow.login),
+            fetch,
+            Math.floor(nowMs / 1000),
+          )
+          if (!verified.ok) return refuse(verified.status, verified.error)
+        }
+      }
 
       const allowedIdsIn = Array.isArray(body.allowedFriendIds) ? body.allowedFriendIds : []
       const cleanAllowedIds = [

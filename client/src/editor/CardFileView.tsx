@@ -186,6 +186,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const unit = useUnit()
   const path = file.path
   const [content, setContent] = useState<string | null>(file.content)
+  const [shareCard, setShareCard] = useState<{ title: string; markdown: string } | null>(null)
   /** "Turn into a page" runs: the file losing `kind: card` is this tab's own doing, and says nothing. */
   const turning = useRef(false)
   const onPageRef = useRef<(next: FileResponse) => void>(onPage)
@@ -430,7 +431,6 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       else turning.current = false
     })
   }
-  const [shareCard, setShareCard] = useState<{ title: string; markdown: string } | null>(null)
   // The one card menu (YAZ-5697 round 2): a card file's rows of it; Turn into a page asks first (it rewrites and renames
   // the file, and no Undo takes it back).
   const sections = (): MenuSection[] =>

@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { BrowsableVault, DeckFilePayload, DeckTreeFile, SharedCardItem } from '@shared/friendsApi'
 import { NO_LINK_PILLS } from '@shared/linkPills'
@@ -136,7 +136,7 @@ export default function BrowseDeckSheet({
     }
   }, [ownerId, activeRepo, service])
 
-  const popTop = () => {
+  const popTop = useCallback(() => {
     setStack((prev) => {
       if (prev.length <= 1) {
         onClose()
@@ -144,7 +144,7 @@ export default function BrowseDeckSheet({
       }
       return prev.slice(0, -1)
     })
-  }
+  }, [onClose])
 
   const pushFile = (file: { repo: string; path: string; title: string }) => {
     setStack((prev) => [...prev, { id: nextPanelId++, kind: 'file', ...file }])
@@ -159,7 +159,7 @@ export default function BrowseDeckSheet({
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  })
+  }, [acceptTarget, popTop])
 
   const mdFiles = useMemo(() => treeFiles.filter((f) => f.kind === 'md'), [treeFiles])
   const allPaths = useMemo(() => treeFiles.map((f) => f.path), [treeFiles])

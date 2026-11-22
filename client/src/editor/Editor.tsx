@@ -865,16 +865,16 @@ function CrepeHost({
     const base = [...convert.rows()]
     if (FRIENDS_ENABLED && !inFolderPage) {
       base.push({
-        label: 'Share page with friend or group…',
+        label: unit('Share page with friend or group…'),
         divider: base.length === 0,
         onToggle: () => {
-          const fallbackTitle = file.path.split('/').pop()?.replace(/\.md$/i, '') ?? 'Untitled page'
+          const fallbackTitle = file.path.split('/').pop()?.replace(/\.md$/i, '') ?? unit('Untitled page')
           setSharePage({ title: titleRef.current || fallbackTitle, markdown: diskRef.current })
         },
       })
     }
     return base
-  }, [convert, file.path, inFolderPage])
+  }, [convert, file.path, inFolderPage, unit])
   const inlineDrawing = useInlineDrawing({ root, path: file.path, title: () => titleRef.current, disk: () => diskRef.current, getView: () => (crepeRef.current === null ? null : editorViewOf(crepeRef.current)), flushPage: () => autosave.flushNow(), wikilinks, viewOnlyLinks, allowFileAction: vaultScope.allowFileAction, onNotice, onOpenInTab: tabId === undefined || onOpenInlineDrawing === undefined ? undefined : (index, background) => onOpenInlineDrawing(tabId, index, background) })
   /** The timed "Allow edits" of THIS tab (YAZ-4939): at zero the page saves (including any open card editor, YAZ-6052), then locks again. */
   const unlock = useTimedUnlock(() => {
