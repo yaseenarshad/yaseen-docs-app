@@ -171,6 +171,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
     if (accelerator === null || (place !== null && row !== undefined && stepsAside(row, place, hotkeysAside))) return {}
     return { accelerator }
   }
+  const isMac = process.platform === 'darwin'
   const template: MenuItemConstructorOptions[] = [
     // macOS titles the first menu with the running app's name; the label only matters off-mac.
     {
@@ -183,10 +184,9 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
         // gesture goes to the focused window's renderer like Search Vault does.
         { id: 'menu.app.settings', label: 'Settings…', ...key('settings'), click: () => handlers.settings() },
         { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
+        ...(isMac
+          ? ([{ role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }] satisfies MenuItemConstructorOptions[])
+          : []),
         { role: 'quit' },
       ],
     },
@@ -275,7 +275,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
       role: 'window',
       submenu: [
         { role: 'minimize' },
-        { role: 'zoom' },
+        ...(isMac ? ([{ role: 'zoom' }] satisfies MenuItemConstructorOptions[]) : []),
         { type: 'separator' },
         // Tab switching (GRO-2232): the visible pair carries the macOS-conventional ⌃Tab / ⌃⇧Tab;
         // hidden duplicates carry the ⌘⇧] / ⌘⇧[ equivalents (`acceleratorWorksWhenHidden`, macOS).
@@ -301,7 +301,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
           click: () => handlers.goToVault(v.path, v.name),
         })),
         ...(keyedVaults.length === 0 ? [] : [{ type: 'separator' } satisfies MenuItemConstructorOptions]),
-        { role: 'front' },
+        ...(isMac ? ([{ role: 'front' }] satisfies MenuItemConstructorOptions[]) : [{ role: 'close' } satisfies MenuItemConstructorOptions]),
       ],
     },
     {
@@ -390,9 +390,10 @@ export function buildContextMenuTemplate(
   actions: ContextMenuActions,
 ): MenuItemConstructorOptions[] {
   if (params.mediaType === 'image') {
+    const revealLabel = process.platform === 'darwin' ? 'Reveal in Finder' : process.platform === 'win32' ? 'Show in Explorer' : 'Show in File Manager'
     return [
       { label: 'Copy Image', click: () => actions.copyImage() },
-      { label: 'Reveal in Finder', click: () => actions.revealImage(params.srcURL) },
+      { label: revealLabel, click: () => actions.revealImage(params.srcURL) },
     ]
   }
   const suggestions: MenuItemConstructorOptions[] = params.dictionarySuggestions.map((s) => ({ label: s, click: () => actions.replace(s) }))

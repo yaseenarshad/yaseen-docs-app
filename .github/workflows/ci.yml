@@ -138,10 +138,64 @@ jobs:
       # Mac jobs take about as long; after the build, on an idle runner, as their budgets need.
       - run: npm test -- --project perf --project perf-engine
 
+  linux-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: engine/packages/*/dist
+          key: engine-${{ runner.os }}-${{ hashFiles('engine/package.json', 'engine/yarn.lock', 'engine/tsconfig.json', 'engine/.env.development', 'engine/.env.production', 'engine/scripts/**', 'engine/packages/tsconfig.base.json', 'engine/packages/utils/**', 'engine/packages/common/**', 'engine/packages/math/**', 'engine/packages/fractional-indexing/**', 'engine/packages/element/**', 'engine/packages/excalidraw/**') }}
+      - run: npm ci
+      - run: npm run engine:build
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: desktop/.cache/drawio
+          key: drawio-${{ runner.os }}-${{ hashFiles('shared/drawio.ts', 'tools/packDrawio.mjs', 'tools/lib/drawioPack.mjs', 'desktop/drawio-overlay/**') }}
+      - run: npm run drawio:pack
+      - name: Add swap for Monaco + electron-builder on 7 GB runner
+        run: |
+          sudo fallocate -l 4G /tmp/ci-swapfile
+          sudo chmod 600 /tmp/ci-swapfile
+          sudo mkswap /tmp/ci-swapfile
+          sudo swapon /tmp/ci-swapfile
+      - run: npm run desktop:build:linux
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          NODE_OPTIONS: --max-old-space-size=5120
+      - name: Smoke-test packaged Linux CLI (offline + xvfb cold-start)
+        run: |
+          set -euo pipefail
+          TARBALL="$(ls desktop/dist-app/*-linux-*.tar.gz | head -n 1)"
+          test -f "$TARBALL"
+          TMP="$(mktemp -d)"
+          trap 'pkill -f "$TMP/app/yaseen-docs" || true; rm -rf "$TMP"' EXIT
+          mkdir -p "$TMP/app" "$TMP/vault" "$TMP/profile"
+          tar -xzf "$TARBALL" -C "$TMP/app" --strip-components=1
+          CLI="$TMP/app/resources/bin/yaseendocs"
+          test -x "$CLI"
+          # 1. Offline CLI commands (plain Node via ELECTRON_RUN_AS_NODE)
+          "$CLI" capabilities --json | grep -q '"app.status"'
+          "$CLI" new "$TMP/vault" --title "Linux Smoke" --body "hello from linux"
+          test -f "$TMP/vault/Linux Smoke.md"
+          # 2. Cold-start live Electron + CLI automation under one Xvfb session
+          YASEEN_DOCS_NO_SANDBOX=1 xvfb-run -a -s "-screen 0 1280x800x24" bash -euo pipefail -c '
+            "$1" open --root "$2" --profile "$3" --wait-ms 25000
+            STATUS="$("$1" app status --profile "$3" --json)"
+            echo "$STATUS"
+            echo "$STATUS" | jq -e ".ok == true and .value.running == true and .value.packaged == true" > /dev/null
+          ' _ "$CLI" "$TMP/vault" "$TMP/profile"
+
   # The required status. `if: always()` so a failed or cancelled job above fails this one instead of skipping it.
   check:
     if: always()
-    needs: [unit-linux, mac-tests, mac-build]
+    needs: [unit-linux, mac-tests, mac-build, linux-build]
     runs-on: ubuntu-latest
     steps:
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
