@@ -725,7 +725,7 @@ describe('YAZ-6218..6275: D1 Friends UI additions', () => {
         },
       ],
     }
-    const grp = demoGroup(NOW, 'Study Group')
+    const grp = demoGroup(NOW, { name: 'Study Group' })
     const d1Grp = {
       id: grp.group,
       name: 'Study Group',

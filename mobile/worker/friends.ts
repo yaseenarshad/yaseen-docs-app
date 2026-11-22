@@ -24,7 +24,6 @@
 import { CALLBACK_ORIGINS } from '../src/auth/githubAppConfig'
 import type { D1Database } from './d1Types'
 import { computeBuddyStreak } from '../../shared/friendsBoard'
-import type { FriendStats } from '../../shared/friendStatsFormat'
 import { FRIENDS_TOKEN_TTL_S, fetchGithubProfile, signFriendsToken, upsertUserProfile, verifyFriendsToken } from './friendsAuth'
 import type { FriendDay, FriendStats } from '../../shared/friendStatsFormat'
 
