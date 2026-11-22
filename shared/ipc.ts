@@ -234,6 +234,14 @@ export const CONTRACT = {
       [prefs: { vaults?: string[]; zone?: string | null; nickname?: string | null }],
       { ok: true; vaults: string[]; zone: string | null; nickname: string | null } | { ok: false; error: string }
     >('friends:update-prefs', 1),
+    uploadAvatar: invoke<
+      [payload: { contentType: string; dataBase64: string }],
+      { ok: true; avatarUrl: string; hasCustomAvatar: true } | { ok: false; error: string }
+    >('friends:upload-avatar', 1),
+    deleteAvatar: invoke<
+      [],
+      { ok: true; avatarUrl: string | null; hasCustomAvatar: false } | { ok: false; error: string }
+    >('friends:delete-avatar', 0),
     createInvite: invoke<[], { ok: true; code: string; link: string; expiresAt: string } | { ok: false; error: string }>('friends:create-invite', 0),
     acceptInvite: invoke<[code: string], { ok: true; result: unknown } | { ok: false; error: string }>('friends:accept-invite', 1),
     removeFriend: invoke<[userId: number, block?: boolean], { ok: true } | { ok: false; error: string }>('friends:remove-friend', 2),

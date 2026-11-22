@@ -152,14 +152,14 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
       {/* The two columns say who they are: "You" at the left, the friend at the right. */}
       <div className="fr-vs fr-vs--who" role="group" aria-label={`You vs ${name}`} style={{ margin: '6px 0 8px' }}>
         <span className="fr-vs__col" aria-hidden="true">
-          <Avatar name={ok.me.name} url={ok.me.avatar} big />
+          <Avatar key={ok.me.avatar ?? ''} name={ok.me.name} url={ok.me.avatar} big />
           <span className="fr-vs__who">You</span>
         </span>
         <span className="fr-vs__label" aria-hidden="true">
           vs
         </span>
         <span className="fr-vs__col" aria-hidden="true">
-          <Avatar name={name} url={theirAvatar} big />
+          <Avatar key={theirAvatar ?? ''} name={name} url={theirAvatar} big />
           <span className="fr-vs__who">{name}</span>
         </span>
       </div>

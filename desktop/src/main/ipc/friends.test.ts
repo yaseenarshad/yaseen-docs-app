@@ -16,6 +16,8 @@ function makeMockService(): FriendsService {
     clearSession: vi.fn(),
     board: vi.fn(async () => ({ ok: true as const, board: { me: { id: 1, login: 'y', name: 'Y', nickname: null, avatarUrl: null, zone: null, vaults: [], stats: null, statsAt: null }, friends: [], invites: [], groups: [], incomingCards: [] } })),
     updatePrefs: vi.fn(async (p) => ({ ok: true as const, vaults: p.vaults ?? [], zone: p.zone ?? null, nickname: p.nickname ?? null })),
+    uploadAvatar: vi.fn(async () => ({ ok: true as const, avatarUrl: 'https://docs.yaseenarshad.com/api/friends/avatar/1?v=abc', hasCustomAvatar: true as const })),
+    deleteAvatar: vi.fn(async () => ({ ok: true as const, avatarUrl: 'https://avatars.githubusercontent.com/u/1', hasCustomAvatar: false as const })),
     createInvite: vi.fn(async () => ({ ok: true as const, code: 'abc12345', link: 'https://docs.yaseenarshad.com/friend#abc12345', expiresAt: '2026-12-01T00:00:00Z' })),
     acceptInvite: vi.fn(async (code) => ({ ok: true as const, result: { kind: 'friend', code } })),
     removeFriend: vi.fn(async () => ({ ok: true as const })),
@@ -62,6 +64,15 @@ describe('registerFriendsIpc (YAZ-6219)', () => {
     expect(await registered(CONTRACT.friends.updatePrefs)(ev, { nickname: 'Y' })).toEqual({
       ok: true,
       value: { ok: true, vaults: [], zone: null, nickname: 'Y' },
+    })
+    expect(await registered(CONTRACT.friends.uploadAvatar)(ev, { contentType: 'image/webp', dataBase64: 'UklGRg==' })).toEqual({
+      ok: true,
+      value: { ok: true, avatarUrl: 'https://docs.yaseenarshad.com/api/friends/avatar/1?v=abc', hasCustomAvatar: true },
+    })
+    expect(service.uploadAvatar).toHaveBeenCalledWith({ contentType: 'image/webp', dataBase64: 'UklGRg==' })
+    expect(await registered(CONTRACT.friends.deleteAvatar)(ev)).toEqual({
+      ok: true,
+      value: { ok: true, avatarUrl: 'https://avatars.githubusercontent.com/u/1', hasCustomAvatar: false },
     })
     expect(await registered(CONTRACT.friends.createInvite)(ev)).toMatchObject({ ok: true, value: { ok: true, code: 'abc12345' } })
     expect(await registered(CONTRACT.friends.acceptInvite)(ev, ' abc12345 ')).toMatchObject({ ok: true, value: { ok: true } })
@@ -145,11 +156,16 @@ describe('registerFriendsIpc (YAZ-6219)', () => {
       ok: true,
       value: { ok: false, error: 'Invalid ownerId, repo, or path' },
     })
+    expect(await registered(CONTRACT.friends.uploadAvatar)(ev, { contentType: 'image/svg+xml', dataBase64: 'PHN2Zz4=' })).toEqual({
+      ok: true,
+      value: { ok: false, error: 'Invalid avatar payload' },
+    })
     expect(service.acceptInvite).not.toHaveBeenCalled()
     expect(service.removeFriend).not.toHaveBeenCalled()
     expect(service.setCardState).not.toHaveBeenCalled()
     expect(service.saveDeckSettings).not.toHaveBeenCalled()
     expect(service.browseDeckTree).not.toHaveBeenCalled()
     expect(service.browseDeckFile).not.toHaveBeenCalled()
+    expect(service.uploadAvatar).not.toHaveBeenCalled()
   })
 })

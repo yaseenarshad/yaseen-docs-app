@@ -3,7 +3,7 @@
  * Shows send status, a `Show Friends in Inbox` toggle (default ON), `Vaults that count` checkboxes,
  * and a `Delete my Friends data` button with confirmation.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { LIST_NEEDS_REPAIR } from '@shared/friendGists'
 import type { DeckSettingsPayload, DeckShareMode, DeckVaultConfig } from '@shared/friendsApi'
 import type { FriendsSendView } from '@shared/types'
@@ -101,6 +101,66 @@ function sendLine(v: FriendsSendView, now: number): string {
   }
 }
 
+const AVATAR_SIZE = 256
+const AVATAR_MAX_BYTES = 48 * 1024
+
+function base64ByteLength(b64: string): number {
+  const padding = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0
+  return Math.floor((b64.length * 3) / 4) - padding
+}
+
+function loadImageFromFile(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      resolve(img)
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Could not read the selected image.'))
+    }
+    img.src = url
+  })
+}
+
+/**
+ * Center-crops an image file to 256x256 and encodes as WebP (or JPEG fallback),
+ * stepping quality down so the payload stays <= 48 KB.
+ */
+export async function encodeAvatarFile(
+  file: File,
+): Promise<{ contentType: 'image/webp' | 'image/jpeg'; dataBase64: string }> {
+  const img = await loadImageFromFile(file)
+  const canvas = document.createElement('canvas')
+  canvas.width = AVATAR_SIZE
+  canvas.height = AVATAR_SIZE
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Image processing is unavailable.')
+  const srcW = img.naturalWidth || img.width
+  const srcH = img.naturalHeight || img.height
+  if (srcW <= 0 || srcH <= 0) throw new Error('Invalid image dimensions.')
+  const side = Math.min(srcW, srcH)
+  const sx = (srcW - side) / 2
+  const sy = (srcH - side) / 2
+  ctx.drawImage(img, sx, sy, side, side, 0, 0, AVATAR_SIZE, AVATAR_SIZE)
+
+  const qualities = [0.86, 0.72, 0.58, 0.44, 0.3]
+  for (const mime of ['image/webp', 'image/jpeg'] as const) {
+    const prefix = `data:${mime};base64,`
+    for (const q of qualities) {
+      const dataUrl = canvas.toDataURL(mime, q)
+      if (!dataUrl.startsWith(prefix)) break
+      const dataBase64 = dataUrl.slice(prefix.length)
+      if (dataBase64.length > 0 && base64ByteLength(dataBase64) <= AVATAR_MAX_BYTES) {
+        return { contentType: mime, dataBase64 }
+      }
+    }
+  }
+  throw new Error('Photo is too large after compression. Try a simpler image.')
+}
+
 export function FriendsSendControl() {
   const [view, setView] = useState<FriendsSendView | null>(null)
   const [showInInbox, setShowInInbox] = useState<boolean>(() => readShowFriendsInInbox())
@@ -108,6 +168,12 @@ export function FriendsSendControl() {
   const [savedNickname, setSavedNickname] = useState('')
   const [githubName, setGithubName] = useState('')
   const [savingName, setSavingName] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [hasCustomAvatar, setHasCustomAvatar] = useState(false)
+  const [avatarBusy, setAvatarBusy] = useState(false)
+  const [avatarNotice, setAvatarNotice] = useState<string | null>(null)
+  const [avatarError, setAvatarError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [allVaults, setAllVaults] = useState<string[]>([])
   const [countedVaults, setCountedVaults] = useState<string[]>([])
   const [knownVaults, setKnownVaults] = useState<{ path: string; name: string; included: boolean }[]>([])
@@ -137,13 +203,16 @@ export function FriendsSendControl() {
       api.friends.board(false).then(
         (res) => {
           if (!live || !res.ok) return
-          const picked = res.board.me.vaults ?? []
+          const me = res.board.me as typeof res.board.me & { hasCustomAvatar?: boolean }
+          const picked = me.vaults ?? []
           setCountedVaults(picked)
           setAllVaults((prev) => Array.from(new Set([...prev, ...picked])))
-          const nick = res.board.me.nickname ?? ''
+          const nick = me.nickname ?? ''
           setNickname(nick)
           setSavedNickname(nick)
-          setGithubName(res.board.me.name || res.board.me.login || '')
+          setGithubName(me.name || me.login || '')
+          setAvatarUrl(me.avatarUrl ?? null)
+          setHasCustomAvatar(Boolean(me.hasCustomAvatar))
           setFriendsList(res.board.friends.map((f) => ({ id: f.id, name: f.name, login: f.login })))
         },
         () => undefined,
@@ -200,6 +269,51 @@ export function FriendsSendControl() {
       }
     } finally {
       setSavingName(false)
+    }
+  }
+
+  const handleAvatarPick = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || avatarBusy || typeof api.friends.uploadAvatar !== 'function') return
+    setAvatarBusy(true)
+    setAvatarNotice(null)
+    setAvatarError(null)
+    try {
+      const encoded = await encodeAvatarFile(file)
+      const res = await api.friends.uploadAvatar(encoded)
+      if (res.ok) {
+        setAvatarUrl(res.avatarUrl)
+        setHasCustomAvatar(true)
+        setAvatarNotice('Profile picture updated.')
+      } else {
+        setAvatarError(res.error || 'Could not upload profile picture.')
+      }
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : 'Could not upload profile picture.')
+    } finally {
+      setAvatarBusy(false)
+    }
+  }
+
+  const handleResetAvatar = async () => {
+    if (avatarBusy || typeof api.friends.deleteAvatar !== 'function') return
+    setAvatarBusy(true)
+    setAvatarNotice(null)
+    setAvatarError(null)
+    try {
+      const res = await api.friends.deleteAvatar()
+      if (res.ok) {
+        setAvatarUrl(res.avatarUrl)
+        setHasCustomAvatar(false)
+        setAvatarNotice('Reset to GitHub photo.')
+      } else {
+        setAvatarError(res.error || 'Could not reset profile picture.')
+      }
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : 'Could not reset profile picture.')
+    } finally {
+      setAvatarBusy(false)
     }
   }
 
@@ -312,7 +426,7 @@ export function FriendsSendControl() {
           type="text"
           className="settings__input"
           aria-label="Display name"
-          placeholder={githubName || 'Your GitHub name'}
+          placeholder={githubName || 'Your GitHub first name'}
           value={nickname}
           disabled={savingName}
           onChange={(e) => setNickname(e.target.value)}
@@ -324,7 +438,86 @@ export function FriendsSendControl() {
             }
           }}
         />
+        <span style={{ display: 'block', fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>
+          Default is your GitHub first name. Any custom name you save is shown as-typed.
+        </span>
       </label>
+
+      <div className="friends-settings__avatar" style={{ marginTop: 12 }}>
+        <span style={{ display: 'block', fontSize: 12, color: 'var(--fg-muted)', marginBottom: 6 }}>Profile picture</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div
+            className="friends-settings__avatar-preview"
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: '50%',
+              overflow: 'hidden',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'var(--bg-subtle, rgba(127, 127, 127, 0.16))',
+              color: 'var(--fg-muted)',
+              fontWeight: 600,
+              fontSize: 16,
+              flexShrink: 0,
+            }}
+          >
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt="Profile picture"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              />
+            ) : (
+              <span>{(nickname.trim() || githubName.trim() || '?')[0].toUpperCase()}</span>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span className="friends-settings__avatar-status" style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
+              {hasCustomAvatar ? 'Custom photo' : 'From GitHub'}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                hidden
+                aria-label="Choose profile picture"
+                onChange={(e) => void handleAvatarPick(e)}
+              />
+              <button
+                type="button"
+                className="settings__btn"
+                disabled={avatarBusy}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {avatarBusy ? 'Saving…' : 'Upload photo'}
+              </button>
+              {hasCustomAvatar && (
+                <button
+                  type="button"
+                  className="settings__btn"
+                  disabled={avatarBusy}
+                  onClick={() => void handleResetAvatar()}
+                >
+                  Reset to GitHub photo
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        {avatarNotice && (
+          <p className="settings__key-status" role="status" style={{ marginTop: 6 }}>
+            {avatarNotice}
+          </p>
+        )}
+        {avatarError && (
+          <p className="settings__key-status" role="alert" style={{ color: 'var(--danger, #dc2626)', marginTop: 6 }}>
+            {avatarError}
+          </p>
+        )}
+      </div>
 
       {knownVaults.length > 0 ? (
         <fieldset className="friends-settings__vaults" style={{ border: 0, padding: 0, margin: '12px 0 0' }}>

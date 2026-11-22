@@ -249,3 +249,17 @@ export function formatMinutes(seconds: number): string {
   const rem = m % 60
   return rem === 0 ? `${h}h` : `${h}h ${rem}m`
 }
+
+/** Returns the first whitespace-separated token of `name.trim()` if non-empty, else `login`. */
+export function firstNameOf(name: string | null | undefined, login: string): string {
+  const trimmed = name?.trim() ?? ''
+  if (!trimmed) return login
+  return trimmed.split(/\s+/)[0] || login
+}
+
+/** Returns `nickname.trim()` as-typed if non-empty, else `firstNameOf(name, login)`. */
+export function displayNameFor(nickname: string | null | undefined, name: string | null | undefined, login: string): string {
+  const nick = nickname?.trim() ?? ''
+  if (nick) return nick
+  return firstNameOf(name, login)
+}

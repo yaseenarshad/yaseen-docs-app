@@ -349,7 +349,7 @@ describe('Settings: Friends (decision 22; round 13, item 4)', () => {
     await h.settle()
     expect((await h.services.friends.settings()).vaults).toEqual(['yaseen/vault@main'])
     await h.click('Name')
-    await h.type('The name your friends see. Leave it empty to use your GitHub name.', '  Yas  ')
+    await h.type('The name your friends see. Leave empty to use your GitHub first name.', '  Yas  ')
     await h.click('Save name')
     expect((await h.services.friends.settings()).nickname).toBe('Yas')
     expect(h.text()).toMatch(/Name\s*Yas/)

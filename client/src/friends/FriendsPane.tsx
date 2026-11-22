@@ -660,8 +660,8 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
       return {
         id: m.id,
         login: m.login,
-        name: isMe ? board.me.nickname || m.name : m.name,
-        avatarUrl: m.avatarUrl ?? (isMe ? board.me.avatarUrl : friend?.avatarUrl ?? null),
+        name: isMe ? board.me.nickname || board.me.name || m.name : m.name,
+        avatarUrl: isMe ? board.me.avatarUrl ?? m.avatarUrl : m.avatarUrl ?? friend?.avatarUrl ?? null,
         isMe,
         mark: dailyMarkOf(m.stats, nowMs),
         finishedForPeriod: finishedOnPeriod(m.stats, period, nowMs),
@@ -866,8 +866,8 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
             const members = streakGroup.members.map((m) => {
               const isMe = m.id === board.me.id
               const fr = friendById.get(m.id)
-              const name = isMe ? board.me.nickname || m.name : m.name
-              const avatarUrl = m.avatarUrl ?? (isMe ? board.me.avatarUrl : fr?.avatarUrl ?? null)
+              const name = isMe ? board.me.nickname || board.me.name || m.name : m.name
+              const avatarUrl = isMe ? board.me.avatarUrl ?? m.avatarUrl : m.avatarUrl ?? fr?.avatarUrl ?? null
               const daySet = new Set((m.stats?.days ?? []).map((d) => d.day))
               const doneSet = new Set((m.stats?.days ?? []).filter((d) => d.done).map((d) => d.day))
               const sinceDay = sinceDayKey(m.since)
@@ -1088,9 +1088,12 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                   {activeMembers.map((m) => (
                     <div key={m.id} className="fr-card-item">
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                        <Avatar name={m.name} url={m.avatarUrl} />
+                        <Avatar
+                          name={m.id === board.me.id ? board.me.nickname || board.me.name || m.name : m.name}
+                          url={m.id === board.me.id ? board.me.avatarUrl ?? m.avatarUrl : m.avatarUrl}
+                        />
                         <div className="fr-card-item__info">
-                          <div className="fr-card-item__title">{m.id === board.me.id ? board.me.nickname || m.name : m.name}</div>
+                          <div className="fr-card-item__title">{m.id === board.me.id ? board.me.nickname || board.me.name || m.name : m.name}</div>
                           <div className="fr-card-item__meta">
                             @{m.login}
                             {m.id === settingsGroup.adminId ? ' · Admin' : ''}

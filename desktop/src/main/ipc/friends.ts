@@ -14,6 +14,7 @@ export interface FriendsIpcTarget {
 
 const CARD_STATUSES = new Set<SharedCardStatus>(['pending', 'accepted', 'dismissed'])
 const DECK_SHARE_MODES = new Set<DeckShareMode>(['none', 'all', 'selected'])
+const ALLOWED_AVATAR_TYPES = new Set(['image/webp', 'image/jpeg', 'image/png'])
 
 function isPositiveInt(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v > 0
@@ -49,6 +50,24 @@ export function registerFriendsIpc(getTarget: FriendsIpcTarget | (() => Promise<
     if (prefs.nickname === null || typeof prefs.nickname === 'string') cleaned.nickname = prefs.nickname
     const { service } = await resolve()
     return service.updatePrefs(cleaned)
+  })
+
+  handle(CONTRACT.friends.uploadAvatar, async (payload: unknown) => {
+    if (
+      !isRecord(payload) ||
+      typeof payload.contentType !== 'string' ||
+      !ALLOWED_AVATAR_TYPES.has(payload.contentType) ||
+      !isNonEmptyString(payload.dataBase64)
+    ) {
+      return { ok: false as const, error: 'Invalid avatar payload' }
+    }
+    const { service } = await resolve()
+    return service.uploadAvatar({ contentType: payload.contentType, dataBase64: payload.dataBase64.trim() })
+  })
+
+  handle(CONTRACT.friends.deleteAvatar, async () => {
+    const { service } = await resolve()
+    return service.deleteAvatar()
   })
 
   handle(CONTRACT.friends.createInvite, async () => {

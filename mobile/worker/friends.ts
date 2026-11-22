@@ -24,7 +24,7 @@
 import { CALLBACK_ORIGINS } from '../src/auth/githubAppConfig'
 import type { D1Database } from './d1Types'
 import { cardFileTitle } from '../../shared/cardFileFormat'
-import { computeBuddyStreak } from '../../shared/friendsBoard'
+import { computeBuddyStreak, displayNameFor } from '../../shared/friendsBoard'
 import type { DeckShareMode } from '../../shared/friendsApi'
 import { extractRelativeAssetPaths, sanitizeSharedMarkdown } from '../../shared/friendsShare'
 import { FRIENDS_TOKEN_TTL_S, fetchGithubProfile, signFriendsToken, upsertUserProfile, verifyFriendsToken } from './friendsAuth'
@@ -51,6 +51,8 @@ const HEADERS: Record<string, string> = {
 const MAX_STATS_BYTES = 128 * 1024
 const MAX_CARD_MD_BYTES = 64 * 1024
 const MAX_CARD_ATTACH_BYTES = 512 * 1024
+const MAX_AVATAR_BYTES = 50 * 1024
+const ALLOWED_AVATAR_TYPES = new Set(['image/webp', 'image/jpeg', 'image/png'])
 const MAX_FOLDER_CARDS = 200
 const FRIEND_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const RATE_INVITES_PER_DAY = 20
@@ -79,6 +81,60 @@ async function sha256Hex(text: string): Promise<string> {
   return Array.from(new Uint8Array(buf))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')
+}
+
+async function sha256HexBytes(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+function decodeBase64Bytes(raw: string): Uint8Array<ArrayBuffer> | null {
+  const clean = raw.replace(/\s+/g, '')
+  if (!clean || clean.length % 4 === 1 || !/^[A-Za-z0-9+/]+={0,2}$/.test(clean)) return null
+  try {
+    const bin = atob(clean)
+    const out = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+    return out
+  } catch {
+    return null
+  }
+}
+
+function matchesAvatarMagicBytes(contentType: string, bytes: Uint8Array): boolean {
+  if (contentType === 'image/webp') {
+    return (
+      bytes.byteLength >= 12 &&
+      bytes[0] === 0x52 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x46 &&
+      bytes[8] === 0x57 &&
+      bytes[9] === 0x45 &&
+      bytes[10] === 0x42 &&
+      bytes[11] === 0x50
+    )
+  }
+  if (contentType === 'image/jpeg') {
+    return bytes.byteLength >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+  }
+  if (contentType === 'image/png') {
+    return bytes.byteLength >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+  }
+  return false
+}
+
+function toUint8Array(data: unknown): Uint8Array<ArrayBuffer> | null {
+  if (data instanceof Uint8Array) {
+    const out = new Uint8Array(data.byteLength)
+    out.set(data)
+    return out
+  }
+  if (data instanceof ArrayBuffer) return new Uint8Array(data)
+  if (Array.isArray(data)) return new Uint8Array(data as number[])
+  return null
 }
 
 /** Canonicalizes `owner/repo` (stripping any `@branch` suffix and lowercasing). */
@@ -276,6 +332,34 @@ export async function handleFriends(
     })
   }
 
+  // 1b. GET /api/friends/avatar/:id — public custom avatar image (no auth header so <img src=...> works)
+  const avatarGet = /^\/api\/friends\/avatar\/([^/]+)$/.exec(path)
+  if (avatarGet) {
+    if (method !== 'GET') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'GET' } })
+    const rawId = avatarGet[1]
+    if (!/^\d+$/.test(rawId)) return refuse(400, 'bad_request')
+    const targetId = Number(rawId)
+    if (!Number.isSafeInteger(targetId) || targetId <= 0) return refuse(400, 'bad_request')
+    const row = await db
+      .prepare('SELECT content_type, data, version FROM user_avatars WHERE github_id = ?')
+      .bind(targetId)
+      .first<{ content_type: string; data: unknown; version: string }>()
+    if (!row) return refuse(404, 'not_found')
+    const bytes = toUint8Array(row.data)
+    if (!bytes || bytes.byteLength === 0) return refuse(404, 'not_found')
+    const hasVersionParam = url.searchParams.has('v') && url.searchParams.get('v') !== ''
+    return new Response(bytes, {
+      status: 200,
+      headers: {
+        'content-type': String(row.content_type),
+        'x-content-type-options': 'nosniff',
+        'cache-control': hasVersionParam ? 'public, max-age=31536000, immutable' : 'public, max-age=300',
+        'referrer-policy': 'no-referrer',
+        'content-security-policy': "default-src 'none'; sandbox",
+      },
+    })
+  }
+
   // All remaining /api/friends/* routes require Bearer friendsToken
   const authHeader = request.headers.get('authorization') ?? ''
   const match = /^Bearer\s+(.+)$/i.exec(authHeader)
@@ -360,6 +444,9 @@ export async function handleFriends(
       .bind(meId)
       .all<Record<string, unknown>>()
 
+    const allAvatarUserIds = new Set<number>([meId])
+    for (const f of friendRows.results) allAvatarUserIds.add(Number(f.github_id))
+
     const groupsOut = []
     for (const g of myGroups.results) {
       const gid = String(g.id)
@@ -377,11 +464,14 @@ export async function handleFriends(
       const activeMembers = []
       const bannedMembers: { id: number; login: string; name: string }[] = []
       for (const m of membersRes.results) {
+        const mid = Number(m.github_id)
+        const mName = displayNameFor(m.nickname as string | null, m.name as string | null, String(m.login))
         if (m.status === 'active') {
+          allAvatarUserIds.add(mid)
           activeMembers.push({
-            id: Number(m.github_id),
+            id: mid,
             login: String(m.login),
-            name: (m.nickname ?? m.name ?? m.login) as string,
+            name: mName,
             avatarUrl: m.avatar_url ? String(m.avatar_url) : null,
             since: m.since ? String(m.since) : null,
             stats: m.stats_json ? safeParseJson(String(m.stats_json)) : null,
@@ -389,9 +479,9 @@ export async function handleFriends(
           })
         } else if (isAdmin && m.status === 'banned') {
           bannedMembers.push({
-            id: Number(m.github_id),
+            id: mid,
             login: String(m.login),
-            name: (m.nickname ?? m.name ?? m.login) as string,
+            name: mName,
           })
         }
       }
@@ -503,6 +593,32 @@ export async function handleFriends(
       createdAt: String(c.created_at),
     }))
 
+    // Batch-query custom avatars for me + all friends + all group members
+    const avatarVersionByUser = new Map<number, string>()
+    const avatarIds = [...allAvatarUserIds]
+    for (let i = 0; i < avatarIds.length; i += 500) {
+      const chunk = avatarIds.slice(i, i + 500)
+      const placeholders = chunk.map(() => '?').join(', ')
+      const avatarRows = await db
+        .prepare(`SELECT github_id, version FROM user_avatars WHERE github_id IN (${placeholders})`)
+        .bind(...chunk)
+        .all<{ github_id: number; version: string }>()
+      for (const r of avatarRows.results) {
+        avatarVersionByUser.set(Number(r.github_id), String(r.version))
+      }
+    }
+    const avatarUrlFor = (id: number, fallback: unknown): string | null => {
+      const ver = avatarVersionByUser.get(id)
+      if (ver) return `${url.origin}/api/friends/avatar/${id}?v=${ver}`
+      return fallback ? String(fallback) : null
+    }
+
+    for (const g of groupsOut) {
+      for (const m of g.members) {
+        m.avatarUrl = avatarUrlFor(m.id, m.avatarUrl)
+      }
+    }
+
     const meStatsParsed = meRow.stats_json ? (safeParseJson(String(meRow.stats_json)) as FriendStats | null) : null
 
     const friendsOut = friendRows.results.map((f) => {
@@ -515,8 +631,8 @@ export async function handleFriends(
       return {
         id: fid,
         login: String(f.login),
-        name: (f.nickname ?? f.name ?? f.login) as string,
-        avatarUrl: f.avatar_url ? String(f.avatar_url) : null,
+        name: displayNameFor(f.nickname as string | null, f.name as string | null, String(f.login)),
+        avatarUrl: avatarUrlFor(fid, f.avatar_url),
         since: String(f.friend_since),
         stats: fStats,
         statsAt: f.stats_at ? String(f.stats_at) : null,
@@ -531,9 +647,10 @@ export async function handleFriends(
       me: {
         id: Number(meRow.github_id),
         login: String(meRow.login),
-        name: (meRow.nickname ?? meRow.name ?? meRow.login) as string,
+        name: displayNameFor(meRow.nickname as string | null, meRow.name as string | null, String(meRow.login)),
         nickname: meRow.nickname ? String(meRow.nickname) : null,
-        avatarUrl: meRow.avatar_url ? String(meRow.avatar_url) : null,
+        avatarUrl: avatarUrlFor(meId, meRow.avatar_url),
+        hasCustomAvatar: avatarVersionByUser.has(meId),
         zone: meRow.zone ? String(meRow.zone) : null,
         vaults: (safeParseJson(String(meRow.vaults_json ?? '[]')) as string[] | null) ?? [],
         stats: meRow.stats_json ? safeParseJson(String(meRow.stats_json)) : null,
@@ -653,6 +770,51 @@ export async function handleFriends(
       .bind(vaultsJson, zone, nickname, nowIso, meId)
       .run()
     return answer(200, { ok: true, vaults: JSON.parse(vaultsJson), zone, nickname })
+  }
+
+  // 4b. PUT / DELETE /api/friends/avatar — upload or reset custom avatar (<= 50 KB)
+  if (path === '/api/friends/avatar') {
+    if (method === 'PUT') {
+      const body = await readJsonBody(request)
+      if (!body) return refuse(400, 'bad_request')
+      const contentType = typeof body.contentType === 'string' ? body.contentType.trim().toLowerCase() : ''
+      if (!ALLOWED_AVATAR_TYPES.has(contentType)) return refuse(400, 'bad_content_type')
+      if (typeof body.dataBase64 !== 'string') return refuse(400, 'bad_avatar')
+      const cleanedBase64 = body.dataBase64.replace(/\s+/g, '')
+      if (cleanedBase64.length === 0) return refuse(400, 'bad_avatar')
+      // Fast oversize guard before base64 decoding
+      if (cleanedBase64.length > Math.ceil((MAX_AVATAR_BYTES * 4) / 3) + 4) return refuse(413, 'avatar_too_large')
+      const bytes = decodeBase64Bytes(cleanedBase64)
+      if (!bytes || bytes.byteLength === 0) return refuse(400, 'bad_avatar')
+      if (bytes.byteLength > MAX_AVATAR_BYTES) return refuse(413, 'avatar_too_large')
+      if (!matchesAvatarMagicBytes(contentType, bytes)) return refuse(400, 'bad_image_bytes')
+
+      const version = (await sha256HexBytes(bytes)).slice(0, 12)
+      await db
+        .prepare(
+          `INSERT INTO user_avatars (github_id, content_type, data, version, updated_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(github_id) DO UPDATE SET
+             content_type = excluded.content_type,
+             data = excluded.data,
+             version = excluded.version,
+             updated_at = excluded.updated_at`,
+        )
+        .bind(meId, contentType, bytes, version, nowIso)
+        .run()
+      return answer(200, {
+        ok: true,
+        avatarUrl: `${url.origin}/api/friends/avatar/${meId}?v=${version}`,
+        hasCustomAvatar: true,
+      })
+    }
+    if (method === 'DELETE') {
+      await db.prepare('DELETE FROM user_avatars WHERE github_id = ?').bind(meId).run()
+      const userRow = await db.prepare('SELECT avatar_url FROM users WHERE github_id = ?').bind(meId).first<{ avatar_url?: string | null }>()
+      const fallback = userRow?.avatar_url ? String(userRow.avatar_url) : null
+      return answer(200, { ok: true, avatarUrl: fallback, hasCustomAvatar: false })
+    }
+    return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'PUT, DELETE' } })
   }
 
   // 5. POST /api/friends/invites — 1-step single-use 7-day friend invite
@@ -1263,6 +1425,7 @@ export async function handleFriends(
       db.prepare('DELETE FROM rate_events WHERE user_id = ?').bind(meId),
       db.prepare('DELETE FROM daily_activity WHERE user_id = ?').bind(meId),
       db.prepare('DELETE FROM activity_events WHERE user_id = ?').bind(meId),
+      db.prepare('DELETE FROM user_avatars WHERE github_id = ?').bind(meId),
       db.prepare('DELETE FROM users WHERE github_id = ?').bind(meId),
     ])
     return answer(200, { ok: true, deleted: true })

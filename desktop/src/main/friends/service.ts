@@ -29,6 +29,12 @@ export interface FriendsService {
   updatePrefs(prefs: { vaults?: string[]; zone?: string | null; nickname?: string | null }): Promise<
     { ok: true; vaults: string[]; zone: string | null; nickname: string | null } | { ok: false; error: string }
   >
+  uploadAvatar(payload: { contentType: string; dataBase64: string }): Promise<
+    { ok: true; avatarUrl: string; hasCustomAvatar: true } | { ok: false; error: string }
+  >
+  deleteAvatar(): Promise<
+    { ok: true; avatarUrl: string | null; hasCustomAvatar: false } | { ok: false; error: string }
+  >
   createInvite(): Promise<{ ok: true; code: string; link: string; expiresAt: string } | { ok: false; error: string }>
   acceptInvite(code: string): Promise<{ ok: true; result: unknown } | { ok: false; error: string }>
   removeFriend(userId: number, block?: boolean): Promise<{ ok: true } | { ok: false; error: string }>
@@ -165,14 +171,18 @@ function createDemoFriendsService(deps: FriendsServiceDeps): FriendsService {
   const aliStats = makeDemoStats({ login: 'ali', name: 'Ali', todayCards: 12, todaySeconds: 6 * 60, todayDone: false, dueLeft: 9, streak: 4, doneRunDays: 2, nowMs: startMs })
   const ninaStats = makeDemoStats({ login: 'nina', name: 'Nina', todayCards: 0, todaySeconds: 0, todayDone: false, dueLeft: 14, streak: 2, doneRunDays: 0, nowMs: startMs })
 
+  const defaultMeName = 'Yaseen'
+  const defaultMeAvatar = avatars.yaseen
+
   let nextId = 100
-  const boardState: FriendsBoardPayload = {
+  const boardState: FriendsBoardPayload & { me: FriendsBoardPayload['me'] & { hasCustomAvatar?: boolean } } = {
     me: {
       id: 1,
       login: 'yaseen',
-      name: 'Yaseen',
+      name: defaultMeName,
       nickname: null,
-      avatarUrl: avatars.yaseen,
+      avatarUrl: defaultMeAvatar,
+      hasCustomAvatar: false,
       zone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
       vaults: ['yaseen/cards-friends-demo'],
       stats: meStats,
@@ -451,8 +461,42 @@ function createDemoFriendsService(deps: FriendsServiceDeps): FriendsService {
     updatePrefs: async (prefs) => {
       if (prefs.vaults !== undefined) boardState.me.vaults = [...prefs.vaults]
       if (prefs.zone !== undefined) boardState.me.zone = prefs.zone
-      if (prefs.nickname !== undefined) boardState.me.nickname = prefs.nickname
+      if (prefs.nickname !== undefined) {
+        const clean = prefs.nickname === null ? null : prefs.nickname.trim() || null
+        boardState.me.nickname = clean
+        boardState.me.name = clean ?? defaultMeName
+        for (const g of boardState.groups) {
+          for (const m of g.members) {
+            if (m.id === boardState.me.id) m.name = boardState.me.name
+          }
+        }
+      }
       return { ok: true as const, vaults: [...boardState.me.vaults], zone: boardState.me.zone, nickname: boardState.me.nickname }
+    },
+    uploadAvatar: async (payload) => {
+      const allowed = payload.contentType === 'image/webp' || payload.contentType === 'image/jpeg' || payload.contentType === 'image/png'
+      if (!allowed || !payload.dataBase64.trim()) {
+        return { ok: false as const, error: 'invalid_avatar' }
+      }
+      const avatarUrl = `data:${payload.contentType};base64,${payload.dataBase64.trim()}`
+      boardState.me.avatarUrl = avatarUrl
+      boardState.me.hasCustomAvatar = true
+      for (const g of boardState.groups) {
+        for (const m of g.members) {
+          if (m.id === boardState.me.id) m.avatarUrl = avatarUrl
+        }
+      }
+      return { ok: true as const, avatarUrl, hasCustomAvatar: true as const }
+    },
+    deleteAvatar: async () => {
+      boardState.me.avatarUrl = defaultMeAvatar
+      boardState.me.hasCustomAvatar = false
+      for (const g of boardState.groups) {
+        for (const m of g.members) {
+          if (m.id === boardState.me.id) m.avatarUrl = defaultMeAvatar
+        }
+      }
+      return { ok: true as const, avatarUrl: defaultMeAvatar, hasCustomAvatar: false as const }
     },
     createInvite: async () => {
       const code = `demo${++nextId}ab`
@@ -475,7 +519,7 @@ function createDemoFriendsService(deps: FriendsServiceDeps): FriendsService {
         isAdmin: true,
         myStatus: 'active',
         inviteCode,
-        members: [{ id: boardState.me.id, login: boardState.me.login, name: boardState.me.name, avatarUrl: avatars.yaseen, since: new Date(now()).toISOString(), stats: boardState.me.stats, statsAt: boardState.me.statsAt }],
+        members: [{ id: boardState.me.id, login: boardState.me.login, name: boardState.me.name, avatarUrl: boardState.me.avatarUrl, since: new Date(now()).toISOString(), stats: boardState.me.stats, statsAt: boardState.me.statsAt }],
         pending: [],
         banned: [],
         sharedFolders: [],
@@ -663,6 +707,16 @@ export function createFriendsService(deps: FriendsServiceDeps): FriendsService {
       wrap(async () => {
         const res = await client.updatePrefs(prefs)
         return { ok: true as const, vaults: res.vaults, zone: res.zone, nickname: res.nickname }
+      }),
+    uploadAvatar: (payload) =>
+      wrap(async () => {
+        const res = await client.uploadAvatar(payload)
+        return { ok: true as const, avatarUrl: res.avatarUrl, hasCustomAvatar: true as const }
+      }),
+    deleteAvatar: () =>
+      wrap(async () => {
+        const res = await client.deleteAvatar()
+        return { ok: true as const, avatarUrl: res.avatarUrl ?? null, hasCustomAvatar: false as const }
       }),
     createInvite: () =>
       wrap(async () => {

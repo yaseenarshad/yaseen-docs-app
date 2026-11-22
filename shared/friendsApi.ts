@@ -121,6 +121,7 @@ export interface FriendsBoardPayload {
     name: string
     nickname: string | null
     avatarUrl: string | null
+    hasCustomAvatar?: boolean
     zone: string | null
     vaults: string[]
     stats: FriendStats | null
@@ -155,6 +156,8 @@ export interface FriendsApiClient {
   board(force?: boolean): Promise<FriendsBoardPayload>
   sendStats(stats: FriendStats, zone?: string | null, opts?: { force?: boolean }): Promise<{ ok: true; statsAt: string }>
   updatePrefs(prefs: { vaults?: string[]; zone?: string | null; nickname?: string | null }): Promise<{ ok: true; vaults: string[]; zone: string | null; nickname: string | null }>
+  uploadAvatar(payload: { contentType: string; dataBase64: string }): Promise<{ ok: true; avatarUrl: string; hasCustomAvatar: true }>
+  deleteAvatar(): Promise<{ ok: true; avatarUrl: string | null; hasCustomAvatar: false }>
   getDeckSettings(): Promise<DeckSettingsPayload>
   saveDeckSettings(input: DeckSettingsPayload): Promise<{ ok: true } & DeckSettingsPayload>
   getDeckTree(ownerId: number, repo: string): Promise<DeckTreePayload>
@@ -259,6 +262,21 @@ export function createFriendsApiClient(opts: FriendsApiClientOptions): FriendsAp
       const res = await authed<{ ok: true; vaults: string[]; zone: string | null; nickname: string | null }>('/api/friends/prefs', {
         method: 'PUT',
         body: JSON.stringify(prefs),
+      })
+      cachedEtag = null
+      return res.data!
+    },
+    async uploadAvatar(payload) {
+      const res = await authed<{ ok: true; avatarUrl: string; hasCustomAvatar: true }>('/api/friends/avatar', {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      })
+      cachedEtag = null
+      return res.data!
+    },
+    async deleteAvatar() {
+      const res = await authed<{ ok: true; avatarUrl: string | null; hasCustomAvatar: false }>('/api/friends/avatar', {
+        method: 'DELETE',
       })
       cachedEtag = null
       return res.data!

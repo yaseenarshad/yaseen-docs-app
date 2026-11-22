@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { FriendDay, FriendStats } from './friendStatsFormat'
-import { average7Day, computeBuddyStreak, computeGroupStreak, dailyMarkOf, sinceDayKey, sortLeaderboard } from './friendsBoard'
+import { average7Day, computeBuddyStreak, computeGroupStreak, dailyMarkOf, displayNameFor, firstNameOf, sinceDayKey, sortLeaderboard } from './friendsBoard'
 
 function makeDay(day: string, done: boolean, cards = done ? 20 : 0): FriendDay {
   return { day, cards, seconds: cards * 25, remembered: cards, forgot: 0, newCards: 2, done }
@@ -115,5 +115,25 @@ describe('friendsBoard shared helpers (YAZ-6200, YAZ-6222)', () => {
     expect(sinceDayKey('2026-11-15T18:00:00.000Z')).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(sinceDayKey(null)).toBeNull()
     expect(sinceDayKey('not-a-date')).toBeNull()
+  })
+
+  it('firstNameOf clips multi-word names, trims whitespace, and falls back to login (YAZ-6298)', () => {
+    expect(firstNameOf('Yaseen Arshad', 'yaseen')).toBe('Yaseen')
+    expect(firstNameOf('Maya', 'maya-gh')).toBe('Maya')
+    expect(firstNameOf('   Samir   Patel   ', 'samir')).toBe('Samir')
+    expect(firstNameOf('Elena\tRodriguez', 'elena')).toBe('Elena')
+    expect(firstNameOf('', 'yaseen')).toBe('yaseen')
+    expect(firstNameOf('   ', 'yaseen')).toBe('yaseen')
+    expect(firstNameOf(null, 'yaseen')).toBe('yaseen')
+    expect(firstNameOf(undefined, 'yaseen')).toBe('yaseen')
+  })
+
+  it('displayNameFor preserves custom nickname as-typed and falls back to firstNameOf (YAZ-6298)', () => {
+    expect(displayNameFor('Yaseen A.', 'Yaseen Arshad', 'yaseen')).toBe('Yaseen A.')
+    expect(displayNameFor('  Dr. Yas  ', 'Yaseen Arshad', 'yaseen')).toBe('Dr. Yas')
+    expect(displayNameFor('', 'Yaseen Arshad', 'yaseen')).toBe('Yaseen')
+    expect(displayNameFor('   ', 'Yaseen Arshad', 'yaseen')).toBe('Yaseen')
+    expect(displayNameFor(null, 'Yaseen Arshad', 'yaseen')).toBe('Yaseen')
+    expect(displayNameFor(undefined, null, 'yaseen')).toBe('yaseen')
   })
 })

@@ -1412,3 +1412,61 @@
   padding: 6px 14px;
   font-size: 14px;
 }
+
+/* YAZ-6300: Settings › Friends › Profile picture 2-click row + sheet. */
+.fr-avatar-row__side {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fr-avatar-row__thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.fr-avatar-row__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.fr-avatar-row__preview-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.fr-avatar-row__preview {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-size: 24px;
+  font-weight: 600;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+
+.fr-avatar-row__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
