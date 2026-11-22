@@ -39,6 +39,25 @@ export interface SharedFolderItem {
 
 export type DeckShareMode = 'none' | 'all' | 'selected'
 
+export type FriendFinishedMode = 'off' | 'all' | 'selected'
+
+export interface NotificationPrefs {
+  dailyReminder: boolean
+  reminderHour: number
+  friendFinishedMode: FriendFinishedMode
+  friendFinishedIds: number[]
+  buddyStreak: boolean
+  sharedCards: boolean
+}
+
+export interface PushSubscriptionInput {
+  endpoint: string
+  keys: {
+    p256dh: string
+    auth: string
+  }
+}
+
 export interface DeckVaultConfig {
   repo: string
   installationId: number
@@ -181,6 +200,12 @@ export interface FriendsApiClient {
   setCardState(cardId: string, status: SharedCardStatus): Promise<{ ok: true; status: SharedCardStatus }>
   setFolderState(folderId: string, status: SharedCardStatus): Promise<{ ok: true; status: SharedCardStatus; count: number }>
   deleteSharedCard(cardId: string): Promise<{ ok: true }>
+  getPushConfig(): Promise<{ vapidPublicKey: string | null }>
+  subscribePush(sub: PushSubscriptionInput): Promise<{ ok: true }>
+  unsubscribePush(endpoint: string): Promise<{ ok: true }>
+  getNotificationPrefs(): Promise<{ prefs: NotificationPrefs; subscribedCount: number }>
+  updateNotificationPrefs(patch: Partial<NotificationPrefs>): Promise<{ ok: true; prefs: NotificationPrefs }>
+  sendTestPush(): Promise<{ ok: true; sent: number; failed: number }>
   deleteMe(): Promise<{ ok: true; deleted: true }>
 }
 
@@ -418,6 +443,39 @@ export function createFriendsApiClient(opts: FriendsApiClientOptions): FriendsAp
     async deleteSharedCard(cardId) {
       const res = await authed<{ ok: true }>(`/api/friends/cards/${encodeURIComponent(cardId)}`, { method: 'DELETE' })
       cachedEtag = null
+      return res.data!
+    },
+    async getPushConfig() {
+      const res = await authed<{ vapidPublicKey: string | null }>('/api/friends/push/config', { method: 'GET' })
+      return res.data!
+    },
+    async subscribePush(sub) {
+      const res = await authed<{ ok: true }>('/api/friends/push/subscribe', {
+        method: 'POST',
+        body: JSON.stringify(sub),
+      })
+      return res.data!
+    },
+    async unsubscribePush(endpoint) {
+      const res = await authed<{ ok: true }>('/api/friends/push/unsubscribe', {
+        method: 'POST',
+        body: JSON.stringify({ endpoint }),
+      })
+      return res.data!
+    },
+    async getNotificationPrefs() {
+      const res = await authed<{ prefs: NotificationPrefs; subscribedCount: number }>('/api/friends/push/prefs', { method: 'GET' })
+      return res.data!
+    },
+    async updateNotificationPrefs(patch) {
+      const res = await authed<{ ok: true; prefs: NotificationPrefs }>('/api/friends/push/prefs', {
+        method: 'PUT',
+        body: JSON.stringify(patch),
+      })
+      return res.data!
+    },
+    async sendTestPush() {
+      const res = await authed<{ ok: true; sent: number; failed: number }>('/api/friends/push/test', { method: 'POST' })
       return res.data!
     },
     async deleteMe() {

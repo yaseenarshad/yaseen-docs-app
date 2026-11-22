@@ -87,6 +87,40 @@ export type Board =
 
 export type PasteAnswer = PasteResult | JoinResult | JoinRequest | Unavailable
 
+export type FriendFinishedMode = 'off' | 'all' | 'selected'
+
+export interface NotificationPrefs {
+  dailyReminder: boolean
+  reminderHour: number
+  friendFinishedMode: FriendFinishedMode
+  friendFinishedIds: number[]
+  buddyStreak: boolean
+  sharedCards: boolean
+}
+
+export interface PushSubscriptionInput {
+  endpoint: string
+  keys: { p256dh: string; auth: string }
+}
+
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
+  dailyReminder: true,
+  reminderHour: 20,
+  friendFinishedMode: 'all',
+  friendFinishedIds: [],
+  buddyStreak: true,
+  sharedCards: true,
+}
+
+type PushApiMethods = {
+  getPushConfig?: () => Promise<{ vapidPublicKey: string | null }>
+  subscribePush?: (sub: PushSubscriptionInput) => Promise<{ ok: true }>
+  unsubscribePush?: (endpoint: string) => Promise<{ ok: true }>
+  getNotificationPrefs?: () => Promise<{ prefs: NotificationPrefs; subscribedCount: number }>
+  updateNotificationPrefs?: (patch: Partial<NotificationPrefs>) => Promise<{ ok: true; prefs: NotificationPrefs }>
+  sendTestPush?: () => Promise<{ ok: true; sent: number; failed: number }>
+}
+
 export interface FriendsService {
   board(): Promise<Board>
   share(): Promise<ShareResult | Unavailable>
@@ -142,6 +176,12 @@ export interface FriendsService {
   }): Promise<{ ok: true; avatarUrl: string; hasCustomAvatar: true } | { ok: false; error: string }>
   deleteAvatar?(): Promise<{ ok: true; avatarUrl: string | null; hasCustomAvatar: false } | { ok: false; error: string }>
   deleteMe?(): Promise<{ ok: true; deleted: true } | { ok: false; error: string }>
+  getPushConfig?(): Promise<{ vapidPublicKey: string | null }>
+  subscribePush?(sub: PushSubscriptionInput): Promise<{ ok: true } | { ok: false; error: string }>
+  unsubscribePush?(endpoint: string): Promise<{ ok: true } | { ok: false; error: string }>
+  getNotificationPrefs?(): Promise<{ prefs: NotificationPrefs; subscribedCount: number } | null>
+  updateNotificationPrefs?(patch: Partial<NotificationPrefs>): Promise<{ ok: true; prefs: NotificationPrefs } | { ok: false; error: string }>
+  sendTestPush?(): Promise<{ ok: true; sent: number; failed: number } | { ok: false; error: string }>
 }
 
 /** Strips any `@branch` suffix and lowercases to canonical `owner/repo`. */
@@ -293,7 +333,7 @@ function makeDemoStats(
   doneHistoryDays: number = streak,
 ): FriendStats {
   const today = localDay(nowMs)
-  const dayCount = Math.max(30, streak + 2, doneHistoryDays + 2)
+  const dayCount = Math.max(60, streak + 2, doneHistoryDays + 2)
   const seed = login.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
   const days = Array.from({ length: dayCount }, (_, idx) => {
     const offset = -idx
@@ -371,7 +411,7 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
       hasCustomAvatar: false,
       zone: 'America/Denver',
       vaults: [],
-      stats: makeDemoStats(t, 'yaseen', 'Yaseen', 42, 18, true, 14),
+      stats: makeDemoStats(t, 'yaseen', 'Yaseen', 42, 18, true, 14, 14),
       statsAt: iso,
     },
     friends: [
@@ -381,7 +421,7 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
         name: 'Maya',
         avatarUrl: avatars.maya,
         since: new Date(t - 30 * 86_400_000).toISOString(),
-        stats: makeDemoStats(t, 'maya', 'Maya', 25, 12, true, 21, 5),
+        stats: makeDemoStats(t, 'maya', 'Maya', 25, 12, true, 24, 24),
         statsAt: new Date(t - 15 * 60_000).toISOString(),
         sharedCardCount: 12,
         canBrowseDeck: true,
@@ -403,7 +443,23 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
         name: 'Elena',
         avatarUrl: avatars.elena,
         since: new Date(t - 20 * 86_400_000).toISOString(),
-        stats: makeDemoStats(t, 'elena', 'Elena', 18, 8, true, 7, 2),
+        stats: (() => {
+          const s = makeDemoStats(t, 'elena', 'Elena', 18, 8, true, 16, 16)
+          // Make prior month lower so Elena showcases the "Beat Oct" badge live in Demo
+          const curMonthPrefix = localDay(t).slice(0, 8)
+          let keptPrior = 0
+          for (const d of s.days) {
+            if (d.day < `${curMonthPrefix}01`) {
+              if (keptPrior < 11) {
+                d.done = true
+                keptPrior++
+              } else {
+                d.done = false
+              }
+            }
+          }
+          return s
+        })(),
         statsAt: new Date(t - 55 * 60_000).toISOString(),
         sharedCardCount: 2,
       },
@@ -517,7 +573,16 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
     unbanGroupMember(groupId: string, userId: number): Promise<{ ok: true }>
     uploadAvatar(payload: { contentType: string; dataBase64: string }): Promise<{ ok: true; avatarUrl: string; hasCustomAvatar: true }>
     deleteAvatar(): Promise<{ ok: true; avatarUrl: string | null; hasCustomAvatar: false }>
+    getPushConfig(): Promise<{ vapidPublicKey: string | null }>
+    subscribePush(sub: PushSubscriptionInput): Promise<{ ok: true }>
+    unsubscribePush(endpoint: string): Promise<{ ok: true }>
+    getNotificationPrefs(): Promise<{ prefs: NotificationPrefs; subscribedCount: number }>
+    updateNotificationPrefs(patch: Partial<NotificationPrefs>): Promise<{ ok: true; prefs: NotificationPrefs }>
+    sendTestPush(): Promise<{ ok: true; sent: number; failed: number }>
   }
+
+  let demoNotificationPrefs: NotificationPrefs = structuredClone(DEFAULT_NOTIFICATION_PREFS)
+  const demoPushEndpoints = new Set<string>()
 
   let demoDeckSettings: DeckSettingsPayload = {
     mode: 'none',
@@ -617,9 +682,12 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
       return structuredClone(state)
     },
     async sendStats(stats) {
-      state.me.stats = stats
-      state.me.statsAt = new Date(now()).toISOString()
-      return { ok: true, statsAt: state.me.statsAt }
+      // Never let an unreviewed local demo vault overwrite the populated demo stats.
+      if (stats.days.some((d) => d.cards > 0)) {
+        state.me.stats = stats
+        state.me.statsAt = new Date(now()).toISOString()
+      }
+      return { ok: true, statsAt: state.me.statsAt ?? new Date(now()).toISOString() }
     },
     async updatePrefs(prefs) {
       if (prefs.vaults !== undefined) state.me.vaults = prefs.vaults
@@ -736,7 +804,42 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
       state.groups = []
       state.invites = []
       state.incomingCards = []
+      demoPushEndpoints.clear()
+      demoNotificationPrefs = structuredClone(DEFAULT_NOTIFICATION_PREFS)
       return { ok: true, deleted: true }
+    },
+    async getPushConfig() {
+      return { vapidPublicKey: 'BDemoVapidPublicKeyForLocalFriendsDemoMode00000000000000000000000000000000000000000000000' }
+    },
+    async subscribePush(sub: PushSubscriptionInput) {
+      if (sub.endpoint) demoPushEndpoints.add(sub.endpoint)
+      return { ok: true as const }
+    },
+    async unsubscribePush(endpoint: string) {
+      if (endpoint) demoPushEndpoints.delete(endpoint)
+      else demoPushEndpoints.clear()
+      return { ok: true as const }
+    },
+    async getNotificationPrefs() {
+      return { prefs: structuredClone(demoNotificationPrefs), subscribedCount: demoPushEndpoints.size }
+    },
+    async updateNotificationPrefs(patch: Partial<NotificationPrefs>) {
+      if (typeof patch.dailyReminder === 'boolean') demoNotificationPrefs.dailyReminder = patch.dailyReminder
+      if (typeof patch.reminderHour === 'number' && Number.isInteger(patch.reminderHour) && patch.reminderHour >= 0 && patch.reminderHour <= 23) {
+        demoNotificationPrefs.reminderHour = patch.reminderHour
+      }
+      if (patch.friendFinishedMode === 'off' || patch.friendFinishedMode === 'all' || patch.friendFinishedMode === 'selected') {
+        demoNotificationPrefs.friendFinishedMode = patch.friendFinishedMode
+      }
+      if (Array.isArray(patch.friendFinishedIds)) {
+        demoNotificationPrefs.friendFinishedIds = [...new Set(patch.friendFinishedIds.filter((id) => typeof id === 'number' && Number.isInteger(id)))]
+      }
+      if (typeof patch.buddyStreak === 'boolean') demoNotificationPrefs.buddyStreak = patch.buddyStreak
+      if (typeof patch.sharedCards === 'boolean') demoNotificationPrefs.sharedCards = patch.sharedCards
+      return { ok: true as const, prefs: structuredClone(demoNotificationPrefs) }
+    },
+    async sendTestPush() {
+      return { ok: true as const, sent: demoPushEndpoints.size, failed: 0 }
     },
   } as FriendsApiClient & DemoGroupExtras
 }
@@ -1433,6 +1536,60 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       }
     },
     deleteMe,
+    async getPushConfig() {
+      try {
+        const ext = api as FriendsApiClient & PushApiMethods
+        if (!ext.getPushConfig) return { vapidPublicKey: null }
+        return await ext.getPushConfig()
+      } catch {
+        return { vapidPublicKey: null }
+      }
+    },
+    async subscribePush(sub) {
+      try {
+        const ext = api as FriendsApiClient & PushApiMethods
+        if (!ext.subscribePush) return { ok: false, error: 'push_unsupported' }
+        return await ext.subscribePush(sub)
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'subscribe_failed' }
+      }
+    },
+    async unsubscribePush(endpoint) {
+      try {
+        const ext = api as FriendsApiClient & PushApiMethods
+        if (!ext.unsubscribePush) return { ok: false, error: 'push_unsupported' }
+        return await ext.unsubscribePush(endpoint)
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'unsubscribe_failed' }
+      }
+    },
+    async getNotificationPrefs() {
+      try {
+        const ext = api as FriendsApiClient & PushApiMethods
+        if (!ext.getNotificationPrefs) return null
+        return await ext.getNotificationPrefs()
+      } catch {
+        return null
+      }
+    },
+    async updateNotificationPrefs(patch) {
+      try {
+        const ext = api as FriendsApiClient & PushApiMethods
+        if (!ext.updateNotificationPrefs) return { ok: false, error: 'push_unsupported' }
+        return await ext.updateNotificationPrefs(patch)
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'prefs_failed' }
+      }
+    },
+    async sendTestPush() {
+      try {
+        const ext = api as FriendsApiClient & PushApiMethods
+        if (!ext.sendTestPush) return { ok: false, error: 'push_unsupported' }
+        return await ext.sendTestPush()
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'test_push_failed' }
+      }
+    },
     async stop() {
       stopped = true
       unfollow?.()

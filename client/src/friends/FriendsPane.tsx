@@ -8,10 +8,13 @@ import type { FriendBoardMember, FriendsBoardPayload, GroupBoardItem, SharedCard
 import type { FriendDay, FriendStats } from '@shared/friendStatsFormat'
 import {
   average7Day,
+  buildPeriodGoalHero,
   computeBuddyStreak,
   dailyMarkOf,
   filterSharedCards,
   localDayKey,
+  periodConsistency,
+  periodContext,
   periodTotals,
   sinceDayKey,
   type BoardPeriod,
@@ -690,13 +693,91 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
     return direct + groupCards
   }, [board])
 
+  const renderPeriodHero = () => {
+    if (!board) return null
+    const ctx = periodContext(period, nowMs)
+    const meTotals = periodTotals(board.me.stats, period, nowMs)
+    const meStreak = board.me.stats?.totals.streak ?? 0
+    const dueLeft = board.me.stats?.totals.dueLeft ?? 0
+    const streakText = meStreak === 1 ? '1-day streak' : `${meStreak}-day streak`
+
+    let subHeading = ctx.rangeLabel
+    let heroPrimary = ''
+    let heroParen: string | null = null
+    let heroDone = false
+    const metaParts: string[] = []
+
+    if (period === 'today') {
+      const todayDone = finishedOnPeriod(board.me.stats, 'today', nowMs) || (dueLeft === 0 && meTotals.cards > 0)
+      heroDone = todayDone
+      heroPrimary = todayDone ? '🎉 Today complete' : dueLeft > 0 ? `${dueLeft} due left` : 'No cards due'
+      metaParts.push(`${meTotals.cards.toLocaleString()} cards`, formatStudyTime(meTotals.seconds), streakText)
+    } else if (period === 'yesterday') {
+      subHeading = `Yesterday · ${ctx.rangeLabel}`
+      const yestDone = finishedOnPeriod(board.me.stats, 'yesterday', nowMs)
+      heroDone = yestDone
+      heroPrimary = yestDone ? '🥇 Yesterday complete' : 'Not finished'
+      metaParts.push(`${meTotals.cards.toLocaleString()} cards`, formatStudyTime(meTotals.seconds), streakText)
+    } else {
+      const goal = buildPeriodGoalHero(board.me.stats, period, meTotals.cards, formatStudyTime(meTotals.seconds), nowMs)
+      subHeading = goal.line1
+      heroDone = goal.heroDone
+      heroPrimary = goal.heroPrimary
+      heroParen = goal.heroParen
+      metaParts.push(goal.line3)
+    }
+
+    return (
+      <section className={heroDone ? 'fr-hero-card fr-hero-card--done' : 'fr-hero-card'} aria-label={ctx.heroTitle}>
+        <div className="fr-seg" role="group" aria-label="Period">
+          {PERIODS.map((p) => (
+            <button key={p.id} type="button" aria-pressed={period === p.id} onClick={() => setPeriod(p.id)}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="fr-hero-card__body">
+          <div className="fr-hero-card__sub">{subHeading}</div>
+          <div className={heroDone ? 'fr-hero-card__num fr-hero-card__num--done' : 'fr-hero-card__num'}>
+            {heroPrimary}
+            {heroParen && <span className="fr-hero-card__paren"> {heroParen}</span>}
+          </div>
+          <div className="fr-hero-card__meta">{metaParts.join(' · ')}</div>
+        </div>
+      </section>
+    )
+  }
+
   const renderLeaderboard = (rows: readonly RowView[], showBuddyStreak: boolean) => {
     const todayKey = localDayKey(nowMs)
     const myDoneToday = board ? dailyMarkOf(board.me.stats, nowMs) === 'finished' : false
+    const orderedRows =
+      period === 'week' || period === 'month'
+        ? [...rows].sort((a, b) => {
+            const sa = a.isMe ? board?.me.stats : a.member?.stats
+            const sb = b.isMe ? board?.me.stats : b.member?.stats
+            const ca = periodConsistency(sa, period, nowMs)
+            const cb = periodConsistency(sb, period, nowMs)
+            return cb.finishedDays - ca.finishedDays || b.cards - a.cards || a.name.localeCompare(b.name)
+          })
+        : rows
     return (
       <div className="fr-board" role="list" aria-label="Friends leaderboard">
-        {rows.map((row) => {
+        {orderedRows.map((row, rowIndex) => {
           const friend = row.member
+          const rowStats = row.isMe ? board?.me.stats : friend?.stats
+          const rowConsistency = period === 'week' || period === 'month' ? periodConsistency(rowStats, period, nowMs) : null
+          const rowPerfect = rowConsistency !== null && rowConsistency.possibleDays > 0 && rowConsistency.finishedDays >= rowConsistency.possibleDays
+          const rowBeatPrior =
+            rowConsistency !== null &&
+            rowConsistency.priorFinishedDays !== null &&
+            rowConsistency.priorFinishedDays > 0 &&
+            rowConsistency.finishedDays > rowConsistency.priorFinishedDays
+          const priorBadgeLabel = period === 'week' ? 'Beat prev week' : 'Beat prev month'
+          const priorSubLabel =
+            rowConsistency && rowConsistency.priorFinishedDays !== null && rowConsistency.priorFinishedDays > 0
+              ? `${period === 'week' ? 'Prev wk' : 'Prev mo'}: ${rowConsistency.priorFinishedDays}d`
+              : null
           const buddyStreak = showBuddyStreak && !row.isMe && friend && board ? buddyStreakOf(board.me.stats?.days, friend, nowMs) : 0
           const bothDoneToday = myDoneToday && row.mark === 'finished'
           const revealKey = friend ? `${todayKey}:${friend.id}` : ''
@@ -720,16 +801,26 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                   }
                 }}
               >
-                {(period === 'today' || period === 'yesterday') && (
+                {period === 'today' || period === 'yesterday' ? (
                   <span className="fr-rank fr-rank--medal" aria-hidden="true">
                     {row.finishedForPeriod ? '🥇' : ''}
+                  </span>
+                ) : (
+                  <span className="fr-rank" aria-hidden="true">
+                    {rowIndex + 1}
                   </span>
                 )}
                 <Avatar name={row.name} url={row.avatarUrl} />
                 <div className="fr-who">
                   <div className="fr-name-line">
                     <span className={`fr-name${row.isMe ? ' fr-name--you' : ''}`}>{row.name}</span>
-                    {showBuddyStreak && !row.isMe && friend && buddyStreak > 0 && (
+                    {(period === 'week' || period === 'month') && rowBeatPrior && (
+                      <span className="fr-cons-badge fr-cons-badge--beat">{priorBadgeLabel}</span>
+                    )}
+                    {(period === 'week' || period === 'month') && !rowBeatPrior && rowPerfect && (
+                      <span className="fr-cons-badge fr-cons-badge--perfect">Perfect</span>
+                    )}
+                    {showBuddyStreak && !row.isMe && friend && buddyStreak > 0 && (period === 'today' || period === 'yesterday') && (
                       period === 'today' && bothDoneToday && !isRevealed ? (
                         <button
                           type="button"
@@ -764,19 +855,38 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                   })()}
                 </div>
                 <div className="fr-nums">
-                  <span className="fr-hero-cards">
-                    {row.finishedForPeriod && (
-                      <span className="fr-mark--finished" aria-label="Finished due cards" style={{ marginRight: 5 }}>
-                        ✓
+                  {(period === 'week' || period === 'month') && rowConsistency !== null ? (
+                    <>
+                      <span className="fr-hero-cards">
+                        {rowPerfect && (
+                          <span className="fr-mark--finished" aria-label="Perfect period" style={{ marginRight: 5 }}>
+                            ✓
+                          </span>
+                        )}
+                        {rowConsistency.finishedDays} / {rowConsistency.possibleDays}
+                        <span className="fr-hero-unit">{rowConsistency.possibleDays === 1 ? 'day' : 'days'}</span>
                       </span>
-                    )}
-                    {row.cards}
-                    <span className="fr-hero-unit">cards</span>
-                  </span>
-                  <span className="fr-nums__sub">
-                    {row.streak > 0 ? `${row.streak}d 🔥 · ` : ''}
-                    {formatStudyTime(row.seconds)}
-                  </span>
+                      <span className="fr-nums__sub">
+                        {priorSubLabel ? `${priorSubLabel} · ${row.cards.toLocaleString()} cards` : `${row.cards.toLocaleString()} cards`}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="fr-hero-cards">
+                        {row.finishedForPeriod && (
+                          <span className="fr-mark--finished" aria-label="Finished due cards" style={{ marginRight: 5 }}>
+                            ✓
+                          </span>
+                        )}
+                        {row.cards}
+                        <span className="fr-hero-unit">cards</span>
+                      </span>
+                      <span className="fr-nums__sub">
+                        {row.streak > 0 ? `${row.streak}d 🔥 · ` : ''}
+                        {formatStudyTime(row.seconds)}
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -1645,15 +1755,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
           ) : activeGroup ? (
             /* ---- Pure StepUp Group Leaderboard (no Shared Cards sub-tabs, no Pending requests box) ---- */
             <div>
-              <div className="fr-controls">
-                <div className="fr-seg" role="group" aria-label="Period">
-                  {PERIODS.map((p) => (
-                    <button key={p.id} type="button" aria-pressed={period === p.id} onClick={() => setPeriod(p.id)}>
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {renderPeriodHero()}
 
               {renderLeaderboard(groupRows, false)}
 
@@ -1704,15 +1806,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
           ) : (
             /* ---- All Friends Leaderboard ---- */
             <>
-              <div className="fr-controls">
-                <div className="fr-seg" role="group" aria-label="Period">
-                  {PERIODS.map((p) => (
-                    <button key={p.id} type="button" aria-pressed={period === p.id} onClick={() => setPeriod(p.id)}>
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {renderPeriodHero()}
 
               {board.friends.length === 0 && board.groups.length === 0 ? (
                 <div className="fr-signed-out">

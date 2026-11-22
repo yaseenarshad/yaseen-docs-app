@@ -1,6 +1,7 @@
 import { CALLBACK_ORIGINS, CALLBACK_PATH, GITHUB_APP_CLIENT_ID, WORKER_REFRESH, WORKER_REVOKE, WORKER_TOKEN } from '../src/auth/githubAppConfig'
 import type { D1Database } from './d1Types'
-import { handleFriends } from './friends'
+import { handleFriends, type WorkerExecutionContext } from './friends'
+import { runDailyReminders } from './pushNotify'
 
 /**
  * THE WORKER OF docs.yaseenarshad.com (YAZ-5645, slice 1; decision D3): the app's static files, as before, plus three
@@ -27,6 +28,12 @@ export interface Env {
   FRIENDS_TOKEN_SECRET?: string
   /** Cloudflare D1 database for Friends stats, invites, marks, groups, and shared cards. */
   FRIENDS_DB?: D1Database
+  /** Base64url-encoded 65-byte uncompressed P-256 VAPID public key for Web Push. */
+  VAPID_PUBLIC_KEY?: string
+  /** Base64url-encoded 32-byte P-256 private scalar or PKCS#8 PEM for Web Push VAPID signing. */
+  VAPID_PRIVATE_KEY?: string
+  /** VAPID `sub` contact URI (default `mailto:yaseen@yaseenarshad.com`). */
+  VAPID_SUBJECT?: string
   /** The static files (`assets.binding`). */
   ASSETS?: { fetch(request: Request): Promise<Response> }
 }
@@ -48,7 +55,12 @@ const answer = (status: number, body: unknown) => new Response(body === null ? n
 /** `error`: one word the app reads (`auth/githubApp.ts`). Never GitHub's text, never a request's value. */
 const refuse = (status: number, error: string) => answer(status, { error })
 
-export async function handle(request: Request, env: Env, fetch: Fetch = (url, init) => globalThis.fetch(url, init)): Promise<Response> {
+export async function handle(
+  request: Request,
+  env: Env,
+  fetch: Fetch = (url, init) => globalThis.fetch(url, init),
+  ctx?: WorkerExecutionContext,
+): Promise<Response> {
   const url = new URL(request.url)
   // YAZ-6190 D1: Mac desktop OAuth bounce — state starts with "mac.", so forward code/state/error to yaseendocs://auth/callback.
   if (url.pathname === CALLBACK_PATH && request.method === 'GET' && url.searchParams.get('state')?.startsWith('mac.')) {
@@ -59,7 +71,7 @@ export async function handle(request: Request, env: Env, fetch: Fetch = (url, in
     }
     return Response.redirect(target.href, 302)
   }
-  if (url.pathname.startsWith('/api/friends/')) return handleFriends(request, env, fetch)
+  if (url.pathname.startsWith('/api/friends/')) return handleFriends(request, env, fetch, Date.now, ctx)
   if (!url.pathname.startsWith('/api/github/')) return env.ASSETS ? env.ASSETS.fetch(request) : refuse(404, 'not_found')
   const route = url.pathname === WORKER_TOKEN ? 'token' : url.pathname === WORKER_REFRESH ? 'refresh' : url.pathname === WORKER_REVOKE ? 'revoke' : null
   if (route === null) return refuse(404, 'not_found')
@@ -152,5 +164,10 @@ export async function handle(request: Request, env: Env, fetch: Fetch = (url, in
 }
 
 export default {
-  fetch: (request: Request, env: Env) => handle(request, env),
+  fetch: (request: Request, env: Env, ctx?: WorkerExecutionContext) => handle(request, env, undefined, ctx),
+  scheduled: (event: { scheduledTime?: number }, env: Env, ctx?: WorkerExecutionContext) => {
+    const run = runDailyReminders(env, event?.scheduledTime ?? Date.now())
+    if (ctx) ctx.waitUntil(run)
+    return run
+  },
 }

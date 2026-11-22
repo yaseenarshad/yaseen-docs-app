@@ -91,10 +91,10 @@ export function average7Day(stats: FriendStats | null, nowMs: number = Date.now(
   }
 }
 
-function mondayOf(day: string): string {
+function sundayOf(day: string): string {
   const [y, m, d] = day.split('-').map(Number)
   const dt = new Date(y, m - 1, d)
-  return addDays(day, -((dt.getDay() + 6) % 7))
+  return addDays(day, -dt.getDay())
 }
 
 export function dailyMarkOf(stats: FriendStats | null, nowMs: number): DailyMark {
@@ -120,7 +120,7 @@ export function periodTotals(stats: FriendStats | null, period: BoardPeriod, now
     const d = findDay(addDays(today, -1))
     return { cards: d?.cards ?? 0, seconds: d?.seconds ?? 0 }
   }
-  const from = period === 'week' ? mondayOf(today) : addDays(today, -29)
+  const from = period === 'week' ? sundayOf(today) : `${today.slice(0, 8)}01`
   let cards = 0
   let seconds = 0
   for (const d of stats.days) {
@@ -262,4 +262,207 @@ export function displayNameFor(nickname: string | null | undefined, name: string
   const nick = nickname?.trim() ?? ''
   if (nick) return nick
   return firstNameOf(name, login)
+}
+
+export interface PeriodContext {
+  rangeLabel: string
+  heroTitle: string
+  fromDay: string
+  toDay: string
+  totalDays: number
+}
+
+const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+/** Date range and bounds for each leaderboard period (Week = Sun–Sat, Month = 1st–today). */
+export function periodContext(period: BoardPeriod, nowMs: number = Date.now()): PeriodContext {
+  const d = new Date(nowMs)
+  const y = d.getFullYear()
+  const m = d.getMonth()
+  const day = d.getDate()
+  const todayKey = localDayKey(nowMs)
+
+  if (period === 'today') {
+    return {
+      rangeLabel: `${WEEKDAYS_SHORT[d.getDay()]}, ${MONTHS_SHORT[m]} ${day}`,
+      heroTitle: 'Your Today',
+      fromDay: todayKey,
+      toDay: todayKey,
+      totalDays: 1,
+    }
+  }
+  if (period === 'yesterday') {
+    const prev = new Date(y, m, day - 1)
+    const prevKey = addDays(todayKey, -1)
+    return {
+      rangeLabel: `${WEEKDAYS_SHORT[prev.getDay()]}, ${MONTHS_SHORT[prev.getMonth()]} ${prev.getDate()}`,
+      heroTitle: 'Your Yesterday',
+      fromDay: prevKey,
+      toDay: prevKey,
+      totalDays: 1,
+    }
+  }
+  if (period === 'week') {
+    const sunKey = sundayOf(todayKey)
+    const sun = new Date(y, m, day - d.getDay())
+    const sat = new Date(y, m, day - d.getDay() + 6)
+    const sunStr = `${MONTHS_SHORT[sun.getMonth()]} ${sun.getDate()}`
+    const satStr = sun.getMonth() === sat.getMonth() ? `${sat.getDate()}` : `${MONTHS_SHORT[sat.getMonth()]} ${sat.getDate()}`
+    return {
+      rangeLabel: `Sun, ${sunStr} – Sat, ${satStr}`,
+      heroTitle: 'Your Week',
+      fromDay: sunKey,
+      toDay: todayKey,
+      totalDays: 7,
+    }
+  }
+  return {
+    rangeLabel: `${MONTHS_FULL[m]} ${y}`,
+    heroTitle: `Your ${MONTHS_FULL[m]}`,
+    fromDay: `${todayKey.slice(0, 8)}01`,
+    toDay: todayKey,
+    totalDays: day,
+  }
+}
+
+export interface PeriodConsistency {
+  finishedDays: number
+  possibleDays: number
+  priorFinishedDays: number | null
+  priorLabel: string
+  daysLeftInPeriod: number
+}
+
+/**
+ * Counts finished days (`done: true`) vs possible elapsed days in `[fromDay, toDay]`,
+ * clamping the start to the user's earliest active day in `stats.days` so new users
+ * are not penalized for days before they started using cards.
+ * Also computes prior week / prior month finished days so the UI can show
+ * concrete "X more days beats October" / "Beat last week" goals.
+ */
+export function periodConsistency(
+  stats: Pick<FriendStats, 'days'> | null | undefined,
+  period: 'week' | 'month',
+  nowMs: number = Date.now(),
+): PeriodConsistency {
+  const ctx = periodContext(period, nowMs)
+  const { fromDay, toDay } = ctx
+  const days = stats?.days ?? []
+  let earliestActive: string | null = null
+  for (const d of days) {
+    if (d.cards > 0 || d.done) {
+      if (earliestActive === null || d.day < earliestActive) earliestActive = d.day
+    }
+  }
+  const effectiveStart = earliestActive !== null && earliestActive > fromDay && earliestActive <= toDay ? earliestActive : fromDay
+  const possibleDays = Math.max(1, diffDays(effectiveStart, toDay) + 1)
+  let finishedDays = 0
+  for (const d of days) {
+    if (d.day >= effectiveStart && d.day <= toDay && d.done) finishedDays++
+  }
+
+  // Prior period bounds & days left in current period
+  const nowDate = new Date(nowMs)
+  const y = nowDate.getFullYear()
+  const m = nowDate.getMonth()
+  let priorFrom: string
+  let priorTo: string
+  let priorLabel: string
+  let daysLeftInPeriod: number
+
+  if (period === 'week') {
+    priorFrom = addDays(fromDay, -7)
+    priorTo = addDays(fromDay, -1)
+    priorLabel = 'last week'
+    daysLeftInPeriod = Math.max(0, 6 - nowDate.getDay())
+  } else {
+    const prevMonthEnd = new Date(y, m, 0)
+    const py = prevMonthEnd.getFullYear()
+    const pm = prevMonthEnd.getMonth()
+    const pad2 = (n: number) => String(n).padStart(2, '0')
+    priorFrom = `${py}-${pad2(pm + 1)}-01`
+    priorTo = `${py}-${pad2(pm + 1)}-${pad2(prevMonthEnd.getDate())}`
+    priorLabel = MONTHS_FULL[pm]
+    const curMonthEnd = new Date(y, m + 1, 0).getDate()
+    daysLeftInPeriod = Math.max(0, curMonthEnd - nowDate.getDate())
+  }
+
+  const hasPriorHistory = earliestActive !== null && earliestActive <= priorTo
+  let priorFinishedDays: number | null = null
+  if (hasPriorHistory) {
+    let count = 0
+    for (const d of days) {
+      if (d.day >= priorFrom && d.day <= priorTo && d.done) count++
+    }
+    priorFinishedDays = count
+  }
+
+  return { finishedDays, possibleDays, priorFinishedDays, priorLabel, daysLeftInPeriod }
+}
+
+export interface GoalHeroLines {
+  line1: string
+  heroText: string
+  heroPrimary: string
+  heroParen: string | null
+  heroDone: boolean
+  line3: string
+}
+
+/** Builds strictly 3 clean hero lines for Week or Month with "X more days (beat Oct)" as the star. */
+export function buildPeriodGoalHero(
+  stats: FriendStats | null | undefined,
+  period: 'week' | 'month',
+  cards: number,
+  durationText: string,
+  nowMs: number = Date.now(),
+): GoalHeroLines {
+  const ctx = periodContext(period, nowMs)
+  const c = periodConsistency(stats, period, nowMs)
+  const dayWord = c.possibleDays === 1 ? 'day' : 'days'
+  const line1 = `${ctx.rangeLabel} · ${c.finishedDays} of ${c.possibleDays} ${dayWord}`
+  const streak = stats?.totals.streak ?? 0
+  const streakText = streak === 1 ? '1-day streak' : `${streak}-day streak`
+
+  let heroPrimary: string
+  let heroParen: string | null = null
+  let heroDone = false
+  const metaParts = [`${cards.toLocaleString()} cards`, durationText]
+
+  if (c.priorFinishedDays !== null && c.priorFinishedDays > 0) {
+    const remainingPossible = c.daysLeftInPeriod + (stats?.days.some((d) => d.day === ctx.toDay && d.done) ? 0 : 1)
+    const neededToBeat = c.priorFinishedDays - c.finishedDays + 1
+    const neededToTie = c.priorFinishedDays - c.finishedDays
+    const shortPrior = period === 'week' ? 'prev week' : 'prev month'
+    const metaPriorLabel = period === 'week' ? 'Prev week' : 'Prev month'
+    metaParts.push(`${metaPriorLabel}: ${c.priorFinishedDays} ${c.priorFinishedDays === 1 ? 'day' : 'days'}`)
+
+    if (neededToBeat <= 0) {
+      heroDone = true
+      heroPrimary = `🎉 Beat ${shortPrior}`
+      heroParen = `(${c.finishedDays} vs ${c.priorFinishedDays})`
+    } else if (neededToBeat <= remainingPossible) {
+      heroPrimary = `${neededToBeat} more ${neededToBeat === 1 ? 'day' : 'days'}`
+      heroParen = `(beat ${shortPrior})`
+    } else if (neededToTie === 0) {
+      heroDone = true
+      heroPrimary = `🎉 Tied ${shortPrior}`
+      heroParen = `(${c.priorFinishedDays})`
+    } else if (neededToTie > 0 && neededToTie <= remainingPossible) {
+      heroPrimary = `${neededToTie} more ${neededToTie === 1 ? 'day' : 'days'}`
+      heroParen = `(tie ${shortPrior})`
+    } else {
+      heroDone = c.finishedDays >= c.possibleDays
+      heroPrimary = heroDone ? `🎉 ${c.finishedDays} of ${c.possibleDays} ${dayWord}` : `${c.finishedDays} of ${c.possibleDays} ${dayWord}`
+    }
+  } else {
+    heroDone = c.finishedDays >= c.possibleDays && c.possibleDays > 0
+    heroPrimary = heroDone ? `🎉 ${c.finishedDays} of ${c.possibleDays} ${dayWord}` : streakText
+    if (heroPrimary !== streakText) metaParts.push(streakText)
+  }
+
+  const heroText = heroParen ? `${heroPrimary} ${heroParen}` : heroPrimary
+  return { line1, heroText, heroPrimary, heroParen, heroDone, line3: metaParts.join(' · ') }
 }

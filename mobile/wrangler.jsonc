@@ -32,5 +32,8 @@
       "database_id": "a8d84afa-db89-454d-b03b-03aaf91de7b3",
       "migrations_dir": "./worker/migrations"
     }
-  ]
+  ],
+  "triggers": {
+    "crons": ["0 * * * *"]
+  }
 }

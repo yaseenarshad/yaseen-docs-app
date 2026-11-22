@@ -24,12 +24,15 @@ import {
   PERIODS,
   addDays,
   boardRows,
+  buildPeriodGoalHero,
   filterSharedCards,
   formatStudyDuration,
   gistText,
   initialOf,
   localDay,
   markWords,
+  periodConsistency,
+  periodContext,
   sendLine,
   sinceDayKey,
   updatedLabel,
@@ -298,6 +301,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
       streak: board.me.stats?.totals.streak ?? 0,
       avatar: board.me.avatar,
       sub: board.me.stats === null ? ['Your numbers need each vault that counts on this phone.'] : [],
+      ago: board.me.stats !== null ? updatedLabel(Date.parse(board.me.stats.at) || null, now) : undefined,
       dim: false,
       buddyStreak: 0,
     }
@@ -343,7 +347,13 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
         streak: memberStats?.totals.streak ?? 0,
         avatar: memberAvatar,
         sub,
-        ago: !m.me && ok !== null ? updatedLabel(ok.updatedAt, now) : undefined,
+        ago: m.me
+          ? board.me.stats !== null
+            ? updatedLabel(Date.parse(board.me.stats.at) || null, now)
+            : undefined
+          : ok !== null
+          ? updatedLabel(ok.updatedAt, now)
+          : undefined,
         dim: m.state === 'left',
         group: group.group,
         pointer: m.pointer,
@@ -491,13 +501,61 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
         <Empty service={service} setPanel={setPanel} />
       ) : (
         <>
-          <div className="fr-seg" role="group" aria-label="Period">
-            {PERIODS.map((p) => (
-              <button key={p.id} type="button" aria-pressed={p.id === period} onClick={() => setPeriod(p.id)}>
-                {p.label}
-              </button>
-            ))}
-          </div>
+          {(() => {
+            const ctx = periodContext(period, now)
+            const meRow = rows.find((r) => r.entry.you) ?? null
+            const meCards = meRow?.numbers?.cards ?? 0
+            const meMinutes = meRow?.numbers?.minutes ?? 0
+            const meStreak = board.me.stats?.totals.streak ?? 0
+            const dueLeft = board.me.stats?.totals.dueLeft ?? 0
+            const streakText = meStreak === 1 ? '1-day streak' : `${meStreak}-day streak`
+
+            let subHeading = ctx.rangeLabel
+            let heroPrimary = ''
+            let heroParen: string | null = null
+            let heroDone = false
+            const metaParts: string[] = []
+
+            if (period === 'today') {
+              const todayDone = meRow?.numbers?.mark === 'finished' || (dueLeft === 0 && meCards > 0)
+              heroDone = todayDone
+              heroPrimary = todayDone ? '🎉 Today complete' : dueLeft > 0 ? `${dueLeft} due left` : 'No cards due'
+              metaParts.push(`${meCards.toLocaleString()} cards`, formatStudyDuration(meMinutes), streakText)
+            } else if (period === 'yesterday') {
+              subHeading = `Yesterday · ${ctx.rangeLabel}`
+              const yestDone = meRow?.numbers?.mark === 'finished'
+              heroDone = yestDone
+              heroPrimary = yestDone ? '🥇 Yesterday complete' : 'Not finished'
+              metaParts.push(`${meCards.toLocaleString()} cards`, formatStudyDuration(meMinutes), streakText)
+            } else {
+              const goal = buildPeriodGoalHero(board.me.stats, period, meCards, formatStudyDuration(meMinutes), now)
+              subHeading = goal.line1
+              heroDone = goal.heroDone
+              heroPrimary = goal.heroPrimary
+              heroParen = goal.heroParen
+              metaParts.push(goal.line3)
+            }
+
+            return (
+              <section className={heroDone ? 'fr-hero-card fr-hero-card--done' : 'fr-hero-card'} aria-label={ctx.heroTitle}>
+                <div className="fr-seg" role="group" aria-label="Period">
+                  {PERIODS.map((p) => (
+                    <button key={p.id} type="button" aria-pressed={p.id === period} onClick={() => setPeriod(p.id)}>
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="fr-hero-card__body">
+                  <div className="fr-hero-card__sub">{subHeading}</div>
+                  <div className={heroDone ? 'fr-hero-card__num fr-hero-card__num--done' : 'fr-hero-card__num'}>
+                    {heroPrimary}
+                    {heroParen && <span className="fr-hero-card__paren"> {heroParen}</span>}
+                  </div>
+                  <div className="fr-hero-card__meta">{metaParts.join(' · ')}</div>
+                </div>
+              </section>
+            )
+          })()}
           <div className="fr-lists" role="group" aria-label="Lists">
             <div className="fr-lists__scroll">
               <button
@@ -599,7 +657,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
             />
           ) : (
             <ul className="rows" aria-label={showGroup ? `${gistText(group?.name ?? '')} members` : 'Friends'}>
-              {rows.map(({ entry: e, numbers }) => {
+              {rows.map(({ entry: e, numbers }, rowIndex) => {
                 // Round 10, item 12 (mockup version 9): "updated … ago" below the name, on Today.
                 const entry = period === 'today' && e.ago !== undefined ? { ...e, sub: [...e.sub, e.ago] } : e
                 const rowClass = entry.dim ? 'fr-row fr-row--gone' : 'fr-row'
@@ -612,6 +670,21 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                   buddy === 1
                     ? '1 day in a row you both finished your due cards'
                     : `${buddy} days in a row you both finished your due cards`
+                const rowConsistency =
+                  entry.stats !== null && (period === 'week' || period === 'month')
+                    ? periodConsistency(entry.stats, period, now)
+                    : null
+                const rowPerfect = rowConsistency !== null && rowConsistency.possibleDays > 0 && rowConsistency.finishedDays >= rowConsistency.possibleDays
+                const rowBeatPrior =
+                  rowConsistency !== null &&
+                  rowConsistency.priorFinishedDays !== null &&
+                  rowConsistency.priorFinishedDays > 0 &&
+                  rowConsistency.finishedDays > rowConsistency.priorFinishedDays
+                const priorBadgeLabel = period === 'week' ? 'Beat prev week' : 'Beat prev month'
+                const priorSubLabel =
+                  rowConsistency && rowConsistency.priorFinishedDays !== null && rowConsistency.priorFinishedDays > 0
+                    ? `${period === 'week' ? 'Prev wk' : 'Prev mo'}: ${rowConsistency.priorFinishedDays}d`
+                    : null
                 return (
                   <li key={entry.key || entry.friend?.mine} className={rowClass}>
                     <button
@@ -621,12 +694,16 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                       disabled={entry.friend?.state === 'removing'}
                       aria-label={rowWords(entry, numbers, period)}
                     >
-                      {(period === 'today' || period === 'yesterday') && (
+                      {period === 'today' || period === 'yesterday' ? (
                         <span
                           className={numbers?.mark === 'finished' && numbers.cards > 0 ? 'fr-rank fr-rank--medal' : 'fr-rank'}
                           aria-hidden="true"
                         >
                           {numbers?.mark === 'finished' && numbers.cards > 0 ? '🥇' : ''}
+                        </span>
+                      ) : (
+                        <span className="fr-rank" aria-hidden="true">
+                          {rowIndex + 1}
                         </span>
                       )}
                       <Avatar key={entry.avatar ?? ''} name={entry.name} url={entry.avatar} />
@@ -635,7 +712,13 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                           <span className={entry.you ? 'fr-name fr-name--you' : 'fr-name'}>
                             {entry.name || 'You'}
                           </span>
-                          {!showGroup && !entry.you && buddy > 0 && (
+                          {(period === 'week' || period === 'month') && rowBeatPrior && (
+                            <span className="fr-cons-badge fr-cons-badge--beat">{priorBadgeLabel}</span>
+                          )}
+                          {(period === 'week' || period === 'month') && !rowBeatPrior && rowPerfect && (
+                            <span className="fr-cons-badge fr-cons-badge--perfect">Perfect</span>
+                          )}
+                          {!showGroup && !entry.you && buddy > 0 && (period === 'today' || period === 'yesterday') && (
                             period === 'today' && bothDoneToday && !isRevealed ? (
                               <span
                                 role="button"
@@ -678,14 +761,32 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                       </span>
                       {numbers !== null && (
                         <span className="fr-nums" aria-hidden="true">
-                          {numbers.mark === 'finished' && numbers.cards > 0 && (
-                            <span className="fr-mark fr-mark--finished" aria-hidden="true">
-                              ✓
-                            </span>
-                          )}{' '}
-                          <b>{numbers.cards}</b> cards
-                          <br />
-                          {(entry.streak ?? 0) > 0 ? `${entry.streak}d 🔥 · ${formatStudyDuration(numbers.minutes)}` : formatStudyDuration(numbers.minutes)}
+                          {(period === 'week' || period === 'month') && rowConsistency !== null ? (
+                            <>
+                              {rowPerfect && (
+                                <span className="fr-mark fr-mark--finished" aria-hidden="true">
+                                  ✓
+                                </span>
+                              )}{' '}
+                              <b>
+                                {rowConsistency.finishedDays} / {rowConsistency.possibleDays}
+                              </b>{' '}
+                              {rowConsistency.possibleDays === 1 ? 'day' : 'days'}
+                              <br />
+                              {priorSubLabel ? `${priorSubLabel} · ${numbers.cards.toLocaleString()} cards` : `${numbers.cards.toLocaleString()} cards`}
+                            </>
+                          ) : (
+                            <>
+                              {numbers.mark === 'finished' && numbers.cards > 0 && (
+                                <span className="fr-mark fr-mark--finished" aria-hidden="true">
+                                  ✓
+                                </span>
+                              )}{' '}
+                              <b>{numbers.cards}</b> cards
+                              <br />
+                              {(entry.streak ?? 0) > 0 ? `${entry.streak}d 🔥 · ${formatStudyDuration(numbers.minutes)}` : formatStudyDuration(numbers.minutes)}
+                            </>
+                          )}
                         </span>
                       )}
                     </button>
