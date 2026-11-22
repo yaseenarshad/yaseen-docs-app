@@ -45,7 +45,7 @@ import { storage } from './lib/storage'
 import { FORMATS_CHAPTER_TITLE, courseLostLine, courseStartOverLabel, courseVaultAt, onCourseRequest, requestCourseChapter } from './course/openCourse'
 import { courseVaultView, type LiveCourseVault } from './course/courseVaultView'
 import { onTourShow } from './course/tourBus'
-import { COURSE_NOTICE, offerInInbox, offerNotice, type OfferVault } from './course/courseFacts'
+import { offerInInbox, type OfferVault } from './course/courseFacts'
 import { resolveItem } from './lists/focusFolders'
 import { useVaultListsHere } from './lists/useVaultListsHere'
 import { readPageView } from './lib/pageView'
@@ -1778,14 +1778,6 @@ export function App() {
     cardsOn: scope.root !== null && scope.reviewSettings.ready === true && scope.reviewSettings.settings.enabled,
     hasCards: scope.ids === undefined ? null : scope.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0),
   })
-  // The one notice: once per Mac, for the vault in front.
-  const front = offerVaultOf(active)
-  const noticeDue = offerNotice(course, settings, front)
-  useEffect(() => {
-    if (!noticeDue) return
-    storage.setCourse({ offered: true })
-    notify(COURSE_NOTICE, 'info', undefined, { label: 'Open the course', run: () => openCourse() })
-  }, [noticeDue, notify, openCourse])
   // The empty Inbox's line (suggestion 24): for the Inbox's vault.
   const inboxVault = offerVaultOf(reviewer ?? first)
   const inboxOffered = offerInInbox(course, settings, inboxVault)

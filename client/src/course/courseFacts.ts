@@ -16,9 +16,6 @@ export const COURSE_MINUTES = 31
 /** Settings › Cards › Card course: the row's hint. */
 export const COURSE_HINT = `About ${COURSE_MINUTES} minutes. Learn how cards work, and make your first ones.`
 
-/** The one notice, the first time this Mac shows a person new to cards (`offerNotice`). */
-export const COURSE_NOTICE = `New to cards? Take the ${COURSE_MINUTES}-minute course`
-
 /** The empty Inbox's line (YAZ-5059 suggestion 24). */
 export const COURSE_INBOX_LINE = 'No cards yet. Take the course, or make a card.'
 
@@ -44,7 +41,3 @@ export const newToCards = (vault: OfferVault): boolean => vault.cardsOn && vault
 /** The empty Inbox's line: only for a person new to cards in the Inbox's vault, the course not done, no "Don't show again". */
 export const offerInInbox = (course: CourseState, settings: SettingsState, vault: OfferVault): boolean =>
   cardTipsOn(settings) && newToCards(vault) && !course.done && !course.dismissed
-
-/** The notice: once per Mac, for a person new to cards in the vault in front, while the course is not done. */
-export const offerNotice = (course: CourseState, settings: SettingsState, vault: OfferVault): boolean =>
-  newToCards(vault) && cardTipsOn(settings) && !course.offered && !course.done
