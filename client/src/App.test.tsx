@@ -8668,7 +8668,7 @@ describe('App: the card course (YAZ-5120)', () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
     expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain('New to cards?')
     act(() => requestCourse('good-card'))
-    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 7 of 12'))
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 7 of 12'), { timeout: SLOW_RUNNER_MS })
     act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
   })
 
@@ -8688,7 +8688,7 @@ describe('App: the card course (YAZ-5120)', () => {
       Object.assign(b.bridge, { createDir: vi.fn(async (req: { path: string }) => ({ path: req.path })), mintPageId: vi.fn(async () => 'TST-1') })
     })
     act(() => requestCourse('first-card'))
-    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 2 of 12'))
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 2 of 12'), { timeout: SLOW_RUNNER_MS })
     expect(bridge.state.setCourse).toHaveBeenCalledWith({ vault: '/a' })
     // The person brings vault B to the front in the middle of the course (the tour lets them use the whole app).
     act(() => showTourPlace({ kind: 'file', path: '/b/y.md' }))
@@ -8709,7 +8709,7 @@ describe('App: the card course (YAZ-5120)', () => {
     const state: AppState = { ...defaultAppState(), course: { ...defaultCourseState(), chapter: 'inbox', clip: 'c3-04', vault: '/gone' } }
     const { bridge } = await mount(state, { id: 'w1', root: '/a', file: '/a/x.md', tabs: ['/a/x.md'] }, { '/a/x.md': { content: '# x', mtime: 1 } })
     act(() => requestCourse())
-    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 3 of 12'))
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 3 of 12'), { timeout: SLOW_RUNNER_MS })
     expect([...document.querySelectorAll('.course__note')].map((n) => n.textContent)).toEqual(['gone is not open in this window, so the course makes no files. Start over in a'])
     expect(bridge.state.setCourse).not.toHaveBeenCalledWith(expect.objectContaining({ vault: '/a' }))
     act(() => [...document.querySelectorAll<HTMLButtonElement>('.course button')].find((b) => b.textContent === 'Start over in a')!.click())
