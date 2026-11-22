@@ -680,10 +680,10 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                   rowConsistency.priorFinishedDays !== null &&
                   rowConsistency.priorFinishedDays > 0 &&
                   rowConsistency.finishedDays > rowConsistency.priorFinishedDays
-                const priorBadgeLabel = period === 'week' ? 'Beat last week' : 'Beat last month'
+                const priorBadgeLabel = period === 'week' ? 'Beat prev week' : 'Beat prev month'
                 const priorSubLabel =
                   rowConsistency && rowConsistency.priorFinishedDays !== null && rowConsistency.priorFinishedDays > 0
-                    ? `${period === 'week' ? 'Last wk' : 'Last mo'}: ${rowConsistency.priorFinishedDays}d`
+                    ? `${period === 'week' ? 'Prev wk' : 'Prev mo'}: ${rowConsistency.priorFinishedDays}d`
                     : null
                 return (
                   <li key={entry.key || entry.friend?.mine} className={rowClass}>

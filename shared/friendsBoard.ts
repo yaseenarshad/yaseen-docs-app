@@ -435,8 +435,8 @@ export function buildPeriodGoalHero(
     const remainingPossible = c.daysLeftInPeriod + (stats?.days.some((d) => d.day === ctx.toDay && d.done) ? 0 : 1)
     const neededToBeat = c.priorFinishedDays - c.finishedDays + 1
     const neededToTie = c.priorFinishedDays - c.finishedDays
-    const shortPrior = period === 'week' ? 'last week' : 'last month'
-    const metaPriorLabel = period === 'week' ? 'Last week' : 'Last month'
+    const shortPrior = period === 'week' ? 'prev week' : 'prev month'
+    const metaPriorLabel = period === 'week' ? 'Prev week' : 'Prev month'
     metaParts.push(`${metaPriorLabel}: ${c.priorFinishedDays} ${c.priorFinishedDays === 1 ? 'day' : 'days'}`)
 
     if (neededToBeat <= 0) {
