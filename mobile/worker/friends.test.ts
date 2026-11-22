@@ -11,16 +11,18 @@ import { handle, type Env } from './index'
 const MIGRATION_SQL = readFileSync(join(__dirname, 'migrations/0001_friends.sql'), 'utf8')
 const MIGRATION_0002_SQL = readFileSync(join(__dirname, 'migrations/0002_drop_marks.sql'), 'utf8')
 const MIGRATION_0003_SQL = readFileSync(join(__dirname, 'migrations/0003_shared_decks.sql'), 'utf8')
+const MIGRATION_0004_SQL = readFileSync(join(__dirname, 'migrations/0004_custom_avatar.sql'), 'utf8')
 
-/** Real SQLite-backed D1 adapter executing the exact production migrations (0001 + 0002 + 0003). */
+/** Real SQLite-backed D1 adapter executing the exact production migrations (0001 + 0002 + 0003 + 0004). */
 function makeSqliteD1(): D1Database {
   const sqlite = new DatabaseSync(':memory:')
   sqlite.exec(MIGRATION_SQL)
   sqlite.exec(MIGRATION_0002_SQL)
   sqlite.exec(MIGRATION_0003_SQL)
+  sqlite.exec(MIGRATION_0004_SQL)
 
   const makeStmt = (sql: string, params: unknown[] = []): D1PreparedStatement => {
-    const cleanParams = () => params.map((p) => (p === undefined ? null : p)) as (string | number | null)[]
+    const cleanParams = () => params.map((p) => (p === undefined ? null : p)) as (string | number | Uint8Array | null)[]
     return {
       bind(...values: unknown[]) {
         return makeStmt(sql, values)
@@ -629,5 +631,172 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
     expect(legit.status).toBe(200)
     const aliceVaults = await db.prepare('SELECT COUNT(*) AS cnt FROM deck_vaults WHERE owner_id = ?').bind(1).first<{ cnt: number }>()
     expect(aliceVaults?.cnt).toBe(1)
+  })
+
+  it('supports custom avatar PUT/GET/DELETE, magic-byte & 50KB validation, cache headers, first-name clipping on board, and deleteMe cleanup (YAZ-6298)', async () => {
+    const db = makeSqliteD1()
+    const env: Env = { FRIENDS_DB: db, FRIENDS_TOKEN_SECRET: SECRET }
+    const ghFetch = fakeGithubFetch({
+      gh_a: { id: 10, login: 'yaseen', name: 'Yaseen Arshad', avatar_url: 'https://avatars.githubusercontent.com/u/10' },
+      gh_b: { id: 20, login: 'maya-gh', name: 'Maya Lin', avatar_url: 'https://avatars.githubusercontent.com/u/20' },
+      gh_c: { id: 30, login: 'samir-gh', name: '   ', avatar_url: 'https://avatars.githubusercontent.com/u/30' },
+    })
+
+    const signIn = async (tok: string) =>
+      ((await (await handle(req('/api/friends/session', { method: 'POST', body: JSON.stringify({ githubToken: tok }) }), env, ghFetch)).json()) as { token: string }).token
+
+    const authA = { authorization: `Bearer ${await signIn('gh_a')}` }
+    const authB = { authorization: `Bearer ${await signIn('gh_b')}` }
+    const authC = { authorization: `Bearer ${await signIn('gh_c')}` }
+
+    // Friend A <-> B and create group with A, B, C
+    const inv = (await (await handle(req('/api/friends/invites', { method: 'POST', headers: authA }), env, ghFetch)).json()) as { code: string }
+    await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authB, body: JSON.stringify({ code: inv.code }) }), env, ghFetch)
+    const grp = (await (await handle(req('/api/friends/groups', { method: 'POST', headers: authA, body: JSON.stringify({ name: 'Study Crew' }) }), env, ghFetch)).json()) as {
+      id: string
+      inviteCode: string
+    }
+    await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authB, body: JSON.stringify({ code: grp.inviteCode }) }), env, ghFetch)
+    await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authC, body: JSON.stringify({ code: grp.inviteCode }) }), env, ghFetch)
+
+    // First-name clipping on GET /api/friends/board before any custom nickname or avatar
+    const boardInitial = (await (await handle(req('/api/friends/board', { method: 'GET', headers: authA }), env, ghFetch)).json()) as {
+      me: { name: string; avatarUrl: string | null; hasCustomAvatar: boolean }
+      friends: { id: number; name: string; avatarUrl: string | null }[]
+      groups: { members: { id: number; name: string; avatarUrl: string | null }[] }[]
+    }
+    expect(boardInitial.me.name).toBe('Yaseen')
+    expect(boardInitial.me.hasCustomAvatar).toBe(false)
+    expect(boardInitial.me.avatarUrl).toBe('https://avatars.githubusercontent.com/u/10')
+    expect(boardInitial.friends[0].name).toBe('Maya')
+    const memberNamesById = new Map(boardInitial.groups[0].members.map((m) => [m.id, m.name]))
+    expect(memberNamesById.get(10)).toBe('Yaseen')
+    expect(memberNamesById.get(20)).toBe('Maya')
+    expect(memberNamesById.get(30)).toBe('samir-gh')
+
+    // Custom nickname preserved as-typed (including multi-word)
+    await handle(req('/api/friends/prefs', { method: 'PUT', headers: authA, body: JSON.stringify({ nickname: 'Yaseen A.' }) }), env, ghFetch)
+
+    const toB64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64')
+    const webpBytes = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x10, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20])
+    const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46])
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00])
+
+    // Public GET before upload -> 404; invalid id -> 400
+    expect((await handle(req('/api/friends/avatar/10', { method: 'GET' }, null), env, ghFetch)).status).toBe(404)
+    expect((await handle(req('/api/friends/avatar/notanumber', { method: 'GET' }, null), env, ghFetch)).status).toBe(400)
+
+    // Validation failures: disallowed contentType, mismatched magic bytes, empty, >50KB
+    const badType = await handle(
+      req('/api/friends/avatar', { method: 'PUT', headers: authA, body: JSON.stringify({ contentType: 'image/svg+xml', dataBase64: toB64(pngBytes) }) }),
+      env,
+      ghFetch,
+    )
+    expect(badType.status).toBe(400)
+
+    const badMagic = await handle(
+      req('/api/friends/avatar', { method: 'PUT', headers: authA, body: JSON.stringify({ contentType: 'image/webp', dataBase64: toB64(pngBytes) }) }),
+      env,
+      ghFetch,
+    )
+    expect(badMagic.status).toBe(400)
+
+    const emptyData = await handle(
+      req('/api/friends/avatar', { method: 'PUT', headers: authA, body: JSON.stringify({ contentType: 'image/png', dataBase64: '' }) }),
+      env,
+      ghFetch,
+    )
+    expect(emptyData.status).toBe(400)
+
+    const oversize = new Uint8Array(50 * 1024 + 1)
+    oversize.set(pngBytes, 0)
+    const tooBig = await handle(
+      req('/api/friends/avatar', { method: 'PUT', headers: authA, body: JSON.stringify({ contentType: 'image/png', dataBase64: toB64(oversize) }) }),
+      env,
+      ghFetch,
+    )
+    expect(tooBig.status).toBe(413)
+
+    // Exact 50KB boundary succeeds
+    const exactCap = new Uint8Array(50 * 1024)
+    exactCap.set(jpegBytes, 0)
+    const capOk = await handle(
+      req('/api/friends/avatar', { method: 'PUT', headers: authA, body: JSON.stringify({ contentType: 'image/jpeg', dataBase64: toB64(exactCap) }) }),
+      env,
+      ghFetch,
+    )
+    expect(capOk.status).toBe(200)
+
+    // Upload WebP for A and PNG for B
+    const putA = await handle(
+      req('/api/friends/avatar', { method: 'PUT', headers: authA, body: JSON.stringify({ contentType: 'image/webp', dataBase64: toB64(webpBytes) }) }),
+      env,
+      ghFetch,
+    )
+    expect(putA.status).toBe(200)
+    const putABody = (await putA.json()) as { ok: true; avatarUrl: string; hasCustomAvatar: boolean }
+    expect(putABody.ok).toBe(true)
+    expect(putABody.hasCustomAvatar).toBe(true)
+    expect(putABody.avatarUrl).toMatch(/^https:\/\/docs\.yaseenarshad\.com\/api\/friends\/avatar\/10\?v=[0-9a-f]{12}$/)
+
+    const putB = await handle(
+      req('/api/friends/avatar', { method: 'PUT', headers: authB, body: JSON.stringify({ contentType: 'image/png', dataBase64: toB64(pngBytes) }) }),
+      env,
+      ghFetch,
+    )
+    expect(putB.status).toBe(200)
+    const putBBody = (await putB.json()) as { avatarUrl: string }
+
+    // Public GET /api/friends/avatar/10 (NO Authorization header!) with ?v= -> immutable cache, exact bytes
+    const versionParam = new URL(putABody.avatarUrl).searchParams.get('v')!
+    const getWithV = await handle(req(`/api/friends/avatar/10?v=${versionParam}`, { method: 'GET' }, null), env, ghFetch)
+    expect(getWithV.status).toBe(200)
+    expect(getWithV.headers.get('content-type')).toBe('image/webp')
+    expect(getWithV.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(getWithV.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+    expect(new Uint8Array(await getWithV.arrayBuffer())).toEqual(webpBytes)
+
+    // Public GET without ?v= -> short cache
+    const getNoV = await handle(req('/api/friends/avatar/10', { method: 'GET' }, null), env, ghFetch)
+    expect(getNoV.status).toBe(200)
+    expect(getNoV.headers.get('cache-control')).toBe('public, max-age=300')
+
+    // Re-signing in via /api/friends/session must NOT wipe nickname or custom avatar
+    await signIn('gh_a')
+
+    // Board returns custom avatar URLs for me, friend, and group members + hasCustomAvatar: true
+    const boardAfterUpload = (await (await handle(req('/api/friends/board', { method: 'GET', headers: authA }), env, ghFetch)).json()) as {
+      me: { name: string; nickname: string | null; avatarUrl: string | null; hasCustomAvatar: boolean }
+      friends: { id: number; avatarUrl: string | null }[]
+      groups: { members: { id: number; avatarUrl: string | null }[] }[]
+    }
+    expect(boardAfterUpload.me.name).toBe('Yaseen A.')
+    expect(boardAfterUpload.me.nickname).toBe('Yaseen A.')
+    expect(boardAfterUpload.me.avatarUrl).toBe(putABody.avatarUrl)
+    expect(boardAfterUpload.me.hasCustomAvatar).toBe(true)
+    expect(boardAfterUpload.friends[0].avatarUrl).toBe(putBBody.avatarUrl)
+    const memberAvatarsById = new Map(boardAfterUpload.groups[0].members.map((m) => [m.id, m.avatarUrl]))
+    expect(memberAvatarsById.get(10)).toBe(putABody.avatarUrl)
+    expect(memberAvatarsById.get(20)).toBe(putBBody.avatarUrl)
+    expect(memberAvatarsById.get(30)).toBe('https://avatars.githubusercontent.com/u/30')
+
+    // DELETE /api/friends/avatar restores GitHub fallback
+    const delAv = await handle(req('/api/friends/avatar', { method: 'DELETE', headers: authA }), env, ghFetch)
+    expect(delAv.status).toBe(200)
+    expect(await delAv.json()).toEqual({ ok: true, avatarUrl: 'https://avatars.githubusercontent.com/u/10', hasCustomAvatar: false })
+    expect((await handle(req('/api/friends/avatar/10', { method: 'GET' }, null), env, ghFetch)).status).toBe(404)
+
+    const boardAfterDel = (await (await handle(req('/api/friends/board', { method: 'GET', headers: authA }), env, ghFetch)).json()) as {
+      me: { avatarUrl: string | null; hasCustomAvatar: boolean }
+    }
+    expect(boardAfterDel.me.avatarUrl).toBe('https://avatars.githubusercontent.com/u/10')
+    expect(boardAfterDel.me.hasCustomAvatar).toBe(false)
+
+    // DELETE /api/friends/me cleans up user_avatars
+    const delMeB = await handle(req('/api/friends/me', { method: 'DELETE', headers: authB }), env, ghFetch)
+    expect(delMeB.status).toBe(200)
+    const leftAvatarB = await db.prepare('SELECT COUNT(*) AS cnt FROM user_avatars WHERE github_id = ?').bind(20).first<{ cnt: number }>()
+    expect(leftAvatarB?.cnt).toBe(0)
+    expect((await handle(req('/api/friends/avatar/20', { method: 'GET' }, null), env, ghFetch)).status).toBe(404)
   })
 })

@@ -42,6 +42,8 @@ export interface FriendsApi {
   status: () => Promise<FriendsSendView>
   board: (force?: boolean) => Promise<{ ok: true; board: FriendsBoardPayload } | { ok: false; error: string }>
   updatePrefs: (prefs: { vaults?: string[]; zone?: string | null; nickname?: string | null }) => Promise<{ ok: true; vaults: string[]; zone: string | null; nickname: string | null } | { ok: false; error: string }>
+  uploadAvatar?: (payload: { contentType: string; dataBase64: string }) => Promise<{ ok: true; avatarUrl: string; hasCustomAvatar: true } | { ok: false; error: string }>
+  deleteAvatar?: () => Promise<{ ok: true; avatarUrl: string | null; hasCustomAvatar: false } | { ok: false; error: string }>
   createInvite: () => Promise<{ ok: true; code: string; link: string; expiresAt: string } | { ok: false; error: string }>
   acceptInvite: (code: string) => Promise<{ ok: true; result: unknown } | { ok: false; error: string }>
   removeFriend: (userId: number, block?: boolean) => Promise<{ ok: true } | { ok: false; error: string }>
@@ -73,6 +75,16 @@ const friendsApi: FriendsApi = {
   status: () => call(() => friendsBridge().status()),
   board: (force) => call(() => friendsBridge().board(force)),
   updatePrefs: (prefs) => call(() => friendsBridge().updatePrefs(prefs)),
+  uploadAvatar: (payload) =>
+    call(async () => {
+      const fn = friendsBridge()?.uploadAvatar
+      return typeof fn === 'function' ? fn(payload) : { ok: false as const, error: 'unavailable' }
+    }),
+  deleteAvatar: () =>
+    call(async () => {
+      const fn = friendsBridge()?.deleteAvatar
+      return typeof fn === 'function' ? fn() : { ok: false as const, error: 'unavailable' }
+    }),
   createInvite: () => call(() => friendsBridge().createInvite()),
   acceptInvite: (code) => call(() => friendsBridge().acceptInvite(code)),
   removeFriend: (userId, block) => call(() => friendsBridge().removeFriend(userId, block)),

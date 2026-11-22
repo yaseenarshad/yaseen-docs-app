@@ -42,6 +42,8 @@ export interface Me {
   name: string
   avatar: string | null
   stats: FriendStats | null
+  nickname?: string | null
+  hasCustomAvatar?: boolean
 }
 
 export interface FriendEntry {
@@ -129,6 +131,16 @@ export interface FriendsService {
   browseDeckTree?(ownerId: number, repo: string): Promise<DeckTreePayload>
   browseDeckFile?(ownerId: number, repo: string, path: string): Promise<DeckFilePayload>
   browseDeckAsset?(ownerId: number, repo: string, path: string): Promise<{ bytes: Uint8Array; contentType: string }>
+  updatePrefs?(prefs: {
+    nickname?: string | null
+    zone?: string | null
+    vaults?: string[]
+  }): Promise<{ ok: true; nickname: string | null } | { ok: false; error: string }>
+  uploadAvatar?(payload: {
+    contentType: string
+    dataBase64: string
+  }): Promise<{ ok: true; avatarUrl: string; hasCustomAvatar: true } | { ok: false; error: string }>
+  deleteAvatar?(): Promise<{ ok: true; avatarUrl: string | null; hasCustomAvatar: false } | { ok: false; error: string }>
   deleteMe?(): Promise<{ ok: true; deleted: true } | { ok: false; error: string }>
 }
 
@@ -330,25 +342,33 @@ function demoPortraitSvg(bg: string, shirt: string, skin: string, hair: string):
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
 
+function firstNameOf(raw: string | null | undefined): string {
+  const trimmed = (raw ?? '').trim()
+  if (!trimmed) return ''
+  return trimmed.split(/\s+/)[0] ?? ''
+}
+
 function createDemoFriendsApiClient(origin: string, now: () => number): FriendsApiClient {
   const t = now()
   const iso = new Date(t).toISOString()
   let seq = 1
+  const demoGithubName = 'Yaseen Arshad'
   const avatars = {
     yaseen: demoPortraitSvg('#dbeafe', '#2563eb', '#e0ac69', '#1f2937'),
     maya: demoPortraitSvg('#fce7f3', '#db2777', '#c68642', '#292524'),
-    sam: demoPortraitSvg('#dcfce7', '#16a34a', '#f1c27d', '#451a03'),
-    trevor: demoPortraitSvg('#fef3c7', '#d97706', '#ffdbac', '#78350f'),
+    samir: demoPortraitSvg('#dcfce7', '#16a34a', '#f1c27d', '#451a03'),
+    elena: demoPortraitSvg('#fef3c7', '#d97706', '#ffdbac', '#78350f'),
     ali: demoPortraitSvg('#ede9fe', '#7c3aed', '#d19a66', '#18181b'),
     nina: demoPortraitSvg('#ffedd5', '#ea580c', '#8d5524', '#1c1917'),
   }
-  const state: FriendsBoardPayload = {
+  const state: FriendsBoardPayload & { me: FriendsBoardPayload['me'] & { hasCustomAvatar?: boolean } } = {
     me: {
       id: 1,
       login: 'yaseen',
-      name: 'Yaseen',
+      name: firstNameOf(demoGithubName),
       nickname: null,
       avatarUrl: avatars.yaseen,
+      hasCustomAvatar: false,
       zone: 'America/Denver',
       vaults: [],
       stats: makeDemoStats(t, 'yaseen', 'Yaseen', 42, 18, true, 14),
@@ -369,21 +389,21 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
       },
       {
         id: 3,
-        login: 'sam',
-        name: 'Sam',
-        avatarUrl: avatars.sam,
+        login: 'samir',
+        name: 'Samir',
+        avatarUrl: avatars.samir,
         since: new Date(t - 10 * 86_400_000).toISOString(),
-        stats: makeDemoStats(t, 'sam', 'Sam', 58, 31, false, 9, 5),
+        stats: makeDemoStats(t, 'samir', 'Samir', 58, 31, false, 9, 5),
         statsAt: new Date(t - 40 * 60_000).toISOString(),
         sharedCardCount: 4,
       },
       {
         id: 4,
-        login: 'trevor',
-        name: 'Trevor',
-        avatarUrl: avatars.trevor,
+        login: 'elena',
+        name: 'Elena',
+        avatarUrl: avatars.elena,
         since: new Date(t - 20 * 86_400_000).toISOString(),
-        stats: makeDemoStats(t, 'trevor', 'Trevor', 18, 8, true, 7, 2),
+        stats: makeDemoStats(t, 'elena', 'Elena', 18, 8, true, 7, 2),
         statsAt: new Date(t - 55 * 60_000).toISOString(),
         sharedCardCount: 2,
       },
@@ -421,7 +441,7 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
         members: [
           { id: 1, login: 'yaseen', name: 'Yaseen', avatarUrl: avatars.yaseen, since: new Date(t - 20 * 86_400_000).toISOString(), stats: makeDemoStats(t, 'yaseen', 'Yaseen', 42, 18, true, 14), statsAt: iso },
           { id: 2, login: 'maya', name: 'Maya', avatarUrl: avatars.maya, since: new Date(t - 20 * 86_400_000).toISOString(), stats: makeDemoStats(t, 'maya', 'Maya', 25, 12, true, 21), statsAt: iso },
-          { id: 3, login: 'sam', name: 'Sam', avatarUrl: avatars.sam, since: new Date(t - 10 * 86_400_000).toISOString(), stats: makeDemoStats(t, 'sam', 'Sam', 58, 31, false, 9, 6), statsAt: iso },
+          { id: 3, login: 'samir', name: 'Samir', avatarUrl: avatars.samir, since: new Date(t - 10 * 86_400_000).toISOString(), stats: makeDemoStats(t, 'samir', 'Samir', 58, 31, false, 9, 6), statsAt: iso },
         ],
         pending: [],
         banned: [],
@@ -440,7 +460,7 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
           },
         ],
         sharedCards: [
-          { id: 'sc_g1', folderId: null, senderId: 3, senderLogin: 'sam', title: 'Krebs Cycle Mnemonic', markdown: 'Citrate Is Krebs Starting Substrate For Making Oxaloacetate', note: 'Saved me on the quiz', attachments: [], status: 'pending', createdAt: iso },
+          { id: 'sc_g1', folderId: null, senderId: 3, senderLogin: 'samir', title: 'Krebs Cycle Mnemonic', markdown: 'Citrate Is Krebs Starting Substrate For Making Oxaloacetate', note: 'Saved me on the quiz', attachments: [], status: 'pending', createdAt: iso },
           { id: 'sc_g2', folderId: null, senderId: 2, senderLogin: 'maya', title: 'Beta-Oxidation Location', markdown: 'Where does beta-oxidation occur?\n---\nMitochondrial matrix', note: null, attachments: [], status: 'dismissed', createdAt: iso },
         ],
       },
@@ -453,7 +473,7 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
         inviteCode: 'spanish26',
         members: [
           { id: 1, login: 'yaseen', name: 'Yaseen', avatarUrl: avatars.yaseen, since: iso, stats: makeDemoStats(t, 'yaseen', 'Yaseen', 42, 18, true, 14), statsAt: iso },
-          { id: 4, login: 'trevor', name: 'Trevor', avatarUrl: avatars.trevor, since: iso, stats: makeDemoStats(t, 'trevor', 'Trevor', 18, 8, true, 7), statsAt: iso },
+          { id: 4, login: 'elena', name: 'Elena', avatarUrl: avatars.elena, since: iso, stats: makeDemoStats(t, 'elena', 'Elena', 18, 8, true, 7), statsAt: iso },
           { id: 5, login: 'ali', name: 'Ali', avatarUrl: avatars.ali, since: iso, stats: makeDemoStats(t, 'ali', 'Ali', 12, 6, false, 4, 3), statsAt: iso },
         ],
         pending: [],
@@ -471,8 +491,8 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
         members: [
           { id: 1, login: 'yaseen', name: 'Yaseen', avatarUrl: avatars.yaseen, since: iso, stats: makeDemoStats(t, 'yaseen', 'Yaseen', 42, 18, true, 14), statsAt: iso },
           { id: 2, login: 'maya', name: 'Maya', avatarUrl: avatars.maya, since: iso, stats: makeDemoStats(t, 'maya', 'Maya', 25, 12, true, 21), statsAt: iso },
-          { id: 3, login: 'sam', name: 'Sam', avatarUrl: avatars.sam, since: iso, stats: makeDemoStats(t, 'sam', 'Sam', 58, 31, false, 9, 11), statsAt: iso },
-          { id: 4, login: 'trevor', name: 'Trevor', avatarUrl: avatars.trevor, since: iso, stats: makeDemoStats(t, 'trevor', 'Trevor', 18, 8, true, 7, 11), statsAt: iso },
+          { id: 3, login: 'samir', name: 'Samir', avatarUrl: avatars.samir, since: iso, stats: makeDemoStats(t, 'samir', 'Samir', 58, 31, false, 9, 11), statsAt: iso },
+          { id: 4, login: 'elena', name: 'Elena', avatarUrl: avatars.elena, since: iso, stats: makeDemoStats(t, 'elena', 'Elena', 18, 8, true, 7, 11), statsAt: iso },
           { id: 6, login: 'nina', name: 'Nina', avatarUrl: avatars.nina, since: iso, stats: makeDemoStats(t, 'nina', 'Nina', 0, 0, false, 2, 11), statsAt: iso },
         ],
         pending: [],
@@ -495,6 +515,8 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
     renameGroup(groupId: string, name: string): Promise<{ ok: true; name: string }>
     banGroupMember(groupId: string, userId: number): Promise<{ ok: true }>
     unbanGroupMember(groupId: string, userId: number): Promise<{ ok: true }>
+    uploadAvatar(payload: { contentType: string; dataBase64: string }): Promise<{ ok: true; avatarUrl: string; hasCustomAvatar: true }>
+    deleteAvatar(): Promise<{ ok: true; avatarUrl: string | null; hasCustomAvatar: false }>
   }
 
   let demoDeckSettings: DeckSettingsPayload = {
@@ -602,8 +624,38 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
     async updatePrefs(prefs) {
       if (prefs.vaults !== undefined) state.me.vaults = prefs.vaults
       if (prefs.zone !== undefined) state.me.zone = prefs.zone
-      if (prefs.nickname !== undefined) state.me.nickname = prefs.nickname
+      if (prefs.nickname !== undefined) {
+        const clean = prefs.nickname ? prefs.nickname.replace(/\s+/g, ' ').trim().slice(0, 40) || null : null
+        state.me.nickname = clean
+        state.me.name = clean ?? firstNameOf(demoGithubName)
+        for (const g of state.groups) {
+          for (const m of g.members) {
+            if (m.id === state.me.id) m.name = state.me.name
+          }
+        }
+      }
       return { ok: true, vaults: state.me.vaults, zone: state.me.zone, nickname: state.me.nickname }
+    },
+    async uploadAvatar(payload: { contentType: string; dataBase64: string }) {
+      const dataUrl = `data:${payload.contentType};base64,${payload.dataBase64}`
+      state.me.avatarUrl = dataUrl
+      state.me.hasCustomAvatar = true
+      for (const g of state.groups) {
+        for (const m of g.members) {
+          if (m.id === state.me.id) m.avatarUrl = dataUrl
+        }
+      }
+      return { ok: true as const, avatarUrl: dataUrl, hasCustomAvatar: true as const }
+    },
+    async deleteAvatar() {
+      state.me.avatarUrl = avatars.yaseen
+      state.me.hasCustomAvatar = false
+      for (const g of state.groups) {
+        for (const m of g.members) {
+          if (m.id === state.me.id) m.avatarUrl = avatars.yaseen
+        }
+      }
+      return { ok: true as const, avatarUrl: avatars.yaseen, hasCustomAvatar: false as const }
     },
     async createInvite() {
       const code = `demo${String(seq++).padStart(6, '0')}`
@@ -732,7 +784,30 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       })
 
   const own: OwnNumbers = options.numbers ?? createOwnNumbers(store)
+  const baseOrigin = origin.replace(/\/+$/, '')
+  const allowedAvatarOrigins = new Set([baseOrigin, DEFAULT_FRIENDS_ORIGIN.replace(/\/+$/, '')])
+  let forceNextBoard = false
   let stopped = false
+
+  function safeAvatar(u: string | null | undefined): string | null {
+    if (typeof u !== 'string' || u === '') return null
+    if (demoMode && /^data:image\/(svg\+xml|webp|jpeg|png);/.test(u)) return u
+    const gh = avatarUrl(u)
+    if (gh !== null) return gh
+    try {
+      const parsed = new URL(u, origin)
+      if (
+        (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
+        allowedAvatarOrigins.has(parsed.origin) &&
+        parsed.pathname.startsWith('/api/friends/avatar/')
+      ) {
+        return parsed.href
+      }
+    } catch {
+      return null
+    }
+    return null
+  }
   let lastSentJson: string | null = null
   let lastSentAt: number | null = null
   let sendStatus: FriendsSendState['status'] = 'idle'
@@ -751,7 +826,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     const excluded = await loadExcludedVaults()
     const primaryVault = phone.open ?? (phone.vaults[0] ? vaultId(phone.vaults[0]) : null)
     const profile = primaryVault === null ? undefined : await loadAccount(store, primaryVault)
-    const name = gistText(settings.nickname ?? profile?.name ?? profile?.login ?? '') || 'You'
+    const name = gistText(settings.nickname ?? (firstNameOf(profile?.name) || profile?.login || '')) || 'You'
     const ids = settings.vaults ?? phone.vaults.map(vaultId)
     const repos = phone.vaults
       .filter((v) => ids.includes(vaultId(v)) && !excluded.has(v.repo.toLowerCase()))
@@ -990,14 +1065,17 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       const settings = await local.settings()
       const [myLocal, seen] = await Promise.all([computeMyStats(settings), loadSeen()])
       try {
-        const payload = await api.board()
+        const force = forceNextBoard
+        forceNextBoard = false
+        const payload = await api.board(force)
         const meStats = demoMode ? payload.me.stats ?? myLocal.stats : myLocal.stats ?? payload.me.stats
-        const safeAvatar = (u: string | null | undefined): string | null =>
-          demoMode && typeof u === 'string' && u.startsWith('data:image/svg+xml') ? u : avatarUrl(u)
+        const meRaw = payload.me as FriendsBoardPayload['me'] & { hasCustomAvatar?: boolean }
         const me: Me = {
-          name: gistText(payload.me.nickname ?? payload.me.name ?? payload.me.login) || myLocal.name,
-          avatar: safeAvatar(payload.me.avatarUrl) ?? myLocal.avatar,
+          name: gistText(meRaw.nickname ?? meRaw.name ?? meRaw.login) || myLocal.name,
+          avatar: safeAvatar(meRaw.avatarUrl) ?? myLocal.avatar,
           stats: meStats,
+          nickname: meRaw.nickname ?? null,
+          hasCustomAvatar: meRaw.hasCustomAvatar === true,
         }
         const nowMs = now()
         const friends: FriendEntry[] = payload.friends.map((m) => {
@@ -1028,15 +1106,19 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
           link: `${origin}/friend#${inv.code}`,
           at: inv.createdAt,
         }))
-        const groupViews = payload.groups.map((g) => toGroupView(g, payload.me.id, meStats, now()))
-        const hasAny = friends.length > 0 || payload.groups.length > 0
+        const d1GroupsNormalized = payload.groups.map((g) => ({
+          ...g,
+          members: g.members.map((m) => ({ ...m, avatarUrl: safeAvatar(m.avatarUrl) })),
+        }))
+        const groupViews = d1GroupsNormalized.map((g) => toGroupView(g, payload.me.id, meStats, now()))
+        const hasAny = friends.length > 0 || d1GroupsNormalized.length > 0
         await (await store.session(PHONE)).setState(PHONE, HAS_FRIENDS_STATE, hasAny).catch(() => undefined)
         await saveCopy({
           friends,
           shared,
           groups: groupViews,
           incomingCards: payload.incomingCards,
-          d1Groups: payload.groups,
+          d1Groups: d1GroupsNormalized,
         })
         return {
           kind: 'ok',
@@ -1049,7 +1131,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
           offline: false,
           ...(lastSentAt !== null && { sending: { status: sendStatus, lastSentAt, retryAt: null } as FriendsSendState }),
           incomingCards: payload.incomingCards,
-          d1Groups: payload.groups,
+          d1Groups: d1GroupsNormalized,
         }
       } catch (err) {
         const mapped = mapApiError(err)
@@ -1319,6 +1401,35 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
         return { ok: true, paths }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'import_failed' }
+      }
+    },
+    async updatePrefs(prefs) {
+      try {
+        const res = await api.updatePrefs(prefs)
+        forceNextBoard = true
+        return { ok: true, nickname: res.nickname }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'prefs_failed' }
+      }
+    },
+    async uploadAvatar(payload) {
+      try {
+        const res = await api.uploadAvatar(payload)
+        forceNextBoard = true
+        const url = safeAvatar(res.avatarUrl)
+        if (url === null) return { ok: false, error: 'invalid_avatar_url' }
+        return { ok: true, avatarUrl: url, hasCustomAvatar: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'upload_failed' }
+      }
+    },
+    async deleteAvatar() {
+      try {
+        const res = await api.deleteAvatar()
+        forceNextBoard = true
+        return { ok: true, avatarUrl: safeAvatar(res.avatarUrl), hasCustomAvatar: false }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'delete_failed' }
       }
     },
     deleteMe,

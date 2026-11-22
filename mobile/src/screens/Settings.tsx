@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { useApp } from '../app/AppState'
 import { deviceZone, isTimeZone } from '@shared/timeZone'
 import { FRIENDS_ENABLED } from '@shared/features'
-import { cleanNickname } from '../app/friendsPort'
+import { cleanNickname, type FriendsPort } from '../app/friendsPort'
 import { friendsMessage } from '../auth/friends'
+import { serviceOf } from '../friends/ui/lazy'
 import { BUILD, buildLine, versionWords } from '../settings/buildInfo'
 import { AppearancePart } from '../settings/AppearancePart'
 import { UpdateCheck } from '../settings/UpdateCheck'
@@ -26,6 +27,8 @@ const MobileVaultPart = lazyScreen(() => import('../settings/MobileVaultPart'))
 const GithubPart = lazyScreen(() => import('../settings/GithubPart'))
 /** YAZ-6284: Settings › Friends › Browse deck permissions, its own chunk. */
 const DeckPermissionsPart = lazyScreen(() => import('../friends/ui/DeckPermissionsPart'))
+/** YAZ-6300: Settings › Friends › Profile picture, its own chunk. */
+const ProfilePictureRow = lazyScreen(() => import('../friends/ui/ProfilePictureRow'))
 
 /**
  * Settings (decisions 7, 22; round 13, item 4; round 10, item 19; YAZ-5659): first the vaults (switch, add, replace the
@@ -231,14 +234,25 @@ function VaultRow({ vault, more, onMore, busy, run }: { vault: PhoneVault; more:
  */
 const EXCLUDED_VAULTS_KEY = 'yaseendocs.friends.excludedVaults'
 
+function firstNameOf(name: string): string {
+  const trimmed = name.trim()
+  return trimmed === '' ? '' : trimmed.split(/\s+/)[0]
+}
+
+type DirectFriendsProfilePort = FriendsPort & {
+  getBoard?: () => Promise<{ kind?: string; me?: { nickname?: string | null } } | null>
+  updatePrefs?: (prefs: { nickname?: string | null }) => Promise<unknown>
+}
+
 function FriendsPart() {
   const app = useApp()
-  const [editing, setEditing] = useState<'account' | 'vaults' | 'name' | 'zone' | 'delete' | null>(null)
-  const toggle = (part: 'account' | 'vaults' | 'name' | 'zone' | 'delete') => setEditing(editing === part ? null : part)
+  const [editing, setEditing] = useState<'account' | 'vaults' | 'name' | 'avatar' | 'zone' | 'delete' | null>(null)
+  const toggle = (part: 'account' | 'vaults' | 'name' | 'avatar' | 'zone' | 'delete') => setEditing(editing === part ? null : part)
   const [zoneSaid, setZoneSaid] = useState<string | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteSaid, setDeleteSaid] = useState<string | null>(null)
   const [excludedVaults, setExcludedVaults] = useState<string[]>([])
+  const [hydratedNickname, setHydratedNickname] = useState<string | null | undefined>(undefined)
   const currentVault = app.list.vaults.find((v) => vaultId(v) === app.vaultKey) ?? app.list.vaults[0] ?? null
   const currentSlug = currentVault?.repo.toLowerCase() ?? null
   const thisVaultIncluded = currentSlug === null || !excludedVaults.some((s) => s.toLowerCase() === currentSlug)
@@ -256,6 +270,32 @@ function FriendsPart() {
       live = false
     }
   }, [app.services.store])
+
+  useEffect(() => {
+    let live = true
+    const direct = app.services.friends as DirectFriendsProfilePort
+    const loadSvc = serviceOf(app.services.friends)
+    const hydrate = async () => {
+      let remoteNickname: string | null | undefined
+      if (typeof direct.getBoard === 'function') {
+        const board = await direct.getBoard().catch(() => null)
+        remoteNickname = board?.me?.nickname
+      } else if (loadSvc !== null) {
+        const svc = await loadSvc().catch(() => null)
+        const board = await svc?.board().catch(() => null)
+        if (board && board.kind === 'ok') remoteNickname = board.me.nickname
+      }
+      if (!live || remoteNickname === undefined) return
+      setHydratedNickname(remoteNickname)
+      if (remoteNickname !== null) {
+        setNickname((prev) => (prev === '' ? remoteNickname : prev))
+      }
+    }
+    void hydrate()
+    return () => {
+      live = false
+    }
+  }, [app.services.friends])
 
   const setThisVaultIncluded = (included: boolean) => {
     if (currentVault === null) return
@@ -277,6 +317,10 @@ function FriendsPart() {
   const actingVault = fa.kind === 'ok' || fa.kind === 'two-accounts' ? fa.vault : null
   const acting = actingVault === null ? undefined : app.accounts[actingVault]
   const githubName = acting?.name ?? acting?.login ?? app.accounts[app.vaultKey ?? '']?.name ?? app.accounts[app.vaultKey ?? '']?.login ?? ''
+  const githubFirstName = firstNameOf(githubName)
+  const githubAvatar = acting?.avatarUrl ?? app.accounts[app.vaultKey ?? '']?.avatarUrl ?? null
+  const activeNickname = hydratedNickname !== undefined ? hydratedNickname : app.friendsSettings.nickname
+  const displayedName = activeNickname ?? (githubFirstName === '' ? 'From GitHub' : githubFirstName)
   const counting = app.friendsSettings.vaults
   const counts = (id: string) => counting === null || counting.includes(id)
   const countLabel = counting === null ? 'All vaults' : app.list.vaults.filter((v) => counts(vaultId(v))).map((v) => v.repo.split('/')[1]).join(', ') || 'None'
@@ -410,19 +454,33 @@ function FriendsPart() {
             <button type="button" className="row__button" aria-expanded={editing === 'name'} onClick={() => toggle('name')}>
               Name
             </button>
-            <span className="row__side">{app.friendsSettings.nickname ?? (githubName === '' ? 'From GitHub' : githubName)}</span>
+            <span className="row__side">{displayedName}</span>
           </div>
           {editing === 'name' && (
             <form
               className="sheet stack"
               onSubmit={(e) => {
                 e.preventDefault()
-                void app.saveFriendsSettings({ ...app.friendsSettings, nickname: cleanNickname(nickname) }).then(() => setEditing(null))
+                const clean = cleanNickname(nickname)
+                setHydratedNickname(clean)
+                const direct = app.services.friends as DirectFriendsProfilePort
+                const loadSvc = serviceOf(app.services.friends)
+                void app
+                  .saveFriendsSettings({ ...app.friendsSettings, nickname: clean })
+                  .then(async () => {
+                    if (typeof direct.updatePrefs === 'function') {
+                      await direct.updatePrefs({ nickname: clean }).catch(() => undefined)
+                    } else if (loadSvc !== null) {
+                      const svc = await loadSvc().catch(() => null)
+                      await svc?.updatePrefs?.({ nickname: clean }).catch(() => undefined)
+                    }
+                    setEditing(null)
+                  })
               }}
             >
               <label className="field">
-                <span className="field__label">The name your friends see. Leave it empty to use your GitHub name.</span>
-                <input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder={githubName || 'Your name'} maxLength={40} autoComplete="nickname" />
+                <span className="field__label">The name your friends see. Leave empty to use your GitHub first name.</span>
+                <input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder={githubFirstName || 'Your name'} maxLength={40} autoComplete="nickname" />
               </label>
               <button type="submit" className="btn btn--wide">
                 Save name
@@ -430,6 +488,12 @@ function FriendsPart() {
             </form>
           )}
         </li>
+        <ProfilePictureRow
+          open={editing === 'avatar'}
+          onToggle={() => toggle('avatar')}
+          displayName={displayedName === 'From GitHub' ? githubFirstName || 'You' : displayedName}
+          fallbackAvatarUrl={githubAvatar}
+        />
         <li>
           <div className="row">
             <button type="button" className="row__button btn--danger" aria-expanded={editing === 'delete'} onClick={() => toggle('delete')}>

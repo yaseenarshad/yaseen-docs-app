@@ -34,6 +34,8 @@ const friendsMock = vi.hoisted(() => ({
   status: vi.fn(),
   board: vi.fn(),
   updatePrefs: vi.fn(),
+  uploadAvatar: vi.fn(),
+  deleteAvatar: vi.fn(),
   createInvite: vi.fn(),
   acceptInvite: vi.fn(),
   removeFriend: vi.fn(),
@@ -951,5 +953,45 @@ describe('Desktop Friends UI (YAZ-6220 / YAZ-6222)', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     })
     expect(document.querySelector('.fr-browse-modal')).toBeNull()
+  })
+
+  it('YAZ-6299: FriendsSendControl shows Profile picture status, Reset to GitHub photo, and first-name Display name hint', async () => {
+    friendsMock.status.mockResolvedValue({
+      status: 'sent',
+      lastSentAt: Date.now() - 60_000,
+      retryAt: null,
+      friends: 2,
+      groups: 1,
+      missing: 0,
+    })
+    const customBoard = makeBoard()
+    ;(customBoard.me as typeof customBoard.me & { hasCustomAvatar?: boolean }).hasCustomAvatar = true
+    customBoard.me.avatarUrl = 'https://docs.yaseenarshad.com/api/friends/avatar/1?v=abc123'
+    friendsMock.board.mockResolvedValue({ ok: true, board: customBoard })
+    friendsMock.deleteAvatar.mockResolvedValue({
+      ok: true,
+      avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+      hasCustomAvatar: false,
+    })
+
+    act(() => root!.render(<FriendsSendControl />))
+    await flush(4)
+
+    expect(el.textContent).toContain('Default is your GitHub first name')
+    expect(el.querySelector('.friends-settings__avatar-status')?.textContent).toBe('Custom photo')
+    const previewImg = el.querySelector<HTMLImageElement>('.friends-settings__avatar-preview img')
+    expect(previewImg?.getAttribute('src')).toBe('https://docs.yaseenarshad.com/api/friends/avatar/1?v=abc123')
+
+    const resetBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Reset to GitHub photo')!
+    expect(resetBtn).not.toBeNull()
+    await act(async () => resetBtn.click())
+    await flush(3)
+
+    expect(friendsMock.deleteAvatar).toHaveBeenCalledTimes(1)
+    expect(el.querySelector('.friends-settings__avatar-status')?.textContent).toBe('From GitHub')
+    expect(el.querySelector<HTMLImageElement>('.friends-settings__avatar-preview img')?.getAttribute('src')).toBe(
+      'https://avatars.githubusercontent.com/u/1',
+    )
+    expect([...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Reset to GitHub photo')).toBeUndefined()
   })
 })

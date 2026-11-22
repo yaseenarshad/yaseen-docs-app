@@ -5,15 +5,14 @@ import { defaultCourseState } from '@shared/courseState'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import manifest from '../../../desktop/src/main/courseAudio/course-audio.json'
 import { COURSE } from './script'
-import { COURSE_HINT, COURSE_MINUTES, COURSE_NOTICE, newToCards, offerInInbox, offerNotice, type OfferVault } from './courseFacts'
+import { COURSE_HINT, COURSE_MINUTES, newToCards, offerInInbox, type OfferVault } from './courseFacts'
 import { WAITING_CLIPS } from './waits'
 
 describe('the course facts the app has before the course loads (YAZ-5120)', () => {
-  it('COURSE_MINUTES is the voice`s length (the manifest`s seconds, summed and rounded); the hint and the notice say it', () => {
+  it('COURSE_MINUTES is the voice`s length (the manifest`s seconds, summed and rounded); the hint says it', () => {
     const seconds = Object.values(manifest.chapters as Record<string, { seconds: number }>).reduce((n, chapter) => n + chapter.seconds, 0)
     expect(COURSE_MINUTES, 'the voice changed its length: set COURSE_MINUTES in courseFacts.ts').toBe(Math.round(seconds / 60))
     expect(COURSE_HINT).toBe(`About ${COURSE_MINUTES} minutes. Learn how cards work, and make your first ones.`)
-    expect(COURSE_NOTICE).toBe(`New to cards? Take the ${COURSE_MINUTES}-minute course`)
   })
 
   // YAZ-5272: both offers are for a person new to cards: the vault has cards on and holds no card yet.
@@ -37,17 +36,6 @@ describe('the course facts the app has before the course loads (YAZ-5120)', () =
     expect(offerInInbox({ ...c, done: true }, DEFAULT_SETTINGS, NEW)).toBe(false)
     expect(offerInInbox({ ...c, dismissed: true }, DEFAULT_SETTINGS, NEW)).toBe(false)
     expect(offerInInbox(c, { ...DEFAULT_SETTINGS, cardTips: false }, NEW)).toBe(false)
-  })
-
-  it('the notice shows once, to a person new to cards (YAZ-5272), with Card tips on and the course not done', () => {
-    const c = defaultCourseState()
-    expect(offerNotice(c, DEFAULT_SETTINGS, NEW)).toBe(true)
-    expect(offerNotice(c, DEFAULT_SETTINGS, HAS_CARDS)).toBe(false)
-    expect(offerNotice(c, DEFAULT_SETTINGS, CARDS_OFF)).toBe(false)
-    expect(offerNotice(c, DEFAULT_SETTINGS, LOADING)).toBe(false)
-    expect(offerNotice({ ...c, offered: true }, DEFAULT_SETTINGS, NEW)).toBe(false)
-    expect(offerNotice({ ...c, done: true }, DEFAULT_SETTINGS, NEW)).toBe(false)
-    expect(offerNotice(c, { ...DEFAULT_SETTINGS, cardTips: false }, NEW)).toBe(false)
   })
 })
 

@@ -59,6 +59,12 @@ describe('createFriendsService (YAZ-6219)', () => {
       if (url.endsWith('/api/friends/me') && method === 'DELETE') {
         return mockJsonResponse({ ok: true, deleted: true })
       }
+      if (url.endsWith('/api/friends/avatar') && method === 'PUT') {
+        return mockJsonResponse({ ok: true, avatarUrl: 'https://docs.yaseenarshad.com/api/friends/avatar/1?v=abc123', hasCustomAvatar: true })
+      }
+      if (url.endsWith('/api/friends/avatar') && method === 'DELETE') {
+        return mockJsonResponse({ ok: true, avatarUrl: 'https://avatars.githubusercontent.com/u/1', hasCustomAvatar: false })
+      }
       return mockJsonResponse({ error: 'unexpected' }, 404)
     })
 
@@ -92,6 +98,17 @@ describe('createFriendsService (YAZ-6219)', () => {
     expect(sentCards[0].markdown).not.toContain('YAZ-99')
     expect(sentCards[0].markdown).not.toContain('kind: card')
     expect(sentCards[0].note).toBe('try this')
+
+    expect(await svc.uploadAvatar({ contentType: 'image/webp', dataBase64: 'UklGRg==' })).toEqual({
+      ok: true,
+      avatarUrl: 'https://docs.yaseenarshad.com/api/friends/avatar/1?v=abc123',
+      hasCustomAvatar: true,
+    })
+    expect(await svc.deleteAvatar()).toEqual({
+      ok: true,
+      avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+      hasCustomAvatar: false,
+    })
 
     expect(await svc.deleteMe()).toEqual({ ok: true })
   })
@@ -178,6 +195,38 @@ describe('createFriendsService (YAZ-6219)', () => {
           allowedFriendIds: [2],
         },
       })
+
+      // Demo custom avatar upload, delete, and live nickname persistence (YAZ-6299)
+      const defaultAvatar = b1.board.me.avatarUrl
+      const uploaded = await svc.uploadAvatar({ contentType: 'image/webp', dataBase64: 'UklGRg==' })
+      expect(uploaded).toEqual({
+        ok: true,
+        avatarUrl: 'data:image/webp;base64,UklGRg==',
+        hasCustomAvatar: true,
+      })
+      const bAvatar = await svc.board()
+      expect(bAvatar.ok && bAvatar.board.me.avatarUrl).toBe('data:image/webp;base64,UklGRg==')
+      expect(bAvatar.ok && (bAvatar.board.me as { hasCustomAvatar?: boolean }).hasCustomAvatar).toBe(true)
+
+      const resetAvatar = await svc.deleteAvatar()
+      expect(resetAvatar).toEqual({
+        ok: true,
+        avatarUrl: defaultAvatar,
+        hasCustomAvatar: false,
+      })
+      const bReset = await svc.board()
+      expect(bReset.ok && bReset.board.me.avatarUrl).toBe(defaultAvatar)
+      expect(bReset.ok && (bReset.board.me as { hasCustomAvatar?: boolean }).hasCustomAvatar).toBe(false)
+
+      expect(await svc.updatePrefs({ nickname: 'Yas A' })).toMatchObject({ ok: true, nickname: 'Yas A' })
+      const bNick = await svc.board()
+      expect(bNick.ok && bNick.board.me.nickname).toBe('Yas A')
+      expect(bNick.ok && bNick.board.me.name).toBe('Yas A')
+
+      expect(await svc.updatePrefs({ nickname: null })).toMatchObject({ ok: true, nickname: null })
+      const bCleared = await svc.board()
+      expect(bCleared.ok && bCleared.board.me.nickname).toBeNull()
+      expect(bCleared.ok && bCleared.board.me.name).toBe('Yaseen')
 
       expect(fetchFn).not.toHaveBeenCalled()
     } finally {

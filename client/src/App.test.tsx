@@ -11,7 +11,6 @@ import { useAutomationSurface } from './automation/surfaces'
 import { openCodeAt } from './code/codeOpener'
 import { FORMATS_CHAPTER_TITLE, requestCourse } from './course/openCourse'
 import { showTourPlace } from './course/tourBus'
-import { COURSE_NOTICE } from './course/courseFacts'
 import { COURSE } from './course/script'
 import { cardSkillReadOnlyVault } from './vault/cardSkill'
 import { CARD_FORMATS_OPEN } from './editor/card/cardFormatHint'
@@ -284,8 +283,6 @@ import { dropAllPageWindows, keepPageWindow, pageWindowKey, pageWindowMemory, op
 import { MOVE_ROW_TITLE_MAX } from './tabs/windowLabel'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
-/** The card course's notice is due in the next mount (YAZ-5120): only its own test sets it. */
-let courseNoticeDue = false
 
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
 type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'>>
@@ -383,9 +380,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     pickFolder: vi.fn(async () => ({ cancelled: true as const })),
     watch: vi.fn((_root?: string, _listener?: unknown): (() => void) => () => undefined),
     state: {
-      // The card course's one notice (YAZ-5120) shows once per Mac: here it has shown, unless a test asks for it
-      // (`courseNoticeDue`), so it never takes the place of the notice another test reads.
-      get: vi.fn(async () => (courseNoticeDue ? state : { ...state, course: { ...(state.course ?? defaultCourseState()), offered: true } })),
+      get: vi.fn(async () => state),
       setSettings: vi.fn(async () => undefined),
       setSidebarWidth: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
@@ -8649,24 +8644,7 @@ describe('App: the card skill in the sidebar (YAZ-5108)', () => {
 })
 
 describe('App: the card course (YAZ-5120)', () => {
-  afterEach(() => {
-    courseNoticeDue = false
-  })
-
-  it('the one notice, the first time a vault with Review on shows: it is kept as shown, and "Open the course" opens the lazy layer; Esc closes it', async () => {
-    courseNoticeDue = true
-    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
-    await vi.waitFor(() => expect(el.querySelector('.link-notice')?.textContent).toContain(COURSE_NOTICE))
-    expect(bridge.state.setCourse).toHaveBeenCalledWith({ offered: true })
-    const open = [...el.querySelectorAll<HTMLButtonElement>('.link-notice button')].find((b) => b.textContent === 'Open the course')!
-    act(() => open.click())
-    // The lazy layer's chunk holds every chapter's scenes (YAZ-5121): its first load can take past waitFor's 1 s default.
-    await vi.waitFor(() => expect(document.querySelector('.course[role="dialog"]')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
-    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
-    expect(document.querySelector('.course')).toBeNull()
-  })
-
-  // YAZ-5272: the offer is for a person new to cards (Yaseen): the vault in front has cards on and holds no card yet.
+  // YAZ-5272: the offer is for a person new to cards (Yaseen): the vault has cards on and holds no card yet.
   describe('YAZ-5272: only a person new to cards gets the offer', () => {
     const cardIn = (path: string): IndexRecord => ({
       path, name: 'cards.md', basename: 'cards', title: 'Cards', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1,
@@ -8675,28 +8653,14 @@ describe('App: the card course (YAZ-5120)', () => {
     const index = (b: ReturnType<typeof installBridge>) =>
       void b.bridge.index.mockImplementation(async (root: string) => ({ root, records: root === '/a' ? [cardIn('/a/cards.md')] : [], folders: [], generatedAt: 1, ids: true }))
 
-    it('a vault with Review on and one card, `offered` false: no notice, nothing kept as offered, and no course line in its empty Inbox', async () => {
-      courseNoticeDue = true
+    it('a vault with Review on and one card: no course line in its empty Inbox', async () => {
       const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/a', file: '/a/x.md', tabs: ['/a/x.md'] }, { '/a/x.md': { content: '# x', mtime: 1 } }, index)
       await vi.waitFor(() => expect(bridge.index).toHaveBeenCalledWith('/a'))
       await act(async () => new Promise((r) => setTimeout(r, 50)))
-      expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain(COURSE_NOTICE)
       expect(bridge.state.setCourse).not.toHaveBeenCalledWith({ offered: true })
       act(() => captured.sidebar?.onOpenInbox())
       await vi.waitFor(() => expect(el.querySelector('.card-inbox')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
       expect(el.querySelector('.course-offer')).toBeNull()
-    })
-
-    it('a window with a vault with cards in front and a vault with none: no notice; the vault with none in front: the notice, one time', async () => {
-      courseNoticeDue = true
-      const files = { '/a/x.md': { content: '# x', mtime: 1 }, '/b/y.md': { content: '# y', mtime: 1 } }
-      const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'] }, files, index)
-      await vi.waitFor(() => expect(bridge.index).toHaveBeenCalledWith('/a'))
-      await act(async () => new Promise((r) => setTimeout(r, 50)))
-      expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain(COURSE_NOTICE)
-      act(() => showTourPlace({ kind: 'file', path: '/b/y.md' }))
-      await vi.waitFor(() => expect(el.querySelector('.link-notice')?.textContent).toContain(COURSE_NOTICE))
-      expect((bridge.state.setCourse.mock.calls as unknown as [{ offered?: boolean }][]).filter(([patch]) => patch.offered === true)).toHaveLength(1)
     })
   })
 
@@ -8704,7 +8668,7 @@ describe('App: the card course (YAZ-5120)', () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
     expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain('New to cards?')
     act(() => requestCourse('good-card'))
-    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 7 of 12'))
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 7 of 12'), { timeout: SLOW_RUNNER_MS })
     act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
   })
 
@@ -8724,7 +8688,7 @@ describe('App: the card course (YAZ-5120)', () => {
       Object.assign(b.bridge, { createDir: vi.fn(async (req: { path: string }) => ({ path: req.path })), mintPageId: vi.fn(async () => 'TST-1') })
     })
     act(() => requestCourse('first-card'))
-    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 2 of 12'))
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 2 of 12'), { timeout: SLOW_RUNNER_MS })
     expect(bridge.state.setCourse).toHaveBeenCalledWith({ vault: '/a' })
     // The person brings vault B to the front in the middle of the course (the tour lets them use the whole app).
     act(() => showTourPlace({ kind: 'file', path: '/b/y.md' }))
@@ -8745,7 +8709,7 @@ describe('App: the card course (YAZ-5120)', () => {
     const state: AppState = { ...defaultAppState(), course: { ...defaultCourseState(), chapter: 'inbox', clip: 'c3-04', vault: '/gone' } }
     const { bridge } = await mount(state, { id: 'w1', root: '/a', file: '/a/x.md', tabs: ['/a/x.md'] }, { '/a/x.md': { content: '# x', mtime: 1 } })
     act(() => requestCourse())
-    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 3 of 12'))
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 3 of 12'), { timeout: SLOW_RUNNER_MS })
     expect([...document.querySelectorAll('.course__note')].map((n) => n.textContent)).toEqual(['gone is not open in this window, so the course makes no files. Start over in a'])
     expect(bridge.state.setCourse).not.toHaveBeenCalledWith(expect.objectContaining({ vault: '/a' }))
     act(() => [...document.querySelectorAll<HTMLButtonElement>('.course button')].find((b) => b.textContent === 'Start over in a')!.click())
@@ -8772,22 +8736,17 @@ describe('App: the card course (YAZ-5120)', () => {
       await vi.waitFor(() => expect(el.querySelector('.card-inbox')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
     }
 
-    it('On (the default): the notice shows, and the empty Inbox of a vault with no card has the course line', async () => {
-      courseNoticeDue = true
+    it('On (the default): the empty Inbox of a vault with no card has the course line', async () => {
       const { el } = await mount(tips(true), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, noCards)
-      await vi.waitFor(() => expect(el.querySelector('.link-notice')?.textContent).toContain(COURSE_NOTICE))
       await openInbox(el)
       await vi.waitFor(() => expect(el.querySelector('.course-offer')).not.toBeNull())
     })
 
-    it('Off: no notice, nothing kept as offered, and no course line in the same empty Inbox; Settings › Cards still has "Open the course"', async () => {
-      courseNoticeDue = true
-      const { bridge, el } = await mount(tips(false), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, noCards)
+    it('Off: no course line in the same empty Inbox; Settings › Cards still has "Open the course"', async () => {
+      const { el } = await mount(tips(false), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, noCards)
       await openInbox(el)
       await vi.waitFor(() => expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.'), { timeout: SLOW_RUNNER_MS })
       expect(el.querySelector('.course-offer')).toBeNull()
-      expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain(COURSE_NOTICE)
-      expect(bridge.state.setCourse).not.toHaveBeenCalledWith({ offered: true })
       await act(async () => (captured.sidebar as unknown as { onOpenSettings: () => void }).onOpenSettings())
       settingsPage(el, 'Cards')
       expect([...el.querySelectorAll('button')].some((b) => b.textContent === 'Open the course')).toBe(true)

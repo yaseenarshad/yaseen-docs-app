@@ -629,7 +629,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                           {numbers?.mark === 'finished' && numbers.cards > 0 ? '🥇' : ''}
                         </span>
                       )}
-                      <Avatar name={entry.name} url={entry.avatar} />
+                      <Avatar key={entry.avatar ?? ''} name={entry.name} url={entry.avatar} />
                       <span className="fr-who" aria-hidden="true">
                         <span className="fr-name-line">
                           <span className={entry.you ? 'fr-name fr-name--you' : 'fr-name'}>
