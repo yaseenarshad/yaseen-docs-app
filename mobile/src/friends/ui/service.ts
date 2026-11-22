@@ -421,7 +421,7 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
         name: 'Maya',
         avatarUrl: avatars.maya,
         since: new Date(t - 30 * 86_400_000).toISOString(),
-        stats: makeDemoStats(t, 'maya', 'Maya', 25, 12, true, 21, 5),
+        stats: makeDemoStats(t, 'maya', 'Maya', 25, 12, true, 24, 24),
         statsAt: new Date(t - 15 * 60_000).toISOString(),
         sharedCardCount: 12,
         canBrowseDeck: true,
@@ -443,7 +443,23 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
         name: 'Elena',
         avatarUrl: avatars.elena,
         since: new Date(t - 20 * 86_400_000).toISOString(),
-        stats: makeDemoStats(t, 'elena', 'Elena', 18, 8, true, 7, 2),
+        stats: (() => {
+          const s = makeDemoStats(t, 'elena', 'Elena', 18, 8, true, 16, 16)
+          // Make prior month lower so Elena showcases the "Beat Oct" badge live in Demo
+          const curMonthPrefix = localDay(t).slice(0, 8)
+          let keptPrior = 0
+          for (const d of s.days) {
+            if (d.day < `${curMonthPrefix}01`) {
+              if (keptPrior < 11) {
+                d.done = true
+                keptPrior++
+              } else {
+                d.done = false
+              }
+            }
+          }
+          return s
+        })(),
         statsAt: new Date(t - 55 * 60_000).toISOString(),
         sharedCardCount: 2,
       },

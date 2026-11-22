@@ -773,10 +773,10 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
             rowConsistency.priorFinishedDays !== null &&
             rowConsistency.priorFinishedDays > 0 &&
             rowConsistency.finishedDays > rowConsistency.priorFinishedDays
-          const priorBadgeLabel = rowConsistency ? (period === 'week' ? 'Beat last wk' : `Beat ${rowConsistency.priorLabel.slice(0, 3)}`) : ''
+          const priorBadgeLabel = period === 'week' ? 'Beat last week' : 'Beat last month'
           const priorSubLabel =
             rowConsistency && rowConsistency.priorFinishedDays !== null && rowConsistency.priorFinishedDays > 0
-              ? `${period === 'week' ? 'Last wk' : rowConsistency.priorLabel.slice(0, 3)}: ${rowConsistency.priorFinishedDays}d`
+              ? `${period === 'week' ? 'Last week' : 'Last month'}: ${rowConsistency.priorFinishedDays}d`
               : null
           const buddyStreak = showBuddyStreak && !row.isMe && friend && board ? buddyStreakOf(board.me.stats?.days, friend, nowMs) : 0
           const bothDoneToday = myDoneToday && row.mark === 'finished'
