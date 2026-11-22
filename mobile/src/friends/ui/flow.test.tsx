@@ -280,15 +280,7 @@ describe('YAZ-6218: D1 Friends service end-to-end flow (zero Gist calls)', () =>
     if (aliBoard.kind !== 'ok') throw new Error(aliBoard.kind)
     expect(aliBoard.friends.map((f) => f.login)).toEqual(['bea'])
 
-    // 4. Ali cheers Bea, Bea sees it and marks it seen
-    const sent = await ali.mark(aliBoard.friends[0].mine, 'cheer', 'cheered your review!')
-    expect(sent.kind).toBe('sent')
-    const beaBoard = await bea.board()
-    if (beaBoard.kind !== 'ok') throw new Error(beaBoard.kind)
-    expect(beaBoard.friends[0].mark?.kind).toBe('cheer')
-    await bea.see([{ theirs: beaBoard.friends[0].theirs, mark: beaBoard.friends[0].mark! }])
-
-    // 5. Ali shares a card with Bea; Bea dismisses and undoes dismiss
+    // 4. Ali shares a card with Bea; Bea dismisses and undoes dismiss
     const shared = await ali.shareCards!({
       toUserIds: [2],
       cards: [{ title: 'FSRS', markdown: 'What is FSRS?', note: 'Must know' }],
@@ -301,16 +293,14 @@ describe('YAZ-6218: D1 Friends service end-to-end flow (zero Gist calls)', () =>
     await bea.setCardState!(cardId, 'dismissed')
     await bea.setCardState!(cardId, 'pending')
 
-    // 6. Group create + join + admin approve
+    // 5. Group create + instant join
     const grp = await ali.groups!.create('Study Crew')
     expect(grp.kind).toBe('ok')
     if (grp.kind !== 'ok') throw new Error(grp.kind)
     const joined = await bea.paste(grp.link)
     expect(joined.kind).toBe('joined')
-    const approved = await ali.approveMember!(grp.group, 2)
-    expect(approved).toEqual({ ok: true })
 
-    // 7. Delete my Friends data
+    // 6. Delete my Friends data
     const del = await ali.deleteMe!()
     expect(del).toEqual({ ok: true, deleted: true })
     expect(server.deletedUsers.has(1)).toBe(true)
@@ -319,26 +309,23 @@ describe('YAZ-6218: D1 Friends service end-to-end flow (zero Gist calls)', () =>
     expect(server.calls.every((c) => c.includes('/api/friends/'))).toBe(true)
   })
 
-  it('renders FriendsTab over the real D1 service and shows QR SVG + paired friend', async () => {
+  it('renders FriendsTab over the real D1 service and shows empty state + QR SVG on Add friends', async () => {
     const server = createMockD1Server()
     const aliPhone = await phoneOf(ALI_TOKEN, 'ali')
     const ali = createFriendsService({ ...aliPhone, fetch: server.fetch as never, now: () => NOW })
-    const sharedOut: ShareData[] = []
-    vi.stubGlobal('navigator', { ...navigator, share: async (d: ShareData) => void sharedOut.push(d) })
 
     h = await mount({
       phone: aliPhone,
-      friends: () => ({ ...ali.port, service: async () => ali, stop: ali.stop }),
+      friends: () => ({ ...ali.port, hasFriends: async () => true, service: async () => ali, stop: ali.stop }),
     })
-    if (h.host.querySelector('section[aria-label="Friends"]') === null) await tap(h, 'Friends')
-    for (let i = 0; i < 50 && h.host.querySelector('section[aria-label="Friends"]:not([aria-busy])') === null; i++) await h.settle()
+    for (let i = 0; i < 80 && h.host.querySelector('section[aria-label="Friends"]:not([aria-busy])') === null; i++) await h.settle()
 
-    await tap(h, 'Share my link')
-    const shareBtn = [...h.host.querySelectorAll('.fr-panel button')].find((b) => b.textContent === 'Share my link') as HTMLButtonElement
-    await act(async () => shareBtn.click())
-    for (let i = 0; i < 6; i++) await h.settle()
+    // Zero-friends first-run empty state card -> Add friend or group -> Add friends (auto-loads QR SVG)
+    expect(plain(h.text())).toContain('Study together with friends')
+    await tap(h, 'Add friend or group')
+    await tap(h, 'Add friends')
+    for (let i = 0; i < 20 && h.host.querySelector('.fr-qr-sheet__box svg') === null; i++) await h.settle()
 
-    expect(sharedOut[0]?.url).toMatch(/^https:\/\/docs\.yaseenarshad\.com\/friend#inv\d+$/)
-    expect(h.host.querySelector('.fr-qr svg')).not.toBeNull()
+    expect(h.host.querySelector('.fr-qr-sheet__box svg')).not.toBeNull()
   })
 })

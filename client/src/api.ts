@@ -45,10 +45,7 @@ export interface FriendsApi {
   createInvite: () => Promise<{ ok: true; code: string; link: string; expiresAt: string } | { ok: false; error: string }>
   acceptInvite: (code: string) => Promise<{ ok: true; result: unknown } | { ok: false; error: string }>
   removeFriend: (userId: number, block?: boolean) => Promise<{ ok: true } | { ok: false; error: string }>
-  sendMark: (toUserId: number, kind: 'cheer' | 'nudge', message?: string) => Promise<{ ok: true } | { ok: false; error: string }>
-  markSeen: (fromUserIds?: number[]) => Promise<{ ok: true } | { ok: false; error: string }>
   createGroup: (name: string) => Promise<{ ok: true; id: string; name: string; inviteCode: string; link: string } | { ok: false; error: string }>
-  approveMember: (groupId: string, userId: number) => Promise<{ ok: true } | { ok: false; error: string }>
   removeMember: (groupId: string, userId?: number) => Promise<{ ok: true; deleted?: boolean } | { ok: false; error: string }>
   rotateGroupInvite: (groupId: string) => Promise<{ ok: true; inviteCode: string; link: string } | { ok: false; error: string }>
   shareCards: (input: { groupId?: string; toUserIds?: number[]; folderName?: string; cards: { title: string; markdown: string; note?: string | null }[] }) => Promise<{ ok: true; count: number } | { ok: false; error: string }>
@@ -56,6 +53,7 @@ export interface FriendsApi {
   setFolderState: (folderId: string, status: 'pending' | 'accepted' | 'dismissed') => Promise<{ ok: true } | { ok: false; error: string }>
   deleteSharedCard: (cardId: string) => Promise<{ ok: true } | { ok: false; error: string }>
   importCards: (input: { root: string; dir: string; cards: { id: string; title: string; markdown: string; senderLogin: string; upNext?: boolean }[]; createFolder?: string }) => Promise<{ ok: true; paths: string[] } | { ok: false; error: string }>
+  setVaultIncluded?: (vaultPath: string, included: boolean) => Promise<{ ok: true; knownVaults?: { path: string; name: string; included: boolean }[] } | { ok: false; error: string }>
   deleteMe: () => Promise<{ ok: true } | { ok: false; error: string }>
   onInviteLink: (cb: (payload: { kind: 'friend' | 'group'; code: string }) => void) => () => void
 }
@@ -69,10 +67,7 @@ const friendsApi: FriendsApi = {
   createInvite: () => call(() => friendsBridge().createInvite()),
   acceptInvite: (code) => call(() => friendsBridge().acceptInvite(code)),
   removeFriend: (userId, block) => call(() => friendsBridge().removeFriend(userId, block)),
-  sendMark: (toUserId, kind, message) => call(() => friendsBridge().sendMark(toUserId, kind, message)),
-  markSeen: (fromUserIds) => call(() => friendsBridge().markSeen(fromUserIds)),
   createGroup: (name) => call(() => friendsBridge().createGroup(name)),
-  approveMember: (groupId, userId) => call(() => friendsBridge().approveMember(groupId, userId)),
   removeMember: (groupId, userId) => call(() => friendsBridge().removeMember(groupId, userId)),
   rotateGroupInvite: (groupId) => call(() => friendsBridge().rotateGroupInvite(groupId)),
   shareCards: (input) => call(() => friendsBridge().shareCards(input)),
@@ -80,6 +75,11 @@ const friendsApi: FriendsApi = {
   setFolderState: (folderId, status) => call(() => friendsBridge().setFolderState(folderId, status)),
   deleteSharedCard: (cardId) => call(() => friendsBridge().deleteSharedCard(cardId)),
   importCards: (input) => call(() => friendsBridge().importCards(input)),
+  setVaultIncluded: (vaultPath, included) =>
+    call(async () => {
+      const fn = friendsBridge()?.setVaultIncluded
+      return typeof fn === 'function' ? fn(vaultPath, included) : { ok: false as const, error: 'unavailable' }
+    }),
   deleteMe: () => call(() => friendsBridge().deleteMe()),
   onInviteLink: (cb) => {
     const fn = friendsBridge()?.onInviteLink

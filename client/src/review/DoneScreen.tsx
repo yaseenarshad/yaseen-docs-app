@@ -253,7 +253,7 @@ export function DoneScreen({ review, session, shown, look, addKinds, adds, from,
           <>
             {' · '}
             <button type="button" className="card-inbox__done-friends-btn" onMouseDown={(e) => e.preventDefault()} onClick={friendsSummary.onOpenFriends}>
-              {friendsSummary.finishedToday > 0 ? 'Cheer them' : 'Open Friends'}
+              Open Friends
             </button>
           </>
         )}

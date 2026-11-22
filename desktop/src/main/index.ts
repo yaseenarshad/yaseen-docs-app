@@ -25,6 +25,7 @@ import { ensureLibraryFolder } from './library/folder'
 import { broadcastAll, excludeFromBroadcast, rootsOf } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerFriendsIpc } from './ipc/friends'
+import { createPendingInviteHandler, type PendingInviteHandler } from './friends/pendingInvite'
 import { onRendererSecretSet } from './ipc/secrets'
 import { FRIENDS_ENABLED } from '@shared/features'
 import { registerSpellerIpc } from './ipc/speller'
@@ -97,6 +98,8 @@ function parseFriendsInviteDeepLink(rawUrl: string): { kind: 'friend' | 'group';
   return { kind: m[1].toLowerCase() as 'friend' | 'group', code: m[2].toLowerCase() }
 }
 
+let pendingInviteHandler: PendingInviteHandler | null = null
+
 /** A parsed link routes to the best window; a bad one gets the unobtrusive notice, never a dialog. */
 function handleLink(url: string): void {
   if (isGithubAuthCallback(url)) {
@@ -106,7 +109,8 @@ function handleLink(url: string): void {
   if (FRIENDS_ENABLED) {
     const invite = parseFriendsInviteDeepLink(url)
     if (invite !== null) {
-      broadcastAll(CONTRACT.friends.onInviteLink.channel, invite)
+      if (pendingInviteHandler !== null) void pendingInviteHandler.onInviteLink(invite)
+      else broadcastAll(CONTRACT.friends.onInviteLink.channel, invite)
       const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !previewPopups.has(w))
       if (win !== undefined) {
         if (win.isMinimized()) win.restore()
@@ -516,7 +520,15 @@ app.whenReady().then(() => {
   // YAZ-5652: only with Friends on (`shared/features.ts`). Off, nothing starts and the build drops the `./friends` chunk.
   if (FRIENDS_ENABLED) {
     const friendsSend = import('./friends').then((m) => m.startFriendsSend(store, { githubAuth: auth, secrets }, app.getPath('userData')))
-    friendsTokenChanged = () => void friendsSend.then((f) => f.tokenChanged())
+    pendingInviteHandler = createPendingInviteHandler({
+      isSignedIn: async () => (await auth.getValidAuth().catch(() => null)) !== null,
+      acceptInvite: async (code) => (await friendsSend).service.acceptInvite(code),
+      notifyRenderer: (payload) => broadcastAll(CONTRACT.friends.onInviteLink.channel, payload),
+    })
+    friendsTokenChanged = () => {
+      void friendsSend.then((f) => f.tokenChanged())
+      void pendingInviteHandler?.onAuthChanged()
+    }
     registerFriendsIpc(() => friendsSend)
     onRendererSecretSet((name) => {
       if (name === GITHUB_TOKEN_SECRET) friendsTokenChanged?.()

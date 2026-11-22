@@ -103,8 +103,13 @@ function sendLine(v: FriendsSendView, now: number): string {
 export function FriendsSendControl() {
   const [view, setView] = useState<FriendsSendView | null>(null)
   const [showInInbox, setShowInInbox] = useState<boolean>(() => readShowFriendsInInbox())
+  const [nickname, setNickname] = useState('')
+  const [savedNickname, setSavedNickname] = useState('')
+  const [githubName, setGithubName] = useState('')
+  const [savingName, setSavingName] = useState(false)
   const [allVaults, setAllVaults] = useState<string[]>([])
   const [countedVaults, setCountedVaults] = useState<string[]>([])
+  const [knownVaults, setKnownVaults] = useState<{ path: string; name: string; included: boolean }[]>([])
   const [savingVaults, setSavingVaults] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -114,7 +119,12 @@ export function FriendsSendControl() {
   useEffect(() => {
     let live = true
     api.friends.status().then(
-      (v) => live && setView(v),
+      (v) => {
+        if (!live) return
+        setView(v)
+        const kv = (v as FriendsSendView & { knownVaults?: { path: string; name: string; included: boolean }[] }).knownVaults
+        if (Array.isArray(kv) && kv.length > 0) setKnownVaults(kv)
+      },
       () => undefined,
     )
     if (typeof api.friends.board === 'function') {
@@ -124,6 +134,10 @@ export function FriendsSendControl() {
           const picked = res.board.me.vaults ?? []
           setCountedVaults(picked)
           setAllVaults((prev) => Array.from(new Set([...prev, ...picked])))
+          const nick = res.board.me.nickname ?? ''
+          setNickname(nick)
+          setSavedNickname(nick)
+          setGithubName(res.board.me.name || res.board.me.login || '')
         },
         () => undefined,
       )
@@ -146,6 +160,34 @@ export function FriendsSendControl() {
   const toggleShowInInbox = (next: boolean) => {
     setShowInInbox(next)
     writeShowFriendsInInbox(next)
+  }
+
+  const saveDisplayName = async () => {
+    const trimmed = nickname.trim()
+    if (savingName || trimmed === savedNickname || typeof api.friends.updatePrefs !== 'function') return
+    setSavingName(true)
+    try {
+      const res = await api.friends.updatePrefs({ nickname: trimmed === '' ? null : trimmed })
+      if (res.ok) {
+        const next = res.nickname ?? ''
+        setNickname(next)
+        setSavedNickname(next)
+      }
+    } finally {
+      setSavingName(false)
+    }
+  }
+
+  const toggleKnownVault = async (vaultPath: string, included: boolean) => {
+    if (savingVaults || typeof api.friends.setVaultIncluded !== 'function') return
+    setKnownVaults((prev) => prev.map((v) => (v.path === vaultPath ? { ...v, included } : v)))
+    setSavingVaults(true)
+    try {
+      const res = await api.friends.setVaultIncluded(vaultPath, included)
+      if (res.ok && Array.isArray(res.knownVaults)) setKnownVaults(res.knownVaults)
+    } finally {
+      setSavingVaults(false)
+    }
   }
 
   const toggleVault = async (vault: string) => {
@@ -198,9 +240,46 @@ export function FriendsSendControl() {
         <span>Show Friends in Inbox</span>
       </label>
 
-      {allVaults.length > 0 && (
+      <label className="friends-settings__name" style={{ display: 'block', marginTop: 12 }}>
+        <span style={{ display: 'block', fontSize: 12, color: 'var(--fg-muted)', marginBottom: 4 }}>Display name</span>
+        <input
+          type="text"
+          className="settings__input"
+          aria-label="Display name"
+          placeholder={githubName || 'Your GitHub name'}
+          value={nickname}
+          disabled={savingName}
+          onChange={(e) => setNickname(e.target.value)}
+          onBlur={() => void saveDisplayName()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.currentTarget.blur()
+              void saveDisplayName()
+            }
+          }}
+        />
+      </label>
+
+      {knownVaults.length > 0 ? (
         <fieldset className="friends-settings__vaults" style={{ border: 0, padding: 0, margin: '12px 0 0' }}>
-          <legend style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 6 }}>Vaults that count</legend>
+          <legend style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 6 }}>Vaults counted</legend>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {knownVaults.map((v) => (
+              <label key={v.path} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }} title={v.path}>
+                <input
+                  type="checkbox"
+                  checked={v.included}
+                  disabled={savingVaults}
+                  onChange={(e) => void toggleKnownVault(v.path, e.target.checked)}
+                />
+                <span>{v.name}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ) : allVaults.length > 0 ? (
+        <fieldset className="friends-settings__vaults" style={{ border: 0, padding: 0, margin: '12px 0 0' }}>
+          <legend style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 6 }}>Vaults counted</legend>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {allVaults.map((vault) => (
               <label key={vault} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
@@ -215,7 +294,7 @@ export function FriendsSendControl() {
             ))}
           </div>
         </fieldset>
-      )}
+      ) : null}
 
       <div className="friends-settings__danger" style={{ marginTop: 14 }}>
         {!confirmDelete ? (

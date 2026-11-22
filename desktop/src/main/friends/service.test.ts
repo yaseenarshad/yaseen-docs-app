@@ -117,24 +117,21 @@ describe('createFriendsService (YAZ-6219)', () => {
       if (!b1.ok) return
       expect(b1.board.me.stats?.days[0].cards).toBe(42)
       expect(b1.board.me.stats?.totals.streak).toBe(14)
-      expect(b1.board.friends.map((f) => f.name)).toEqual(['Maya', 'Sam'])
+      expect(b1.board.friends.map((f) => f.name)).toEqual(['Maya', 'Sam', 'Trevor', 'Ali', 'Nina'])
       expect(b1.board.groups[0].name).toBe('Med Study')
       expect(b1.board.groups[0].sharedFolders[0].cards).toHaveLength(3)
       expect(b1.board.incomingCards).toHaveLength(1)
 
-      await svc.sendMark(2, 'cheer', 'Nice!')
-      await svc.markSeen([3])
       await svc.setCardState('sc-dismissed-1', 'pending')
       await svc.setFolderState('fld-biochem', 'accepted')
-      await svc.approveMember('grp-med-study', 4)
 
       const b2 = await svc.board()
       expect(b2.ok).toBe(true)
       if (!b2.ok) return
-      expect(b2.board.friends[0].outgoingMark?.kind).toBe('cheer')
-      expect(b2.board.friends[1].incomingMark?.seenAt).not.toBeNull()
+      expect(b2.board.friends[0].buddyStreak).toBe(6)
       expect(b2.board.groups[0].pending).toHaveLength(0)
-      expect(b2.board.groups[0].members).toHaveLength(4)
+      expect(b2.board.groups[0].banned).toEqual([])
+      expect(b2.board.groups[0].members).toHaveLength(3)
       expect(b2.board.groups[0].sharedFolders[0].cards.every((c) => c.status === 'accepted')).toBe(true)
       expect(b2.board.groups[0].sharedCards.find((c) => c.id === 'sc-dismissed-1')?.status).toBe('pending')
       expect(fetchFn).not.toHaveBeenCalled()

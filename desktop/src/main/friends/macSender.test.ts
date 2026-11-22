@@ -45,8 +45,6 @@ function makeBoard(overrides: Partial<FriendsBoardPayload> = {}): FriendsBoardPa
         since: '2026-11-01T00:00:00Z',
         stats: null,
         statsAt: null,
-        incomingMark: null,
-        outgoingMark: null,
         sharedCardCount: 0,
       },
     ],
@@ -247,6 +245,38 @@ describe('createMacSender (D1 Friends API, YAZ-6219)', () => {
     expect((await makeWithErr(new FriendsApiError(401, 'signed_out')).attempt('pass')).status).toBe('no-token')
     expect((await makeWithErr(new FriendsApiError(429, 'rate_limited')).attempt('pass')).status).toBe('slowed')
     expect((await makeWithErr(new TypeError('fetch failed')).attempt('pass')).status).toBe('offline')
+  })
+
+  it('skips vaults in excludedVaults so they never count toward cards or due-done completion (YAZ-6275)', async () => {
+    const { clock } = fakeClock()
+    const countedRoots: string[] = []
+    const sendStats = vi.fn(async () => ({ ok: true as const, statsAt: new Date(clock.now()).toISOString() }))
+    const sender = createMacSender({
+      readToken: async () => 'ghu_tok',
+      client: {
+        board: async () => makeBoard({ me: { ...makeBoard().me, vaults: ['yaseen/notes', 'yaseen/scratch'] } }),
+        sendStats,
+        clearSession: vi.fn(),
+      },
+      vaults: async () =>
+        new Map([
+          ['yaseen/notes', '/vault/notes'],
+          ['yaseen/scratch', '/vault/scratch'],
+        ]),
+      excludedVaults: () => new Set(['/vault/scratch']),
+      count: async (root) => {
+        countedRoots.push(root)
+        return makeVault(2)
+      },
+      stats: async (_t, now, _c, zone) => friendStats([makeVault(2)], now, zone ?? undefined),
+      state: { load: async () => null, save: async () => undefined },
+      clock,
+    })
+
+    expect((await sender.attempt('pass')).status).toBe('sent')
+    expect(countedRoots).toEqual(['/vault/notes'])
+    expect(sendStats).toHaveBeenCalledTimes(1)
+    await sender.stop()
   })
 
   it('clears cached session on tokenChanged', async () => {

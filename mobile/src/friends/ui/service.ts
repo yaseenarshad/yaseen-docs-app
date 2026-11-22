@@ -6,6 +6,7 @@ import {
   DEFAULT_FRIENDS_ORIGIN,
   FriendsApiError,
   createFriendsApiClient,
+  type FriendBoardMember,
   type FriendsApiClient,
   type FriendsBoardPayload,
   type GroupBoardItem,
@@ -55,8 +56,7 @@ export interface FriendEntry {
   login?: string
   since?: string
   sharedCardCount?: number
-  incomingMarkMessage?: string | null
-  outgoingMark?: { kind: MarkKind; message?: string | null; at: string } | null
+  buddyStreak?: number
 }
 
 export type Board =
@@ -99,8 +99,10 @@ export interface FriendsService {
   setCardState?(cardId: string, status: SharedCardStatus): Promise<{ ok: true } | { ok: false; error: string }>
   setFolderState?(folderId: string, status: SharedCardStatus): Promise<{ ok: true } | { ok: false; error: string }>
   deleteSharedCard?(cardId: string): Promise<{ ok: true } | { ok: false; error: string }>
-  approveMember?(groupId: string, userId: number): Promise<{ ok: true } | { ok: false; error: string }>
   rotateGroupInvite?(groupId: string): Promise<{ ok: true; inviteCode: string; link: string } | { ok: false; error: string }>
+  renameGroup?(groupId: string, name: string): Promise<{ ok: true; name: string } | { ok: false; error: string }>
+  banGroupMember?(groupId: string, userId: number): Promise<{ ok: true } | { ok: false; error: string }>
+  unbanGroupMember?(groupId: string, userId: number): Promise<{ ok: true } | { ok: false; error: string }>
   vaultFolders?(): Promise<string[]>
   acceptCardToVault?(input: {
     card: SharedCardItem
@@ -122,6 +124,7 @@ export interface FriendsServices extends FriendsPort {
 
 const BOARD_COPY = 'friendsBoardCopy'
 const SEEN_STATE = 'friendsSeenMarks'
+const EXCLUDED_VAULTS_KEY = 'yaseendocs.friends.excludedVaults'
 
 type BoardCopy = {
   friends: FriendEntry[]
@@ -161,6 +164,24 @@ function mapApiError(err: unknown): Unavailable {
     return { kind: 'failed' }
   }
   return { kind: 'offline' }
+}
+
+/** Computes consecutive days (ending today if both finished, else yesterday) where both users finished due cards. */
+function computeBuddyStreakLocal(meStats: FriendStats | null, friendStats: FriendStats | null, nowMs: number): number {
+  if (meStats === null || friendStats === null) return 0
+  const today = localDay(nowMs)
+  const bothDone = (day: string) =>
+    meStats.days.some((d) => d.day === day && d.done === true) &&
+    friendStats.days.some((d) => d.day === day && d.done === true)
+  let streak = 0
+  let offset = bothDone(today) ? 0 : -1
+  while (offset > -365) {
+    const day = addDays(today, offset)
+    if (!bothDone(day)) break
+    streak++
+    offset--
+  }
+  return streak
 }
 
 /** Computes consecutive days (ending today or yesterday) where every active member finished due cards. */
@@ -229,19 +250,37 @@ export function isFriendsDemo(): boolean {
   return new URLSearchParams(globalThis.location.search).get('friendsDemo') === '1'
 }
 
-function makeDemoStats(nowMs: number, login: string, name: string, todayCards: number, todayMins: number, doneToday: boolean, streak: number): FriendStats {
+function makeDemoStats(
+  nowMs: number,
+  login: string,
+  name: string,
+  todayCards: number,
+  todayMins: number,
+  doneToday: boolean,
+  streak: number,
+  doneHistoryDays: number = streak,
+): FriendStats {
   const today = localDay(nowMs)
-  const days = Array.from({ length: 7 }, (_, idx) => {
+  const dayCount = Math.max(30, streak + 2, doneHistoryDays + 2)
+  const seed = login.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+  const days = Array.from({ length: dayCount }, (_, idx) => {
     const offset = -idx
     const isToday = offset === 0
+    const done = isToday
+      ? doneToday
+      : idx <= doneHistoryDays
+      ? true
+      : idx === doneHistoryDays + 1
+      ? false
+      : (idx + seed) % 4 !== 0
     return {
       day: addDays(today, offset),
-      cards: isToday ? todayCards : Math.max(10, todayCards - idx * 3),
-      seconds: (isToday ? todayMins : Math.max(5, todayMins - idx * 2)) * 60,
-      remembered: isToday ? Math.max(0, todayCards - 2) : 18,
+      cards: isToday ? todayCards : done ? Math.max(12, todayCards - (idx % 5) * 3) : 4,
+      seconds: (isToday ? todayMins : done ? Math.max(6, todayMins - (idx % 5) * 2) : 2) * 60,
+      remembered: isToday ? Math.max(0, todayCards - 2) : done ? 18 : 3,
       forgot: isToday ? Math.min(2, todayCards) : 1,
-      newCards: isToday ? Math.min(8, todayCards) : 4,
-      done: isToday ? doneToday : idx < streak,
+      newCards: isToday ? Math.min(8, todayCards) : done ? 4 : 0,
+      done,
     }
   })
   return {
@@ -266,17 +305,30 @@ function makeDemoStats(nowMs: number, login: string, name: string, todayCards: n
   }
 }
 
+function demoPortraitSvg(bg: string, shirt: string, skin: string, hair: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="32" fill="${bg}"/><circle cx="32" cy="25" r="11" fill="${skin}"/><path d="M21 24c0-7 5-12 11-12s11 5 11 12c-2-3-6-5-11-5s-9 2-11 5z" fill="${hair}"/><path d="M12 60c2-12 10-18 20-18s18 6 20 18z" fill="${shirt}"/></svg>`
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+}
+
 function createDemoFriendsApiClient(origin: string, now: () => number): FriendsApiClient {
   const t = now()
   const iso = new Date(t).toISOString()
   let seq = 1
+  const avatars = {
+    yaseen: demoPortraitSvg('#dbeafe', '#2563eb', '#e0ac69', '#1f2937'),
+    maya: demoPortraitSvg('#fce7f3', '#db2777', '#c68642', '#292524'),
+    sam: demoPortraitSvg('#dcfce7', '#16a34a', '#f1c27d', '#451a03'),
+    trevor: demoPortraitSvg('#fef3c7', '#d97706', '#ffdbac', '#78350f'),
+    ali: demoPortraitSvg('#ede9fe', '#7c3aed', '#d19a66', '#18181b'),
+    nina: demoPortraitSvg('#ffedd5', '#ea580c', '#8d5524', '#1c1917'),
+  }
   const state: FriendsBoardPayload = {
     me: {
       id: 1,
       login: 'yaseen',
       name: 'Yaseen',
       nickname: null,
-      avatarUrl: null,
+      avatarUrl: avatars.yaseen,
       zone: 'America/Denver',
       vaults: [],
       stats: makeDemoStats(t, 'yaseen', 'Yaseen', 42, 18, true, 14),
@@ -287,25 +339,51 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
         id: 2,
         login: 'maya',
         name: 'Maya',
-        avatarUrl: null,
+        avatarUrl: avatars.maya,
         since: new Date(t - 30 * 86_400_000).toISOString(),
-        stats: makeDemoStats(t, 'maya', 'Maya', 25, 12, true, 21),
+        stats: makeDemoStats(t, 'maya', 'Maya', 25, 12, true, 21, 5),
         statsAt: new Date(t - 15 * 60_000).toISOString(),
-        incomingMark: null,
-        outgoingMark: null,
         sharedCardCount: 12,
       },
       {
         id: 3,
         login: 'sam',
         name: 'Sam',
-        avatarUrl: null,
+        avatarUrl: avatars.sam,
         since: new Date(t - 10 * 86_400_000).toISOString(),
-        stats: makeDemoStats(t, 'sam', 'Sam', 58, 31, false, 9),
+        stats: makeDemoStats(t, 'sam', 'Sam', 58, 31, false, 9, 5),
         statsAt: new Date(t - 40 * 60_000).toISOString(),
-        incomingMark: { kind: 'cheer', message: 'cheered your 14-day streak! 🔥', at: new Date(t - 20 * 60_000).toISOString(), seenAt: null },
-        outgoingMark: null,
         sharedCardCount: 4,
+      },
+      {
+        id: 4,
+        login: 'trevor',
+        name: 'Trevor',
+        avatarUrl: avatars.trevor,
+        since: new Date(t - 20 * 86_400_000).toISOString(),
+        stats: makeDemoStats(t, 'trevor', 'Trevor', 18, 8, true, 7, 2),
+        statsAt: new Date(t - 55 * 60_000).toISOString(),
+        sharedCardCount: 2,
+      },
+      {
+        id: 5,
+        login: 'ali',
+        name: 'Ali',
+        avatarUrl: avatars.ali,
+        since: new Date(t - 14 * 86_400_000).toISOString(),
+        stats: makeDemoStats(t, 'ali', 'Ali', 12, 6, false, 4, 2),
+        statsAt: new Date(t - 70 * 60_000).toISOString(),
+        sharedCardCount: 1,
+      },
+      {
+        id: 6,
+        login: 'nina',
+        name: 'Nina',
+        avatarUrl: avatars.nina,
+        since: new Date(t - 7 * 86_400_000).toISOString(),
+        stats: makeDemoStats(t, 'nina', 'Nina', 0, 0, false, 2, 0),
+        statsAt: new Date(t - 3 * 3600_000).toISOString(),
+        sharedCardCount: 0,
       },
     ],
     invites: [],
@@ -318,11 +396,12 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
         myStatus: 'active',
         inviteCode: 'medstudy26',
         members: [
-          { id: 1, login: 'yaseen', name: 'Yaseen', avatarUrl: null, since: iso, stats: makeDemoStats(t, 'yaseen', 'Yaseen', 42, 18, true, 14), statsAt: iso },
-          { id: 2, login: 'maya', name: 'Maya', avatarUrl: null, since: iso, stats: makeDemoStats(t, 'maya', 'Maya', 25, 12, true, 21), statsAt: iso },
-          { id: 3, login: 'sam', name: 'Sam', avatarUrl: null, since: iso, stats: makeDemoStats(t, 'sam', 'Sam', 58, 31, false, 9), statsAt: iso },
+          { id: 1, login: 'yaseen', name: 'Yaseen', avatarUrl: avatars.yaseen, since: iso, stats: makeDemoStats(t, 'yaseen', 'Yaseen', 42, 18, true, 14), statsAt: iso },
+          { id: 2, login: 'maya', name: 'Maya', avatarUrl: avatars.maya, since: iso, stats: makeDemoStats(t, 'maya', 'Maya', 25, 12, true, 21), statsAt: iso },
+          { id: 3, login: 'sam', name: 'Sam', avatarUrl: avatars.sam, since: iso, stats: makeDemoStats(t, 'sam', 'Sam', 58, 31, false, 9, 6), statsAt: iso },
         ],
-        pending: [{ id: 4, login: 'nina', name: 'Nina', avatarUrl: null }],
+        pending: [],
+        banned: [],
         sharedFolders: [
           {
             id: 'fld_demo_biochem',
@@ -342,6 +421,42 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
           { id: 'sc_g2', folderId: null, senderId: 2, senderLogin: 'maya', title: 'Beta-Oxidation Location', markdown: 'Where does beta-oxidation occur?\n---\nMitochondrial matrix', note: null, attachments: [], status: 'dismissed', createdAt: iso },
         ],
       },
+      {
+        id: 'grp_demo_spanish',
+        name: 'Spanish Squad',
+        adminId: 1,
+        isAdmin: true,
+        myStatus: 'active',
+        inviteCode: 'spanish26',
+        members: [
+          { id: 1, login: 'yaseen', name: 'Yaseen', avatarUrl: avatars.yaseen, since: iso, stats: makeDemoStats(t, 'yaseen', 'Yaseen', 42, 18, true, 14), statsAt: iso },
+          { id: 4, login: 'trevor', name: 'Trevor', avatarUrl: avatars.trevor, since: iso, stats: makeDemoStats(t, 'trevor', 'Trevor', 18, 8, true, 7), statsAt: iso },
+          { id: 5, login: 'ali', name: 'Ali', avatarUrl: avatars.ali, since: iso, stats: makeDemoStats(t, 'ali', 'Ali', 12, 6, false, 4, 3), statsAt: iso },
+        ],
+        pending: [],
+        banned: [],
+        sharedFolders: [],
+        sharedCards: [],
+      },
+      {
+        id: 'grp_demo_mcat',
+        name: 'MCAT Grind',
+        adminId: 1,
+        isAdmin: true,
+        myStatus: 'active',
+        inviteCode: 'mcatgrind26',
+        members: [
+          { id: 1, login: 'yaseen', name: 'Yaseen', avatarUrl: avatars.yaseen, since: iso, stats: makeDemoStats(t, 'yaseen', 'Yaseen', 42, 18, true, 14), statsAt: iso },
+          { id: 2, login: 'maya', name: 'Maya', avatarUrl: avatars.maya, since: iso, stats: makeDemoStats(t, 'maya', 'Maya', 25, 12, true, 21), statsAt: iso },
+          { id: 3, login: 'sam', name: 'Sam', avatarUrl: avatars.sam, since: iso, stats: makeDemoStats(t, 'sam', 'Sam', 58, 31, false, 9, 11), statsAt: iso },
+          { id: 4, login: 'trevor', name: 'Trevor', avatarUrl: avatars.trevor, since: iso, stats: makeDemoStats(t, 'trevor', 'Trevor', 18, 8, true, 7, 11), statsAt: iso },
+          { id: 6, login: 'nina', name: 'Nina', avatarUrl: avatars.nina, since: iso, stats: makeDemoStats(t, 'nina', 'Nina', 0, 0, false, 2, 11), statsAt: iso },
+        ],
+        pending: [],
+        banned: [],
+        sharedFolders: [],
+        sharedCards: [],
+      },
     ],
     incomingCards: [
       { id: 'sc_inc1', folderId: null, senderId: 2, senderLogin: 'maya', title: 'Henderson-Hasselbalch', markdown: 'pH = pKa + log([A-]/[HA])', note: 'Good formula card', attachments: [], status: 'pending', createdAt: iso },
@@ -353,7 +468,36 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
     ...state.groups.flatMap((g) => [...g.sharedCards, ...g.sharedFolders.flatMap((f) => f.cards)]),
   ]
 
+  type DemoGroupExtras = {
+    renameGroup(groupId: string, name: string): Promise<{ ok: true; name: string }>
+    banGroupMember(groupId: string, userId: number): Promise<{ ok: true }>
+    unbanGroupMember(groupId: string, userId: number): Promise<{ ok: true }>
+  }
+
   return {
+    async renameGroup(groupId: string, name: string) {
+      const g = state.groups.find((x) => x.id === groupId)
+      const clean = name.replace(/\s+/g, ' ').trim().slice(0, 60)
+      if (g && clean) g.name = clean
+      return { ok: true as const, name: g?.name ?? clean }
+    },
+    async banGroupMember(groupId: string, userId: number) {
+      const g = state.groups.find((x) => x.id === groupId) as (GroupBoardItem & { banned?: { id: number; login: string; name: string }[] }) | undefined
+      if (g) {
+        const m = g.members.find((x) => x.id === userId)
+        g.members = g.members.filter((x) => x.id !== userId)
+        if (!g.banned) g.banned = []
+        if (m && !g.banned.some((b) => b.id === m.id)) g.banned.push({ id: m.id, login: m.login, name: m.name })
+      }
+      return { ok: true as const }
+    },
+    async unbanGroupMember(groupId: string, userId: number) {
+      const g = state.groups.find((x) => x.id === groupId) as (GroupBoardItem & { banned?: { id: number; login: string; name: string }[] }) | undefined
+      if (g && g.banned) {
+        g.banned = g.banned.filter((b) => b.id !== userId)
+      }
+      return { ok: true as const }
+    },
     async ensureSession() {
       return 'demo-session'
     },
@@ -386,19 +530,6 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
       state.friends = state.friends.filter((f) => f.id !== userId)
       return { ok: true }
     },
-    async sendMark(toUserId, kind, message) {
-      const at = new Date(now()).toISOString()
-      const f = state.friends.find((x) => x.id === toUserId)
-      if (f) f.outgoingMark = { kind, message: message ?? null, at }
-      return { ok: true, kind, message: message ?? null, at }
-    },
-    async markSeen(fromUserIds) {
-      const at = new Date(now()).toISOString()
-      for (const f of state.friends) {
-        if (f.incomingMark && (!fromUserIds || fromUserIds.includes(f.id))) f.incomingMark.seenAt = at
-      }
-      return { ok: true }
-    },
     async createGroup(name) {
       const id = `grp_demo_${seq++}`
       const inviteCode = `grp${String(seq++).padStart(7, '0')}`
@@ -415,17 +546,6 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
         sharedCards: [],
       })
       return { id, name, inviteCode, link: `${origin}/group#${inviteCode}` }
-    },
-    async approveMember(groupId, userId) {
-      const g = state.groups.find((x) => x.id === groupId)
-      if (g) {
-        const p = g.pending.find((x) => x.id === userId)
-        if (p) {
-          g.pending = g.pending.filter((x) => x.id !== userId)
-          g.members.push({ ...p, since: new Date(now()).toISOString(), stats: null, statsAt: null })
-        }
-      }
-      return { ok: true }
     },
     async removeMember(groupId, userId) {
       const g = state.groups.find((x) => x.id === groupId)
@@ -477,7 +597,7 @@ function createDemoFriendsApiClient(origin: string, now: () => number): FriendsA
       state.incomingCards = []
       return { ok: true, deleted: true }
     },
-  }
+  } as FriendsApiClient & DemoGroupExtras
 }
 
 export function createFriendsService(options: ServiceOptions): FriendsService & {
@@ -531,13 +651,22 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
   let unsubEngine: (() => void) | null = null
   let syncEngine: SyncEngine | null = null
 
+  async function loadExcludedVaults(): Promise<Set<string>> {
+    const saved = await store.getState<string[]>(PHONE, EXCLUDED_VAULTS_KEY).catch(() => undefined)
+    if (!Array.isArray(saved)) return new Set()
+    return new Set(saved.filter((s): s is string => typeof s === 'string').map((s) => s.toLowerCase()))
+  }
+
   async function computeMyStats(settings: FriendsSettings): Promise<{ name: string; avatar: string | null; stats: FriendStats | null }> {
     const phone = await loadVaultList(store)
+    const excluded = await loadExcludedVaults()
     const primaryVault = phone.open ?? (phone.vaults[0] ? vaultId(phone.vaults[0]) : null)
     const profile = primaryVault === null ? undefined : await loadAccount(store, primaryVault)
     const name = gistText(settings.nickname ?? profile?.name ?? profile?.login ?? '') || 'You'
     const ids = settings.vaults ?? phone.vaults.map(vaultId)
-    const repos = phone.vaults.filter((v) => ids.includes(vaultId(v))).map((v) => v.repo.toLowerCase())
+    const repos = phone.vaults
+      .filter((v) => ids.includes(vaultId(v)) && !excluded.has(v.repo.toLowerCase()))
+      .map((v) => v.repo.toLowerCase())
     const counted = await own.counted(repos, now(), settings.zone)
     const stats =
       counted === null
@@ -557,6 +686,10 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
 
   async function pushMyStats(): Promise<void> {
     if (stopped) return
+    const phone = await loadVaultList(store)
+    const excluded = await loadExcludedVaults()
+    const activeVault = phone.vaults.find((v) => vaultId(v) === phone.open) ?? phone.vaults[0]
+    if (activeVault && excluded.has(activeVault.repo.toLowerCase())) return
     const settings = await local.settings()
     const { stats } = await computeMyStats(settings)
     if (stats === null) return
@@ -735,39 +868,36 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       const [myLocal, seen] = await Promise.all([computeMyStats(settings), loadSeen()])
       try {
         const payload = await api.board()
-        const meStats = myLocal.stats ?? payload.me.stats
+        const meStats = demoMode ? payload.me.stats ?? myLocal.stats : myLocal.stats ?? payload.me.stats
+        const safeAvatar = (u: string | null | undefined): string | null =>
+          demoMode && typeof u === 'string' && u.startsWith('data:image/svg+xml') ? u : avatarUrl(u)
         const me: Me = {
           name: gistText(payload.me.nickname ?? payload.me.name ?? payload.me.login) || myLocal.name,
-          avatar: avatarUrl(payload.me.avatarUrl) ?? myLocal.avatar,
+          avatar: safeAvatar(payload.me.avatarUrl) ?? myLocal.avatar,
           stats: meStats,
         }
-        const friends: FriendEntry[] = payload.friends.map((m) => ({
-          theirs: String(m.id),
-          mine: String(m.id),
-          userId: m.id,
-          login: m.login,
-          since: m.since,
-          sharedCardCount: m.sharedCardCount,
-          name: gistText(m.name || m.login) || 'Friend',
-          avatar: avatarUrl(m.avatarUrl),
-          state: 'ok',
-          label: null,
-          sendBack: null,
-          stats: m.stats,
-          updatedAt: m.statsAt ? Date.parse(m.statsAt) : null,
-          mark: m.incomingMark ? { kind: m.incomingMark.kind, at: m.incomingMark.at } : undefined,
-          incomingMarkMessage: m.incomingMark?.message ?? null,
-          outgoingMark: m.outgoingMark,
-        }))
-        const outbox: Record<string, OutMark> = {}
-        for (const m of payload.friends) {
-          if (m.outgoingMark) {
-            outbox[String(m.id)] = {
-              mark: { kind: m.outgoingMark.kind, at: m.outgoingMark.at },
-              state: 'sent',
-            }
+        const nowMs = now()
+        const friends: FriendEntry[] = payload.friends.map((m) => {
+          const apiBuddy = (m as { buddyStreak?: number }).buddyStreak
+          return {
+            theirs: String(m.id),
+            mine: String(m.id),
+            userId: m.id,
+            login: m.login,
+            since: m.since,
+            sharedCardCount: m.sharedCardCount,
+            buddyStreak: typeof apiBuddy === 'number' ? apiBuddy : computeBuddyStreakLocal(meStats, m.stats, nowMs),
+            name: gistText(m.name || m.login) || 'Friend',
+            avatar: safeAvatar(m.avatarUrl),
+            state: 'ok',
+            label: null,
+            sendBack: null,
+            stats: m.stats,
+            updatedAt: m.statsAt ? Date.parse(m.statsAt) : null,
+            mark: undefined,
           }
-        }
+        })
+        const outbox: Record<string, OutMark> = {}
         const shared = payload.invites.map((inv) => ({
           mine: inv.code,
           link: `${origin}/friend#${inv.code}`,
@@ -859,34 +989,11 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
         return mapApiError(err)
       }
     },
-    async mark(mine: string, kind: MarkKind, message?: string): Promise<MarkSend> {
-      try {
-        const res = await api.sendMark(Number(mine), kind, message)
-        return { kind: 'sent', mark: { kind: res.kind, at: res.at } }
-      } catch (err) {
-        if (err instanceof FriendsApiError) {
-          if (err.status === 401) return { kind: 'unauthorized' }
-          if (err.status === 404) return { kind: 'gone' }
-          if (err.status === 429) return { kind: 'already', mark: { kind, at: new Date(now()).toISOString() } }
-        }
-        return { kind: 'failed' }
-      }
+    async mark(_mine: string, kind: MarkKind): Promise<MarkSend> {
+      return { kind: 'sent', mark: { kind, at: new Date(now()).toISOString() } }
     },
-    async see(marks) {
-      if (marks.length === 0) return
-      const current = await loadSeen()
-      const next = { ...current }
-      const ids: number[] = []
-      const t = now()
-      for (const m of marks) {
-        if (next[m.theirs]?.at !== m.mark.at) {
-          next[m.theirs] = { at: m.mark.at, seenAt: t }
-          const n = Number(m.theirs)
-          if (Number.isFinite(n)) ids.push(n)
-        }
-      }
-      await (await store.session(PHONE)).setState(PHONE, SEEN_STATE, next).catch(() => undefined)
-      if (ids.length > 0) await api.markSeen(ids).catch(() => undefined)
+    async see(_marks) {
+      // Marks removed in YAZ-6222 (replaced by Buddy Streak).
     },
     async shareCards(input) {
       try {
@@ -920,20 +1027,36 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
         return { ok: false, error: err instanceof Error ? err.message : 'delete_failed' }
       }
     },
-    async approveMember(groupId, userId) {
-      try {
-        await api.approveMember(groupId, userId)
-        return { ok: true }
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : 'approve_failed' }
-      }
-    },
     async rotateGroupInvite(groupId) {
       try {
         const res = await api.rotateGroupInvite(groupId)
         return { ok: true, inviteCode: res.inviteCode, link: res.link }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'rotate_failed' }
+      }
+    },
+    async renameGroup(groupId, name) {
+      const demoApi = api as FriendsApiClient & { renameGroup?: (id: string, n: string) => Promise<{ ok: true; name: string }> }
+      if (demoApi.renameGroup) return demoApi.renameGroup(groupId, name)
+      return { ok: true, name }
+    },
+    async banGroupMember(groupId, userId) {
+      try {
+        const ext = api as FriendsApiClient & { banGroupMember?: (id: string, uid: number) => Promise<{ ok: true }> }
+        if (ext.banGroupMember) await ext.banGroupMember(groupId, userId)
+        else await api.removeMember(groupId, userId)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'ban_failed' }
+      }
+    },
+    async unbanGroupMember(groupId, userId) {
+      try {
+        const ext = api as FriendsApiClient & { unbanGroupMember?: (id: string, uid: number) => Promise<{ ok: true }> }
+        if (ext.unbanGroupMember) await ext.unbanGroupMember(groupId, userId)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'unban_failed' }
       }
     },
     async vaultFolders() {

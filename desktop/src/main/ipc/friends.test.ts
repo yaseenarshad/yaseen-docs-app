@@ -19,10 +19,7 @@ function makeMockService(): FriendsService {
     createInvite: vi.fn(async () => ({ ok: true as const, code: 'abc12345', link: 'https://docs.yaseenarshad.com/friend#abc12345', expiresAt: '2026-12-01T00:00:00Z' })),
     acceptInvite: vi.fn(async (code) => ({ ok: true as const, result: { kind: 'friend', code } })),
     removeFriend: vi.fn(async () => ({ ok: true as const })),
-    sendMark: vi.fn(async () => ({ ok: true as const })),
-    markSeen: vi.fn(async () => ({ ok: true as const })),
     createGroup: vi.fn(async (name) => ({ ok: true as const, id: 'g1', name, inviteCode: 'grp12345', link: 'https://docs.yaseenarshad.com/group#grp12345' })),
-    approveMember: vi.fn(async () => ({ ok: true as const })),
     removeMember: vi.fn(async () => ({ ok: true as const, deleted: false })),
     rotateGroupInvite: vi.fn(async () => ({ ok: true as const, inviteCode: 'grp99999', link: 'https://docs.yaseenarshad.com/group#grp99999' })),
     shareCards: vi.fn(async (input) => ({ ok: true as const, count: input.cards.length })),
@@ -41,7 +38,11 @@ describe('registerFriendsIpc (YAZ-6219)', () => {
   beforeEach(() => {
     vi.mocked(ipcMain.handle).mockClear()
     service = makeMockService()
-    registerFriendsIpc({ look: async () => view, service })
+    registerFriendsIpc({
+      look: async () => view,
+      setVaultIncluded: vi.fn(async (vaultPath, included) => ({ ok: true as const, knownVaults: [{ path: vaultPath, name: 'Demo', included }] })),
+      service,
+    })
   })
 
   it('routes all 18 invoke channels to the Friends service and status view', async () => {
@@ -60,12 +61,7 @@ describe('registerFriendsIpc (YAZ-6219)', () => {
     expect(await registered(CONTRACT.friends.removeFriend)(ev, 7, true)).toEqual({ ok: true, value: { ok: true } })
     expect(service.removeFriend).toHaveBeenCalledWith(7, true)
 
-    expect(await registered(CONTRACT.friends.sendMark)(ev, 7, 'cheer', 'Nice!')).toEqual({ ok: true, value: { ok: true } })
-    expect(service.sendMark).toHaveBeenCalledWith(7, 'cheer', 'Nice!')
-
-    expect(await registered(CONTRACT.friends.markSeen)(ev, [7])).toEqual({ ok: true, value: { ok: true } })
     expect(await registered(CONTRACT.friends.createGroup)(ev, 'Bio Squad')).toMatchObject({ ok: true, value: { ok: true, name: 'Bio Squad' } })
-    expect(await registered(CONTRACT.friends.approveMember)(ev, 'g1', 7)).toEqual({ ok: true, value: { ok: true } })
     expect(await registered(CONTRACT.friends.removeMember)(ev, 'g1', 7)).toEqual({ ok: true, value: { ok: true, deleted: false } })
     expect(await registered(CONTRACT.friends.rotateGroupInvite)(ev, 'g1')).toMatchObject({ ok: true, value: { ok: true, inviteCode: 'grp99999' } })
     expect(await registered(CONTRACT.friends.shareCards)(ev, { toUserIds: [7], cards: [{ title: 'T', markdown: 'M' }] })).toEqual({ ok: true, value: { ok: true, count: 1 } })
@@ -77,16 +73,18 @@ describe('registerFriendsIpc (YAZ-6219)', () => {
       value: { ok: true, paths: ['/v/card.md'] },
     })
     expect(await registered(CONTRACT.friends.deleteMe)(ev)).toEqual({ ok: true, value: { ok: true } })
+    expect(await registered(CONTRACT.friends.setVaultIncluded)(ev, '/v/scratch', false)).toEqual({
+      ok: true,
+      value: { ok: true, knownVaults: [{ path: '/v/scratch', name: 'Demo', included: false }] },
+    })
   })
 
   it('rejects malformed arguments cleanly without invoking the service', async () => {
     expect(await registered(CONTRACT.friends.acceptInvite)(ev, '')).toEqual({ ok: true, value: { ok: false, error: 'Invalid invite code' } })
     expect(await registered(CONTRACT.friends.removeFriend)(ev, -1)).toEqual({ ok: true, value: { ok: false, error: 'Invalid userId' } })
-    expect(await registered(CONTRACT.friends.sendMark)(ev, 7, 'invalid')).toEqual({ ok: true, value: { ok: false, error: 'Invalid mark kind' } })
     expect(await registered(CONTRACT.friends.setCardState)(ev, 'c1', 'bogus')).toEqual({ ok: true, value: { ok: false, error: 'Invalid cardId or status' } })
     expect(service.acceptInvite).not.toHaveBeenCalled()
     expect(service.removeFriend).not.toHaveBeenCalled()
-    expect(service.sendMark).not.toHaveBeenCalled()
     expect(service.setCardState).not.toHaveBeenCalled()
   })
 })

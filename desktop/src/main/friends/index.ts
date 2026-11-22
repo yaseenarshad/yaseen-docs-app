@@ -4,6 +4,7 @@
  * the card-file watcher trigger (`cardTrigger.ts`), and the count worker (`countWorker.ts`).
  */
 import { join } from 'node:path'
+import { emptyBudget } from '@shared/friendSend'
 import { isRecord } from '@shared/guards'
 import { cleanToken } from '@shared/githubInput'
 import { REVIEW_SETTINGS_FILE, sanitizeReviewSettings } from '@shared/reviews'
@@ -44,8 +45,10 @@ export function sendStateFile(file: string): { load(): Promise<MacSendSaved | nu
 export interface FriendsSend {
   sender: MacSender
   service: FriendsService
-  /** For Settings: the last state, with no network call. */
+  /** For Settings: the last state, with no network call, including per-vault include/exclude checkboxes. */
   look(): Promise<FriendsSendView>
+  /** Include or exclude a local vault path from Friends counting (YAZ-6275). */
+  setVaultIncluded(vaultPath: string, included: boolean): Promise<{ ok: true; knownVaults: { path: string; name: string; included: boolean }[] } | { ok: false; error: string }>
   tokenChanged(): void
   stop(): Promise<void>
 }
@@ -79,10 +82,21 @@ export function startFriendsSend(
     fetch,
   })
 
+  let excludedSet: Set<string> | null = null
+  const loadExcluded = async (): Promise<Set<string>> => {
+    if (excludedSet !== null) return excludedSet
+    const saved = await state.load().catch(() => null)
+    excludedSet = new Set(Array.isArray(saved?.excludedVaults) ? saved.excludedVaults.filter((v): v is string => typeof v === 'string') : [])
+    return excludedSet
+  }
+  const buildKnownVaults = (excluded: ReadonlySet<string>) =>
+    listVaults(store.get()).map((v) => ({ path: v.path, name: v.name, included: !excluded.has(v.path) }))
+
   const counter = makeCounter(countWorker, { scanDir: join(userData, FRIENDS_SCAN_DIR), indexDir: join(userData, 'index-cache') })
   const sender = createMacSender({
     readToken,
     client: service.client,
+    excludedVaults: loadExcluded,
     async vaults() {
       const bin = await resolveGit()
       const out = new Map<string, string>()
@@ -122,12 +136,30 @@ export function startFriendsSend(
     sender,
     service,
     async look() {
+      const excluded = await loadExcluded()
+      const knownVaults = buildKnownVaults(excluded)
       const view = sender.view()
-      if (view.status !== 'idle') return view
+      if (view.status !== 'idle') return { ...view, knownVaults }
       const saved = await state.load().catch(() => null)
-      const base = { ...view, lastSentAt: saved?.lastSentAt ?? null, friends: saved?.friends ?? 0, groups: saved?.groups ?? 0 }
+      const base = { ...view, lastSentAt: saved?.lastSentAt ?? null, friends: saved?.friends ?? 0, groups: saved?.groups ?? 0, knownVaults }
       if ((await readToken()) === null) return { ...base, status: 'no-token' }
       return base
+    },
+    async setVaultIncluded(vaultPath: string, included: boolean) {
+      const excluded = await loadExcluded()
+      if (included) excluded.delete(vaultPath)
+      else excluded.add(vaultPath)
+      const prev = (await state.load().catch(() => null)) ?? {
+        lastSentAt: null,
+        lastKey: null,
+        budget: emptyBudget(),
+        friends: 0,
+        groups: 0,
+        refused: false,
+      }
+      await state.save({ ...prev, excludedVaults: [...excluded], lastInput: null })
+      void sender.attempt('pass')
+      return { ok: true as const, knownVaults: buildKnownVaults(excluded) }
     },
     tokenChanged: () => {
       service.clearSession()

@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS marks (
   message TEXT,
   at TEXT NOT NULL,
   seen_at TEXT,
+  streak INTEGER NOT NULL DEFAULT 1,
+  last_day TEXT,
   PRIMARY KEY (from_id, to_id)
 );
 CREATE INDEX IF NOT EXISTS idx_marks_to ON marks (to_id);

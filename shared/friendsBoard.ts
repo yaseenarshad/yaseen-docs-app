@@ -3,7 +3,7 @@
  * Pure — no React, no DOM, no network. Used identically on Phone and Desktop.
  */
 import type { FriendDay, FriendStats } from './friendStatsFormat'
-import type { FriendBoardMember, SharedCardItem, SharedCardStatus } from './friendsApi'
+import type { SharedCardItem, SharedCardStatus } from './friendsApi'
 
 export type BoardPeriod = 'today' | 'yesterday' | 'week' | 'month'
 export type LeaderboardSort = 'cards' | 'time' | 'streak'
@@ -13,12 +13,6 @@ export const DAILY_MARK_SIGN: Record<DailyMark, string> = {
   finished: '✓',
   started: '◐',
   'not-started': '○',
-}
-
-export interface BuddyEmoji {
-  emoji: string
-  label: string
-  reason: string
 }
 
 export interface LeaderboardRow {
@@ -32,7 +26,6 @@ export interface LeaderboardRow {
   seconds: number
   streak: number
   sharedCardCount: number
-  emojis: BuddyEmoji[]
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -125,93 +118,78 @@ export function sortLeaderboard<T extends Pick<LeaderboardRow, 'mark' | 'cards' 
   })
 }
 
-/** Last 7 local days chain for the Seinfeld "don't break the streak" display: 'done' | 'open' | 'missed'. */
-export function sevenDayChain(stats: FriendStats | null, nowMs: number): ('done' | 'open' | 'missed')[] {
-  const today = localDayKey(nowMs)
-  const byDay = new Map<string, FriendDay>()
-  for (const d of stats?.days ?? []) byDay.set(d.day, d)
-  const out: ('done' | 'open' | 'missed')[] = []
-  for (let i = 6; i >= 0; i--) {
-    const key = addDays(today, -i)
-    const row = byDay.get(key)
-    if (row?.done) out.push('done')
-    else if (i === 0) out.push('open')
-    else out.push('missed')
-  }
-  return out
-}
-
-/** Smart context-aware Cheer / Nudge label & message based on a friend's streak and daily status (D12). */
-export function smartMarkSuggestion(friend: Pick<FriendBoardMember, 'name' | 'stats'>, nowMs: number): {
-  kind: 'cheer' | 'nudge'
-  buttonLabel: string
-  message: string
-} {
-  const mark = dailyMarkOf(friend.stats, nowMs)
-  const streak = friend.stats?.totals.streak ?? 0
-  if (mark === 'finished') {
-    if (streak >= 3) {
-      return { kind: 'cheer', buttonLabel: `Cheer ${streak}d streak`, message: `cheered your ${streak}-day streak! 🔥` }
-    }
-    return { kind: 'cheer', buttonLabel: 'Cheer', message: 'cheered your review today! 🎉' }
-  }
-  if (streak >= 3) {
-    return { kind: 'nudge', buttonLabel: `Save ${streak}d streak ⏳`, message: `nudged you — don't break your ${streak}-day streak! ⏳` }
-  }
-  return { kind: 'nudge', buttonLabel: 'Nudge', message: 'sent a friendly nudge to review today!' }
+export function filterSharedCards(cards: readonly SharedCardItem[], status: SharedCardStatus): SharedCardItem[] {
+  return cards.filter((c) => c.status === status)
 }
 
 /**
- * Snapchat-style Study Buddy Emojis (YAZ-6200 D11):
- * Computed from existing D1 interaction data (mutual streaks, shared card counts, cheers/nudges).
+ * Timezone-safe mutual streak helper shared by Buddy Streak (2 friends) and Group Streak (N members).
+ * Anchors to the latest calendar day across all participants (allowing today, yesterday, or — when participants
+ * span a timezone date boundary — the day before the lagging member's current day) so a timezone rollover gap
+ * never falsely breaks an active streak.
  */
-export function computeBuddyEmojis(
-  friend: FriendBoardMember,
-  me: { stats: FriendStats | null },
-  allFriends: readonly FriendBoardMember[],
-  nowMs: number,
-): BuddyEmoji[] {
-  const out: BuddyEmoji[] = []
-  const myStreak = me.stats?.totals.streak ?? 0
-  const theirStreak = friend.stats?.totals.streak ?? 0
-  const mutualStreak = Math.min(myStreak, theirStreak)
+function computeSharedStreak(
+  memberDaysList: readonly (readonly FriendDay[] | null | undefined)[],
+  nowMs: number = Date.now(),
+): number {
+  if (memberDaysList.length === 0) return 0
+  const doneSets: Set<string>[] = []
+  let maxLatest = localDayKey(nowMs)
+  let minLatest: string | null = null
 
-  // 1. Mutual Study Streak (🔥) and Streak at Risk (⏳)
-  if (mutualStreak >= 3) {
-    out.push({ emoji: '🔥', label: 'Study Streak', reason: `You and ${friend.name} both have a ${mutualStreak}+ day streak` })
-    const myMark = dailyMarkOf(me.stats, nowMs)
-    const theirMark = dailyMarkOf(friend.stats, nowMs)
-    if (myMark !== 'finished' || theirMark !== 'finished') {
-      out.push({ emoji: '⏳', label: 'Streak at Risk', reason: 'Finish daily due cards today to keep your mutual streak alive' })
+  for (const days of memberDaysList) {
+    if (!days || days.length === 0) return 0
+    doneSets.push(new Set(days.filter((d) => d.done).map((d) => d.day)))
+    const latest = days[0]?.day
+    if (latest) {
+      if (latest > maxLatest) maxLatest = latest
+      if (minLatest === null || latest < minLatest) minLatest = latest
     }
   }
 
-  // 2. Top Study Buddy (#1 by shared cards + recent marks)
-  const scoreOf = (f: FriendBoardMember) => f.sharedCardCount * 2 + (f.incomingMark ? 1 : 0) + (f.outgoingMark ? 1 : 0)
-  const myScore = scoreOf(friend)
-  if (myScore > 0) {
-    const maxScore = allFriends.reduce((acc, f) => Math.max(acc, scoreOf(f)), 0)
-    const daysFriends = Math.max(0, Math.floor((nowMs - Date.parse(friend.since)) / 86_400_000))
-    if (myScore === maxScore && allFriends.length > 0) {
-      if (daysFriends >= 60 && myScore >= 20) {
-        out.push({ emoji: '💕', label: 'Super Study Buddy', reason: '#1 study buddy for 2+ months' })
-      } else if (daysFriends >= 14 && myScore >= 10) {
-        out.push({ emoji: '❤️', label: 'Best Study Buddy', reason: '#1 study buddy for 2+ weeks' })
-      } else {
-        out.push({ emoji: '💛', label: '#1 Study Buddy', reason: 'Your most active friend by shared cards and cheers' })
-      }
-    } else if (friend.sharedCardCount >= 10) {
-      out.push({ emoji: '📚', label: 'Card Sharer', reason: `${friend.sharedCardCount} cards shared together` })
-    } else if (friend.incomingMark || friend.outgoingMark) {
-      out.push({ emoji: '🤝', label: 'Active Buddy', reason: 'Recently exchanged cheers or cards' })
-    }
+  const allDoneOn = (day: string) => doneSets.every((s) => s.has(day))
+  const candidates = [maxLatest, addDays(maxLatest, -1)]
+  if (minLatest && minLatest < maxLatest) {
+    const behindYesterday = addDays(minLatest, -1)
+    if (!candidates.includes(behindYesterday)) candidates.push(behindYesterday)
   }
 
-  return out
+  let day: string | null = null
+  for (const c of candidates) {
+    if (allDoneOn(c)) {
+      day = c
+      break
+    }
+  }
+  if (!day) return 0
+
+  let streak = 0
+  for (let i = 0; i < 365; i++) {
+    if (allDoneOn(day)) {
+      streak++
+      day = addDays(day, -1)
+    } else {
+      break
+    }
+  }
+  return streak
 }
 
-export function filterSharedCards(cards: readonly SharedCardItem[], status: SharedCardStatus): SharedCardItem[] {
-  return cards.filter((c) => c.status === status)
+/** Counts consecutive days where BOTH `meDays` and `friendDays` finished their due cards (`done: true`). */
+export function computeBuddyStreak(
+  meDays: readonly FriendDay[] | null | undefined,
+  friendDays: readonly FriendDay[] | null | undefined,
+  nowMs: number = Date.now(),
+): number {
+  return computeSharedStreak([meDays, friendDays], nowMs)
+}
+
+/** Counts consecutive days where EVERY member in `memberDaysList` finished their due cards (`done: true`). */
+export function computeGroupStreak(
+  memberDaysList: readonly (readonly FriendDay[] | null | undefined)[],
+  nowMs: number = Date.now(),
+): number {
+  return computeSharedStreak(memberDaysList, nowMs)
 }
 
 export function formatMinutes(seconds: number): string {

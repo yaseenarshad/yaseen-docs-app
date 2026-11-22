@@ -1,14 +1,14 @@
 /**
- * Desktop Friends UI tests (YAZ-6220):
+ * Desktop Friends UI tests (YAZ-6220 / YAZ-6222 final locked design):
  * - Friends icon placement in CardInboxBar (between SessionCount and View) + in-place toggle in CardInbox
- * - Cards-hero + 🔥 streak + 7-day chain + time + Cards | Time | Streak sort
- * - Study Buddy Emojis with tooltips
- * - AcceptCardSheet (existing vault folder pick vs 1-click "Put in Shared Cards" + Up next)
- * - Reversible Dismiss / Undo + Group Shared Cards & 1-shot Import folder (N)
- * - Signed-out state with one-click Sign in with GitHub button
- * - Quiet toast on unseen incoming Cheer/Nudge + You vs Friend shared-card count
- * - DoneScreen 1-line Friends summary (hidden when 0 friends)
- * - Card menu `Share with friend or group…` door
+ * - Leaderboard: left 🥇 medal + right green ✓ for finishers (cards > 0 && done), empty left slot for unfinished,
+ *   tiered sort (Finished -> Cards desc -> Name), formatted duration (`15 min`, `2hr 5m`), relative sync time on Today
+ * - Buddy Streak: daily 🔔 reveal -> 🤝 Nd pill on Friends tab (hidden on Group tabs), VS 1:1 stats + 30-day strip + Remove friend confirm modal
+ * - Group leaderboard + clickable Group streak footer bar -> 30-day Group Streak detail view + Group Settings
+ * - Unified Shared (N) flat list: compact Add, two-tap × -> Dismiss?, Undo, Import (N), Explore preview
+ * - AcceptCardSheet centered modal (Shared Cards folder default vs Pick a vault folder + Move to Up next)
+ * - Zero-friends first-run empty state + Signed-out Sign in with GitHub state
+ * - DoneScreen 1-line Friends summary, cardMenuSections shareFriend door, FriendsSendControl per-vault checkboxes & Display name
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -37,10 +37,7 @@ const friendsMock = vi.hoisted(() => ({
   createInvite: vi.fn(),
   acceptInvite: vi.fn(),
   removeFriend: vi.fn(),
-  sendMark: vi.fn(),
-  markSeen: vi.fn(),
   createGroup: vi.fn(),
-  approveMember: vi.fn(),
   removeMember: vi.fn(),
   rotateGroupInvite: vi.fn(),
   shareCards: vi.fn(),
@@ -48,6 +45,7 @@ const friendsMock = vi.hoisted(() => ({
   setFolderState: vi.fn(),
   deleteSharedCard: vi.fn(),
   importCards: vi.fn(),
+  setVaultIncluded: vi.fn(),
   deleteMe: vi.fn(),
   onInviteLink: vi.fn(() => () => undefined),
 }))
@@ -92,7 +90,18 @@ function makeStats(login: string, name: string, days: FriendDay[], streak: numbe
     name,
     avatar: '',
     days,
-    totals: { cards: totalCards, inReview: totalCards, newLeft: 0, mature: 0, dueLeft: 0, addedThisWeek: 0, streak, bestStreak: streak, bestDay: days[0]?.cards ?? 0, bestWeek: totalCards },
+    totals: {
+      cards: totalCards,
+      inReview: totalCards,
+      newLeft: 5,
+      mature: 12,
+      dueLeft: 0,
+      addedThisWeek: 3,
+      streak,
+      bestStreak: streak,
+      bestDay: days[0]?.cards ?? 0,
+      bestWeek: totalCards,
+    },
     at: new Date().toISOString(),
   }
 }
@@ -100,6 +109,7 @@ function makeStats(login: string, name: string, days: FriendDay[], streak: numbe
 function makeBoard(overrides?: Partial<FriendsBoardPayload>): FriendsBoardPayload {
   const today = dayOffset(0)
   const yest = dayOffset(-1)
+  const nowIso = new Date().toISOString()
   return {
     me: {
       id: 1,
@@ -110,7 +120,7 @@ function makeBoard(overrides?: Partial<FriendsBoardPayload>): FriendsBoardPayloa
       zone: 'America/Denver',
       vaults: ['main'],
       stats: makeStats('yaseen', 'Yaseen', [makeDay(today, 20, 600, true), makeDay(yest, 15, 420, true)], 5),
-      statsAt: new Date().toISOString(),
+      statsAt: nowIso,
     },
     friends: [
       {
@@ -120,23 +130,21 @@ function makeBoard(overrides?: Partial<FriendsBoardPayload>): FriendsBoardPayloa
         avatarUrl: null,
         since: '2026-01-01T00:00:00Z',
         stats: makeStats('ali', 'Ali', [makeDay(today, 42, 900, true), makeDay(yest, 30, 700, true)], 6),
-        statsAt: new Date().toISOString(),
-        incomingMark: { kind: 'cheer', message: 'cheered your 5-day streak! 🔥', at: new Date().toISOString(), seenAt: null },
-        outgoingMark: null,
+        statsAt: nowIso,
         sharedCardCount: 7,
-      },
+        buddyStreak: 5,
+      } as FriendsBoardPayload['friends'][number],
       {
         id: 3,
         login: 'sara',
         name: 'Sara',
         avatarUrl: null,
         since: '2026-02-01T00:00:00Z',
-        stats: makeStats('sara', 'Sara', [makeDay(today, 18, 2400, true), makeDay(yest, 10, 600, true)], 14),
-        statsAt: new Date().toISOString(),
-        incomingMark: null,
-        outgoingMark: null,
+        stats: makeStats('sara', 'Sara', [makeDay(today, 58, 4500, false), makeDay(yest, 10, 600, true)], 14),
+        statsAt: nowIso,
         sharedCardCount: 2,
-      },
+        buddyStreak: 3,
+      } as FriendsBoardPayload['friends'][number],
     ],
     invites: [],
     groups: [
@@ -155,7 +163,7 @@ function makeBoard(overrides?: Partial<FriendsBoardPayload>): FriendsBoardPayloa
             avatarUrl: null,
             since: '2026-01-01T00:00:00Z',
             stats: makeStats('yaseen', 'Yaseen', [makeDay(today, 20, 600, true)], 5),
-            statsAt: new Date().toISOString(),
+            statsAt: nowIso,
           },
           {
             id: 2,
@@ -164,17 +172,17 @@ function makeBoard(overrides?: Partial<FriendsBoardPayload>): FriendsBoardPayloa
             avatarUrl: null,
             since: '2026-01-01T00:00:00Z',
             stats: makeStats('ali', 'Ali', [makeDay(today, 42, 900, true)], 6),
-            statsAt: new Date().toISOString(),
+            statsAt: nowIso,
           },
         ],
-        pending: [{ id: 9, login: 'omar', name: 'Omar', avatarUrl: null }],
+        pending: [],
         sharedFolders: [
           {
             id: 'fld-1',
             name: 'Verbs Pack',
             senderId: 2,
             senderLogin: 'ali',
-            createdAt: new Date().toISOString(),
+            createdAt: nowIso,
             cards: [
               {
                 id: 'fc-1',
@@ -186,7 +194,7 @@ function makeBoard(overrides?: Partial<FriendsBoardPayload>): FriendsBoardPayloa
                 note: 'Must know',
                 attachments: [],
                 status: 'pending',
-                createdAt: new Date().toISOString(),
+                createdAt: nowIso,
               },
               {
                 id: 'fc-2',
@@ -198,7 +206,7 @@ function makeBoard(overrides?: Partial<FriendsBoardPayload>): FriendsBoardPayloa
                 note: null,
                 attachments: [],
                 status: 'pending',
-                createdAt: new Date().toISOString(),
+                createdAt: nowIso,
               },
             ],
           },
@@ -214,7 +222,7 @@ function makeBoard(overrides?: Partial<FriendsBoardPayload>): FriendsBoardPayloa
             note: null,
             attachments: [],
             status: 'dismissed',
-            createdAt: new Date().toISOString(),
+            createdAt: nowIso,
           },
         ],
       },
@@ -230,7 +238,7 @@ function makeBoard(overrides?: Partial<FriendsBoardPayload>): FriendsBoardPayloa
         note: 'Try this card',
         attachments: [],
         status: 'pending',
-        createdAt: new Date().toISOString(),
+        createdAt: nowIso,
       },
     ],
     ...overrides,
@@ -317,13 +325,12 @@ let el: HTMLElement
 beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()
-  friendsMock.markSeen.mockResolvedValue({ ok: true })
-  friendsMock.sendMark.mockResolvedValue({ ok: true })
   friendsMock.setCardState.mockResolvedValue({ ok: true })
   friendsMock.setFolderState.mockResolvedValue({ ok: true })
   friendsMock.importCards.mockResolvedValue({ ok: true, paths: ['/vault/Spanish/hola.md'] })
   friendsMock.createInvite.mockResolvedValue({ ok: true, code: 'abc12345', link: 'https://docs.yaseenarshad.com/friend#abc12345', expiresAt: '2026-12-01T00:00:00Z' })
   friendsMock.acceptInvite.mockResolvedValue({ ok: true, result: { kind: 'friend', friendId: 4 } })
+  friendsMock.removeFriend.mockResolvedValue({ ok: true })
   treeMock.mockResolvedValue({
     root: '/vault',
     generatedAt: Date.now(),
@@ -347,7 +354,7 @@ async function flush(n = 4) {
   for (let i = 0; i < n; i++) await act(async () => await Promise.resolve())
 }
 
-describe('Desktop Friends UI (YAZ-6220)', () => {
+describe('Desktop Friends UI (YAZ-6220 / YAZ-6222)', () => {
   it('places Friends icon directly between SessionCount and View in CardInboxBar', () => {
     const session = makeSession(true)
     act(() => {
@@ -368,7 +375,7 @@ describe('Desktop Friends UI (YAZ-6220)', () => {
     expect(friendsBtn.nextElementSibling).toBe(viewBtn)
   })
 
-  it('toggles FriendsPane in place inside CardInbox while pausing the review card, and returns to it on Back to Review', async () => {
+  it('toggles FriendsPane in place inside CardInbox while hiding/pausing the review card, and returns on Back to Review', async () => {
     friendsMock.board.mockResolvedValue({ ok: true, board: makeBoard() })
     const session = makeSession(true)
     const review = makeReviewApi(session)
@@ -394,7 +401,7 @@ describe('Desktop Friends UI (YAZ-6220)', () => {
 
     const friendsBtn = el.querySelector<HTMLButtonElement>('.card-inbox__friends-btn')!
     expect(friendsBtn).not.toBeNull()
-    expect(friendsBtn.hasAttribute('data-unread')).toBe(true)
+    expect(friendsBtn.hasAttribute('data-unread')).toBe(false)
 
     const col = el.querySelector<HTMLElement>('.card-inbox__column')!
     expect(col.hidden).toBe(false)
@@ -403,6 +410,7 @@ describe('Desktop Friends UI (YAZ-6220)', () => {
     await act(async () => friendsBtn.click())
     await flush(6)
     expect(col.hidden).toBe(true)
+    expect(col.style.display).toBe('none')
     expect(el.querySelector('.fr-pane')).not.toBeNull()
 
     // Back to Review returns right to the paused card
@@ -413,86 +421,97 @@ describe('Desktop Friends UI (YAZ-6220)', () => {
     expect(el.querySelector('.fr-pane')).toBeNull()
   })
 
-  it('renders Cards-hero, 🔥 streak, 7-day chain, time, Study Buddy Emojis with tooltips, and sorts by Cards | Time | Streak', async () => {
+  it('renders tiered leaderboard (left 🥇 + right ✓ for finishers, Buddy Streak 🔔 -> 🤝, formatted duration, VS 1:1 stats + Remove confirm)', async () => {
     friendsMock.board.mockResolvedValue({ ok: true, board: makeBoard() })
     act(() => root!.render(<FriendsPane vaultRoot="/vault" onBack={vi.fn()} />))
     await flush(6)
 
-    // Quiet toast for unseen incoming cheer + markSeen called
-    expect(el.querySelector('.fr-toast')?.textContent).toContain('Ali cheered your 5-day streak!')
-    expect(friendsMock.markSeen).toHaveBeenCalledWith([2])
+    // Tiered sort: Finished (Ali 42, Yaseen 20) before Unfinished (Sara 58)
+    const rowIds = [...el.querySelectorAll<HTMLElement>('.fr-row')].map((r) => Number(r.dataset.userId))
+    expect(rowIds).toEqual([2, 1, 3])
 
-    const rowIds = () => [...el.querySelectorAll<HTMLElement>('.fr-row')].map((r) => Number(r.dataset.userId))
-    // Default sort: Status -> Cards (Ali 42, Yaseen 20, Sara 18)
-    expect(rowIds()).toEqual([2, 1, 3])
-
-    // Cards hero, streak, 7-day chain (7 dots), time
+    // Ali (finished, 42 cards): left 🥇, right ✓ 42 cards, 6d 🔥 · 15 min, 🔔 bell for mutual Today finish
     const aliRow = el.querySelector<HTMLElement>('.fr-row[data-user-id="2"]')!
+    expect(aliRow.querySelector('.fr-rank--medal')?.textContent).toBe('🥇')
+    expect(aliRow.querySelector('.fr-hero-cards')?.textContent).toContain('✓')
     expect(aliRow.querySelector('.fr-hero-cards')?.textContent).toContain('42')
-    expect(aliRow.querySelector('.fr-sub')?.textContent).toContain('🔥 6d')
-    expect(aliRow.querySelectorAll('.fr-chain__dot').length).toBe(7)
-    expect(aliRow.querySelector('.fr-sub')?.textContent).toContain('15m')
+    expect(aliRow.querySelector('.fr-nums__sub')?.textContent).toContain('6d 🔥 · 15 min')
 
-    // Study Buddy Emojis with tooltip explaining why they earned it
-    const emojis = [...aliRow.querySelectorAll<HTMLElement>('.fr-emojis [role="img"]')]
-    expect(emojis.length).toBeGreaterThan(0)
-    expect(emojis.some((e) => e.textContent === '🔥' && (e.getAttribute('title') ?? '').includes('day streak'))).toBe(true)
-    expect(emojis.some((e) => ['💛', '❤️', '💕'].includes(e.textContent ?? '') && (e.getAttribute('title') ?? '').includes('Study Buddy'))).toBe(true)
+    // Click 🔔 bell to reveal 🤝 5d buddy streak
+    const bell = aliRow.querySelector<HTMLButtonElement>('.fr-bell-btn')!
+    expect(bell).not.toBeNull()
+    await act(async () => bell.click())
+    expect(aliRow.querySelector('.fr-buddy-pill')?.textContent).toContain('🤝 5d')
 
-    // Switch sort to Time -> Sara (2400s) first, Ali (900s), Yaseen (600s)
-    const timeBtn = [...el.querySelectorAll<HTMLButtonElement>('.fr-sort button')].find((b) => b.textContent === 'Time')!
-    await act(async () => timeBtn.click())
-    expect(rowIds()).toEqual([3, 2, 1])
+    // Sara (unfinished, 58 cards, 75 min = 1hr 15min): empty left slot, NO ✓, muted 🤝 3d buddy streak
+    const saraRow = el.querySelector<HTMLElement>('.fr-row[data-user-id="3"]')!
+    expect(saraRow.querySelector('.fr-rank--medal')?.textContent).toBe('')
+    expect(saraRow.querySelector('.fr-mark--finished')).toBeNull()
+    expect(saraRow.querySelector('.fr-nums__sub')?.textContent).toContain('14d 🔥 · 1hr 15min')
+    expect(saraRow.querySelector('.fr-buddy-pill--pending')?.textContent).toContain('🤝 3d')
 
-    // Switch sort to Streak -> Sara (14d), Ali (6d), Yaseen (5d)
-    const streakBtn = [...el.querySelectorAll<HTMLButtonElement>('.fr-sort button')].find((b) => b.textContent === 'Streak')!
-    await act(async () => streakBtn.click())
-    expect(rowIds()).toEqual([3, 2, 1])
-
-    // Open You vs Friend view and verify shared cards count
-    const aliTap = aliRow.querySelector<HTMLButtonElement>('.fr-row__tap')!
+    // Open You vs Ali: Buddy Streak + 30-day strip + full 1:1 stats + Remove friend confirm modal
+    const aliTap = aliRow.querySelector<HTMLElement>('.fr-row__tap')!
     await act(async () => aliTap.click())
+    expect(el.textContent).toContain('🤝 5d buddy streak')
     expect(el.textContent).toContain('7 cards shared together')
+    expect(el.textContent).toContain('cards today')
+    expect(el.textContent).toContain('Their vault')
+    expect(el.textContent).toContain('days reviewed of 30')
+
+    // Click Remove friend -> opens confirmation modal -> Confirm
+    const removeBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Remove friend')!
+    await act(async () => removeBtn.click())
+    const confirmModal = document.body.querySelector<HTMLElement>('[aria-label="Remove Ali?"]')!
+    expect(confirmModal).not.toBeNull()
+    const confirmRemove = [...confirmModal.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Remove friend')!
+    await act(async () => confirmRemove.click())
+    await flush()
+    expect(friendsMock.removeFriend).toHaveBeenCalledWith(2, false)
   })
 
-  it('supports reversible Dismiss / Undo on incoming cards and 1-shot Import folder (N) in Group Shared Cards', async () => {
-    const board = makeBoard()
-    friendsMock.board.mockResolvedValue({ ok: true, board })
+  it('supports unified Shared (N) flat list with two-tap dismiss, Undo, Import (N), and Group streak 30-day view', async () => {
+    friendsMock.board.mockResolvedValue({ ok: true, board: makeBoard() })
     act(() => root!.render(<FriendsPane vaultRoot="/vault" onBack={vi.fn()} />))
     await flush(6)
 
-    // Pinned Incoming cards (1) at top
-    expect(el.textContent).toContain('Incoming cards (1)')
+    // Switch to Shared (3) pill (1 direct + 2 folder cards)
+    const sharedPill = [...el.querySelectorAll<HTMLButtonElement>('.fr-lists button')].find((b) => b.textContent?.includes('Shared (3)'))!
+    expect(sharedPill).not.toBeNull()
+    await act(async () => sharedPill.click())
     expect(el.textContent).toContain('Hola greeting')
+    expect(el.textContent).toContain('Import (2)')
 
-    // Dismiss incoming card -> calls setCardState('ic-1', 'dismissed') and shows Undo dismiss
-    const dismissBtn = [...el.querySelectorAll<HTMLButtonElement>('section[aria-label="Incoming cards"] button')].find((b) => b.textContent === 'Dismiss')!
-    await act(async () => dismissBtn.click())
+    // Two-tap × -> Dismiss? on Hola greeting
+    const dismissX = el.querySelector<HTMLButtonElement>('.fr-shared-x')!
+    await act(async () => dismissX.click())
+    expect(friendsMock.setCardState).not.toHaveBeenCalled()
+    const armedBtn = el.querySelector<HTMLButtonElement>('.fr-shared-dismiss-confirm')!
+    expect(armedBtn.textContent).toBe('Dismiss?')
+    await act(async () => armedBtn.click())
     await flush()
     expect(friendsMock.setCardState).toHaveBeenCalledWith('ic-1', 'dismissed')
 
-    const undoBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Undo dismiss')!
-    await act(async () => undoBtn.click())
-    await flush()
-    expect(friendsMock.setCardState).toHaveBeenCalledWith('ic-1', 'pending')
-
-    // Switch to Group -> Shared Cards tab -> 1-shot Import folder (2) + Dismissed filter Undo dismiss
-    const groupPill = [...el.querySelectorAll<HTMLButtonElement>('.fr-lists button')].find((b) => b.textContent?.includes('Spanish 101'))!
-    await act(async () => groupPill.click())
-    const cardsTab = [...el.querySelectorAll<HTMLButtonElement>('.fr-seg button')].find((b) => b.textContent?.includes('Shared Cards'))!
-    await act(async () => cardsTab.click())
-    expect(el.textContent).toContain('Import folder (2)')
-
+    // Switch to Dismissed filter -> Undo on Old Grammar Tip
     const dismissedFilter = [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Shared card filter"] button')].find((b) => b.textContent === 'Dismissed')!
     await act(async () => dismissedFilter.click())
     expect(el.textContent).toContain('Old Grammar Tip')
-    const groupUndo = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Undo dismiss')!
-    await act(async () => groupUndo.click())
+    const undoBtn = el.querySelector<HTMLButtonElement>('.fr-shared-undo')!
+    await act(async () => undoBtn.click())
     await flush()
     expect(friendsMock.setCardState).toHaveBeenCalledWith('gc-dismissed', 'pending')
+
+    // Switch to Group -> Buddy Streak hidden on group tab, clickable Group streak footer opens 30-day detail view
+    const groupPill = [...el.querySelectorAll<HTMLButtonElement>('.fr-lists button')].find((b) => b.textContent?.includes('Spanish 101'))!
+    await act(async () => groupPill.click())
+    expect(el.querySelector('.fr-buddy-pill, .fr-bell-btn')).toBeNull()
+    const summaryBtn = el.querySelector<HTMLButtonElement>('.fr-group-summary')!
+    expect(summaryBtn.textContent).toContain('Group streak')
+    await act(async () => summaryBtn.click())
+    expect(el.querySelector('[aria-label="Group 30-day history"]')).not.toBeNull()
   })
 
-  it('AcceptCardSheet lets user pick an existing vault folder (remembering last pick) OR click 1-click Put in Shared Cards', async () => {
+  it('AcceptCardSheet defaults to Shared Cards folder and lets user switch to Pick a vault folder + Up next', async () => {
     const onImported = vi.fn()
     const card = { id: 'ic-1', title: 'Hola greeting', markdown: 'Hola\n---\nHello', senderLogin: 'ali' }
 
@@ -503,10 +522,25 @@ describe('Desktop Friends UI (YAZ-6220)', () => {
     })
     await flush(4)
 
+    // Default: Shared Cards folder with ONE primary button "Add to Shared Cards"
+    const sharedPrimary = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Add to Shared Cards')!
+    expect(sharedPrimary).not.toBeNull()
+    await act(async () => sharedPrimary.click())
+    await flush()
+    expect(friendsMock.importCards).toHaveBeenCalledWith({
+      root: '/vault',
+      dir: '',
+      createFolder: 'Shared Cards',
+      cards: [{ ...card, upNext: false }],
+    })
+
+    // Switch radio to "Pick a vault folder", select "Spanish", check "Move to Up next"
+    friendsMock.importCards.mockClear()
+    const radios = [...el.querySelectorAll<HTMLInputElement>('input[type="radio"]')]
+    await act(async () => radios[1].click())
+
     const select = el.querySelector<HTMLSelectElement>('select[aria-label="Vault folder"]')!
     expect([...select.options].map((o) => o.value)).toEqual(['', 'History', 'Spanish'])
-
-    // Pick "Spanish" + check "Move to Up next"
     act(() => {
       select.value = 'Spanish'
       select.dispatchEvent(new Event('change', { bubbles: true }))
@@ -514,46 +548,36 @@ describe('Desktop Friends UI (YAZ-6220)', () => {
     const upNextBox = el.querySelector<HTMLInputElement>('input[type="checkbox"]')!
     act(() => upNextBox.click())
 
-    const addBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.includes('Add to Spanish'))!
+    const addBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Add to Spanish')!
     await act(async () => addBtn.click())
     await flush()
-
     expect(friendsMock.importCards).toHaveBeenCalledWith({
       root: '/vault',
       dir: 'Spanish',
       cards: [{ ...card, upNext: true }],
     })
     expect(localStorage.getItem(LAST_IMPORT_DIR_KEY)).toBe('Spanish')
-    expect(friendsMock.setCardState).toHaveBeenCalledWith('ic-1', 'accepted')
-
-    // Now test 1-click "Put in Shared Cards"
-    friendsMock.importCards.mockClear()
-    const sharedBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Put in Shared Cards')!
-    await act(async () => sharedBtn.click())
-    await flush()
-
-    expect(friendsMock.importCards).toHaveBeenCalledWith({
-      root: '/vault',
-      dir: '',
-      createFolder: 'Shared Cards',
-      cards: [{ ...card, upNext: true }],
-    })
   })
 
-  it('renders clean signed-out state with one-click Sign in with GitHub button calling api.github.signIn()', async () => {
+  it('renders clean zero-friends first-run empty state and signed-out GitHub button', async () => {
+    friendsMock.board.mockResolvedValueOnce({ ok: true, board: makeBoard({ friends: [], groups: [], incomingCards: [] }) })
+    act(() => root!.render(<FriendsPane vaultRoot="/vault" onBack={vi.fn()} />))
+    await flush(4)
+    expect(el.textContent).toContain('Study together with friends')
+    expect(el.textContent).toContain('Add a friend or create a group')
+
+    // Signed-out state
     friendsMock.board.mockResolvedValueOnce({ ok: false, error: 'signed_out' })
     githubMock.signIn.mockResolvedValueOnce({ signedIn: true, login: 'yaseen' })
     friendsMock.board.mockResolvedValueOnce({ ok: true, board: makeBoard() })
 
-    act(() => root!.render(<FriendsPane vaultRoot="/vault" onBack={vi.fn()} />))
+    act(() => root!.render(<FriendsPane key="signed-out" vaultRoot="/vault" onBack={vi.fn()} />))
     await flush(4)
 
     const signInBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Sign in with GitHub')!
     expect(signInBtn).not.toBeNull()
-
     await act(async () => signInBtn.click())
     await flush(6)
-
     expect(api.github.signIn).toHaveBeenCalledTimes(1)
     expect(el.textContent).toContain('All friends (2)')
   })
@@ -583,7 +607,6 @@ describe('Desktop Friends UI (YAZ-6220)', () => {
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done-friends-btn')!.click())
     expect(onOpenFriends).toHaveBeenCalledTimes(1)
 
-    // Hidden when 0 friends
     act(() => {
       root!.render(
         <DoneScreen
@@ -602,7 +625,7 @@ describe('Desktop Friends UI (YAZ-6220)', () => {
     expect(el.querySelector('.card-inbox__done-friends')).toBeNull()
   })
 
-  it('wires shareFriend door in cardMenuSections', () => {
+  it('wires shareFriend door in cardMenuSections and FriendsSendControl per-vault checkboxes & delete', async () => {
     const shareFriend = vi.fn()
     const sections = cardMenuSections({
       marks: null,
@@ -616,12 +639,21 @@ describe('Desktop Friends UI (YAZ-6220)', () => {
     expect(item?.label).toBe('Share with friend or group…')
     item?.onSelect?.()
     expect(shareFriend).toHaveBeenCalledTimes(1)
-  })
 
-  it('FriendsSendControl renders Show Friends in Inbox toggle (default ON), Vaults that count, and Delete my Friends data with confirm', async () => {
-    friendsMock.status.mockResolvedValue({ status: 'sent', lastSentAt: Date.now() - 60_000, retryAt: null, friends: 2, groups: 1, missing: 0 })
+    friendsMock.status.mockResolvedValue({
+      status: 'sent',
+      lastSentAt: Date.now() - 60_000,
+      retryAt: null,
+      friends: 2,
+      groups: 1,
+      missing: 0,
+      knownVaults: [{ path: '/vault/main', name: 'Main Vault', included: true }],
+    })
     friendsMock.board.mockResolvedValue({ ok: true, board: makeBoard() })
-    friendsMock.updatePrefs.mockResolvedValue({ ok: true, vaults: [], zone: null, nickname: null })
+    friendsMock.setVaultIncluded.mockResolvedValue({
+      ok: true,
+      knownVaults: [{ path: '/vault/main', name: 'Main Vault', included: false }],
+    })
     friendsMock.deleteMe.mockResolvedValue({ ok: true })
 
     act(() => root!.render(<FriendsSendControl />))
@@ -632,14 +664,12 @@ describe('Desktop Friends UI (YAZ-6220)', () => {
     await act(async () => toggle.click())
     expect(localStorage.getItem(FRIENDS_INBOX_VISIBLE_KEY)).toBe('false')
 
-    // Vaults that count checkbox ("main")
     const vaultBox = [...el.querySelectorAll<HTMLInputElement>('fieldset input[type="checkbox"]')][0]!
     expect(vaultBox.checked).toBe(true)
     await act(async () => vaultBox.click())
     await flush()
-    expect(friendsMock.updatePrefs).toHaveBeenCalledWith({ vaults: [] })
+    expect(friendsMock.setVaultIncluded).toHaveBeenCalledWith('/vault/main', false)
 
-    // Delete my Friends data -> confirm -> deleteMe()
     const delBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Delete my Friends data')!
     await act(async () => delBtn.click())
     const confirmBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Confirm delete')!

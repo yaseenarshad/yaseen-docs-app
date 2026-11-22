@@ -1,8 +1,8 @@
 /**
- * AcceptCardSheet (YAZ-6220 D8):
- * Lets the user accept 1 shared card or 1-shot import a shared folder into ANY existing folder
- * in their real vault (remembering their last pick), OR click 1-click "Put in Shared Cards"
- * (creating `Shared Cards/` only when chosen), plus an optional "Move to Up next" checkbox.
+ * AcceptCardSheet (YAZ-6220 D8, YAZ-6259):
+ * Centered modal letting the user save 1 shared card or 1-shot import a shared folder
+ * either into `Shared Cards` (default) OR into ANY existing folder in their real vault
+ * (remembering their last pick), plus an optional "Move to Up next" checkbox.
  */
 import { useEffect, useState } from 'react'
 import type { TreeNode } from '@shared/types'
@@ -59,6 +59,7 @@ function writeLastDir(dir: string): void {
 
 export function AcceptCardSheet({ cards, folderId, folderName, vaultRoot, onImported, onClose }: AcceptCardSheetProps) {
   const [folders, setFolders] = useState<string[]>([])
+  const [destination, setDestination] = useState<'shared' | 'pick'>('shared')
   const [selectedDir, setSelectedDir] = useState<string>(() => readLastDir())
   const [upNext, setUpNext] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -92,16 +93,16 @@ export function AcceptCardSheet({ cards, folderId, folderName, vaultRoot, onImpo
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const runImport = async (opts: { dir: string; createFolder?: string; remember: boolean }) => {
+  const handleConfirm = async () => {
     if (busy) return
     setBusy(true)
     setError(null)
     try {
-      const targetDir = opts.createFolder ? '' : opts.dir
+      const useShared = destination === 'shared'
       const res = await api.friends.importCards({
         root: vaultRoot,
-        dir: targetDir,
-        ...(opts.createFolder ? { createFolder: opts.createFolder } : {}),
+        dir: useShared ? '' : selectedDir,
+        ...(useShared ? { createFolder: 'Shared Cards' } : {}),
         cards: cards.map((c) => ({
           id: c.id,
           title: c.title,
@@ -114,14 +115,14 @@ export function AcceptCardSheet({ cards, folderId, folderName, vaultRoot, onImpo
         setError(res.error)
         return
       }
-      if (opts.remember) writeLastDir(opts.dir)
+      if (!useShared) writeLastDir(selectedDir)
       if (folderId) {
         await api.friends.setFolderState(folderId, 'accepted').catch(() => undefined)
       } else {
         await Promise.all(cards.map((c) => api.friends.setCardState(c.id, 'accepted').catch(() => undefined)))
       }
       onImported({
-        dir: opts.createFolder ?? opts.dir,
+        dir: useShared ? 'Shared Cards' : selectedDir,
         paths: res.paths,
         cardIds: cards.map((c) => c.id),
         folderId,
@@ -133,68 +134,95 @@ export function AcceptCardSheet({ cards, folderId, folderName, vaultRoot, onImpo
     }
   }
 
-  const heading = folderName
-    ? `Import folder "${folderName}" (${cards.length})`
+  const heading = cards.length === 1 ? 'Where should we save this card?' : `Where should we save these ${cards.length} cards?`
+  const subtitle = folderName
+    ? `Folder: ${folderName}`
     : cards.length === 1
-      ? `Accept "${cards[0].title}"`
-      : `Accept ${cards.length} cards`
+      ? cards[0].title
+      : `${cards.length} shared cards`
+  const primaryLabel = busy
+    ? 'Adding…'
+    : destination === 'shared'
+      ? 'Add to Shared Cards'
+      : `Add to ${selectedDir || 'Vault root'}`
 
   return (
     <div className="fr-modal-backdrop" role="presentation" onClick={onClose}>
       <div className="fr-modal" role="dialog" aria-modal="true" aria-label="Accept shared cards" onClick={(e) => e.stopPropagation()}>
-        <div className="fr-modal__head">
+        <div className="fr-modal__head" style={{ marginBottom: 4 }}>
           <h3 className="fr-modal__title">{heading}</h3>
           <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" aria-label="Close" onClick={onClose}>
             ✕
           </button>
         </div>
+        <p className="fr-line" style={{ marginTop: 0, marginBottom: 14 }}>{subtitle}</p>
 
-        <p className="fr-line">Choose where in your vault to save {cards.length === 1 ? 'this card' : `these ${cards.length} cards`}. A fresh review schedule starts automatically.</p>
+        <div className="fr-dest-list" role="radiogroup" aria-label="Save destination">
+          <label className={`fr-dest-option${destination === 'shared' ? ' fr-dest-option--active' : ''}`}>
+            <input
+              type="radio"
+              name="accept-dest"
+              checked={destination === 'shared'}
+              disabled={busy}
+              onChange={() => setDestination('shared')}
+            />
+            <div>
+              <div className="fr-dest-option__title">Shared Cards folder</div>
+              <div className="fr-dest-option__sub">Quick save to Shared Cards</div>
+            </div>
+          </label>
 
-        <label style={{ display: 'block', marginBottom: 10 }}>
-          <span style={{ display: 'block', fontSize: 12, color: 'var(--fr-muted)', marginBottom: 4 }}>Vault folder</span>
-          <select
-            className="fr-select"
-            aria-label="Vault folder"
-            value={selectedDir}
-            disabled={busy}
-            onChange={(e) => setSelectedDir(e.target.value)}
-          >
-            <option value="">Vault root</option>
-            {folders.map((dir) => (
-              <option key={dir} value={dir}>
-                {dir}
-              </option>
-            ))}
-          </select>
-        </label>
+          <label className={`fr-dest-option${destination === 'pick' ? ' fr-dest-option--active' : ''}`}>
+            <input
+              type="radio"
+              name="accept-dest"
+              checked={destination === 'pick'}
+              disabled={busy}
+              onChange={() => setDestination('pick')}
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="fr-dest-option__title">Pick a vault folder</div>
+              <div className="fr-dest-option__sub">Choose any existing folder in your vault</div>
+              {destination === 'pick' && (
+                <select
+                  className="fr-select"
+                  style={{ marginTop: 8 }}
+                  aria-label="Vault folder"
+                  value={selectedDir}
+                  disabled={busy}
+                  onChange={(e) => setSelectedDir(e.target.value)}
+                >
+                  <option value="">Vault root</option>
+                  {folders.map((dir) => (
+                    <option key={dir} value={dir}>
+                      {dir}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </label>
+        </div>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, fontSize: 13 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, marginBottom: 4, fontSize: 13 }}>
           <input type="checkbox" checked={upNext} disabled={busy} onChange={(e) => setUpNext(e.target.checked)} />
           <span>Move to Up next</span>
         </label>
 
         {error && <p className="fr-error" role="alert">{error}</p>}
 
-        <div className="fr-actions" style={{ flexWrap: 'wrap' }}>
+        <div className="fr-actions">
+          <button type="button" className="fr-btn" style={{ flex: 1 }} disabled={busy} onClick={onClose}>
+            Cancel
+          </button>
           <button
             type="button"
             className="fr-btn fr-btn--primary"
+            style={{ flex: 1 }}
             disabled={busy}
-            onClick={() => void runImport({ dir: selectedDir, remember: true })}
+            onClick={() => void handleConfirm()}
           >
-            {busy ? 'Importing…' : `Add to ${selectedDir || 'Vault root'}`}
-          </button>
-          <button
-            type="button"
-            className="fr-btn"
-            disabled={busy}
-            onClick={() => void runImport({ dir: '', createFolder: 'Shared Cards', remember: false })}
-          >
-            Put in Shared Cards
-          </button>
-          <button type="button" className="fr-btn fr-btn--ghost" disabled={busy} onClick={onClose}>
-            Cancel
+            {primaryLabel}
           </button>
         </div>
       </div>

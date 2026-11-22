@@ -23,6 +23,8 @@
  */
 import { CALLBACK_ORIGINS } from '../src/auth/githubAppConfig'
 import type { D1Database } from './d1Types'
+import { computeBuddyStreak } from '../../shared/friendsBoard'
+import type { FriendStats } from '../../shared/friendStatsFormat'
 import { FRIENDS_TOKEN_TTL_S, fetchGithubProfile, signFriendsToken, upsertUserProfile, verifyFriendsToken } from './friendsAuth'
 import type { FriendDay, FriendStats } from '../../shared/friendStatsFormat'
 
@@ -213,24 +215,6 @@ export async function handleFriends(
       .bind(meId, meId, meId)
       .all<Record<string, unknown>>()
 
-    // Incoming & outgoing marks
-    const incomingMarks = await db
-      .prepare('SELECT from_id, kind, message, at, seen_at FROM marks WHERE to_id = ?')
-      .bind(meId)
-      .all<Record<string, unknown>>()
-    const outgoingMarks = await db
-      .prepare('SELECT to_id, kind, message, at FROM marks WHERE from_id = ?')
-      .bind(meId)
-      .all<Record<string, unknown>>()
-    const inMarkBy = new Map<number, { kind: string; message: string | null; at: string; seenAt: string | null }>()
-    for (const m of incomingMarks.results) {
-      inMarkBy.set(Number(m.from_id), { kind: String(m.kind), message: m.message ? String(m.message) : null, at: String(m.at), seenAt: m.seen_at ? String(m.seen_at) : null })
-    }
-    const outMarkBy = new Map<number, { kind: string; message: string | null; at: string }>()
-    for (const m of outgoingMarks.results) {
-      outMarkBy.set(Number(m.to_id), { kind: String(m.kind), message: m.message ? String(m.message) : null, at: String(m.at) })
-    }
-
     // Shared card counts per friend (both directions)
     const sharedCounts = await db
       .prepare(
@@ -252,13 +236,13 @@ export async function handleFriends(
       .bind(meId, nowIso)
       .all<Record<string, unknown>>()
 
-    // Groups I belong to (active or pending)
+    // Groups I belong to (excluding groups I am banned from)
     const myGroups = await db
       .prepare(
         `SELECT g.id, g.name, g.admin_id, g.invite_code, gm.status AS my_status, gm.since AS my_since
          FROM group_members gm
          JOIN groups g ON g.id = gm.group_id
-         WHERE gm.user_id = ?`,
+         WHERE gm.user_id = ? AND gm.status != 'banned'`,
       )
       .bind(meId)
       .all<Record<string, unknown>>()
@@ -278,7 +262,7 @@ export async function handleFriends(
         .all<Record<string, unknown>>()
 
       const activeMembers = []
-      const pendingMembers = []
+      const bannedMembers: { id: number; login: string; name: string }[] = []
       for (const m of membersRes.results) {
         if (m.status === 'active') {
           activeMembers.push({
@@ -290,12 +274,11 @@ export async function handleFriends(
             stats: m.stats_json ? safeParseJson(String(m.stats_json)) : null,
             statsAt: m.stats_at ? String(m.stats_at) : null,
           })
-        } else if (isAdmin && m.status === 'pending') {
-          pendingMembers.push({
+        } else if (isAdmin && m.status === 'banned') {
+          bannedMembers.push({
             id: Number(m.github_id),
             login: String(m.login),
             name: (m.nickname ?? m.name ?? m.login) as string,
-            avatarUrl: m.avatar_url ? String(m.avatar_url) : null,
           })
         }
       }
@@ -371,7 +354,8 @@ export async function handleFriends(
         myStatus: String(g.my_status),
         inviteCode: isAdmin || g.my_status === 'active' ? String(g.invite_code) : null,
         members: activeMembers,
-        pending: pendingMembers,
+        pending: [],
+        banned: bannedMembers,
         sharedFolders: foldersOut,
         sharedCards: looseCardsOut,
       })
@@ -405,22 +389,22 @@ export async function handleFriends(
       createdAt: String(c.created_at),
     }))
 
+    const meStatsParsed = meRow.stats_json ? (safeParseJson(String(meRow.stats_json)) as FriendStats | null) : null
+
     const friendsOut = friendRows.results.map((f) => {
       const fid = Number(f.github_id)
-      const incoming = inMarkBy.get(fid) ?? null
-      const outgoing = outMarkBy.get(fid) ?? null
       const sharedCount = sharedCountBy.get(fid) ?? 0
+      const fStats = f.stats_json ? (safeParseJson(String(f.stats_json)) as FriendStats | null) : null
       return {
         id: fid,
         login: String(f.login),
         name: (f.nickname ?? f.name ?? f.login) as string,
         avatarUrl: f.avatar_url ? String(f.avatar_url) : null,
         since: String(f.friend_since),
-        stats: f.stats_json ? safeParseJson(String(f.stats_json)) : null,
+        stats: fStats,
         statsAt: f.stats_at ? String(f.stats_at) : null,
-        incomingMark: incoming,
-        outgoingMark: outgoing,
         sharedCardCount: sharedCount,
+        buddyStreak: computeBuddyStreak(meStatsParsed?.days, fStats?.days, nowMs),
       }
     })
 
@@ -588,13 +572,18 @@ export async function handleFriends(
       if (blocked) return refuse(403, 'blocked')
 
       const existing = await db.prepare('SELECT status FROM group_members WHERE group_id = ? AND user_id = ?').bind(gid, meId).first<{ status: string }>()
-      if (existing) return answer(200, { kind: 'group', groupId: gid, status: existing.status, name: String(grp.name) })
+      if (existing?.status === 'banned') return refuse(403, 'banned')
+      if (existing?.status === 'active') return answer(200, { kind: 'group', groupId: gid, status: 'active', name: String(grp.name) })
 
       await db
-        .prepare("INSERT INTO group_members (group_id, user_id, status, since, created_at) VALUES (?, ?, 'pending', NULL, ?)")
-        .bind(gid, meId, nowIso)
+        .prepare(
+          `INSERT INTO group_members (group_id, user_id, status, since, created_at)
+           VALUES (?, ?, 'active', ?, ?)
+           ON CONFLICT(group_id, user_id) DO UPDATE SET status = 'active', since = excluded.since`,
+        )
+        .bind(gid, meId, nowIso, nowIso)
         .run()
-      return answer(200, { kind: 'group', groupId: gid, status: 'pending', name: String(grp.name) })
+      return answer(200, { kind: 'group', groupId: gid, status: 'active', name: String(grp.name) })
     }
 
     return refuse(404, 'invite_not_found')
@@ -608,7 +597,6 @@ export async function handleFriends(
     const [a, b] = canonicalPair(meId, otherId)
     const stmts = [
       db.prepare('DELETE FROM friendships WHERE user_a = ? AND user_b = ?').bind(a, b),
-      db.prepare('DELETE FROM marks WHERE (from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?)').bind(meId, otherId, otherId, meId),
     ]
     if (url.searchParams.get('block') === '1') {
       stmts.push(db.prepare('INSERT OR IGNORE INTO blocks (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)').bind(meId, otherId, nowIso))
@@ -617,51 +605,7 @@ export async function handleFriends(
     return answer(200, { ok: true })
   }
 
-  // 8. POST /api/friends/marks (Cheer or Nudge, 30/hr rate limit)
-  if (path === '/api/friends/marks') {
-    if (method !== 'POST') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'POST' } })
-    const body = await readJsonBody(request)
-    const toId = typeof body?.toUserId === 'number' && Number.isInteger(body.toUserId) ? body.toUserId : null
-    const kind = body?.kind === 'cheer' || body?.kind === 'nudge' ? body.kind : null
-    if (!toId || !kind || toId === meId) return refuse(400, 'bad_request')
-
-    const [a, b] = canonicalPair(meId, toId)
-    const isFriend = await db.prepare('SELECT 1 FROM friendships WHERE user_a = ? AND user_b = ?').bind(a, b).first()
-    if (!isFriend) return refuse(403, 'not_friends')
-
-    const allowed = await checkRateLimit(db, meId, 'mark', RATE_MARKS_PER_HOUR, 60 * 60 * 1000, nowMs)
-    if (!allowed) return refuse(429, 'rate_limited')
-
-    const message = typeof body?.message === 'string' && body.message.trim() !== '' ? body.message.trim().slice(0, 160) : null
-    await db.batch([
-      db
-        .prepare(
-          `INSERT INTO marks (from_id, to_id, kind, message, at, seen_at)
-           VALUES (?, ?, ?, ?, ?, NULL)
-           ON CONFLICT(from_id, to_id) DO UPDATE SET kind = excluded.kind, message = excluded.message, at = excluded.at, seen_at = NULL`,
-        )
-        .bind(meId, toId, kind, message, nowIso),
-      db
-        .prepare('INSERT INTO activity_events (id, user_id, group_id, kind, payload_json, created_at) VALUES (?, ?, NULL, ?, ?, ?)')
-        .bind(randomId(), meId, kind, JSON.stringify({ toUserId: toId, message }), nowIso),
-    ])
-    return answer(200, { ok: true, kind, message, at: nowIso })
-  }
-
-  // 9. POST /api/friends/marks/seen
-  if (path === '/api/friends/marks/seen') {
-    if (method !== 'POST') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'POST' } })
-    const body = await readJsonBody(request)
-    const fromIds = Array.isArray(body?.fromUserIds) ? body.fromUserIds.filter((n): n is number => typeof n === 'number' && Number.isInteger(n)) : []
-    if (fromIds.length === 0) {
-      await db.prepare('UPDATE marks SET seen_at = ? WHERE to_id = ? AND seen_at IS NULL').bind(nowIso, meId).run()
-    } else {
-      await db.batch(fromIds.slice(0, 100).map((fid) => db.prepare('UPDATE marks SET seen_at = ? WHERE to_id = ? AND from_id = ? AND seen_at IS NULL').bind(nowIso, meId, fid)))
-    }
-    return answer(200, { ok: true })
-  }
-
-  // 10. POST /api/friends/groups — create group
+  // 8. POST /api/friends/groups — create group
   if (path === '/api/friends/groups') {
     if (method !== 'POST') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'POST' } })
     const body = await readJsonBody(request)
@@ -677,8 +621,8 @@ export async function handleFriends(
     return answer(200, { id, name, inviteCode, link: `https://docs.yaseenarshad.com/group#${inviteCode}` })
   }
 
-  // 11. Group member actions: approve, remove/leave, rotate-invite
-  const groupAct = /^\/api\/friends\/groups\/([^/]+)\/(approve|remove|rotate-invite)$/.exec(path)
+  // 9. Group member actions: remove/leave, rotate-invite, ban, unban
+  const groupAct = /^\/api\/friends\/groups\/([^/]+)\/(remove|rotate-invite|ban|unban)$/.exec(path)
   if (groupAct) {
     if (method !== 'POST') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'POST' } })
     const gid = decodeURIComponent(groupAct[1])
@@ -686,12 +630,28 @@ export async function handleFriends(
     const grp = await db.prepare('SELECT id, admin_id FROM groups WHERE id = ?').bind(gid).first<{ id: string; admin_id: number }>()
     if (!grp) return refuse(404, 'group_not_found')
 
-    if (action === 'approve') {
+    if (action === 'ban') {
+      if (grp.admin_id !== meId) return refuse(403, 'not_admin')
+      const body = await readJsonBody(request)
+      const userId = typeof body?.userId === 'number' && Number.isInteger(body.userId) ? body.userId : null
+      if (!userId || userId === grp.admin_id) return refuse(400, 'bad_request')
+      await db
+        .prepare(
+          `INSERT INTO group_members (group_id, user_id, status, since, created_at)
+           VALUES (?, ?, 'banned', NULL, ?)
+           ON CONFLICT(group_id, user_id) DO UPDATE SET status = 'banned', since = NULL`,
+        )
+        .bind(gid, userId, nowIso)
+        .run()
+      return answer(200, { ok: true })
+    }
+
+    if (action === 'unban') {
       if (grp.admin_id !== meId) return refuse(403, 'not_admin')
       const body = await readJsonBody(request)
       const userId = typeof body?.userId === 'number' && Number.isInteger(body.userId) ? body.userId : null
       if (!userId) return refuse(400, 'bad_request')
-      await db.prepare("UPDATE group_members SET status = 'active', since = ? WHERE group_id = ? AND user_id = ?").bind(nowIso, gid, userId).run()
+      await db.prepare("DELETE FROM group_members WHERE group_id = ? AND user_id = ? AND status = 'banned'").bind(gid, userId).run()
       return answer(200, { ok: true })
     }
 
@@ -903,7 +863,6 @@ export async function handleFriends(
     await db.batch([
       db.prepare('DELETE FROM friendships WHERE user_a = ? OR user_b = ?').bind(meId, meId),
       db.prepare('DELETE FROM invites WHERE creator_id = ?').bind(meId),
-      db.prepare('DELETE FROM marks WHERE from_id = ? OR to_id = ?').bind(meId, meId),
       db.prepare('DELETE FROM group_members WHERE user_id = ?').bind(meId),
       db.prepare('DELETE FROM blocks WHERE blocker_id = ? OR blocked_id = ?').bind(meId, meId),
       db.prepare('DELETE FROM shared_card_states WHERE user_id = ?').bind(meId),

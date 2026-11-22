@@ -134,7 +134,7 @@ describe('the main thread, the whole path of one try (YAZ-5252)', () => {
     let clockNow = NOW
     const fakeBoard: FriendsBoardPayload = {
       me: { id: 1, login: 'yaseen', name: 'Y', nickname: null, avatarUrl: 'https://avatars.githubusercontent.com/u/7', zone: null, vaults: ['yaseen/notes', 'yaseen/cards'], stats: null, statsAt: null },
-      friends: [{ id: 2, login: 'friend', name: 'F', avatarUrl: null, since: '2026-11-01T00:00:00Z', stats: null, statsAt: null, incomingMark: null, outgoingMark: null, sharedCardCount: 0 }],
+      friends: [{ id: 2, login: 'friend', name: 'F', avatarUrl: null, since: '2026-11-01T00:00:00Z', stats: null, statsAt: null, sharedCardCount: 0 }],
       invites: [],
       groups: [],
       incomingCards: [],

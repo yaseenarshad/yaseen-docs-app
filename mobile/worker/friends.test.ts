@@ -7,11 +7,13 @@ import type { D1Database, D1PreparedStatement, D1Result } from './d1Types'
 import { handle, type Env } from './index'
 
 const MIGRATION_SQL = readFileSync(join(__dirname, 'migrations/0001_friends.sql'), 'utf8')
+const MIGRATION_0002_SQL = readFileSync(join(__dirname, 'migrations/0002_drop_marks.sql'), 'utf8')
 
-/** Real SQLite-backed D1 adapter executing the exact production 0001_friends.sql migration. */
+/** Real SQLite-backed D1 adapter executing the exact production migrations (0001 + 0002). */
 function makeSqliteD1(): D1Database {
   const sqlite = new DatabaseSync(':memory:')
   sqlite.exec(MIGRATION_SQL)
+  sqlite.exec(MIGRATION_0002_SQL)
 
   const makeStmt = (sql: string, params: unknown[] = []): D1PreparedStatement => {
     const cleanParams = () => params.map((p) => (p === undefined ? null : p)) as (string | number | null)[]
@@ -165,10 +167,6 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
     const accAgain = await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authC, body: JSON.stringify({ code: invRes.code }) }), env, ghFetch)
     expect(accAgain.status).toBe(404)
 
-    // Cheer from Alice to Bob
-    const markRes = await handle(req('/api/friends/marks', { method: 'POST', headers: authA, body: JSON.stringify({ toUserId: 2, kind: 'cheer' }) }), env, ghFetch)
-    expect(markRes.status).toBe(200)
-
     // 1-on-1 card share from Alice to Bob -> increments sharedCardCount
     const directShare = await handle(
       req('/api/friends/cards/share', {
@@ -207,13 +205,16 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
     expect(folderShare.folderId).toBeTruthy()
     expect(folderShare.cardIds).toHaveLength(2)
 
-    // Charlie joins late -> pending -> Alice approves -> Charlie sees the Biochem folder!
-    await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authC, body: JSON.stringify({ code: grp.inviteCode }) }), env, ghFetch)
-    await handle(req(`/api/friends/groups/${grp.id}/approve`, { method: 'POST', headers: authA, body: JSON.stringify({ userId: 3 }) }), env, ghFetch)
+    // Charlie joins late -> instant active join (no pending approval needed!) -> Charlie immediately sees the Biochem folder!
+    const joinRes = await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authC, body: JSON.stringify({ code: grp.inviteCode }) }), env, ghFetch)
+    expect(joinRes.status).toBe(200)
+    expect(await joinRes.json()).toMatchObject({ kind: 'group', groupId: grp.id, status: 'active' })
 
     const boardC = (await (await handle(req('/api/friends/board', { method: 'GET', headers: authC }), env, ghFetch)).json()) as {
-      groups: { sharedFolders: { id: string; name: string; cards: { id: string; status: string }[] }[] }[]
+      groups: { pending: unknown[]; banned: unknown[]; sharedFolders: { id: string; name: string; cards: { id: string; status: string }[] }[] }[]
     }
+    expect(boardC.groups[0].pending).toEqual([])
+    expect(boardC.groups[0].banned).toEqual([])
     expect(boardC.groups[0].sharedFolders).toHaveLength(1)
     expect(boardC.groups[0].sharedFolders[0].name).toBe('Biochem')
     expect(boardC.groups[0].sharedFolders[0].cards.map((c) => c.status)).toEqual(['pending', 'pending'])
@@ -231,13 +232,26 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
     }
     expect(boardC2.groups[0].sharedFolders[0].cards.every((c) => c.status === 'accepted')).toBe(true)
 
-    // Bob sees Alice's cheer + sharedCardCount = 1 + incoming card
+    // Admin bans Charlie -> Charlie cannot rejoin (403 banned) -> Admin sees Charlie in banned[] -> Admin unbans -> Charlie can rejoin
+    const banRes = await handle(req(`/api/friends/groups/${grp.id}/ban`, { method: 'POST', headers: authA, body: JSON.stringify({ userId: 3 }) }), env, ghFetch)
+    expect(banRes.status).toBe(200)
+    const rejoinBanned = await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authC, body: JSON.stringify({ code: grp.inviteCode }) }), env, ghFetch)
+    expect(rejoinBanned.status).toBe(403)
+    const boardA = (await (await handle(req('/api/friends/board', { method: 'GET', headers: authA }), env, ghFetch)).json()) as {
+      groups: { banned: { id: number; login: string; name: string }[] }[]
+    }
+    expect(boardA.groups[0].banned).toEqual([{ id: 3, login: 'charlie', name: 'Charlie' }])
+    const unbanRes = await handle(req(`/api/friends/groups/${grp.id}/unban`, { method: 'POST', headers: authA, body: JSON.stringify({ userId: 3 }) }), env, ghFetch)
+    expect(unbanRes.status).toBe(200)
+    const rejoinOk = await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authC, body: JSON.stringify({ code: grp.inviteCode }) }), env, ghFetch)
+    expect(rejoinOk.status).toBe(200)
+
+    // Bob sees sharedCardCount = 1 + incoming card
     const boardB = (await (await handle(req('/api/friends/board', { method: 'GET', headers: authB }), env, ghFetch)).json()) as {
-      friends: { id: number; sharedCardCount: number; incomingMark: { kind: string } | null }[]
+      friends: { id: number; sharedCardCount: number }[]
       incomingCards: { title: string }[]
     }
     expect(boardB.friends[0].sharedCardCount).toBe(1)
-    expect(boardB.friends[0].incomingMark?.kind).toBe('cheer')
     expect(boardB.incomingCards[0].title).toBe('Krebs')
 
     // Delete my Friends data wipes Bob cleanly

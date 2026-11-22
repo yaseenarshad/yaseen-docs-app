@@ -19,7 +19,7 @@ describe('shared/friendsShare and qrSvg (YAZ-6217)', () => {
       nowMs: Date.parse('2026-11-21T12:00:00Z'),
       upNext: true,
     })
-    expect(file.filename).toContain('Krebs Cycle')
+    expect(file.filename).toBe('krebs-cycle-stu-99.md')
     expect(file.content).toContain('shared_from: "@alice"')
     expect(file.content).toContain('STU-99')
     expect(file.content).toContain('next')

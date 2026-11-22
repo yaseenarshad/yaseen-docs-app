@@ -35,6 +35,8 @@ export interface MacSendSaved {
   countFails?: number
   countFailedAt?: number | null
   countUnreadable?: number
+  /** Local vault paths excluded from Friends counting on this Mac (YAZ-6275). */
+  excludedVaults?: string[]
 }
 
 export interface MacClock {
@@ -54,6 +56,8 @@ export interface MacSenderDeps {
   stats(text: string, now: number, closed: readonly ClosedVault[], zone: string | null): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>>
   /** Closed vaults on this Mac that are in the user's configured vaults list (`closedVaults.ts`). */
   closed?(wanted: ReadonlySet<string>): Promise<Map<string, ClosedVault>>
+  /** Vault paths or repo slugs excluded from Friends counting on this Mac (YAZ-6275). */
+  excludedVaults?(): Promise<ReadonlySet<string>> | ReadonlySet<string>
   state: { load(): Promise<MacSendSaved | null>; save(saved: MacSendSaved): Promise<void> }
   clock?: MacClock
 }
@@ -193,20 +197,38 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
 
       if (friends === 0 && groups === 0) return set('no-friends')
 
-      const held = await deps.vaults()
-      const configuredVaults = board.me.vaults.map((v) => v.toLowerCase())
+      const excluded = new Set<string>(s.excludedVaults ?? [])
+      const extraExcluded = deps.excludedVaults ? await deps.excludedVaults() : null
+      if (extraExcluded) for (const v of extraExcluded) excluded.add(v)
+      const isExcluded = (repo: string, root?: string) => excluded.has(repo) || (root !== undefined && excluded.has(root))
+
+      const rawHeld = await deps.vaults()
+      const held = new Map<string, string>()
+      for (const [repo, root] of rawHeld) {
+        if (!isExcluded(repo, root)) held.set(repo, root)
+      }
+      const configuredVaults = board.me.vaults.map((v) => v.toLowerCase()).filter((v) => !isExcluded(v, rawHeld.get(v)))
       const targetRepos = configuredVaults.length > 0 ? configuredVaults : [...held.keys()]
       if (targetRepos.length === 0) return set('missing-vaults', { missing: 0 })
 
       const notOpen = new Set(targetRepos.filter((v) => !held.has(v)))
-      const closedOnMac = notOpen.size > 0 ? ((await deps.closed?.(notOpen)) ?? new Map<string, ClosedVault>()) : new Map<string, ClosedVault>()
-      const behind = [...notOpen].filter((v) => closedOnMac.get(v)?.behind === true).length
-      const missing = [...notOpen].filter((v) => !closedOnMac.has(v) || closedOnMac.get(v)!.behind === true).length
+      const rawClosed = notOpen.size > 0 ? ((await deps.closed?.(notOpen)) ?? new Map<string, ClosedVault>()) : new Map<string, ClosedVault>()
+      const closedOnMac = new Map<string, ClosedVault>()
+      const excludedClosedRepos = new Set<string>()
+      for (const [repo, cv] of rawClosed) {
+        if (isExcluded(repo, cv.root)) excludedClosedRepos.add(repo)
+        else closedOnMac.set(repo, cv)
+      }
+      const effectiveTargetRepos = targetRepos.filter((v) => !excludedClosedRepos.has(v))
+      if (effectiveTargetRepos.length === 0) return set('missing-vaults', { missing: 0 })
+      const effectiveNotOpen = [...notOpen].filter((v) => !excludedClosedRepos.has(v))
+      const behind = effectiveNotOpen.filter((v) => closedOnMac.get(v)?.behind === true).length
+      const missing = effectiveNotOpen.filter((v) => !closedOnMac.has(v) || closedOnMac.get(v)!.behind === true).length
       if (missing > 0) return set('missing-vaults', { missing, ...(behind > 0 && { behind }) })
 
       const counted: FriendVault[] = []
       const closed: ClosedVault[] = []
-      for (const repo of targetRepos) {
+      for (const repo of effectiveTargetRepos) {
         const root = held.get(repo)
         if (root !== undefined) counted.push(await deps.count(root))
         else closed.push(closedOnMac.get(repo)!)

@@ -273,15 +273,11 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   const [friendsOpen, setFriendsOpen] = useState(false)
   const [pendingInvite, setPendingInvite] = useState<{ kind: 'friend' | 'group'; code: string } | null>(null)
   const [shareCard, setShareCard] = useState<{ title: string; markdown: string } | null>(null)
-  const [friendsMeta, setFriendsMeta] = useState<{ unread: boolean; friendsCount: number; finishedToday: number; myStreak: number } | null>(null)
+  const [friendsMeta, setFriendsMeta] = useState<{ friendsCount: number; finishedToday: number; myStreak: number } | null>(null)
 
   const updateFriendsMeta = useCallback((board: FriendsBoardPayload) => {
     const now = Date.now()
-    const unseenMarks = board.friends.some((f) => f.incomingMark && !f.incomingMark.seenAt)
-    const pendingCards = board.incomingCards.some((c) => c.status === 'pending')
-    const pendingApprovals = board.groups.some((g) => g.isAdmin && g.pending.length > 0)
     setFriendsMeta({
-      unread: unseenMarks || pendingCards || pendingApprovals,
       friendsCount: board.friends.length,
       finishedToday: board.friends.filter((f) => dailyMarkOf(f.stats, now) === 'finished').length,
       myStreak: board.me.stats?.totals.streak ?? 0,
@@ -613,7 +609,6 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
               className="card-inbox__friends-btn"
               aria-label="Friends"
               aria-pressed={friendsOpen}
-              data-unread={friendsMeta?.unread ? '' : undefined}
               title={friendsOpen ? 'Back to Review' : 'Friends'}
               onMouseDown={(e) => {
                 e.preventDefault()
@@ -639,7 +634,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
           />
         </Suspense>
       )}
-      <div ref={columnRef} className="card-inbox__column" hidden={friendsOpen} style={cardColumnStyle(width)}>
+      <div ref={columnRef} className="card-inbox__column" hidden={friendsOpen} style={friendsOpen ? { display: 'none' } : cardColumnStyle(width)}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move. YAZ-5051 (Yaseen: "so that the card is just pure"):
             the head sits here too, after the chip — the ID (a click copies it) — with "Up next ×"; the title is in the

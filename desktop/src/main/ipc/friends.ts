@@ -7,6 +7,7 @@ import { handle } from './envelope'
 
 export interface FriendsIpcTarget {
   look(): Promise<FriendsSendView>
+  setVaultIncluded?(vaultPath: string, included: boolean): Promise<{ ok: true; knownVaults: { path: string; name: string; included: boolean }[] } | { ok: false; error: string }>
   service: FriendsService
 }
 
@@ -65,30 +66,10 @@ export function registerFriendsIpc(getTarget: FriendsIpcTarget | (() => Promise<
     return service.removeFriend(userId, block === true)
   })
 
-  handle(CONTRACT.friends.sendMark, async (toUserId: unknown, kind: unknown, message: unknown) => {
-    if (!isPositiveInt(toUserId)) return { ok: false as const, error: 'Invalid toUserId' }
-    if (kind !== 'cheer' && kind !== 'nudge') return { ok: false as const, error: 'Invalid mark kind' }
-    const msg = typeof message === 'string' && message.trim() !== '' ? message : undefined
-    const { service } = await resolve()
-    return service.sendMark(toUserId, kind, msg)
-  })
-
-  handle(CONTRACT.friends.markSeen, async (fromUserIds: unknown) => {
-    const ids = Array.isArray(fromUserIds) ? fromUserIds.filter(isPositiveInt) : undefined
-    const { service } = await resolve()
-    return service.markSeen(ids)
-  })
-
   handle(CONTRACT.friends.createGroup, async (name: unknown) => {
     if (!isNonEmptyString(name)) return { ok: false as const, error: 'Group name is required' }
     const { service } = await resolve()
     return service.createGroup(name.trim())
-  })
-
-  handle(CONTRACT.friends.approveMember, async (groupId: unknown, userId: unknown) => {
-    if (!isNonEmptyString(groupId) || !isPositiveInt(userId)) return { ok: false as const, error: 'Invalid groupId or userId' }
-    const { service } = await resolve()
-    return service.approveMember(groupId.trim(), userId)
   })
 
   handle(CONTRACT.friends.removeMember, async (groupId: unknown, userId: unknown) => {
@@ -175,5 +156,14 @@ export function registerFriendsIpc(getTarget: FriendsIpcTarget | (() => Promise<
   handle(CONTRACT.friends.deleteMe, async () => {
     const { service } = await resolve()
     return service.deleteMe()
+  })
+
+  handle(CONTRACT.friends.setVaultIncluded, async (vaultPath: unknown, included: unknown) => {
+    if (!isNonEmptyString(vaultPath) || typeof included !== 'boolean') {
+      return { ok: false as const, error: 'Invalid vaultPath or included flag' }
+    }
+    const target = await resolve()
+    if (!target.setVaultIncluded) return { ok: false as const, error: 'Vault preferences unavailable' }
+    return target.setVaultIncluded(vaultPath, included)
   })
 }

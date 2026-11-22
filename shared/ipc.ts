@@ -237,10 +237,7 @@ export const CONTRACT = {
     createInvite: invoke<[], { ok: true; code: string; link: string; expiresAt: string } | { ok: false; error: string }>('friends:create-invite', 0),
     acceptInvite: invoke<[code: string], { ok: true; result: unknown } | { ok: false; error: string }>('friends:accept-invite', 1),
     removeFriend: invoke<[userId: number, block?: boolean], { ok: true } | { ok: false; error: string }>('friends:remove-friend', 2),
-    sendMark: invoke<[toUserId: number, kind: 'cheer' | 'nudge', message?: string], { ok: true } | { ok: false; error: string }>('friends:send-mark', 3),
-    markSeen: invoke<[fromUserIds?: number[]], { ok: true } | { ok: false; error: string }>('friends:mark-seen', 1),
     createGroup: invoke<[name: string], { ok: true; id: string; name: string; inviteCode: string; link: string } | { ok: false; error: string }>('friends:create-group', 1),
-    approveMember: invoke<[groupId: string, userId: number], { ok: true } | { ok: false; error: string }>('friends:approve-member', 2),
     removeMember: invoke<[groupId: string, userId?: number], { ok: true; deleted?: boolean } | { ok: false; error: string }>('friends:remove-member', 2),
     rotateGroupInvite: invoke<[groupId: string], { ok: true; inviteCode: string; link: string } | { ok: false; error: string }>('friends:rotate-group-invite', 1),
     shareCards: invoke<
@@ -255,6 +252,10 @@ export const CONTRACT = {
       { ok: true; paths: string[] } | { ok: false; error: string }
     >('friends:import-cards', 1),
     deleteMe: invoke<[], { ok: true } | { ok: false; error: string }>('friends:delete-me', 0),
+    setVaultIncluded: invoke<
+      [vaultPath: string, included: boolean],
+      { ok: true; knownVaults: { path: string; name: string; included: boolean }[] } | { ok: false; error: string }
+    >('friends:set-vault-included', 2),
     onInviteLink: push<{ kind: 'friend' | 'group'; code: string }>('friends:invite-link'),
   },
   /** Targeted mutators (not a generic patch) so several windows never lose each other's writes. */

@@ -7,7 +7,6 @@ import type { FriendStats } from './friendStatsFormat'
 
 export const DEFAULT_FRIENDS_ORIGIN = 'https://docs.yaseenarshad.com'
 
-export type MarkKind = 'cheer' | 'nudge'
 export type SharedCardStatus = 'pending' | 'accepted' | 'dismissed'
 
 export interface SharedCardAttachment {
@@ -46,9 +45,8 @@ export interface FriendBoardMember {
   since: string
   stats: FriendStats | null
   statsAt: string | null
-  incomingMark: { kind: MarkKind; message?: string | null; at: string; seenAt: string | null } | null
-  outgoingMark: { kind: MarkKind; message?: string | null; at: string } | null
   sharedCardCount: number
+  buddyStreak?: number
 }
 
 export interface GroupBoardMember {
@@ -70,6 +68,7 @@ export interface GroupBoardItem {
   inviteCode: string | null
   members: GroupBoardMember[]
   pending: { id: number; login: string; name: string; avatarUrl: string | null }[]
+  banned?: { id: number; login: string; name: string }[]
   sharedFolders: SharedFolderItem[]
   sharedCards: SharedCardItem[]
 }
@@ -118,11 +117,10 @@ export interface FriendsApiClient {
   createInvite(): Promise<{ code: string; link: string; expiresAt: string }>
   acceptInvite(code: string): Promise<{ kind: 'friend'; friendId: number } | { kind: 'group'; groupId: string; status: string; name: string }>
   removeFriend(userId: number, block?: boolean): Promise<{ ok: true }>
-  sendMark(toUserId: number, kind: MarkKind, message?: string): Promise<{ ok: true; kind: MarkKind; message?: string | null; at: string }>
-  markSeen(fromUserIds?: number[]): Promise<{ ok: true }>
   createGroup(name: string): Promise<{ id: string; name: string; inviteCode: string; link: string }>
-  approveMember(groupId: string, userId: number): Promise<{ ok: true }>
   removeMember(groupId: string, userId?: number): Promise<{ ok: true; deleted?: boolean }>
+  banGroupMember(groupId: string, userId: number): Promise<{ ok: true }>
+  unbanGroupMember(groupId: string, userId: number): Promise<{ ok: true }>
   rotateGroupInvite(groupId: string): Promise<{ inviteCode: string; link: string }>
   shareCards(input: {
     groupId?: string
@@ -236,22 +234,6 @@ export function createFriendsApiClient(opts: FriendsApiClientOptions): FriendsAp
       cachedEtag = null
       return res.data!
     },
-    async sendMark(toUserId, kind, message) {
-      const res = await authed<{ ok: true; kind: MarkKind; message?: string | null; at: string }>('/api/friends/marks', {
-        method: 'POST',
-        body: JSON.stringify({ toUserId, kind, ...(message ? { message } : {}) }),
-      })
-      cachedEtag = null
-      return res.data!
-    },
-    async markSeen(fromUserIds) {
-      const res = await authed<{ ok: true }>('/api/friends/marks/seen', {
-        method: 'POST',
-        body: JSON.stringify({ fromUserIds: fromUserIds ?? [] }),
-      })
-      cachedEtag = null
-      return res.data!
-    },
     async createGroup(name) {
       const res = await authed<{ id: string; name: string; inviteCode: string; link: string }>('/api/friends/groups', {
         method: 'POST',
@@ -260,18 +242,26 @@ export function createFriendsApiClient(opts: FriendsApiClientOptions): FriendsAp
       cachedEtag = null
       return res.data!
     },
-    async approveMember(groupId, userId) {
-      const res = await authed<{ ok: true }>(`/api/friends/groups/${encodeURIComponent(groupId)}/approve`, {
+    async removeMember(groupId, userId) {
+      const res = await authed<{ ok: true; deleted?: boolean }>(`/api/friends/groups/${encodeURIComponent(groupId)}/remove`, {
+        method: 'POST',
+        body: JSON.stringify(userId !== undefined ? { userId } : {}),
+      })
+      cachedEtag = null
+      return res.data!
+    },
+    async banGroupMember(groupId, userId) {
+      const res = await authed<{ ok: true }>(`/api/friends/groups/${encodeURIComponent(groupId)}/ban`, {
         method: 'POST',
         body: JSON.stringify({ userId }),
       })
       cachedEtag = null
       return res.data!
     },
-    async removeMember(groupId, userId) {
-      const res = await authed<{ ok: true; deleted?: boolean }>(`/api/friends/groups/${encodeURIComponent(groupId)}/remove`, {
+    async unbanGroupMember(groupId, userId) {
+      const res = await authed<{ ok: true }>(`/api/friends/groups/${encodeURIComponent(groupId)}/unban`, {
         method: 'POST',
-        body: JSON.stringify(userId !== undefined ? { userId } : {}),
+        body: JSON.stringify({ userId }),
       })
       cachedEtag = null
       return res.data!

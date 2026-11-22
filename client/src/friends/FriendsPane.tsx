@@ -2,27 +2,26 @@
  * Desktop FriendsPane (YAZ-6220):
  * Full-parity Friends experience rendered in place inside CardInbox (toggled from CardInboxBar).
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { FriendBoardMember, FriendsBoardPayload, GroupBoardItem, SharedCardItem, SharedCardStatus, SharedFolderItem } from '@shared/friendsApi'
+import type { FriendDay, FriendStats } from '@shared/friendStatsFormat'
 import {
-  DAILY_MARK_SIGN,
-  computeBuddyEmojis,
+  computeBuddyStreak,
   dailyMarkOf,
   filterSharedCards,
-  formatMinutes,
+  localDayKey,
   periodTotals,
-  sevenDayChain,
-  smartMarkSuggestion,
-  sortLeaderboard,
   type BoardPeriod,
-  type BuddyEmoji,
   type LeaderboardRow,
-  type LeaderboardSort,
 } from '@shared/friendsBoard'
 import { parseInviteInput } from '@shared/friendsShare'
 import { qrCodeSvg } from '@shared/qrSvg'
 import { api } from '../api'
+import { renderCard } from '../editor/card/cardRender'
+import { CardBand } from '../review/cardParts'
 import { AcceptCardSheet, type AcceptCardTarget } from './AcceptCardSheet'
+import '../explore/explore.css'
 import './friendsPane.css'
 
 export interface FriendsPaneProps {
@@ -41,12 +40,6 @@ const PERIODS: readonly { id: BoardPeriod; label: string }[] = [
   { id: 'month', label: 'Month' },
 ]
 
-const SORTS: readonly { id: LeaderboardSort; label: string }[] = [
-  { id: 'cards', label: 'Cards' },
-  { id: 'time', label: 'Time' },
-  { id: 'streak', label: 'Streak' },
-]
-
 const CARD_FILTERS: readonly { id: SharedCardStatus; label: string }[] = [
   { id: 'pending', label: 'Pending' },
   { id: 'accepted', label: 'Added' },
@@ -54,8 +47,246 @@ const CARD_FILTERS: readonly { id: SharedCardStatus; label: string }[] = [
 ]
 
 interface RowView extends LeaderboardRow {
-  chain: ('done' | 'open' | 'missed')[]
+  finishedForPeriod: boolean
+  statsAt: string | null
   member?: FriendBoardMember
+}
+
+/** Relative last-synced label for the Today tab (YAZ-6276): `now`, `15m ago`, `2h ago`, `3d ago`. */
+function relativeSyncTime(iso: string | null, nowMs: number): string | null {
+  if (!iso) return null
+  const ms = Date.parse(iso)
+  if (!Number.isFinite(ms)) return null
+  const mins = Math.max(0, Math.floor((nowMs - ms) / 60_000))
+  if (mins < 1) return 'now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
+/** Full-viewport portal confetti burst dead-center on the Desktop window (zoom-independent, YAZ-6276). */
+function FriendsConfettiPortal({ burstKey, onDone }: { burstKey: number; onDone: () => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return onDone()
+    let cancelled = false
+    let frame = 0
+    void import('../review/confetti')
+      .then(({ confettiPieces, stepPiece }) => {
+        if (cancelled) return
+        const w = window.innerWidth
+        const h = window.innerHeight
+        const dpr = Math.min(window.devicePixelRatio || 1, 2)
+        canvas.width = Math.round(w * dpr)
+        canvas.height = Math.round(h * dpr)
+        ctx.scale(dpr, dpr)
+        const pieces = confettiPieces(w / 2, h * 0.42)
+        const LIFE = 2000
+        let start: number | null = null
+        let last = 0
+        const tick = (now: number) => {
+          if (cancelled) return
+          if (start === null) start = last = now
+          const t = now - start
+          if (t >= LIFE) {
+            onDone()
+            return
+          }
+          const dt = Math.min(3, (now - last) / (1000 / 60))
+          last = now
+          const alpha = t < LIFE * 0.6 ? 1 : 1 - (t - LIFE * 0.6) / (LIFE * 0.4)
+          ctx.clearRect(0, 0, w, h)
+          for (const p of pieces) {
+            stepPiece(p, dt)
+            ctx.save()
+            ctx.translate(p.x, p.y)
+            ctx.rotate(p.spin)
+            const face = Math.cos(p.flip)
+            ctx.scale(1, Math.max(0.08, Math.abs(face)))
+            ctx.globalAlpha = alpha * (face < 0 ? 0.8 : 1)
+            ctx.fillStyle = p.colour
+            const s = p.size
+            if (p.shape === 'rect') ctx.fillRect(-s / 2, -s / 3, s, (s * 2) / 3)
+            else if (p.shape === 'strip') ctx.fillRect(-s * 0.8, -s / 6, s * 1.6, s / 3)
+            else if (p.shape === 'circle') {
+              ctx.beginPath()
+              ctx.arc(0, 0, s / 2.4, 0, Math.PI * 2)
+              ctx.fill()
+            } else {
+              ctx.beginPath()
+              ctx.moveTo(0, -s / 2)
+              ctx.lineTo(s / 2, s / 2)
+              ctx.lineTo(-s / 2, s / 2)
+              ctx.closePath()
+              ctx.fill()
+            }
+            ctx.restore()
+          }
+          frame = requestAnimationFrame(tick)
+        }
+        frame = requestAnimationFrame(tick)
+      })
+      .catch(() => onDone())
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(frame)
+    }
+  }, [burstKey, onDone])
+  return createPortal(
+    <canvas
+      ref={canvasRef}
+      aria-hidden="true"
+      style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', pointerEvents: 'none', zIndex: 9999 }}
+    />,
+    document.body,
+  )
+}
+
+function finishedOnPeriod(
+  stats: { days: readonly { day: string; cards: number; done: boolean }[] } | null,
+  period: BoardPeriod,
+  nowMs: number,
+): boolean {
+  if (period === 'week' || period === 'month' || !stats || stats.days.length === 0) return false
+  const pad2 = (n: number) => String(n).padStart(2, '0')
+  const dt = new Date(nowMs)
+  if (period === 'yesterday') dt.setDate(dt.getDate() - 1)
+  const targetKey = `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`
+  const day = stats.days.find((d) => d.day === targetKey)
+  return day !== undefined && day.done === true && day.cards > 0
+}
+
+function sortTieredRows(rows: readonly RowView[], period: BoardPeriod): RowView[] {
+  const useTier = period === 'today' || period === 'yesterday'
+  return [...rows].sort((a, b) => {
+    if (useTier && a.finishedForPeriod !== b.finishedForPeriod) {
+      return a.finishedForPeriod ? -1 : 1
+    }
+    if (b.cards !== a.cards) return b.cards - a.cards
+    return a.name.localeCompare(b.name)
+  })
+}
+
+/** Formats study time per YAZ-6263: `< 60m` → `N min`, `>= 60m` → `Xhr Ymin` (or `Xhr` on exact hours). */
+function formatStudyTime(seconds: number): string {
+  const m = Math.round(seconds / 60)
+  if (m < 60) return `${m} min`
+  const h = Math.floor(m / 60)
+  const rem = m % 60
+  return rem === 0 ? `${h}hr` : `${h}hr ${rem}min`
+}
+
+/** Consecutive days both you and `friend` finished due cards (`done: true`), per YAZ-6268. */
+function buddyStreakOf(
+  meDays: readonly FriendDay[] | undefined,
+  friend: FriendBoardMember,
+  nowMs: number,
+): number {
+  if (typeof friend.buddyStreak === 'number') return friend.buddyStreak
+  return computeBuddyStreak(meDays, friend.stats?.days, nowMs)
+}
+
+interface VsStatLine {
+  label: string
+  part?: boolean
+  you: string
+  them: string
+  lead: 'you' | 'them' | 'both' | 'none'
+}
+
+function buildVsComparison(me: FriendStats | null, them: FriendStats | null, nowMs: number): { side: VsStatLine[]; vault: VsStatLine[] } {
+  const pad2 = (n: number) => String(n).padStart(2, '0')
+  const keyAt = (offset: number) => {
+    const dt = new Date(nowMs)
+    dt.setDate(dt.getDate() - offset)
+    return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`
+  }
+  const today = keyAt(0)
+  const yest = keyAt(1)
+  const from7 = keyAt(6)
+  const from30 = keyAt(29)
+
+  const summarize = (s: FriendStats | null) => {
+    if (!s) return null
+    const dToday = s.days.find((d) => d.day === today)
+    const dYest = s.days.find((d) => d.day === yest)
+    const cardsToday = dToday?.cards ?? 0
+    const newToday = dToday?.newCards ?? 0
+    const dueToday = Math.max(0, cardsToday - newToday)
+    const secondsToday = dToday?.seconds ?? 0
+    const sum7 = s.days.filter((d) => d.day >= from7 && d.day <= today).reduce((acc, d) => acc + d.cards, 0)
+    const avg7 = Math.round(sum7 / 7)
+    const days30 = s.days.filter((d) => d.day >= from30 && d.day <= today)
+    const rem = days30.reduce((acc, d) => acc + d.remembered, 0)
+    const forg = days30.reduce((acc, d) => acc + d.forgot, 0)
+    const rememberedPct = rem + forg > 0 ? Math.round((rem / (rem + forg)) * 100) : null
+    const daysReviewed30 = days30.filter((d) => d.cards > 0).length
+    return {
+      cardsToday,
+      dueToday,
+      newToday,
+      yesterday: dYest?.cards ?? 0,
+      avg7,
+      secondsToday,
+      bestDay: s.totals.bestDay,
+      streak: s.totals.streak,
+      totalCards: s.totals.cards,
+      inReview: s.totals.inReview,
+      newLeft: s.totals.newLeft,
+      rememberedPct,
+      mature: s.totals.mature,
+      addedThisWeek: s.totals.addedThisWeek,
+      daysReviewed30,
+    }
+  }
+
+  const m = summarize(me)
+  const t = summarize(them)
+
+  const line = (
+    label: string,
+    a: number | null | undefined,
+    b: number | null | undefined,
+    opts?: { part?: boolean; fmt?: (n: number) => string; suffix?: string },
+  ): VsStatLine => {
+    const av = a ?? null
+    const bv = b ?? null
+    const fmt = (v: number | null) => (v === null ? '–' : opts?.fmt ? opts.fmt(v) : `${v}${opts?.suffix ?? ''}`)
+    const lead: VsStatLine['lead'] =
+      av === null || bv === null ? 'none' : av > bv ? 'you' : bv > av ? 'them' : 'both'
+    return { label, part: opts?.part, you: fmt(av), them: fmt(bv), lead }
+  }
+
+  return {
+    side: [
+      line('cards today', m?.cardsToday, t?.cardsToday),
+      line('due cards', m?.dueToday, t?.dueToday, { part: true }),
+      line('new cards', m?.newToday, t?.newToday, { part: true }),
+      line('yesterday', m?.yesterday, t?.yesterday),
+      line('7 day average', m?.avg7, t?.avg7),
+      line('minutes today', m?.secondsToday, t?.secondsToday, { fmt: formatStudyTime }),
+      line('best day', m?.bestDay, t?.bestDay),
+      line('streak', m?.streak, t?.streak, { suffix: 'd' }),
+    ],
+    vault: [
+      line('total cards', m?.totalCards, t?.totalCards),
+      line('in review', m?.inReview, t?.inReview),
+      line('new cards left', m?.newLeft, t?.newLeft),
+      line('remembered', m?.rememberedPct, t?.rememberedPct, { suffix: '%' }),
+      line('mature cards', m?.mature, t?.mature),
+      line('added this week', m?.addedThisWeek, t?.addedThisWeek),
+      line('days reviewed of 30', m?.daysReviewed30, t?.daysReviewed30),
+    ],
+  }
+}
+
+/** Auto-scrolls a 30-day horizontal strip to its right edge (Today) on mount. */
+function scrollStripToRight(el: HTMLDivElement | null) {
+  if (el) el.scrollLeft = el.scrollWidth
 }
 
 function Avatar({ name, url, big = false }: { name: string; url: string | null; big?: boolean }) {
@@ -67,36 +298,51 @@ function Avatar({ name, url, big = false }: { name: string; url: string | null; 
   )
 }
 
-function SevenDayChain({ chain }: { chain: readonly ('done' | 'open' | 'missed')[] }) {
-  return (
-    <span className="fr-chain" aria-label="Last 7 days streak chain">
-      {chain.map((state, idx) => (
-        <span
-          key={idx}
-          className={`fr-chain__dot fr-chain__dot--${state}`}
-          title={state === 'done' ? 'Finished' : state === 'open' ? 'Today (in progress)' : 'Missed'}
-        />
-      ))}
-    </span>
-  )
-}
-
-function BuddyEmojiList({ emojis }: { emojis: readonly BuddyEmoji[] }) {
-  if (emojis.length === 0) return null
-  return (
-    <span className="fr-emojis">
-      {emojis.map((e) => (
-        <span key={e.label} role="img" aria-label={e.label} title={`${e.label}: ${e.reason}`}>
-          {e.emoji}
-        </span>
-      ))}
-    </span>
-  )
+/** Renders a shared card's Markdown using the app's real Inbox/Explore `renderCard` engine. */
+function RenderedCardBody({ markdown }: { markdown: string }) {
+  const hostRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = hostRef.current
+    if (!el) return
+    el.innerHTML = ''
+    el.appendChild(renderCard(markdown))
+  }, [markdown])
+  return <div ref={hostRef} className="card-inbox__body" />
 }
 
 function isSignedOutError(err: string): boolean {
   const low = err.toLowerCase()
   return low.includes('signed_out') || low.includes('no_token') || low.includes('no-token') || low.includes('401') || low.includes('unauthorized')
+}
+
+const BUDDY_REVEAL_KEY = 'yaseen-docs:friends-buddy-reveal'
+
+function readRevealedToday(todayKey: string): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(BUDDY_REVEAL_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as { day?: string; ids?: unknown }
+    if (parsed.day !== todayKey || !Array.isArray(parsed.ids)) return {}
+    const out: Record<string, boolean> = {}
+    for (const id of parsed.ids) {
+      if (typeof id === 'string' || typeof id === 'number') out[`${todayKey}:${id}`] = true
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function writeRevealedToday(todayKey: string, map: Record<string, boolean>): void {
+  try {
+    const prefix = `${todayKey}:`
+    const ids = Object.keys(map)
+      .filter((k) => k.startsWith(prefix) && map[k])
+      .map((k) => k.slice(prefix.length))
+    localStorage.setItem(BUDDY_REVEAL_KEY, JSON.stringify({ day: todayKey, ids }))
+  } catch {
+    // ignore storage errors
+  }
 }
 
 export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendingInvite, onClearPendingInvite }: FriendsPaneProps) {
@@ -106,18 +352,48 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
   const [signingIn, setSigningIn] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const [scope, setScope] = useState<'all' | string>('all')
+  const [scope, setScope] = useState<'all' | 'shared' | string>('all')
   const [period, setPeriod] = useState<BoardPeriod>('today')
-  const [sort, setSort] = useState<LeaderboardSort>('cards')
-  const [groupTab, setGroupTab] = useState<'leaderboard' | 'cards'>('leaderboard')
   const [cardFilter, setCardFilter] = useState<SharedCardStatus>('pending')
-  const [showDismissedIncoming, setShowDismissedIncoming] = useState(false)
   const [vsFriendId, setVsFriendId] = useState<number | null>(null)
-  const [sentMarks, setSentMarks] = useState<Record<number, boolean>>({})
-  const [toastMarks, setToastMarks] = useState<{ id: number; name: string; kind: 'cheer' | 'nudge'; message: string }[]>([])
+  const [settingsGroupId, setSettingsGroupId] = useState<string | null>(null)
+  const [streakGroupId, setStreakGroupId] = useState<string | null>(null)
+  const [groupNameDraft, setGroupNameDraft] = useState('')
+  const [renamedGroups, setRenamedGroups] = useState<Record<string, string>>({})
+  const [localBanned, setLocalBanned] = useState<Record<string, { id: number; login: string; name: string }[]>>({})
+  const [revealedToday, setRevealedToday] = useState<Record<string, boolean>>(() => readRevealedToday(localDayKey(Date.now())))
+  const [confettiKey, setConfettiKey] = useState(0)
+  const [armedDismissId, setArmedDismissId] = useState<string | null>(null)
+  const armedTimerRef = useRef<number | null>(null)
 
-  // Modals & sheets
-  const [addModalOpen, setAddModalOpen] = useState(false)
+  useEffect(
+    () => () => {
+      if (armedTimerRef.current !== null) window.clearTimeout(armedTimerRef.current)
+    },
+    [],
+  )
+
+  const armDismiss = (id: string) => {
+    if (armedTimerRef.current !== null) window.clearTimeout(armedTimerRef.current)
+    setArmedDismissId(id)
+    armedTimerRef.current = window.setTimeout(() => {
+      setArmedDismissId(null)
+      armedTimerRef.current = null
+    }, 3000)
+  }
+
+  const clearArmedDismiss = () => {
+    if (armedTimerRef.current !== null) {
+      window.clearTimeout(armedTimerRef.current)
+      armedTimerRef.current = null
+    }
+    setArmedDismissId(null)
+  }
+
+  // Modals & sheets (StepUp-style + menu, QR Share sheet, Enter link, New group, Manage group)
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false)
+  const [qrShareModal, setQrShareModal] = useState<{ title: string; link: string } | null>(null)
+  const [enterLinkOpen, setEnterLinkOpen] = useState(false)
   const [myInvite, setMyInvite] = useState<{ code: string; link: string; expiresAt: string } | null>(null)
   const [inviteInput, setInviteInput] = useState('')
   const [inviteError, setInviteError] = useState<string | null>(null)
@@ -128,9 +404,31 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
   const [newGroupName, setNewGroupName] = useState('')
   const [newGroupBusy, setNewGroupBusy] = useState(false)
 
-  const [groupInviteModal, setGroupInviteModal] = useState<{ groupId: string; name: string; link: string; isAdmin: boolean } | null>(null)
+  const [manageGroup, setManageGroup] = useState<GroupBoardItem | null>(null)
+  const [confirmRemoveFriend, setConfirmRemoveFriend] = useState<FriendBoardMember | null>(null)
+  const [removingFriend, setRemovingFriend] = useState(false)
+  const [previewCard, setPreviewCard] = useState<{ card: SharedCardItem; context?: string } | null>(null)
   const [acceptTarget, setAcceptTarget] = useState<{ cards: AcceptCardTarget[]; folderId?: string | null; folderName?: string | null } | null>(null)
   const [lastDismissedCard, setLastDismissedCard] = useState<{ id: string; title: string } | null>(null)
+
+  useEffect(() => {
+    const anyModal = Boolean(previewCard || confirmRemoveFriend || plusMenuOpen || qrShareModal || enterLinkOpen || newGroupOpen || manageGroup)
+    if (!anyModal) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      if (confirmRemoveFriend) setConfirmRemoveFriend(null)
+      else if (previewCard) setPreviewCard(null)
+      else if (qrShareModal) setQrShareModal(null)
+      else if (enterLinkOpen) setEnterLinkOpen(false)
+      else if (newGroupOpen) setNewGroupOpen(false)
+      else if (manageGroup) setManageGroup(null)
+      else if (plusMenuOpen) setPlusMenuOpen(false)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [previewCard, confirmRemoveFriend, plusMenuOpen, qrShareModal, enterLinkOpen, newGroupOpen, manageGroup])
 
   const nowMs = Date.now()
 
@@ -153,22 +451,6 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
         setSignedOut(false)
         setBoard(res.board)
         onBoardLoaded?.(res.board)
-
-        // Quiet toast on incoming unseen Cheer/Nudge (Item 8)
-        const unseen = res.board.friends.filter((f) => f.incomingMark && !f.incomingMark.seenAt)
-        if (unseen.length > 0) {
-          setToastMarks(
-            unseen.map((f) => ({
-              id: f.id,
-              name: f.name,
-              kind: f.incomingMark!.kind,
-              message:
-                f.incomingMark!.message ||
-                (f.incomingMark!.kind === 'cheer' ? 'cheered your review!' : 'nudged you to review today!'),
-            })),
-          )
-          void api.friends.markSeen(unseen.map((f) => f.id)).catch(() => undefined)
-        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         if (isSignedOutError(msg)) {
@@ -192,7 +474,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
   useEffect(() => {
     if (!pendingInvite) return
     setInviteInput(pendingInvite.code)
-    setAddModalOpen(true)
+    setEnterLinkOpen(true)
     onClearPendingInvite?.()
   }, [pendingInvite, onClearPendingInvite])
 
@@ -215,13 +497,19 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
     }
   }
 
-  const openAddModal = async () => {
-    setAddModalOpen(true)
-    setInviteError(null)
+  const openFriendQrShare = async () => {
+    setPlusMenuOpen(false)
     setCopiedLink(false)
-    if (!myInvite && board) {
+    let inv = myInvite
+    if (!inv && board) {
       const res = await api.friends.createInvite().catch(() => null)
-      if (res?.ok) setMyInvite({ code: res.code, link: res.link, expiresAt: res.expiresAt })
+      if (res?.ok) {
+        inv = { code: res.code, link: res.link, expiresAt: res.expiresAt }
+        setMyInvite(inv)
+      }
+    }
+    if (inv) {
+      setQrShareModal({ title: 'Share your unique friend link to add friends', link: inv.link })
     }
   }
 
@@ -240,7 +528,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
         return
       }
       setInviteInput('')
-      setAddModalOpen(false)
+      setEnterLinkOpen(false)
       onNotice?.('Invite accepted!')
       await loadBoard(true)
     } catch (err) {
@@ -257,17 +545,6 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
       setTimeout(() => setCopiedLink(false), 2000)
     } catch {
       // ignore clipboard errors in headless tests
-    }
-  }
-
-  const handleSendMark = async (friend: FriendBoardMember) => {
-    const suggestion = smartMarkSuggestion(friend, nowMs)
-    setSentMarks((prev) => ({ ...prev, [friend.id]: true }))
-    const res = await api.friends.sendMark(friend.id, suggestion.kind, suggestion.message).catch(() => ({ ok: false as const, error: 'Failed' }))
-    if (res.ok) {
-      onNotice?.(`${suggestion.kind === 'cheer' ? 'Cheered' : 'Nudged'} ${friend.name}`)
-    } else {
-      setSentMarks((prev) => ({ ...prev, [friend.id]: false }))
     }
   }
 
@@ -304,9 +581,21 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
   }
 
   const activeGroup: GroupBoardItem | null = useMemo(
-    () => (scope === 'all' || !board ? null : board.groups.find((g) => g.id === scope) ?? null),
+    () => (scope === 'all' || scope === 'shared' || !board ? null : board.groups.find((g) => g.id === scope) ?? null),
     [scope, board],
   )
+
+  const settingsGroup: GroupBoardItem | null = useMemo(
+    () => (settingsGroupId === null || !board ? null : board.groups.find((g) => g.id === settingsGroupId) ?? null),
+    [settingsGroupId, board],
+  )
+
+  const streakGroup: GroupBoardItem | null = useMemo(
+    () => (streakGroupId === null || !board ? null : board.groups.find((g) => g.id === streakGroupId) ?? null),
+    [streakGroupId, board],
+  )
+
+  const groupDisplayName = (g: Pick<GroupBoardItem, 'id' | 'name'>) => renamedGroups[g.id] ?? g.name
 
   const vsFriend: FriendBoardMember | null = useMemo(
     () => (vsFriendId === null || !board ? null : board.friends.find((f) => f.id === vsFriendId) ?? null),
@@ -323,12 +612,12 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
       avatarUrl: board.me.avatarUrl,
       isMe: true,
       mark: dailyMarkOf(board.me.stats, nowMs),
+      finishedForPeriod: finishedOnPeriod(board.me.stats, period, nowMs),
+      statsAt: board.me.statsAt,
       cards: meTotals.cards,
       seconds: meTotals.seconds,
       streak: board.me.stats?.totals.streak ?? 0,
       sharedCardCount: 0,
-      emojis: [],
-      chain: sevenDayChain(board.me.stats, nowMs),
     }
     const friendRows: RowView[] = board.friends.map((f) => {
       const totals = periodTotals(f.stats, period, nowMs)
@@ -339,17 +628,18 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
         avatarUrl: f.avatarUrl,
         isMe: false,
         mark: dailyMarkOf(f.stats, nowMs),
+        finishedForPeriod: finishedOnPeriod(f.stats, period, nowMs),
+        statsAt: f.statsAt,
         cards: totals.cards,
         seconds: totals.seconds,
         streak: f.stats?.totals.streak ?? 0,
         sharedCardCount: f.sharedCardCount,
-        emojis: computeBuddyEmojis(f, board.me, board.friends, nowMs),
-        chain: sevenDayChain(f.stats, nowMs),
+        emojis: [],
         member: f,
       }
     })
-    return sortLeaderboard([meRow, ...friendRows], sort)
-  }, [board, period, sort, nowMs])
+    return sortTieredRows([meRow, ...friendRows], period)
+  }, [board, period, nowMs])
 
   const groupRows: RowView[] = useMemo(() => {
     if (!board || !activeGroup) return []
@@ -362,113 +652,156 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
         id: m.id,
         login: m.login,
         name: isMe ? board.me.nickname || m.name : m.name,
-        avatarUrl: m.avatarUrl,
+        avatarUrl: m.avatarUrl ?? (isMe ? board.me.avatarUrl : friend?.avatarUrl ?? null),
         isMe,
         mark: dailyMarkOf(m.stats, nowMs),
+        finishedForPeriod: finishedOnPeriod(m.stats, period, nowMs),
+        statsAt: m.statsAt ?? (isMe ? board.me.statsAt : friend?.statsAt ?? null),
         cards: totals.cards,
         seconds: totals.seconds,
         streak: m.stats?.totals.streak ?? 0,
         sharedCardCount: friend?.sharedCardCount ?? 0,
-        emojis: friend ? computeBuddyEmojis(friend, board.me, board.friends, nowMs) : [],
-        chain: sevenDayChain(m.stats, nowMs),
+        emojis: [],
         member: friend,
       }
     })
-    return sortLeaderboard(rows, sort)
-  }, [board, activeGroup, period, sort, nowMs])
+    return sortTieredRows(rows, period)
+  }, [board, activeGroup, period, nowMs])
 
-  const pendingIncoming = useMemo(() => filterSharedCards(board?.incomingCards ?? [], 'pending'), [board])
-  const dismissedIncoming = useMemo(() => filterSharedCards(board?.incomingCards ?? [], 'dismissed'), [board])
+  const totalPendingShared = useMemo(() => {
+    if (!board) return 0
+    const direct = filterSharedCards(board.incomingCards, 'pending').length
+    const groupCards = board.groups.reduce(
+      (sum, g) =>
+        sum +
+        filterSharedCards(g.sharedCards, 'pending').length +
+        g.sharedFolders.reduce((fs, f) => fs + filterSharedCards(f.cards, 'pending').length, 0),
+      0,
+    )
+    return direct + groupCards
+  }, [board])
 
-  const renderLeaderboard = (rows: readonly RowView[]) => (
-    <div className="fr-board" role="list" aria-label="Friends leaderboard">
-      {rows.map((row, index) => {
-        const friend = row.member
-        const suggestion = friend ? smartMarkSuggestion(friend, nowMs) : null
-        const alreadySent = friend ? sentMarks[friend.id] === true || friend.outgoingMark !== null : false
-        return (
-          <div key={row.id} className="fr-row" role="listitem" data-user-id={row.id}>
-            <button
-              type="button"
-              className="fr-row__tap"
-              disabled={row.isMe || !friend}
-              onClick={() => friend && setVsFriendId(friend.id)}
-            >
-              <span className="fr-rank">{index + 1}</span>
-              <span className={`fr-mark fr-mark--${row.mark}`} aria-label={row.mark}>
-                {DAILY_MARK_SIGN[row.mark]}
-              </span>
-              <Avatar name={row.name} url={row.avatarUrl} />
-              <div className="fr-who">
-                <div className="fr-name-line">
-                  <span className={`fr-name${row.isMe ? ' fr-name--you' : ''}`}>
-                    {row.name}
-                    {row.isMe ? ' (You)' : ''}
-                  </span>
-                  <BuddyEmojiList emojis={row.emojis} />
-                </div>
-                <div className="fr-sub">
-                  <span>🔥 {row.streak}d</span>
-                  <SevenDayChain chain={row.chain} />
-                  <span>{formatMinutes(row.seconds)}</span>
-                </div>
-              </div>
-              <div className="fr-nums">
-                <span className="fr-hero-cards">
-                  {row.cards}
-                  <span className="fr-hero-unit">cards</span>
-                </span>
-              </div>
-            </button>
-            {friend && suggestion && (
-              <button
-                type="button"
-                className="fr-mark-btn"
-                disabled={alreadySent}
-                onClick={() => void handleSendMark(friend)}
+  const renderLeaderboard = (rows: readonly RowView[], showBuddyStreak: boolean) => {
+    const todayKey = localDayKey(nowMs)
+    const myDoneToday = board ? dailyMarkOf(board.me.stats, nowMs) === 'finished' : false
+    return (
+      <div className="fr-board" role="list" aria-label="Friends leaderboard">
+        {rows.map((row) => {
+          const friend = row.member
+          const buddyStreak = showBuddyStreak && !row.isMe && friend && board ? buddyStreakOf(board.me.stats?.days, friend, nowMs) : 0
+          const bothDoneToday = myDoneToday && row.mark === 'finished'
+          const revealKey = friend ? `${todayKey}:${friend.id}` : ''
+          const isRevealed = revealKey !== '' && revealedToday[revealKey] === true
+          const buddyTitle = `${buddyStreak} ${buddyStreak === 1 ? 'day' : 'days'} in a row you both finished your due cards`
+          return (
+            <div key={row.id} className="fr-row" role="listitem" data-user-id={row.id}>
+              <div
+                className="fr-row__tap"
+                role={friend ? 'button' : undefined}
+                tabIndex={friend ? 0 : undefined}
+                onClick={() => {
+                  if (!friend) return
+                  setVsFriendId(friend.id)
+                }}
+                onKeyDown={(e) => {
+                  if (!friend) return
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setVsFriendId(friend.id)
+                  }
+                }}
               >
-                {alreadySent ? 'Sent ✓' : suggestion.buttonLabel}
-              </button>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
+                {(period === 'today' || period === 'yesterday') && (
+                  <span className="fr-rank fr-rank--medal" aria-hidden="true">
+                    {row.finishedForPeriod ? '🥇' : ''}
+                  </span>
+                )}
+                <Avatar name={row.name} url={row.avatarUrl} />
+                <div className="fr-who">
+                  <div className="fr-name-line">
+                    <span className={`fr-name${row.isMe ? ' fr-name--you' : ''}`}>{row.name}</span>
+                    {showBuddyStreak && !row.isMe && friend && buddyStreak > 0 && (
+                      period === 'today' && bothDoneToday && !isRevealed ? (
+                        <button
+                          type="button"
+                          className="fr-bell-btn fr-bell-btn--wiggle"
+                          aria-label="You both finished today! Tap to reveal your buddy streak"
+                          title="You both finished today! Click to reveal your buddy streak"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setRevealedToday((prev) => {
+                              const next = { ...prev, [revealKey]: true }
+                              writeRevealedToday(todayKey, next)
+                              return next
+                            })
+                            setConfettiKey((k) => k + 1)
+                          }}
+                        >
+                          🔔
+                        </button>
+                      ) : (
+                        <span
+                          className={`fr-buddy-pill${period === 'today' && bothDoneToday ? ' fr-buddy-pill--pop' : period === 'today' ? ' fr-buddy-pill--pending' : ''}`}
+                          title={buddyTitle}
+                        >
+                          🤝 {buddyStreak}d
+                        </span>
+                      )
+                    )}
+                  </div>
+                  {period === 'today' && (() => {
+                    const rel = relativeSyncTime(row.statsAt, nowMs)
+                    return rel ? <div className="fr-sub">{rel}</div> : null
+                  })()}
+                </div>
+                <div className="fr-nums">
+                  <span className="fr-hero-cards">
+                    {row.finishedForPeriod && (
+                      <span className="fr-mark--finished" aria-label="Finished due cards" style={{ marginRight: 5 }}>
+                        ✓
+                      </span>
+                    )}
+                    {row.cards}
+                    <span className="fr-hero-unit">cards</span>
+                  </span>
+                  <span className="fr-nums__sub">
+                    {row.streak > 0 ? `${row.streak}d 🔥 · ` : ''}
+                    {formatStudyTime(row.seconds)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
 
   return (
     <div className="fr-pane" role="region" aria-label="Friends">
-      <div className="fr-pane__head">
+      <div className="fr-pane__content">
+        <div className="fr-pane__head">
         <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" onClick={onBack}>
           ← Back to Review
         </button>
         <h2 className="fr-pane__title">Friends</h2>
         {board && (
           <>
-            <button type="button" className="fr-btn fr-btn--primary fr-btn--sm" onClick={() => void openAddModal()}>
-              + Add / Join
-            </button>
-            <button type="button" className="fr-btn fr-btn--sm" onClick={() => setNewGroupOpen((v) => !v)}>
-              New group
-            </button>
             <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" aria-label="Refresh Friends" onClick={() => void loadBoard(true)}>
               ↻
+            </button>
+            <button
+              type="button"
+              className="fr-icon-btn"
+              aria-label="Add or create"
+              title="Add friends or create group"
+              onClick={() => setPlusMenuOpen(true)}
+            >
+              +
             </button>
           </>
         )}
       </div>
-
-      {/* Quiet toast on incoming unseen Cheer/Nudge (Item 8) */}
-      {toastMarks.length > 0 && (
-        <div className="fr-toast" role="status">
-          <span>
-            {toastMarks.map((t) => `${t.name} ${t.message}`).join(' · ')}
-          </span>
-          <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" onClick={() => setToastMarks([])}>
-            Dismiss
-          </button>
-        </div>
-      )}
 
       {/* Reversible undo banner right after dismissing a card */}
       {lastDismissedCard && (
@@ -508,79 +841,431 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
             Try again
           </button>
         </div>
+      ) : board && streakGroup ? (
+        /* ---- Group Streak 30-day detail view (Demo Round 20, YAZ-6270) ---- */
+        <div className="fr-panel">
+          <div className="fr-panel__head">
+            <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" onClick={() => setStreakGroupId(null)}>
+              ← {groupDisplayName(streakGroup)}
+            </button>
+          </div>
+
+          {(() => {
+            const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+            const pad2 = (n: number) => String(n).padStart(2, '0')
+            const friendById = new Map(board.friends.map((f) => [f.id, f]))
+            const members = streakGroup.members.map((m) => {
+              const isMe = m.id === board.me.id
+              const fr = friendById.get(m.id)
+              const name = isMe ? board.me.nickname || m.name : m.name
+              const avatarUrl = m.avatarUrl ?? (isMe ? board.me.avatarUrl : fr?.avatarUrl ?? null)
+              const doneSet = new Set((m.stats?.days ?? []).filter((d) => d.done).map((d) => d.day))
+              return { id: m.id, name, avatarUrl, doneSet }
+            })
+            // 30 days chronologically left -> right (oldest on left, Today on right)
+            const days = Array.from({ length: 30 }, (_, idx) => {
+              const offset = 29 - idx
+              const dt = new Date(nowMs)
+              dt.setDate(dt.getDate() - offset)
+              const key = `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`
+              const missedNames = members.filter((m) => !m.doneSet.has(key)).map((m) => m.name)
+              return {
+                key,
+                isToday: offset === 0,
+                wk: DAY_LABELS[dt.getDay()],
+                md: `${dt.getMonth() + 1}/${dt.getDate()}`,
+                allDone: members.length > 0 && missedNames.length === 0,
+                missedNames,
+              }
+            })
+            const todayDay = days[days.length - 1]
+            const explicitStreak = (streakGroup as GroupBoardItem & { groupStreak?: number }).groupStreak
+            const computedStreak = (() => {
+              if (members.length === 0) return 0
+              let i = todayDay.allDone ? days.length - 1 : days.length - 2
+              let count = 0
+              while (i >= 0 && days[i].allDone) {
+                count++
+                i--
+              }
+              return count
+            })()
+            const groupStreak = typeof explicitStreak === 'number' ? explicitStreak : computedStreak
+            const newestFirst = [...days].reverse()
+            const brokenDay = newestFirst.filter((d) => !d.isToday).find((d) => !d.allDone)
+            const heroSub =
+              groupStreak > 0
+                ? `${groupStreak} ${groupStreak === 1 ? 'day' : 'days'} in a row everyone finished`
+                : brokenDay
+                  ? `Last broken on ${brokenDay.wk} ${brokenDay.md} by ${brokenDay.missedNames.join(', ')}`
+                  : 'Finish today to start a group streak'
+
+            return (
+              <>
+                <div style={{ textAlign: 'center', marginTop: 4 }}>
+                  <span className="fr-hype-pill" style={{ marginBottom: 4 }}>
+                    🔥 {groupStreak}d group streak
+                  </span>
+                  <p className="fr-buddy-sub">
+                    {heroSub}
+                    {groupStreak > 0 && brokenDay && (
+                      <span> · Last broken {brokenDay.wk} {brokenDay.md} by {brokenDay.missedNames.join(', ')}</span>
+                    )}
+                  </p>
+                </div>
+
+                {/* Horizontally scrollable 30-day strip (chronological left -> right, auto-scrolled to Today on right) */}
+                <div ref={scrollStripToRight} className="fr-strip30" aria-label="Group 30-day history">
+                  {days.map((d) => {
+                    const sortedMembers = [...members].sort((a, b) => {
+                      const ad = a.doneSet.has(d.key) ? 0 : 1
+                      const bd = b.doneSet.has(d.key) ? 0 : 1
+                      return ad - bd
+                    })
+                    return (
+                      <div key={d.key} className={`fr-day30${d.allDone ? ' fr-day30--all' : ''}`}>
+                        <span className="fr-day__wk">{d.wk}</span>
+                        <span className="fr-day__date">{d.md}</span>
+                        <div className="fr-day30__avs">
+                          {sortedMembers.map((m) => {
+                            const done = m.doneSet.has(d.key)
+                            const missed = !done && !d.isToday
+                            return (
+                              <span
+                                key={m.id}
+                                className={`fr-ring-av fr-ring-av--lg${missed ? ' fr-ring-av--missed' : ''}`}
+                                title={`${m.name}: ${done ? 'finished' : d.isToday ? 'in progress today' : 'missed'}`}
+                              >
+                                {m.avatarUrl ? <img src={m.avatarUrl} alt={m.name} /> : (m.name[0] ?? '?').toUpperCase()}
+                                {(done || missed) && (
+                                  <span
+                                    className={`fr-ring-av__badge ${done ? 'fr-ring-av__badge--done' : 'fr-ring-av__badge--missed'}`}
+                                    aria-hidden="true"
+                                  >
+                                    {done ? '✓' : '✕'}
+                                  </span>
+                                )}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Compact member legend / 30-day summary (sorted by days finished desc) */}
+                <div className="fr-settings-section" style={{ marginTop: 8 }}>
+                  <div className="fr-settings-section__label">Members (last 30 days)</div>
+                  {[...members]
+                    .map((m) => ({ ...m, count30: days.filter((d) => m.doneSet.has(d.key)).length }))
+                    .sort((a, b) => b.count30 - a.count30 || a.name.localeCompare(b.name))
+                    .map((m) => (
+                      <div key={m.id} className="fr-card-item">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                          <Avatar name={m.name} url={m.avatarUrl} />
+                          <span className="fr-card-item__title">{m.name}</span>
+                        </div>
+                        <span className="fr-card-item__meta">{m.count30} of 30 days finished</span>
+                      </div>
+                    ))}
+                </div>
+              </>
+            )
+          })()}
+        </div>
+      ) : board && settingsGroup ? (
+        /* ---- StepUp Group Settings view (Demo Round 11) ---- */
+        <div className="fr-panel">
+          <div className="fr-panel__head">
+            <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" onClick={() => setSettingsGroupId(null)}>
+              ← Group Settings
+            </button>
+            <span style={{ fontSize: 12, color: 'var(--fr-muted)' }}>
+              {settingsGroup.isAdmin ? 'Admin' : 'Member'}
+            </span>
+          </div>
+
+          {/* Group name */}
+          <div className="fr-settings-section">
+            <div className="fr-settings-section__label">Group name</div>
+            {settingsGroup.isAdmin ? (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="text"
+                  className="fr-input"
+                  aria-label="Group name"
+                  value={groupNameDraft}
+                  onChange={(e) => setGroupNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && groupNameDraft.trim()) {
+                      setRenamedGroups((prev) => ({ ...prev, [settingsGroup.id]: groupNameDraft.trim() }))
+                      onNotice?.(`Renamed group to "${groupNameDraft.trim()}"`)
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="fr-btn fr-btn--primary fr-btn--sm"
+                  disabled={!groupNameDraft.trim() || groupNameDraft.trim() === groupDisplayName(settingsGroup)}
+                  onClick={() => {
+                    const next = groupNameDraft.trim()
+                    if (!next) return
+                    setRenamedGroups((prev) => ({ ...prev, [settingsGroup.id]: next }))
+                    onNotice?.(`Renamed group to "${next}"`)
+                  }}
+                >
+                  Save
+                </button>
+              </div>
+            ) : (
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{groupDisplayName(settingsGroup)}</div>
+            )}
+          </div>
+
+          {/* Members */}
+          {(() => {
+            const extraBanned = localBanned[settingsGroup.id] ?? []
+            const apiBanned = (settingsGroup as GroupBoardItem & { banned?: { id: number; login: string; name: string }[] }).banned ?? []
+            const allBanned = [...apiBanned, ...extraBanned.filter((b) => !apiBanned.some((a) => a.id === b.id))]
+            const bannedIds = new Set(allBanned.map((b) => b.id))
+            const activeMembers = settingsGroup.members.filter((m) => !bannedIds.has(m.id))
+            return (
+              <>
+                <div className="fr-settings-section">
+                  <div className="fr-settings-section__label">Members ({activeMembers.length})</div>
+                  {activeMembers.map((m) => (
+                    <div key={m.id} className="fr-card-item">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                        <Avatar name={m.name} url={m.avatarUrl} />
+                        <div className="fr-card-item__info">
+                          <div className="fr-card-item__title">{m.id === board.me.id ? board.me.nickname || m.name : m.name}</div>
+                          <div className="fr-card-item__meta">
+                            @{m.login}
+                            {m.id === settingsGroup.adminId ? ' · Admin' : ''}
+                          </div>
+                        </div>
+                      </div>
+                      {settingsGroup.isAdmin && m.id !== board.me.id && (
+                        <button
+                          type="button"
+                          className="fr-btn fr-btn--ghost fr-btn--danger fr-btn--sm"
+                          onClick={async () => {
+                            setLocalBanned((prev) => ({
+                              ...prev,
+                              [settingsGroup.id]: [...(prev[settingsGroup.id] ?? []), { id: m.id, login: m.login, name: m.name }],
+                            }))
+                            await api.friends.removeMember(settingsGroup.id, m.id).catch(() => undefined)
+                            onNotice?.(`Banned ${m.name} from ${groupDisplayName(settingsGroup)}`)
+                          }}
+                        >
+                          Ban
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Banned people */}
+                <div className="fr-settings-section">
+                  <div className="fr-settings-section__label">Banned people</div>
+                  {allBanned.length === 0 ? (
+                    <p className="fr-line" style={{ margin: 0 }}>No banned people</p>
+                  ) : (
+                    allBanned.map((b) => (
+                      <div key={b.id} className="fr-card-item">
+                        <div className="fr-card-item__info">
+                          <div className="fr-card-item__title">{b.name}</div>
+                          <div className="fr-card-item__meta">@{b.login}</div>
+                        </div>
+                        {settingsGroup.isAdmin && (
+                          <button
+                            type="button"
+                            className="fr-btn fr-btn--sm"
+                            onClick={() => {
+                              setLocalBanned((prev) => ({
+                                ...prev,
+                                [settingsGroup.id]: (prev[settingsGroup.id] ?? []).filter((x) => x.id !== b.id),
+                              }))
+                              onNotice?.(`Unbanned ${b.name}`)
+                            }}
+                          >
+                            Unban
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )
+          })()}
+
+          {/* Leave & Delete group */}
+          <div className="fr-settings-section" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button
+              type="button"
+              className="fr-btn"
+              onClick={async () => {
+                const gid = settingsGroup.id
+                const res = await api.friends.removeMember(gid)
+                if (res.ok) {
+                  setSettingsGroupId(null)
+                  setScope('all')
+                  await loadBoard(true)
+                }
+              }}
+            >
+              Leave group
+            </button>
+            {settingsGroup.isAdmin && (
+              <button
+                type="button"
+                className="fr-btn fr-btn--danger"
+                onClick={async () => {
+                  const gid = settingsGroup.id
+                  const res = await api.friends.removeMember(gid)
+                  if (res.ok) {
+                    setSettingsGroupId(null)
+                    setScope('all')
+                    await loadBoard(true)
+                  }
+                }}
+              >
+                Delete group
+              </button>
+            )}
+          </div>
+        </div>
       ) : board && vsFriend ? (
-        /* ---- You vs Friend view ---- */
+        /* ---- You vs Friend view (Buddy Streak + Dated 7-Day Strip AT THE TOP, YAZ-6269) ---- */
         <div className="fr-panel">
           <div className="fr-panel__head">
             <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" onClick={() => setVsFriendId(null)}>
               ← Back to leaderboard
             </button>
-            <BuddyEmojiList emojis={computeBuddyEmojis(vsFriend, board.me, board.friends, nowMs)} />
-          </div>
-
-          <div className="fr-vs">
-            <div className="fr-vs__col">
-              <Avatar name={board.me.nickname || board.me.name} url={board.me.avatarUrl} big />
-              <span className="fr-vs__who">You</span>
-            </div>
-            <span className="fr-vs__label">30-day match</span>
-            <div className="fr-vs__col">
-              <Avatar name={vsFriend.name} url={vsFriend.avatarUrl} big />
-              <span className="fr-vs__who">{vsFriend.name}</span>
-            </div>
           </div>
 
           {(() => {
-            const my30 = periodTotals(board.me.stats, 'month', nowMs)
-            const their30 = periodTotals(vsFriend.stats, 'month', nowMs)
-            const suggestion = smartMarkSuggestion(vsFriend, nowMs)
-            const alreadySent = sentMarks[vsFriend.id] === true || vsFriend.outgoingMark !== null
+            const vs = buildVsComparison(board.me.stats, vsFriend.stats, nowMs)
+            const buddyStreak = buddyStreakOf(board.me.stats?.days, vsFriend, nowMs)
+            const buddySub =
+              buddyStreak > 0
+                ? `${buddyStreak} ${buddyStreak === 1 ? 'day' : 'days'} in a row you both finished your due cards`
+                : 'Finish your due cards today to start a buddy streak'
+            const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+            const pad2 = (n: number) => String(n).padStart(2, '0')
+            const myDone = new Set((board.me.stats?.days ?? []).filter((d) => d.done).map((d) => d.day))
+            const theirDone = new Set((vsFriend.stats?.days ?? []).filter((d) => d.done).map((d) => d.day))
+            const myName = board.me.nickname || board.me.name || 'Y'
+            // 30 days chronologically left -> right (oldest on left, Today on right)
+            const days = Array.from({ length: 30 }, (_, idx) => {
+              const offset = 29 - idx
+              const dt = new Date(nowMs)
+              dt.setDate(dt.getDate() - offset)
+              const key = `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`
+              return {
+                key,
+                isToday: offset === 0,
+                wk: DAY_LABELS[dt.getDay()],
+                md: `${dt.getMonth() + 1}/${dt.getDate()}`,
+                me: myDone.has(key),
+                them: theirDone.has(key),
+              }
+            })
             return (
               <>
-                <div className="fr-vs">
-                  <b>{my30.cards}</b>
-                  <span className="fr-vs__label">Cards (30d)</span>
-                  <b>{their30.cards}</b>
-                </div>
-                <div className="fr-vs">
-                  <b>{formatMinutes(my30.seconds)}</b>
-                  <span className="fr-vs__label">Time (30d)</span>
-                  <b>{formatMinutes(their30.seconds)}</b>
-                </div>
-                <div className="fr-vs">
-                  <b>🔥 {board.me.stats?.totals.streak ?? 0}d</b>
-                  <span className="fr-vs__label">Streak</span>
-                  <b>🔥 {vsFriend.stats?.totals.streak ?? 0}d</b>
-                </div>
-                <div className="fr-vs">
-                  <SevenDayChain chain={sevenDayChain(board.me.stats, nowMs)} />
-                  <span className="fr-vs__label">Last 7 days</span>
-                  <SevenDayChain chain={sevenDayChain(vsFriend.stats, nowMs)} />
+                <div style={{ textAlign: 'center', marginTop: 4 }}>
+                  <span className="fr-hype-pill" style={{ marginBottom: 4 }} title={buddySub} aria-label={buddySub}>
+                    🤝 {buddyStreak}d buddy streak
+                  </span>
+                  <p className="fr-buddy-sub">{buddySub}</p>
                 </div>
 
-                <div className="fr-vs__shared">
-                  {vsFriend.sharedCardCount} {vsFriend.sharedCardCount === 1 ? 'card' : 'cards'} shared together
+                {/* Horizontally scrollable 30-day circular-avatar strip (chronological left -> right, auto-scrolled to Today on right) */}
+                <div ref={scrollStripToRight} className="fr-strip30" aria-label="Last 30 days" style={{ marginBottom: 14 }}>
+                  {days.map((d) => {
+                    const meMissed = !d.me && !d.isToday
+                    const themMissed = !d.them && !d.isToday
+                    return (
+                      <div key={d.key} className={`fr-day30${d.me && d.them ? ' fr-day30--all' : ''}`}>
+                        <span className="fr-day__wk">{d.wk}</span>
+                        <span className="fr-day__date">{d.md}</span>
+                        <div className="fr-day30__avs">
+                          <span
+                            className={`fr-ring-av${meMissed ? ' fr-ring-av--missed' : ''}`}
+                            title={`${myName}: ${d.me ? 'finished' : d.isToday ? 'in progress today' : 'missed'}`}
+                          >
+                            {board.me.avatarUrl ? <img src={board.me.avatarUrl} alt={myName} /> : myName[0].toUpperCase()}
+                            {(d.me || meMissed) && (
+                              <span
+                                className={`fr-ring-av__badge ${d.me ? 'fr-ring-av__badge--done' : 'fr-ring-av__badge--missed'}`}
+                                aria-hidden="true"
+                              >
+                                {d.me ? '✓' : '✕'}
+                              </span>
+                            )}
+                          </span>
+                          <span
+                            className={`fr-ring-av${themMissed ? ' fr-ring-av--missed' : ''}`}
+                            title={`${vsFriend.name}: ${d.them ? 'finished' : d.isToday ? 'in progress today' : 'missed'}`}
+                          >
+                            {vsFriend.avatarUrl ? <img src={vsFriend.avatarUrl} alt={vsFriend.name} /> : (vsFriend.name[0] ?? '?').toUpperCase()}
+                            {(d.them || themMissed) && (
+                              <span
+                                className={`fr-ring-av__badge ${d.them ? 'fr-ring-av__badge--done' : 'fr-ring-av__badge--missed'}`}
+                                aria-hidden="true"
+                              >
+                                {d.them ? '✓' : '✕'}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
 
-                <div className="fr-actions">
-                  <button
-                    type="button"
-                    className="fr-btn fr-btn--primary"
-                    disabled={alreadySent}
-                    onClick={() => void handleSendMark(vsFriend)}
-                  >
-                    {alreadySent ? 'Sent ✓' : suggestion.buttonLabel}
-                  </button>
+                <div className="fr-vs">
+                  <div className="fr-vs__col">
+                    <Avatar name={myName} url={board.me.avatarUrl} big />
+                    <span className="fr-vs__who">{myName}</span>
+                  </div>
+                  <span className="fr-vs__label">vs</span>
+                  <div className="fr-vs__col">
+                    <Avatar name={vsFriend.name} url={vsFriend.avatarUrl} big />
+                    <span className="fr-vs__who">{vsFriend.name}</span>
+                  </div>
+                </div>
+
+                {vsFriend.sharedCardCount > 0 && (
+                  <div className="fr-vs__shared">
+                    {vsFriend.sharedCardCount} {vsFriend.sharedCardCount === 1 ? 'card' : 'cards'} shared together
+                  </div>
+                )}
+
+                {vs.side.map((row) => (
+                  <div key={row.label} className={row.part ? 'fr-vs fr-vs--part' : 'fr-vs'}>
+                    <span>{row.lead === 'you' || row.lead === 'both' ? <b>{row.you}</b> : row.you}</span>
+                    <span className="fr-vs__label">{row.part ? `· ${row.label}` : row.label}</span>
+                    <span>{row.lead === 'them' || row.lead === 'both' ? <b>{row.them}</b> : row.them}</span>
+                  </div>
+                ))}
+
+                <div className="fr-week-head" style={{ marginTop: 16 }}>Their vault</div>
+                {vs.vault.map((row) => (
+                  <div key={row.label} className="fr-vs">
+                    <span>{row.lead === 'you' || row.lead === 'both' ? <b>{row.you}</b> : row.you}</span>
+                    <span className="fr-vs__label">{row.label}</span>
+                    <span>{row.lead === 'them' || row.lead === 'both' ? <b>{row.them}</b> : row.them}</span>
+                  </div>
+                ))}
+
+                <div className="fr-actions" style={{ justifyContent: 'center' }}>
                   <button
                     type="button"
                     className="fr-btn fr-btn--danger"
-                    onClick={async () => {
-                      const res = await api.friends.removeFriend(vsFriend.id, false)
-                      if (res.ok) {
-                        setVsFriendId(null)
-                        await loadBoard(true)
-                      }
-                    }}
+                    onClick={() => setConfirmRemoveFriend(vsFriend)}
                   >
                     Remove friend
                   </button>
@@ -591,99 +1276,7 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
         </div>
       ) : board ? (
         <>
-          {/* Create group inline panel */}
-          {newGroupOpen && (
-            <div className="fr-panel">
-              <div className="fr-panel__head">
-                <h3 className="fr-panel__title">Create a study group</h3>
-                <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" onClick={() => setNewGroupOpen(false)}>
-                  Cancel
-                </button>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  type="text"
-                  className="fr-input"
-                  placeholder="Group name (e.g. Spanish 101)"
-                  value={newGroupName}
-                  onChange={(e) => setNewGroupName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && void handleCreateGroup()}
-                />
-                <button type="button" className="fr-btn fr-btn--primary" disabled={newGroupBusy || !newGroupName.trim()} onClick={() => void handleCreateGroup()}>
-                  Create
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Pinned Incoming cards (N) section at top for 1-on-1 shared cards (hidden when 0) */}
-          {(pendingIncoming.length > 0 || (showDismissedIncoming && dismissedIncoming.length > 0)) && (
-            <section className="fr-panel" aria-label="Incoming cards">
-              <div className="fr-panel__head">
-                <h3 className="fr-panel__title">Incoming cards ({pendingIncoming.length})</h3>
-                {dismissedIncoming.length > 0 && (
-                  <button
-                    type="button"
-                    className="fr-btn fr-btn--ghost fr-btn--sm"
-                    onClick={() => setShowDismissedIncoming((v) => !v)}
-                  >
-                    {showDismissedIncoming ? 'Hide dismissed' : `Dismissed (${dismissedIncoming.length})`}
-                  </button>
-                )}
-              </div>
-              {pendingIncoming.map((card) => (
-                <div key={card.id} className="fr-card-item">
-                  <div className="fr-card-item__info">
-                    <div className="fr-card-item__title">{card.title}</div>
-                    <div className="fr-card-item__meta">
-                      from @{card.senderLogin}
-                      {card.note ? ` · "${card.note}"` : ''}
-                    </div>
-                  </div>
-                  <div className="fr-card-item__actions">
-                    <button
-                      type="button"
-                      className="fr-btn fr-btn--primary fr-btn--sm"
-                      onClick={() =>
-                        setAcceptTarget({
-                          cards: [{ id: card.id, title: card.title, markdown: card.markdown, senderLogin: card.senderLogin }],
-                        })
-                      }
-                    >
-                      Accept
-                    </button>
-                    <button
-                      type="button"
-                      className="fr-btn fr-btn--ghost fr-btn--sm"
-                      onClick={() => void handleCardState(card, 'dismissed')}
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {showDismissedIncoming &&
-                dismissedIncoming.map((card) => (
-                  <div key={card.id} className="fr-card-item">
-                    <div className="fr-card-item__info">
-                      <div className="fr-card-item__title">{card.title}</div>
-                      <div className="fr-card-item__meta">Dismissed · from @{card.senderLogin}</div>
-                    </div>
-                    <div className="fr-card-item__actions">
-                      <button
-                        type="button"
-                        className="fr-btn fr-btn--sm"
-                        onClick={() => void handleCardState(card, 'pending')}
-                      >
-                        Undo dismiss
-                      </button>
-                    </div>
-                  </div>
-                ))}
-            </section>
-          )}
-
-          {/* Scope pills: All friends + Groups */}
+          {/* Scope pills: All friends + Groups (active group shows ▾ to manage) + Shared Cards */}
           <div className="fr-lists" role="group" aria-label="Friends or group">
             <button
               type="button"
@@ -693,173 +1286,143 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
             >
               All friends ({board.friends.length})
             </button>
-            {board.groups.map((g) => (
-              <button
-                key={g.id}
-                type="button"
-                className="fr-pill"
-                aria-pressed={scope === g.id}
-                onClick={() => {
-                  setScope(g.id)
-                  setGroupTab('leaderboard')
-                }}
-              >
-                {g.name}
-                {g.isAdmin && g.pending.length > 0 ? ` (${g.pending.length})` : ''}
-              </button>
-            ))}
+            {board.groups.map((g) => {
+              const isActive = scope === g.id
+              return (
+                <button
+                  key={g.id}
+                  type="button"
+                  className="fr-pill"
+                  aria-pressed={isActive}
+                  onClick={() => {
+                    if (isActive) {
+                      setManageGroup(g)
+                    } else {
+                      setScope(g.id)
+                    }
+                  }}
+                >
+                  {groupDisplayName(g)}
+                  {isActive ? ' ▾' : ''}
+                </button>
+              )
+            })}
+            <button
+              type="button"
+              className="fr-pill"
+              aria-pressed={scope === 'shared'}
+              onClick={() => setScope('shared')}
+            >
+              Shared{totalPendingShared > 0 ? ` (${totalPendingShared})` : ''}
+            </button>
           </div>
 
-          {activeGroup ? (
-            /* ---- Group View ---- */
-            <div>
-              {/* Group Chain banner */}
-              <div className="fr-group-banner">
-                <div>
-                  <strong>{activeGroup.name}</strong>
-                  {' · '}
-                  <span>
-                    {groupRows.filter((r) => r.mark === 'finished').length} / {groupRows.length} finished today
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {activeGroup.inviteCode && (
-                    <button
-                      type="button"
-                      className="fr-btn fr-btn--sm"
-                      onClick={() =>
-                        setGroupInviteModal({
-                          groupId: activeGroup.id,
-                          name: activeGroup.name,
-                          link: `https://docs.yaseenarshad.com/group#${activeGroup.inviteCode}`,
-                          isAdmin: activeGroup.isAdmin,
-                        })
-                      }
-                    >
-                      Invite
-                    </button>
-                  )}
+          {scope === 'shared' ? (
+            /* ---- Unified flat Shared (N) view (never follows you to Friends or Groups) ---- */
+            <section aria-label="Shared cards">
+              <div className="fr-lists" role="group" aria-label="Shared card filter">
+                {CARD_FILTERS.map((f) => (
                   <button
+                    key={f.id}
                     type="button"
-                    className="fr-btn fr-btn--ghost fr-btn--danger fr-btn--sm"
-                    onClick={async () => {
-                      const res = await api.friends.removeMember(activeGroup.id)
-                      if (res.ok) {
-                        setScope('all')
-                        await loadBoard(true)
-                      }
-                    }}
+                    className="fr-pill"
+                    aria-pressed={cardFilter === f.id}
+                    onClick={() => setCardFilter(f.id)}
                   >
-                    Leave
+                    {f.label}
                   </button>
-                </div>
+                ))}
               </div>
 
-              {/* Admin pending approvals */}
-              {activeGroup.isAdmin && activeGroup.pending.length > 0 && (
-                <div className="fr-panel">
-                  <div className="fr-panel__head">
-                    <h3 className="fr-panel__title">Pending approvals ({activeGroup.pending.length})</h3>
-                  </div>
-                  {activeGroup.pending.map((p) => (
-                    <div key={p.id} className="fr-card-item">
-                      <div className="fr-card-item__info">
-                        <div className="fr-card-item__title">{p.name}</div>
-                        <div className="fr-card-item__meta">@{p.login}</div>
-                      </div>
-                      <div className="fr-card-item__actions">
+              {(() => {
+                const directCards = filterSharedCards(board.incomingCards, cardFilter)
+                const groupFolders = board.groups.flatMap((g) =>
+                  g.sharedFolders
+                    .map((folder) => ({ groupName: groupDisplayName(g), folder, matching: filterSharedCards(folder.cards, cardFilter) }))
+                    .filter((x) => x.matching.length > 0),
+                )
+                const groupLooseCards = board.groups.flatMap((g) =>
+                  filterSharedCards(g.sharedCards, cardFilter).map((card) => ({ groupName: groupDisplayName(g), card })),
+                )
+                if (directCards.length === 0 && groupFolders.length === 0 && groupLooseCards.length === 0) {
+                  return <p className="fr-line">No {cardFilter === 'accepted' ? 'added' : cardFilter} shared cards.</p>
+                }
+                return (
+                  <div className="fr-flat-list">
+                    {directCards.map((card) => (
+                      <div key={card.id} className="fr-shared-row">
                         <button
                           type="button"
-                          className="fr-btn fr-btn--primary fr-btn--sm"
-                          onClick={async () => {
-                            const res = await api.friends.approveMember(activeGroup.id, p.id)
-                            if (res.ok) await loadBoard(true)
-                          }}
+                          className="fr-shared-row__tap"
+                          onClick={() => setPreviewCard({ card, context: 'Direct share' })}
                         >
-                          Approve
-                        </button>
-                        <button
-                          type="button"
-                          className="fr-btn fr-btn--ghost fr-btn--sm"
-                          onClick={async () => {
-                            const res = await api.friends.removeMember(activeGroup.id, p.id)
-                            if (res.ok) await loadBoard(true)
-                          }}
-                        >
-                          Decline
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Group sub-tabs: Leaderboard | Shared Cards */}
-              <div className="fr-seg" style={{ marginBottom: 12 }}>
-                <button type="button" aria-pressed={groupTab === 'leaderboard'} onClick={() => setGroupTab('leaderboard')}>
-                  Leaderboard
-                </button>
-                <button type="button" aria-pressed={groupTab === 'cards'} onClick={() => setGroupTab('cards')}>
-                  Shared Cards ({filterSharedCards(activeGroup.sharedCards, 'pending').length + activeGroup.sharedFolders.reduce((acc, f) => acc + filterSharedCards(f.cards, 'pending').length, 0)})
-                </button>
-              </div>
-
-              {groupTab === 'leaderboard' ? (
-                <>
-                  <div className="fr-controls">
-                    <div className="fr-seg" role="group" aria-label="Period">
-                      {PERIODS.map((p) => (
-                        <button key={p.id} type="button" aria-pressed={period === p.id} onClick={() => setPeriod(p.id)}>
-                          {p.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="fr-sort" role="group" aria-label="Sort leaderboard">
-                      {SORTS.map((s) => (
-                        <button key={s.id} type="button" aria-pressed={sort === s.id} onClick={() => setSort(s.id)}>
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  {renderLeaderboard(groupRows)}
-                </>
-              ) : (
-                /* ---- Group Shared Cards tab ---- */
-                <div>
-                  <div className="fr-lists" role="group" aria-label="Shared card filter">
-                    {CARD_FILTERS.map((f) => (
-                      <button
-                        key={f.id}
-                        type="button"
-                        className="fr-pill"
-                        aria-pressed={cardFilter === f.id}
-                        onClick={() => setCardFilter(f.id)}
-                      >
-                        {f.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Shared Folders (1-shot Import folder (N)) */}
-                  {activeGroup.sharedFolders.map((folder) => {
-                    const matching = filterSharedCards(folder.cards, cardFilter)
-                    if (matching.length === 0) return null
-                    return (
-                      <div key={folder.id} className="fr-panel">
-                        <div className="fr-panel__head">
-                          <div>
-                            <h3 className="fr-panel__title">📁 {folder.name}</h3>
-                            <span className="fr-card-item__meta">
-                              Shared by @{folder.senderLogin} · {matching.length} {matching.length === 1 ? 'card' : 'cards'}
-                            </span>
+                          <div className="fr-shared-row__title">{card.title}</div>
+                          <div className="fr-shared-row__sub">
+                            from {card.senderLogin}
+                            {card.note ? ` · ${card.note}` : ''}
                           </div>
-                          <div className="fr-card-item__actions">
+                        </button>
+                        <div className="fr-shared-row__actions">
+                          {cardFilter === 'pending' && (
+                            <>
+                              <button
+                                type="button"
+                                className="fr-shared-add"
+                                onClick={() =>
+                                  setAcceptTarget({
+                                    cards: [{ id: card.id, title: card.title, markdown: card.markdown, senderLogin: card.senderLogin }],
+                                  })
+                                }
+                              >
+                                Add
+                              </button>
+                              <button
+                                type="button"
+                                className={armedDismissId === card.id ? 'fr-shared-dismiss-confirm' : 'fr-shared-x'}
+                                aria-label={armedDismissId === card.id ? 'Confirm dismiss' : 'Dismiss'}
+                                title={armedDismissId === card.id ? 'Click again to dismiss' : 'Dismiss'}
+                                onClick={() => {
+                                  if (armedDismissId === card.id) {
+                                    clearArmedDismiss()
+                                    void handleCardState(card, 'dismissed')
+                                  } else {
+                                    armDismiss(card.id)
+                                  }
+                                }}
+                              >
+                                {armedDismissId === card.id ? 'Dismiss?' : '×'}
+                              </button>
+                            </>
+                          )}
+                          {cardFilter === 'dismissed' && (
+                            <button
+                              type="button"
+                              className="fr-shared-undo"
+                              onClick={() => void handleCardState(card, 'pending')}
+                            >
+                              Undo
+                            </button>
+                          )}
+                          {cardFilter === 'accepted' && <span className="fr-shared-added">Added ✓</span>}
+                        </div>
+                      </div>
+                    ))}
+
+                    {groupFolders.map(({ groupName, folder, matching }) => (
+                      <div key={folder.id} className="fr-flat-folder">
+                        <div className="fr-flat-folder__head">
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div className="fr-shared-row__title">📁 {folder.name}</div>
+                            <div className="fr-shared-row__sub">
+                              from {folder.senderLogin} · {groupName} · {matching.length} {matching.length === 1 ? 'card' : 'cards'}
+                            </div>
+                          </div>
+                          <div className="fr-shared-row__actions">
                             {cardFilter === 'pending' && (
                               <>
                                 <button
                                   type="button"
-                                  className="fr-btn fr-btn--primary fr-btn--sm"
+                                  className="fr-shared-add"
                                   onClick={() =>
                                     setAcceptTarget({
                                       folderId: folder.id,
@@ -873,106 +1436,175 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                                     })
                                   }
                                 >
-                                  Import folder ({matching.length})
+                                  Import ({matching.length})
                                 </button>
                                 <button
                                   type="button"
-                                  className="fr-btn fr-btn--ghost fr-btn--sm"
-                                  onClick={() => void handleFolderState(folder, 'dismissed')}
+                                  className={armedDismissId === `folder:${folder.id}` ? 'fr-shared-dismiss-confirm' : 'fr-shared-x'}
+                                  aria-label={armedDismissId === `folder:${folder.id}` ? 'Confirm dismiss folder' : 'Dismiss'}
+                                  title={armedDismissId === `folder:${folder.id}` ? 'Click again to dismiss' : 'Dismiss'}
+                                  onClick={() => {
+                                    const key = `folder:${folder.id}`
+                                    if (armedDismissId === key) {
+                                      clearArmedDismiss()
+                                      void handleFolderState(folder, 'dismissed')
+                                    } else {
+                                      armDismiss(key)
+                                    }
+                                  }}
                                 >
-                                  Dismiss
+                                  {armedDismissId === `folder:${folder.id}` ? 'Dismiss?' : '×'}
                                 </button>
                               </>
                             )}
                             {cardFilter === 'dismissed' && (
                               <button
                                 type="button"
-                                className="fr-btn fr-btn--sm"
+                                className="fr-shared-undo"
                                 onClick={() => void handleFolderState(folder, 'pending')}
                               >
-                                Undo dismiss
+                                Undo
                               </button>
                             )}
+                            {cardFilter === 'accepted' && <span className="fr-shared-added">Added ✓</span>}
                           </div>
                         </div>
-                        {matching.map((card) => (
-                          <div key={card.id} className="fr-card-item">
-                            <div className="fr-card-item__info">
-                              <div className="fr-card-item__title">{card.title}</div>
-                              {card.note && <div className="fr-card-item__meta">"{card.note}"</div>}
-                            </div>
-                          </div>
-                        ))}
+                        <div className="fr-flat-folder__cards">
+                          {matching.map((card) => (
+                            <button
+                              key={card.id}
+                              type="button"
+                              className="fr-folder-card-row"
+                              onClick={() => setPreviewCard({ card, context: `${groupName} › ${folder.name}` })}
+                            >
+                              <span>{card.title}</span>
+                              <span className="fr-folder-card-row__chev" aria-hidden="true">›</span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    )
-                  })}
+                    ))}
 
-                  {/* Individual shared cards in group */}
-                  {(() => {
-                    const cards = filterSharedCards(activeGroup.sharedCards, cardFilter)
-                    const folderHasAny = activeGroup.sharedFolders.some((f) => filterSharedCards(f.cards, cardFilter).length > 0)
-                    if (cards.length === 0 && !folderHasAny) {
-                      return <p className="fr-line">No {cardFilter === 'accepted' ? 'added' : cardFilter} cards in this group.</p>
-                    }
-                    return cards.map((card) => (
-                      <div key={card.id} className="fr-card-item">
-                        <div className="fr-card-item__info">
-                          <div className="fr-card-item__title">{card.title}</div>
-                          <div className="fr-card-item__meta">
-                            from @{card.senderLogin}
-                            {card.note ? ` · "${card.note}"` : ''}
+                    {groupLooseCards.map(({ groupName, card }) => (
+                      <div key={card.id} className="fr-shared-row">
+                        <button
+                          type="button"
+                          className="fr-shared-row__tap"
+                          onClick={() => setPreviewCard({ card, context: groupName })}
+                        >
+                          <div className="fr-shared-row__title">{card.title}</div>
+                          <div className="fr-shared-row__sub">
+                            from {card.senderLogin} · {groupName}
+                            {card.note ? ` · ${card.note}` : ''}
                           </div>
-                        </div>
-                        <div className="fr-card-item__actions">
+                        </button>
+                        <div className="fr-shared-row__actions">
                           {cardFilter === 'pending' && (
                             <>
                               <button
                                 type="button"
-                                className="fr-btn fr-btn--primary fr-btn--sm"
+                                className="fr-shared-add"
                                 onClick={() =>
                                   setAcceptTarget({
                                     cards: [{ id: card.id, title: card.title, markdown: card.markdown, senderLogin: card.senderLogin }],
                                   })
                                 }
                               >
-                                Accept
+                                Add
                               </button>
                               <button
                                 type="button"
-                                className="fr-btn fr-btn--ghost fr-btn--sm"
-                                onClick={() => void handleCardState(card, 'dismissed')}
+                                className={armedDismissId === card.id ? 'fr-shared-dismiss-confirm' : 'fr-shared-x'}
+                                aria-label={armedDismissId === card.id ? 'Confirm dismiss' : 'Dismiss'}
+                                title={armedDismissId === card.id ? 'Click again to dismiss' : 'Dismiss'}
+                                onClick={() => {
+                                  if (armedDismissId === card.id) {
+                                    clearArmedDismiss()
+                                    void handleCardState(card, 'dismissed')
+                                  } else {
+                                    armDismiss(card.id)
+                                  }
+                                }}
                               >
-                                Dismiss
+                                {armedDismissId === card.id ? 'Dismiss?' : '×'}
                               </button>
                             </>
                           )}
                           {cardFilter === 'dismissed' && (
                             <button
                               type="button"
-                              className="fr-btn fr-btn--sm"
+                              className="fr-shared-undo"
                               onClick={() => void handleCardState(card, 'pending')}
                             >
-                              Undo dismiss
+                              Undo
                             </button>
                           )}
-                          {card.senderId === board.me.id && (
-                            <button
-                              type="button"
-                              className="fr-btn fr-btn--ghost fr-btn--danger fr-btn--sm"
-                              onClick={async () => {
-                                const res = await api.friends.deleteSharedCard(card.id)
-                                if (res.ok) await loadBoard(true)
-                              }}
-                            >
-                              Delete
-                            </button>
-                          )}
+                          {cardFilter === 'accepted' && <span className="fr-shared-added">Added ✓</span>}
                         </div>
                       </div>
-                    ))
-                  })()}
+                    ))}
+                  </div>
+                )
+              })()}
+            </section>
+          ) : activeGroup ? (
+            /* ---- Pure StepUp Group Leaderboard (no Shared Cards sub-tabs, no Pending requests box) ---- */
+            <div>
+              <div className="fr-controls">
+                <div className="fr-seg" role="group" aria-label="Period">
+                  {PERIODS.map((p) => (
+                    <button key={p.id} type="button" aria-pressed={period === p.id} onClick={() => setPeriod(p.id)}>
+                      {p.label}
+                    </button>
+                  ))}
                 </div>
-              )}
+              </div>
+
+              {renderLeaderboard(groupRows, false)}
+
+              {/* Group streak hero bottom row (YAZ-6267, #194) */}
+              {(() => {
+                const totalCards = groupRows.reduce((sum, r) => sum + r.cards, 0)
+                const totalSeconds = groupRows.reduce((sum, r) => sum + r.seconds, 0)
+                const doneTodayCount = groupRows.filter((r) => r.finishedForPeriod).length
+                const explicitStreak = (activeGroup as GroupBoardItem & { groupStreak?: number }).groupStreak
+                const groupStreak =
+                  typeof explicitStreak === 'number'
+                    ? explicitStreak
+                    : groupRows.length === 0
+                      ? 0
+                      : Math.min(...groupRows.map((r) => r.streak))
+                const rightSub =
+                  period === 'today'
+                    ? groupRows.length > 0 && doneTodayCount === groupRows.length
+                      ? 'all finished'
+                      : `${doneTodayCount} of ${groupRows.length} finished`
+                    : null
+                return (
+                  <button
+                    type="button"
+                    className="fr-group-summary"
+                    onClick={() => setStreakGroupId(activeGroup.id)}
+                  >
+                    <div className="fr-group-summary__left">
+                      <span className="fr-group-summary__icon" aria-hidden="true">🔥</span>
+                      <div>
+                        <div className="fr-group-summary__title">Group streak</div>
+                        <div className="fr-group-summary__sub">
+                          {groupRows.length} {groupRows.length === 1 ? 'person' : 'people'} · {totalCards} {totalCards === 1 ? 'card' : 'cards'} · {formatStudyTime(totalSeconds)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="fr-group-summary__right">
+                      <div className="fr-nums">
+                        <span className="fr-hero-cards">{groupStreak > 0 ? `${groupStreak}d 🔥` : '0d'}</span>
+                        {rightSub && <span className="fr-nums__sub">{rightSub}</span>}
+                      </div>
+                      <span className="fr-group-summary__chev" aria-hidden="true">›</span>
+                    </div>
+                  </button>
+                )
+              })()}
             </div>
           ) : (
             /* ---- All Friends Leaderboard ---- */
@@ -985,110 +1617,373 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
                     </button>
                   ))}
                 </div>
-                <div className="fr-sort" role="group" aria-label="Sort leaderboard">
-                  {SORTS.map((s) => (
-                    <button key={s.id} type="button" aria-pressed={sort === s.id} onClick={() => setSort(s.id)}>
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
               </div>
 
-              {board.friends.length === 0 ? (
-                <div className="fr-panel">
-                  <p className="fr-line">No friends yet. Share your invite link or QR code to add a study buddy!</p>
-                  <button type="button" className="fr-btn fr-btn--primary" onClick={() => void openAddModal()}>
-                    + Add friend or join group
+              {board.friends.length === 0 && board.groups.length === 0 ? (
+                <div className="fr-signed-out">
+                  <h3>Study together with friends</h3>
+                  <p>Add a friend or create a group to track daily streaks, share cards, and stay accountable.</p>
+                  <button type="button" className="fr-btn fr-btn--primary" onClick={() => setPlusMenuOpen(true)}>
+                    Add a friend or create a group
+                  </button>
+                </div>
+              ) : board.friends.length === 0 ? (
+                <div className="fr-signed-out">
+                  <h3>No friends yet</h3>
+                  <p>Share your invite link or QR code to add a study buddy.</p>
+                  <button type="button" className="fr-btn fr-btn--primary" onClick={() => setPlusMenuOpen(true)}>
+                    Add friends
                   </button>
                 </div>
               ) : (
-                renderLeaderboard(allFriendsRows)
+                renderLeaderboard(allFriendsRows, true)
               )}
             </>
           )}
         </>
       ) : null}
+      </div>
 
-      {/* 1-step Add Friend / Join Group modal */}
-      {addModalOpen && (
-        <div className="fr-modal-backdrop" role="presentation" onClick={() => setAddModalOpen(false)}>
-          <div className="fr-modal" role="dialog" aria-modal="true" aria-label="Add friend or join group" onClick={(e) => e.stopPropagation()}>
+      {/* Full-viewport portal confetti (dead-center at any zoom level, YAZ-6276) */}
+      {confettiKey > 0 && <FriendsConfettiPortal key={confettiKey} burstKey={confettiKey} onDone={() => setConfettiKey(0)} />}
+
+      {/* All modals/overlays rendered via createPortal to document.body so CSS zoom never clips fixed positioning */}
+      {createPortal(
+        <>
+          {/* StepUp-style `+` action sheet */}
+          {plusMenuOpen && (
+        <div className="fr-modal-backdrop" role="presentation" onClick={() => setPlusMenuOpen(false)}>
+          <div className="fr-sheet" role="dialog" aria-modal="true" aria-label="Add friends or create group" onClick={(e) => e.stopPropagation()}>
+            <button type="button" className="fr-sheet__item" onClick={() => void openFriendQrShare()}>
+              Add friends
+            </button>
+            <button
+              type="button"
+              className="fr-sheet__item"
+              onClick={() => {
+                setPlusMenuOpen(false)
+                setNewGroupOpen(true)
+              }}
+            >
+              Create new group
+            </button>
+            <button
+              type="button"
+              className="fr-sheet__item"
+              onClick={() => {
+                setPlusMenuOpen(false)
+                setInviteError(null)
+                setEnterLinkOpen(true)
+              }}
+            >
+              Enter link to add friend/group
+            </button>
+            <button type="button" className="fr-sheet__item fr-sheet__item--cancel" onClick={() => setPlusMenuOpen(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated QR Share sheet (friend or group) */}
+      {qrShareModal && (
+        <div className="fr-modal-backdrop" role="presentation" onClick={() => setQrShareModal(null)}>
+          <div className="fr-modal fr-qr-share" role="dialog" aria-modal="true" aria-label={qrShareModal.title} onClick={(e) => e.stopPropagation()}>
             <div className="fr-modal__head">
-              <h3 className="fr-modal__title">Add friend or join group</h3>
-              <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" aria-label="Close" onClick={() => setAddModalOpen(false)}>
+              <h3 className="fr-modal__title" style={{ flex: 1, textAlign: 'center' }}>
+                {qrShareModal.title}
+              </h3>
+              <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" aria-label="Close" onClick={() => setQrShareModal(null)}>
                 ✕
               </button>
             </div>
+            <div className="fr-qr-share__box" dangerouslySetInnerHTML={{ __html: qrCodeSvg(qrShareModal.link) }} />
+            <p className="fr-line">Ask friends to scan QR code</p>
+            <div className="fr-qr-share__or">or</div>
+            <button
+              type="button"
+              className="fr-btn fr-btn--primary fr-btn--pill"
+              onClick={() => void handleCopyText(qrShareModal.link)}
+            >
+              {copiedLink ? 'Link copied ✓' : 'Share link'}
+            </button>
+          </div>
+        </div>
+      )}
 
-            {myInvite && (
-              <div style={{ marginBottom: 16 }}>
-                <p className="fr-line">Share your invite link or scan the QR code:</p>
-                <div className="fr-qr" dangerouslySetInnerHTML={{ __html: qrCodeSvg(myInvite.link) }} />
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input type="text" className="fr-input" readOnly value={myInvite.link} aria-label="Your invite link" />
-                  <button type="button" className="fr-btn" onClick={() => void handleCopyText(myInvite.link)}>
-                    {copiedLink ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <div>
-              <p className="fr-line">Or paste a friend / group invite link or code:</p>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  type="text"
-                  className="fr-input"
-                  placeholder="https://docs.yaseenarshad.com/friend#…"
-                  aria-label="Paste invite link or code"
-                  value={inviteInput}
-                  onChange={(e) => setInviteInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && void handleAcceptInvite()}
-                />
-                <button type="button" className="fr-btn fr-btn--primary" disabled={inviteBusy} onClick={() => void handleAcceptInvite()}>
-                  {inviteBusy ? 'Joining…' : 'Join'}
-                </button>
-              </div>
-              {inviteError && <p className="fr-error" role="alert">{inviteError}</p>}
+      {/* Create new group modal */}
+      {newGroupOpen && (
+        <div className="fr-modal-backdrop" role="presentation" onClick={() => setNewGroupOpen(false)}>
+          <div className="fr-modal" role="dialog" aria-modal="true" aria-label="Create new group" onClick={(e) => e.stopPropagation()}>
+            <div className="fr-modal__head">
+              <h3 className="fr-modal__title">Create new group</h3>
+              <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" aria-label="Close" onClick={() => setNewGroupOpen(false)}>
+                ✕
+              </button>
+            </div>
+            <input
+              type="text"
+              className="fr-input"
+              placeholder="Group name (e.g. Med Study)"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && void handleCreateGroup()}
+            />
+            <div className="fr-actions">
+              <button type="button" className="fr-btn" style={{ flex: 1 }} onClick={() => setNewGroupOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" className="fr-btn fr-btn--primary" style={{ flex: 1 }} disabled={newGroupBusy || !newGroupName.trim()} onClick={() => void handleCreateGroup()}>
+                {newGroupBusy ? 'Creating…' : 'Create'}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Group invite modal with QR & admin rotate */}
-      {groupInviteModal && (
-        <div className="fr-modal-backdrop" role="presentation" onClick={() => setGroupInviteModal(null)}>
-          <div className="fr-modal" role="dialog" aria-modal="true" aria-label={`Invite to ${groupInviteModal.name}`} onClick={(e) => e.stopPropagation()}>
+      {/* Enter link to add friend/group modal (StepUp centered dialog) */}
+      {enterLinkOpen && (
+        <div className="fr-modal-backdrop" role="presentation" onClick={() => setEnterLinkOpen(false)}>
+          <div className="fr-modal" role="dialog" aria-modal="true" aria-label="Paste invite link to join group or add friend" onClick={(e) => e.stopPropagation()}>
             <div className="fr-modal__head">
-              <h3 className="fr-modal__title">Invite to {groupInviteModal.name}</h3>
-              <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" aria-label="Close" onClick={() => setGroupInviteModal(null)}>
+              <h3 className="fr-modal__title">Paste invite link to join group or add friend</h3>
+              <button type="button" className="fr-btn fr-btn--ghost fr-btn--sm" aria-label="Close" onClick={() => setEnterLinkOpen(false)}>
                 ✕
               </button>
             </div>
-            <div className="fr-qr" dangerouslySetInnerHTML={{ __html: qrCodeSvg(groupInviteModal.link) }} />
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input type="text" className="fr-input" readOnly value={groupInviteModal.link} aria-label="Group invite link" />
-              <button type="button" className="fr-btn" onClick={() => void handleCopyText(groupInviteModal.link)}>
-                {copiedLink ? 'Copied' : 'Copy'}
+            <p className="fr-line">Eg. https://docs.yaseenarshad.com/friend#k9x2m7 or k9x2m7</p>
+            <input
+              type="text"
+              className="fr-input"
+              style={{ borderRadius: 10, padding: '9px 12px' }}
+              placeholder="Invite link"
+              aria-label="Invite link"
+              value={inviteInput}
+              onChange={(e) => setInviteInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && void handleAcceptInvite()}
+            />
+            {inviteError && <p className="fr-error" role="alert">{inviteError}</p>}
+            <div className="fr-actions">
+              <button type="button" className="fr-btn" style={{ flex: 1 }} onClick={() => setEnterLinkOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" className="fr-btn fr-btn--primary" style={{ flex: 1 }} disabled={inviteBusy} onClick={() => void handleAcceptInvite()}>
+                {inviteBusy ? 'Submitting…' : 'Submit'}
               </button>
             </div>
-            {groupInviteModal.isAdmin && (
-              <div className="fr-actions">
+          </div>
+        </div>
+      )}
+
+      {/* Manage "<name>" group action sheet (StepUp: Invite to group, Group Settings, Leave group, Cancel) */}
+      {manageGroup && (
+        <div className="fr-modal-backdrop" role="presentation" onClick={() => setManageGroup(null)}>
+          <div className="fr-sheet" role="dialog" aria-modal="true" aria-label={`Manage ${groupDisplayName(manageGroup)} group`} onClick={(e) => e.stopPropagation()}>
+            <div className="fr-sheet__head">
+              <h3 className="fr-sheet__title">Manage "{groupDisplayName(manageGroup)}" group</h3>
+              <p className="fr-sheet__sub">{manageGroup.isAdmin ? "You're an admin" : 'Member'}</p>
+            </div>
+            {manageGroup.inviteCode && (
+              <button
+                type="button"
+                className="fr-sheet__item"
+                onClick={() => {
+                  const g = manageGroup
+                  setManageGroup(null)
+                  setCopiedLink(false)
+                  setQrShareModal({
+                    title: `Invite friends to "${groupDisplayName(g)}"`,
+                    link: `https://docs.yaseenarshad.com/group#${g.inviteCode}`,
+                  })
+                }}
+              >
+                Invite to group
+              </button>
+            )}
+            <button
+              type="button"
+              className="fr-sheet__item"
+              onClick={() => {
+                const g = manageGroup
+                setManageGroup(null)
+                setGroupNameDraft(groupDisplayName(g))
+                setSettingsGroupId(g.id)
+              }}
+            >
+              Group Settings
+            </button>
+            <button
+              type="button"
+              className="fr-sheet__item fr-sheet__item--danger"
+              onClick={async () => {
+                const g = manageGroup
+                setManageGroup(null)
+                const res = await api.friends.removeMember(g.id)
+                if (res.ok) {
+                  setScope('all')
+                  await loadBoard(true)
+                }
+              }}
+            >
+              Leave group
+            </button>
+            <button type="button" className="fr-sheet__item fr-sheet__item--cancel" onClick={() => setManageGroup(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Real Explore-style shared card preview overlay (uses .explore + .explore__layer + CardBand + renderCard) */}
+      {previewCard && (
+        <div className="explore" role="presentation" onClick={() => setPreviewCard(null)}>
+          <div
+            className="explore__layer explore__layer--in fr-explore-layer"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Preview ${previewCard.card.title}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="fr-explore-head">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                <span className="fr-explore-chip">shared from @{previewCard.card.senderLogin}</span>
+                {previewCard.context && <span>· {previewCard.context}</span>}
+              </div>
+              <button
+                type="button"
+                className="fr-btn fr-btn--ghost fr-btn--sm"
+                aria-label="Close preview"
+                onClick={() => setPreviewCard(null)}
+              >
+                Close (Esc)
+              </button>
+            </div>
+
+            <div className="fr-explore-body">
+              <div className="card-inbox__card">
+                <CardBand>
+                  <span className="card-inbox__name">{previewCard.card.title}</span>
+                </CardBand>
+                <RenderedCardBody markdown={previewCard.card.markdown} />
+              </div>
+
+              {previewCard.card.note && (
+                <p className="fr-explore-note">
+                  <strong>Note from @{previewCard.card.senderLogin}:</strong> {previewCard.card.note}
+                </p>
+              )}
+            </div>
+
+            <div className="fr-explore-foot">
+              <button type="button" className="fr-btn fr-btn--ghost" onClick={() => setPreviewCard(null)}>
+                Close
+              </button>
+              {previewCard.card.status === 'dismissed' ? (
                 <button
                   type="button"
                   className="fr-btn"
-                  onClick={async () => {
-                    const res = await api.friends.rotateGroupInvite(groupInviteModal.groupId)
-                    if (res.ok) {
-                      setGroupInviteModal((prev) => (prev ? { ...prev, link: res.link } : null))
-                      await loadBoard(true)
-                    }
+                  onClick={() => {
+                    const c = previewCard.card
+                    setPreviewCard(null)
+                    void handleCardState(c, 'pending')
                   }}
                 >
-                  Rotate invite link
+                  Undo dismiss
                 </button>
-              </div>
-            )}
+              ) : (
+                previewCard.card.status === 'pending' && (
+                  <button
+                    type="button"
+                    className="fr-btn fr-btn--ghost"
+                    onClick={() => {
+                      const c = previewCard.card
+                      setPreviewCard(null)
+                      void handleCardState(c, 'dismissed')
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                )
+              )}
+              {previewCard.card.status !== 'accepted' && (
+                <button
+                  type="button"
+                  className="fr-btn fr-btn--primary"
+                  onClick={() => {
+                    const c = previewCard.card
+                    setPreviewCard(null)
+                    setAcceptTarget({
+                      cards: [{ id: c.id, title: c.title, markdown: c.markdown, senderLogin: c.senderLogin }],
+                    })
+                  }}
+                >
+                  Accept
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Remove Friend modal (YAZ-6276) */}
+      {confirmRemoveFriend && (
+        <div className="fr-modal-backdrop" role="presentation" onClick={() => !removingFriend && setConfirmRemoveFriend(null)}>
+          <div
+            className="fr-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Remove ${confirmRemoveFriend.name}?`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="fr-modal__head">
+              <h3 className="fr-modal__title">Remove {confirmRemoveFriend.name}?</h3>
+              <button
+                type="button"
+                className="fr-btn fr-btn--ghost fr-btn--sm"
+                aria-label="Close"
+                disabled={removingFriend}
+                onClick={() => setConfirmRemoveFriend(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <p className="fr-line">
+              They won't see your numbers anymore. You can add each other again with a new link.
+            </p>
+            <div className="fr-actions">
+              <button
+                type="button"
+                className="fr-btn"
+                style={{ flex: 1 }}
+                disabled={removingFriend}
+                onClick={() => setConfirmRemoveFriend(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="fr-btn fr-btn--danger"
+                style={{ flex: 1 }}
+                disabled={removingFriend}
+                onClick={async () => {
+                  const target = confirmRemoveFriend
+                  setRemovingFriend(true)
+                  try {
+                    const res = await api.friends.removeFriend(target.id, false)
+                    if (res.ok) {
+                      setConfirmRemoveFriend(null)
+                      setVsFriendId(null)
+                      onNotice?.(`Removed ${target.name}`)
+                      await loadBoard(true)
+                    }
+                  } finally {
+                    setRemovingFriend(false)
+                  }
+                }}
+              >
+                {removingFriend ? 'Removing…' : 'Remove friend'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1107,6 +2002,9 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
             await loadBoard(true)
           }}
         />
+      )}
+        </>,
+        document.body,
       )}
     </div>
   )
