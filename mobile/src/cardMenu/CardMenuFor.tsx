@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { cardOnPageIn } from '@client/review/cardRead'
 import { CardNotFoundError } from '@shared/cardLine'
+import { FRIENDS_ENABLED } from '@shared/features'
 import type { Answers } from '../answers/answers'
 import { changeCardLine } from '../answers/cardLineWrite'
 import { UnsentChangeError } from '../answers/ops'
@@ -22,6 +23,8 @@ export interface CardMenuForProps {
   onClose: () => void
   /** What to say when the write is in the list ("Archived"), or why it is not. */
   onNotice: (text: string) => void
+  /** Opens the Share with friend or group modal for this card. */
+  onShare?: (card: { title: string; markdown: string }) => void
   rowClassName?: string
 }
 
@@ -31,8 +34,9 @@ export interface CardMenuForProps {
  * safe card-line write (`changeCardLine`, the same one as Review's Up next): only that word changes,
  * queued, sent later in one compare-and-swap commit. Lazy: its chunk comes with the first menu.
  */
-export default function CardMenuFor({ answers, path, id, upNext, onClose, onNotice, rowClassName }: CardMenuForProps) {
+export default function CardMenuFor({ answers, path, id, upNext, onClose, onNotice, onShare, rowClassName }: CardMenuForProps) {
   const [marks, setMarks] = useState<CardActionMarks | null>(null)
+  const [cardData, setCardData] = useState<{ title: string; markdown: string } | null>(null)
   // The vault's Show card titles (review.json): Title in review's "Default (Always)" (YAZ-5696 round 2).
   const [titleGlobal, setTitleGlobal] = useState<CardTitleShow | undefined>(undefined)
   useEffect(() => {
@@ -66,26 +70,44 @@ export default function CardMenuFor({ answers, path, id, upNext, onClose, onNoti
       if (!live) return
       const card = text === null ? null : cardOnPageIn(path, text, id)
       setMarks(card === null ? null : { off: card.off, next: card.next, fix: card.fix === true, notitle: card.notitle === true, ...(card.titleAt !== undefined && { titleAt: card.notitle === true ? 'never' : card.titleAt }) })
+      setCardData(card === null ? null : { title: card.title || id, markdown: card.text })
     })
     return () => {
       live = false
     }
   }, [answers, path, id, reads])
   return (
-    <CardActionRows
-      marks={marks}
-      upNext={upNext}
-      titleGlobal={titleGlobal}
-      disabled={answers === null}
-      rowClassName={rowClassName}
-      onAction={(action) => {
-        onClose()
-        if (answers === null) return
-        void changeCardLine(answers, path, id, action.change).then(
-          () => onNotice(action.done),
-          (err: unknown) => onNotice(err instanceof CardNotFoundError ? 'This card is not on the phone now.' : err instanceof UnsentChangeError ? 'The phone cannot make this change. Make it on the Mac.' : 'That did not save. Try again.'),
-        )
-      }}
-    />
+    <>
+      <CardActionRows
+        marks={marks}
+        upNext={upNext}
+        titleGlobal={titleGlobal}
+        disabled={answers === null}
+        rowClassName={rowClassName}
+        onAction={(action) => {
+          onClose()
+          if (answers === null) return
+          void changeCardLine(answers, path, id, action.change).then(
+            () => onNotice(action.done),
+            (err: unknown) => onNotice(err instanceof CardNotFoundError ? 'This card is not on the phone now.' : err instanceof UnsentChangeError ? 'The phone cannot make this change. Make it on the Mac.' : 'That did not save. Try again.'),
+          )
+        }}
+      />
+      {FRIENDS_ENABLED && onShare !== undefined && (
+        <button
+          type="button"
+          role="menuitem"
+          className={rowClassName ?? 'card-actions__row'}
+          disabled={cardData === null}
+          onClick={() => {
+            if (cardData === null) return
+            onClose()
+            onShare(cardData)
+          }}
+        >
+          Share with friend or group…
+        </button>
+      )}
+    </>
   )
 }

@@ -1,11 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { FRIENDS_ENABLED } from '@shared/features'
 import { useMenuToggle } from '../app/menuToggle'
 import type { Answers } from '../answers/answers'
 import { Toast, useToast } from '../screens/Toast'
 import { CardMenuFor } from './lazy'
 import { CARD_MORE_ATTR } from './moreButton'
 import './cardMenu.css'
+
+const ShareCardSheet = lazy(() => import('../friends/ui/ShareCardSheet'))
 
 /**
  * A PAGE CARD'S ⋯ MENU (also the card view's card, and a card in an Explore sheet): a tap on the ⋯ at the right of a card's head in the page (`moreButton.ts`) opens
@@ -16,6 +19,7 @@ import './cardMenu.css'
 export function usePageCardMenu(host: RefObject<HTMLElement | null>, options: { path: string; answers: Answers | null; upNext: boolean }): ReactNode {
   const [said, say] = useToast(2500)
   const [open, setOpen] = useState<{ id: string; button: HTMLElement } | null>(null)
+  const [sharing, setSharing] = useState<{ title: string; markdown: string } | null>(null)
   const menu = useRef<HTMLDivElement>(null)
   // The ⋯ of a card: the page's DOM is drawn by `renderPage`, so one listener on the page's box.
   useEffect(() => {
@@ -62,13 +66,46 @@ export function usePageCardMenu(host: RefObject<HTMLElement | null>, options: { 
   }, [open])
   const box = open?.button.parentElement ?? null
   const toast = said !== null && <Toast text={said} />
-  if (open === null || box === null || !box.isConnected) return toast
+  const shareModal =
+    sharing !== null &&
+    createPortal(
+      <Suspense fallback={null}>
+        <ShareCardSheet
+          title={sharing.title}
+          markdown={sharing.markdown}
+          kind="card"
+          onClose={() => setSharing(null)}
+          onShared={(msg) => {
+            setSharing(null)
+            say(msg)
+          }}
+        />
+      </Suspense>,
+      document.body,
+    )
+  if (open === null || box === null || !box.isConnected) {
+    return (
+      <>
+        {toast}
+        {shareModal}
+      </>
+    )
+  }
   return (
     <>
       {toast}
+      {shareModal}
       {createPortal(
         <div className="card-menu" role="menu" aria-label={`Card actions: ${open.id}`} ref={menu}>
-          <CardMenuFor answers={options.answers} path={options.path} id={open.id} upNext={options.upNext} onClose={() => setOpen(null)} onNotice={say} />
+          <CardMenuFor
+            answers={options.answers}
+            path={options.path}
+            id={open.id}
+            upNext={options.upNext}
+            onClose={() => setOpen(null)}
+            onNotice={say}
+            onShare={FRIENDS_ENABLED ? (card) => setSharing(card) : undefined}
+          />
         </div>,
         box,
       )}

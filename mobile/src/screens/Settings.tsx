@@ -24,6 +24,8 @@ const VaultHealth = lazyScreen(() => import('../settings/VaultHealth'), { waitin
 const MobileVaultPart = lazyScreen(() => import('../settings/MobileVaultPart'))
 /** YAZ-5645 slice 2: Settings › GitHub (the accounts signed in with GitHub), its own chunk. */
 const GithubPart = lazyScreen(() => import('../settings/GithubPart'))
+/** YAZ-6284: Settings › Friends › Browse deck permissions, its own chunk. */
+const DeckPermissionsPart = lazyScreen(() => import('../friends/ui/DeckPermissionsPart'))
 
 /**
  * Settings (decisions 7, 22; round 13, item 4; round 10, item 19; YAZ-5659): first the vaults (switch, add, replace the
@@ -264,7 +266,10 @@ function FriendsPart() {
       ? excludedVaults
       : [...excludedVaults, currentVault.repo]
     setExcludedVaults(next)
-    void app.services.store.setState(PHONE, EXCLUDED_VAULTS_KEY, next).catch(() => undefined)
+    void app.services.store
+      .setState(PHONE, EXCLUDED_VAULTS_KEY, next)
+      .then(() => app.services.friends.syncVaultExclusion?.())
+      .catch(() => undefined)
   }
   const fa = app.friendsAccount
   const alert = friendsMessage(fa)
@@ -358,6 +363,10 @@ function FriendsPart() {
             </div>
           )}
         </li>
+        <DeckPermissionsPart
+          currentRepo={currentVault?.repo ?? null}
+          currentVaultName={currentVault ? vaultTitle(currentVault.repo) : null}
+        />
         <li>
           <div className="row">
             <button type="button" className="row__button" aria-expanded={editing === 'zone'} onClick={() => toggle('zone')}>

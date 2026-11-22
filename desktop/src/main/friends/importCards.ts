@@ -4,12 +4,19 @@ import path from 'node:path'
 import { buildAcceptedCardFile } from '@shared/friendsShare'
 import { mintIds } from '../vaultIndex/mint'
 
+export interface ImportSharedCardAttachment {
+  name: string
+  mime: string
+  dataBase64: string
+}
+
 export interface ImportSharedCardItem {
   id: string
   title: string
   markdown: string
   senderLogin: string
   upNext?: boolean
+  attachments?: ImportSharedCardAttachment[]
 }
 
 export interface ImportCardsInput {
@@ -123,6 +130,26 @@ export async function importSharedCards(
         const fallbackPath = path.join(targetDir, `${stem}-${randomHex()}${ext}`)
         await writeFile(fallbackPath, content, { encoding: 'utf8', flag: 'wx' })
         written = fallbackPath
+      }
+
+      if (Array.isArray(card.attachments) && card.attachments.length > 0) {
+        for (const att of card.attachments) {
+          if (!att || typeof att.name !== 'string' || typeof att.dataBase64 !== 'string') continue
+          const parts = att.name
+            .replace(/\\/g, '/')
+            .split('/')
+            .map((seg) => seg.trim())
+            .filter((seg) => seg !== '' && seg !== '.' && seg !== '..' && !seg.startsWith('.'))
+          if (parts.length === 0) continue
+          const attPath = path.resolve(targetDir, ...parts)
+          if (!isInsideRoot(targetDir, attPath)) continue
+          await mkdir(path.dirname(attPath), { recursive: true })
+          try {
+            await writeFile(attPath, Buffer.from(att.dataBase64, 'base64'), { flag: 'wx' })
+          } catch (err) {
+            if (!isEexist(err)) throw err
+          }
+        }
       }
 
       paths.push(written)

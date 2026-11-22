@@ -31,6 +31,7 @@ import {
   localDay,
   markWords,
   sendLine,
+  sinceDayKey,
   updatedLabel,
   type BoardEntry,
   type Period,
@@ -47,6 +48,7 @@ import {
   type JoinRequest,
   type JoinResult,
 } from './groups'
+import { AcceptCardSheet } from './AcceptCardSheet'
 import { Avatar, LinkToCopy, SHARED_WORDS, actionWords, groupShareText, joinShareText, ownSiteLink, readClipboard, shareOut } from './parts'
 import type { Board, FriendEntry, FriendsService, PasteAnswer } from './service'
 import { useBoard, useNow, useService } from './useFriends'
@@ -69,7 +71,6 @@ type Entry = BoardEntry & {
   buddyStreak?: number
 }
 
-const LAST_FOLDER_KEY = 'yaseendocs.friends.lastFolder'
 const BUDDY_REVEAL_KEY = 'yaseendocs.friends.buddyReveal'
 
 export default function FriendsTab() {
@@ -402,7 +403,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
     if (paired !== '') setSaid(`${paired} added you back. You are friends now.`)
   }, [paired])
 
-  const nobody = board.friends.length === 0 && board.groups.length === 0 && board.shared.length === 0 && totalSharedCount === 0
+  const nobody = board.friends.length === 0 && board.groups.length === 0 && totalSharedCount === 0
 
   const ask = (question: string, yes: string, run: () => Promise<unknown>) => setAsking({ question, yes, run })
   const doAsk = async () => {
@@ -774,25 +775,6 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
               </>
             )
           })()}
-          {!showGroup && !showShared && board.shared.length > 0 && (
-            <>
-              <h2 className="section">Links you shared</h2>
-              <ul className="rows">
-                {board.shared.map((s) => (
-                  <li key={s.mine} className="row">
-                    <span className="row__main">Shared {updatedLabel(Date.parse(s.at), now)}, not used yet</span>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => ask('Cancel this link? A friend who has it cannot add you with it.', 'Cancel link', () => service.remove(s.mine, 'shared'))}
-                    >
-                      Cancel link
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
           {(manageGroup || groupInviteOpen) && showGroup && group !== undefined && service.groups !== null && (
             <ManageGroupSheet
               view={group}
@@ -1499,41 +1481,77 @@ function GroupStreakScreen({
     const friendMatch = board.friends.find((f) => f.theirs === m.pointer)
     const avatar = m.me ? board.me.avatar : friendMatch?.avatar ?? d1Member?.avatarUrl ?? null
     const name = m.me ? board.me.name || 'You' : gistText(m.name) || gistText(m.login) || 'Member'
-    return { pointer: m.pointer, name, avatar, stats }
+    const sinceDay = sinceDayKey(d1Member?.since)
+    return { pointer: m.pointer, name, avatar, stats, sinceDay }
   })
 
-  const days30 = Array.from({ length: 30 }, (_, idx) => {
-    const day = addDays(todayStr, idx - 29)
+  const minStripDay = addDays(todayStr, -29)
+  const candidateStarts = [
+    sinceDayKey(d1Group?.createdAt),
+    ...members.map((m) => m.sinceDay),
+  ].filter((d): d is string => d !== null)
+  const earliestSince = candidateStarts.length > 0 ? candidateStarts.reduce((a, b) => (a < b ? a : b)) : null
+  const stripStart =
+    earliestSince !== null && earliestSince > minStripDay
+      ? earliestSince > todayStr
+        ? todayStr
+        : earliestSince
+      : minStripDay
+
+  const stripDays: string[] = []
+  for (let d = stripStart; d <= todayStr && stripDays.length < 30; d = addDays(d, 1)) {
+    stripDays.push(d)
+  }
+  if (stripDays.length === 0) stripDays.push(todayStr)
+
+  const days30 = stripDays.map((day) => {
+    const isToday = day === todayStr
     const statuses = members
-      .map((m) => ({
-        ...m,
-        done: m.stats?.days.some((d) => d.day === day && d.done === true) === true,
-      }))
+      .map((m) => {
+        const isPreMembership = m.sinceDay !== null && day < m.sinceDay
+        const entry = m.stats?.days.find((d) => d.day === day)
+        const hasDayEntry = entry !== undefined
+        const done = !isPreMembership && entry?.done === true
+        const missed = !done && !isToday && !isPreMembership && hasDayEntry
+        return {
+          ...m,
+          isPreMembership,
+          hasDayEntry,
+          done,
+          missed,
+        }
+      })
       .sort((a, b) => (a.done ? 0 : 1) - (b.done ? 0 : 1))
+    const eligible = statuses.filter((s) => !s.isPreMembership)
     return {
       day,
-      isToday: day === todayStr,
+      isToday,
       weekday: weekdayShort(day),
       shortDate: shortMonthDay(day),
       statuses,
-      allDone: statuses.length > 0 && statuses.every((s) => s.done),
+      allDone: eligible.length > 0 && eligible.every((s) => s.done),
     }
   })
 
   const memberSummaries = members
-    .map((m) => ({
-      ...m,
-      finishedCount: days30.filter((d) => d.statuses.some((s) => s.pointer === m.pointer && s.done)).length,
-    }))
+    .map((m) => {
+      const finishedCount = days30.filter((d) => d.statuses.some((s) => s.pointer === m.pointer && s.done)).length
+      const eligibleDays = Math.max(
+        1,
+        days30.filter((d) => d.statuses.some((s) => s.pointer === m.pointer && !s.isPreMembership)).length,
+      )
+      return {
+        ...m,
+        finishedCount,
+        eligibleDays,
+      }
+    })
     .sort((a, b) => b.finishedCount - a.finishedCount || a.name.localeCompare(b.name))
 
-  const allDoneToday = days30[days30.length - 1]?.allDone === true
-  const brokenOffset = view.streak > 0 ? (allDoneToday ? view.streak : view.streak + 1) : -1
-  const brokenDay =
-    brokenOffset >= 0
-      ? days30[days30.length - 1 - brokenOffset] ?? null
-      : [...days30].filter((d) => !d.isToday).reverse().find((d) => !d.allDone) ?? null
-  const missedNames = brokenDay ? brokenDay.statuses.filter((s) => !s.done).map((s) => s.name) : []
+  const brokenDay = [...days30].filter((d) => !d.isToday).reverse().find((d) => !d.allDone) ?? null
+  const missedNames = brokenDay
+    ? brokenDay.statuses.filter((s) => !s.isPreMembership && s.hasDayEntry && !s.done).map((s) => s.name)
+    : []
 
   const heroSubtitle =
     view.streak === 1
@@ -1559,7 +1577,7 @@ function GroupStreakScreen({
           </p>
         )}
       </div>
-      <ul ref={stripRef} className="fr-strip30" aria-label={`Last 30 days for ${groupName}`}>
+      <ul ref={stripRef} className="fr-strip30" aria-label={`Last ${days30.length} ${days30.length === 1 ? 'day' : 'days'} for ${groupName}`}>
         {days30.map((d) => (
           <li
             key={d.day}
@@ -1578,14 +1596,24 @@ function GroupStreakScreen({
                   className={
                     s.done
                       ? 'fr-ring-av fr-ring-av--done'
-                      : d.isToday
-                      ? 'fr-ring-av'
-                      : 'fr-ring-av fr-ring-av--missed'
+                      : s.missed
+                      ? 'fr-ring-av fr-ring-av--missed'
+                      : 'fr-ring-av'
                   }
-                  title={s.done ? `${s.name}: finished` : d.isToday ? `${s.name}: in progress today` : `${s.name}: missed`}
+                  title={
+                    s.done
+                      ? `${s.name}: finished`
+                      : s.isPreMembership
+                      ? `${s.name}: not in group yet`
+                      : d.isToday
+                      ? `${s.name}: in progress today`
+                      : s.missed
+                      ? `${s.name}: missed`
+                      : `${s.name}: no data`
+                  }
                 >
                   {s.avatar ? <img src={s.avatar} alt="" referrerPolicy="no-referrer" /> : initialOf(s.name)}
-                  {(s.done || !d.isToday) && (
+                  {(s.done || s.missed) && (
                     <span
                       className={s.done ? 'fr-ring-av__badge fr-ring-av__badge--done' : 'fr-ring-av__badge fr-ring-av__badge--missed'}
                       aria-hidden="true"
@@ -1599,7 +1627,7 @@ function GroupStreakScreen({
           </li>
         ))}
       </ul>
-      <ul className="rows" style={{ marginTop: 14 }} aria-label="Member 30-day summary">
+      <ul className="rows" style={{ marginTop: 14 }} aria-label="Member streak summary">
         {memberSummaries.map((m) => (
           <li key={m.pointer} className="fr-gs-row">
             <span className="fr-legend-who">
@@ -1608,7 +1636,9 @@ function GroupStreakScreen({
               </span>
               <span className="fr-name">{m.name}</span>
             </span>
-            <span className="fr-sub">{m.finishedCount} of 30 days finished</span>
+            <span className="fr-sub">
+              {m.finishedCount} of {m.eligibleDays} {m.eligibleDays === 1 ? 'day' : 'days'} finished
+            </span>
           </li>
         ))}
       </ul>
@@ -2052,138 +2082,5 @@ function UnifiedSharedView({
         </>
       )}
     </section>
-  )
-}
-
-/**
- * Accept sheet (D8): pick any existing folder in the vault (remembers last pick) OR 1-click "Put in Shared Cards",
- * plus optional "Move to Up next", committing via `githubRemote.commit()`.
- */
-function AcceptCardSheet({
-  target,
-  service,
-  onClose,
-  onDone,
-}: {
-  target: { kind: 'card'; card: SharedCardItem } | { kind: 'folder'; folder: SharedFolderItem }
-  service: FriendsService
-  onClose: () => void
-  onDone: (message: string) => void
-}) {
-  const app = useApp()
-  const [folders, setFolders] = useState<string[]>([])
-  const [dest, setDest] = useState<'shared' | 'pick'>('shared')
-  const [picked, setPicked] = useState<string>('')
-  const [upNext, setUpNext] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let live = true
-    void Promise.all([
-      service.vaultFolders?.() ?? Promise.resolve([]),
-      app.services.store.getState<string>(PHONE, LAST_FOLDER_KEY).catch(() => undefined),
-    ]).then(([list, last]) => {
-      if (!live) return
-      setFolders(list)
-      if (typeof last === 'string' && last !== 'Shared Cards') setPicked(last)
-    })
-    return () => {
-      live = false
-    }
-  }, [service, app.services.store])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busy) onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, busy])
-
-  const commit = async () => {
-    if (busy) return
-    const dir = dest === 'shared' ? 'Shared Cards' : picked
-    setBusy(true)
-    setError(null)
-    try {
-      await app.services.store.setState(PHONE, LAST_FOLDER_KEY, dir).catch(() => undefined)
-      if (target.kind === 'card') {
-        const res = await service.acceptCardToVault?.({ card: target.card, folder: dir, upNext })
-        if (!res?.ok) return setError(res?.error ?? 'Could not add card to vault.')
-        onDone(`Added "${gistText(target.card.title, 60)}" to ${dir || 'Vault root'}.`)
-      } else {
-        const res = await service.importFolderToVault?.({ folder: target.folder, targetDir: dir, upNext })
-        if (!res?.ok) return setError(res?.error ?? 'Could not import folder.')
-        onDone(`Imported ${res.paths.length} ${res.paths.length === 1 ? 'card' : 'cards'} into ${dir ? `${dir}/${target.folder.name}` : target.folder.name}.`)
-      }
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const cardCount = target.kind === 'folder' ? target.folder.cards.filter((c) => c.status !== 'accepted').length || target.folder.cards.length : 1
-  const heading = target.kind === 'card' ? 'Where should we save this card?' : `Where should we save these ${cardCount} cards?`
-  const subtitle = target.kind === 'card' ? gistText(target.card.title, 80) : `📁 ${gistText(target.folder.name, 60)}`
-  const primaryLabel =
-    busy
-      ? 'Saving…'
-      : dest === 'shared'
-      ? 'Add to Shared Cards'
-      : `Add to ${picked || 'Vault root'}`
-
-  return (
-    <div className="fr-modal-backdrop" onClick={(e) => e.target === e.currentTarget && !busy && onClose()}>
-      <div className="fr-modal-card" role="dialog" aria-modal="true" aria-label={heading}>
-        <h2 className="fr-modal-card__title">{heading}</h2>
-        <p className="fr-modal-card__hint">{subtitle}</p>
-        <div className="fr-dest-list" role="radiogroup" aria-label="Destination folder">
-          <label className={dest === 'shared' ? 'fr-dest-opt fr-dest-opt--active' : 'fr-dest-opt'}>
-            <input type="radio" className="check" name="accept-dest" checked={dest === 'shared'} onChange={() => setDest('shared')} disabled={busy} />
-            <span>
-              <span className="fr-dest-opt__title">Shared Cards folder</span>
-              <span className="fr-dest-opt__sub">Quick save to Shared Cards</span>
-            </span>
-          </label>
-          <label className={dest === 'pick' ? 'fr-dest-opt fr-dest-opt--active' : 'fr-dest-opt'}>
-            <input type="radio" className="check" name="accept-dest" checked={dest === 'pick'} onChange={() => setDest('pick')} disabled={busy} />
-            <span>
-              <span className="fr-dest-opt__title">Pick a vault folder</span>
-              <span className="fr-dest-opt__sub">Save into any folder in your vault</span>
-            </span>
-          </label>
-        </div>
-        {dest === 'pick' && (
-          <label className="field" style={{ marginBottom: 10 }}>
-            <span className="field__label">Vault folder</span>
-            <select aria-label="Vault folder" className="fr-modal-card__input" style={{ marginBottom: 0 }} value={picked} onChange={(e) => setPicked(e.target.value)} disabled={busy}>
-              <option value="">Vault root</option>
-              {folders.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <label className="row" style={{ minHeight: 36, marginBottom: 12 }}>
-          <input type="checkbox" className="check" checked={upNext} onChange={(e) => setUpNext(e.target.checked)} disabled={busy} />
-          <span className="row__main">Move to Up next</span>
-        </label>
-        {error !== null && (
-          <p className="fr-line" role="alert">
-            {error}
-          </p>
-        )}
-        <div className="fr-modal-card__actions">
-          <button type="button" className="btn" onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
-          <button type="button" className="btn btn--primary" disabled={busy} aria-busy={busy} onClick={() => void commit()}>
-            {primaryLabel}
-          </button>
-        </div>
-      </div>
-    </div>
   )
 }

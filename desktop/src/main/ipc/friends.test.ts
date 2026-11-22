@@ -31,6 +31,11 @@ function makeMockService(): FriendsService {
     deleteSharedCard: vi.fn(async () => ({ ok: true as const })),
     importCards: vi.fn(async () => ({ ok: true as const, paths: ['/v/card.md'] })),
     deleteMe: vi.fn(async () => ({ ok: true as const })),
+    getDeckSettings: vi.fn(async () => ({ ok: true as const, settings: { mode: 'none' as const, vaults: [], allowedFriendIds: [] } })),
+    saveDeckSettings: vi.fn(async (input) => ({ ok: true as const, settings: input })),
+    browseDeckTree: vi.fn(async (_ownerId, repo) => ({ ok: true as const, tree: { repo, name: 'Med Notes', files: [{ path: 'README.md', title: 'README', kind: 'md' as const }] } })),
+    browseDeckFile: vi.fn(async (_ownerId, _repo, path) => ({ ok: true as const, file: { path, title: 'README', markdown: '# Hi', assetPaths: [] } })),
+    browseDeckAsset: vi.fn(async () => ({ ok: true as const, mime: 'image/png', dataBase64: 'AAAA' })),
   }
 }
 
@@ -44,6 +49,7 @@ describe('registerFriendsIpc (YAZ-6219)', () => {
     registerFriendsIpc({
       look: async () => view,
       setVaultIncluded: vi.fn(async (vaultPath, included) => ({ ok: true as const, knownVaults: [{ path: vaultPath, name: 'Demo', included }] })),
+      listInstallableRepos: vi.fn(async () => ({ ok: true as const, repos: [{ repo: 'yaseen/med-notes', installationId: 42, name: 'med-notes' }] })),
       service,
     })
   })
@@ -83,14 +89,67 @@ describe('registerFriendsIpc (YAZ-6219)', () => {
       ok: true,
       value: { ok: true, knownVaults: [{ path: '/v/scratch', name: 'Demo', included: false }] },
     })
+
+    expect(await registered(CONTRACT.friends.getDeckSettings)(ev)).toEqual({
+      ok: true,
+      value: { ok: true, settings: { mode: 'none', vaults: [], allowedFriendIds: [] } },
+    })
+    expect(
+      await registered(CONTRACT.friends.saveDeckSettings)(ev, {
+        mode: 'selected',
+        vaults: [{ repo: 'Yaseen/Med-Notes', installationId: 42, name: 'Med Notes' }],
+        allowedFriendIds: [2],
+      }),
+    ).toEqual({
+      ok: true,
+      value: {
+        ok: true,
+        settings: {
+          mode: 'selected',
+          vaults: [{ repo: 'yaseen/med-notes', installationId: 42, name: 'Med Notes' }],
+          allowedFriendIds: [2],
+        },
+      },
+    })
+    expect(await registered(CONTRACT.friends.listInstallableRepos)(ev)).toEqual({
+      ok: true,
+      value: { ok: true, repos: [{ repo: 'yaseen/med-notes', installationId: 42, name: 'med-notes' }] },
+    })
+    expect(await registered(CONTRACT.friends.browseDeckTree)(ev, 2, 'Maya/Med-Notes')).toMatchObject({
+      ok: true,
+      value: { ok: true, tree: { repo: 'maya/med-notes' } },
+    })
+    expect(await registered(CONTRACT.friends.browseDeckFile)(ev, 2, 'Maya/Med-Notes', 'README.md')).toMatchObject({
+      ok: true,
+      value: { ok: true, file: { path: 'README.md' } },
+    })
+    expect(await registered(CONTRACT.friends.browseDeckAsset)(ev, 2, 'Maya/Med-Notes', 'img.png')).toEqual({
+      ok: true,
+      value: { ok: true, mime: 'image/png', dataBase64: 'AAAA' },
+    })
   })
 
   it('rejects malformed arguments cleanly without invoking the service', async () => {
     expect(await registered(CONTRACT.friends.acceptInvite)(ev, '')).toEqual({ ok: true, value: { ok: false, error: 'Invalid invite code' } })
     expect(await registered(CONTRACT.friends.removeFriend)(ev, -1)).toEqual({ ok: true, value: { ok: false, error: 'Invalid userId' } })
     expect(await registered(CONTRACT.friends.setCardState)(ev, 'c1', 'bogus')).toEqual({ ok: true, value: { ok: false, error: 'Invalid cardId or status' } })
+    expect(await registered(CONTRACT.friends.saveDeckSettings)(ev, { mode: 'bogus', vaults: [], allowedFriendIds: [] })).toEqual({
+      ok: true,
+      value: { ok: false, error: 'Invalid deck share mode' },
+    })
+    expect(await registered(CONTRACT.friends.browseDeckTree)(ev, 0, 'maya/med')).toEqual({
+      ok: true,
+      value: { ok: false, error: 'Invalid ownerId or repo' },
+    })
+    expect(await registered(CONTRACT.friends.browseDeckFile)(ev, 2, 'maya/med', '')).toEqual({
+      ok: true,
+      value: { ok: false, error: 'Invalid ownerId, repo, or path' },
+    })
     expect(service.acceptInvite).not.toHaveBeenCalled()
     expect(service.removeFriend).not.toHaveBeenCalled()
     expect(service.setCardState).not.toHaveBeenCalled()
+    expect(service.saveDeckSettings).not.toHaveBeenCalled()
+    expect(service.browseDeckTree).not.toHaveBeenCalled()
+    expect(service.browseDeckFile).not.toHaveBeenCalled()
   })
 })

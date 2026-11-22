@@ -140,6 +140,45 @@ describe('createFriendsService (YAZ-6219)', () => {
       expect(b2.board.groups[0].members).toHaveLength(2)
       expect(b2.board.groups[0].sharedFolders[0].cards.every((c) => c.status === 'accepted')).toBe(true)
       expect(b2.board.groups[0].sharedCards.find((c) => c.id === 'sc-dismissed-1')?.status).toBe('pending')
+
+      // Demo deck browsing (Maya has canBrowseDeck: true + realistic multi-folder tree)
+      const maya = b2.board.friends.find((f) => f.id === 2)
+      expect(maya?.canBrowseDeck).toBe(true)
+      expect(maya?.browsableVaults).toEqual([{ repo: 'maya/med-notes', name: 'Med Notes' }])
+
+      const tree = await svc.browseDeckTree(2, 'maya/med-notes')
+      expect(tree.ok).toBe(true)
+      if (!tree.ok) throw new Error('expected tree')
+      expect(tree.tree.files.map((f) => f.path)).toEqual([
+        'Biochem/ATP Synthase.md',
+        'Biochem/PFK-1 Regulation.md',
+        'Biochem/Henderson-Hasselbalch.md',
+        'Spanish/Subjunctive Triggers.md',
+        'README.md',
+      ])
+
+      const file = await svc.browseDeckFile(2, 'maya/med-notes', 'Biochem/ATP Synthase.md')
+      expect(file.ok).toBe(true)
+      if (!file.ok) throw new Error('expected file')
+      expect(file.file.title).toBe('ATP Synthase')
+      expect(file.file.markdown).toContain('ATP Synthase')
+
+      const savedDeck = await svc.saveDeckSettings({
+        mode: 'selected',
+        vaults: [{ repo: 'yaseen/med-notes', installationId: 1001, name: 'Med Notes' }],
+        allowedFriendIds: [2],
+      })
+      expect(savedDeck.ok).toBe(true)
+      const loadedDeck = await svc.getDeckSettings()
+      expect(loadedDeck).toEqual({
+        ok: true,
+        settings: {
+          mode: 'selected',
+          vaults: [{ repo: 'yaseen/med-notes', installationId: 1001, name: 'Med Notes' }],
+          allowedFriendIds: [2],
+        },
+      })
+
       expect(fetchFn).not.toHaveBeenCalled()
     } finally {
       vi.unstubAllEnvs()

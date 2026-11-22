@@ -35,10 +35,60 @@ export function localDayKey(nowMs: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
+/** Converts an ISO timestamp (or YYYY-MM-DD day key) to a local YYYY-MM-DD day key. */
+export function sinceDayKey(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const trimmed = iso.trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
+  const ms = Date.parse(trimmed)
+  if (Number.isNaN(ms)) return null
+  return localDayKey(ms)
+}
+
+function diffDays(fromDay: string, toDay: string): number {
+  const [fy, fm, fd] = fromDay.split('-').map(Number)
+  const [ty, tm, td] = toDay.split('-').map(Number)
+  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000)
+}
+
 function addDays(day: string, delta: number): string {
   const [y, m, d] = day.split('-').map(Number)
   const dt = new Date(y, m - 1, d + delta)
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
+}
+
+/**
+ * 7-day rolling daily average: divides by actual calendar span `Math.min(7, diffDays(oldestDay, endDay) + 1)`
+ * and excludes an unstarted `today` (`cards === 0 && !done`) when prior days exist so morning zeros don't drag down the average.
+ */
+export function average7Day(stats: FriendStats | null, nowMs: number = Date.now()): { cards: number; seconds: number } {
+  if (!stats || stats.days.length === 0) return { cards: 0, seconds: 0 }
+  const mine = localDayKey(nowMs)
+  const today = stats.days[0].day > mine ? stats.days[0].day : mine
+  let oldestDay = stats.days[0].day
+  let hasPriorDays = false
+  let todayRow: FriendDay | undefined
+  for (const d of stats.days) {
+    if (d.day < oldestDay) oldestDay = d.day
+    if (d.day < today) hasPriorDays = true
+    if (d.day === today) todayRow = d
+  }
+  const excludeToday = hasPriorDays && (!todayRow || (todayRow.cards === 0 && !todayRow.done))
+  const endDay = excludeToday ? addDays(today, -1) : today
+  const span = Math.min(7, Math.max(1, diffDays(oldestDay, endDay) + 1))
+  const startDay = addDays(endDay, -(span - 1))
+  let cards = 0
+  let seconds = 0
+  for (const d of stats.days) {
+    if (d.day >= startDay && d.day <= endDay) {
+      cards += d.cards
+      seconds += d.seconds
+    }
+  }
+  return {
+    cards: Math.round(cards / span),
+    seconds: Math.round(seconds / span),
+  }
 }
 
 function mondayOf(day: string): string {

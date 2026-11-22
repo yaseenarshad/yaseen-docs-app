@@ -45,7 +45,9 @@
  *  - ON DISK: the tab reads the file again on each new index version, as the card window does. A file that lost
  *    `kind: card` goes back to the page view (`onPage`, with the bytes just read); a second card is the notice above.
  */
-import { useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
+import { FRIENDS_ENABLED } from '@shared/features'
 import { cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { fileKind } from '@shared/fileKind'
@@ -98,6 +100,8 @@ import { ZOOM_EVENT } from './zoomRequest'
 import { runConvert } from './useCardConvert'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+
+const ShareCardModal = lazy(() => import('../friends/ShareCardModal').then((m) => ({ default: m.ShareCardModal })))
 import type { ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import './cardFileView.css'
 import { useUnit } from '../vault/unitWord'
@@ -426,10 +430,24 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       else turning.current = false
     })
   }
+  const [shareCard, setShareCard] = useState<{ title: string; markdown: string } | null>(null)
   // The one card menu (YAZ-5697 round 2): a card file's rows of it; Turn into a page asks first (it rewrites and renames
   // the file, and no Undo takes it back).
   const sections = (): MenuSection[] =>
-    cardMenuSections({ marks: cardMarksOf(card), path, upNext: reviewOn, copyId: id, copyLink: true, reset: true, unit, change: (c) => void writes.changeLine(c), onNotice, preview: card === null ? undefined : preview, toPage: converts ? toPage : undefined })
+    cardMenuSections({
+      marks: cardMarksOf(card),
+      path,
+      upNext: reviewOn,
+      copyId: id,
+      copyLink: true,
+      reset: true,
+      unit,
+      change: (c) => void writes.changeLine(c),
+      onNotice,
+      preview: card === null ? undefined : preview,
+      toPage: converts ? toPage : undefined,
+      shareFriend: FRIENDS_ENABLED ? () => setShareCard({ title: card?.title || path.split('/').pop()?.replace(/\.md$/i, '') || 'Untitled card', markdown: cardText }) : undefined,
+    })
   const fixes =
     !converts ? null : shape.problem === 'many' ? (
       <button type="button" onClick={() => convert('split the card file', (a) => a.splitIntoCardFiles(path))}>
@@ -602,6 +620,17 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       </div>
       {previewScope !== undefined && <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} />}
       {openImage !== null && <ImageModal key={openImage.images[openImage.index].src} images={openImage.images} index={openImage.index} onClose={() => setOpenImage(null)} />}
+      {shareCard !== null &&
+        createPortal(
+          <Suspense fallback={null}>
+            <ShareCardModal
+              card={shareCard}
+              onShared={(summary) => onNotice?.(summary)}
+              onClose={() => setShareCard(null)}
+            />
+          </Suspense>,
+          document.body,
+        )}
     </>
   )
 }

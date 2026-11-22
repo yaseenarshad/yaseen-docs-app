@@ -1,19 +1,23 @@
+import { generateKeyPairSync } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
 import type { FriendStats } from '../../shared/friendStatsFormat'
 import type { D1Database, D1PreparedStatement, D1Result } from './d1Types'
+import { mergeStatsNeverLower } from './friends'
 import { handle, type Env } from './index'
 
 const MIGRATION_SQL = readFileSync(join(__dirname, 'migrations/0001_friends.sql'), 'utf8')
 const MIGRATION_0002_SQL = readFileSync(join(__dirname, 'migrations/0002_drop_marks.sql'), 'utf8')
+const MIGRATION_0003_SQL = readFileSync(join(__dirname, 'migrations/0003_shared_decks.sql'), 'utf8')
 
-/** Real SQLite-backed D1 adapter executing the exact production migrations (0001 + 0002). */
+/** Real SQLite-backed D1 adapter executing the exact production migrations (0001 + 0002 + 0003). */
 function makeSqliteD1(): D1Database {
   const sqlite = new DatabaseSync(':memory:')
   sqlite.exec(MIGRATION_SQL)
   sqlite.exec(MIGRATION_0002_SQL)
+  sqlite.exec(MIGRATION_0003_SQL)
 
   const makeStmt = (sql: string, params: unknown[] = []): D1PreparedStatement => {
     const cleanParams = () => params.map((p) => (p === undefined ? null : p)) as (string | number | null)[]
@@ -268,5 +272,242 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
     expect(delMe.status).toBe(200)
     const afterDel = await handle(req('/api/friends/board', { method: 'GET', headers: authB }), env, ghFetch)
     expect(afterDel.status).toBe(401)
+  })
+
+  it('fixes mergeStatsNeverLower (done protection + past days merge), supports force recount, and strips @branch in prefs', async () => {
+    const db = makeSqliteD1()
+    const env: Env = { FRIENDS_DB: db, FRIENDS_TOKEN_SECRET: SECRET }
+    const ghFetch = fakeGithubFetch({ gh_yaseen: { id: 101, login: 'yaseen', name: 'Yaseen' } })
+    const { token } = (await (await handle(req('/api/friends/session', { method: 'POST', body: JSON.stringify({ githubToken: 'gh_yaseen' }) }), env, ghFetch)).json()) as { token: string }
+    const auth = { authorization: `Bearer ${token}` }
+
+    // Prefs strips @branch suffix
+    const prefs = await handle(
+      req('/api/friends/prefs', { method: 'PUT', headers: auth, body: JSON.stringify({ vaults: ['Yaseen/Study@main', 'Yaseen/Study', 'Yaseen/Med@dev'] }) }),
+      env,
+      ghFetch,
+    )
+    expect(prefs.status).toBe(200)
+    expect(((await prefs.json()) as { vaults: string[] }).vaults).toEqual(['yaseen/study', 'yaseen/med'])
+
+    // Pure mergeStatsNeverLower: done:false NEVER overwrites done:true even with equal/higher counts, and past days merge by Math.max / ||
+    const prev: FriendStats = {
+      ...sampleStats('2026-11-21', 20, 600, 5, true),
+      days: [
+        { day: '2026-11-21', cards: 20, seconds: 600, remembered: 18, forgot: 2, newCards: 2, done: true },
+        { day: '2026-11-20', cards: 45, seconds: 1200, remembered: 40, forgot: 5, newCards: 3, done: true },
+        { day: '2026-11-19', cards: 30, seconds: 900, remembered: 28, forgot: 2, newCards: 1, done: true },
+      ],
+    }
+    const partialDevice: FriendStats = {
+      ...sampleStats('2026-11-21', 25, 700, 4, false),
+      days: [
+        { day: '2026-11-21', cards: 25, seconds: 700, remembered: 24, forgot: 1, newCards: 2, done: false },
+        { day: '2026-11-20', cards: 10, seconds: 300, remembered: 10, forgot: 0, newCards: 0, done: false },
+      ],
+    }
+    const merged = mergeStatsNeverLower(prev, partialDevice)
+    expect(merged.days[0]).toMatchObject({ day: '2026-11-21', cards: 25, seconds: 700, done: true })
+    expect(merged.days[1]).toMatchObject({ day: '2026-11-20', cards: 45, seconds: 1200, done: true })
+    expect(merged.days[2]).toMatchObject({ day: '2026-11-19', cards: 30, seconds: 900, done: true })
+
+    // PUT /api/friends/stats normal push then force: true recount lowers counts & overwrites daily_activity
+    await handle(req('/api/friends/stats', { method: 'PUT', headers: auth, body: JSON.stringify({ stats: prev }) }), env, ghFetch)
+    const forced = sampleStats('2026-11-21', 5, 120, 2, false)
+    const forceRes = await handle(req('/api/friends/stats', { method: 'PUT', headers: auth, body: JSON.stringify({ stats: forced, force: true }) }), env, ghFetch)
+    expect(forceRes.status).toBe(200)
+    const board = (await (await handle(req('/api/friends/board', { method: 'GET', headers: auth }), env, ghFetch)).json()) as { me: { stats: FriendStats } }
+    expect(board.me.stats.days[0]).toMatchObject({ day: '2026-11-21', cards: 5, seconds: 120, done: false })
+    expect(board.me.stats.totals.streak).toBe(2)
+    const daRow = await db.prepare('SELECT cards, seconds, done FROM daily_activity WHERE user_id = ? AND day = ?').bind(101, '2026-11-21').first<{ cards: number; seconds: number; done: number }>()
+    expect(daRow).toEqual({ cards: 5, seconds: 120, done: 0 })
+  })
+
+  it('supports deck sharing settings, board canBrowseDeck/createdAt, read-only GitHub App proxy (tree/file/asset), and cleanup on deleteMe', async () => {
+    const db = makeSqliteD1()
+    const pair = generateKeyPairSync('rsa', { modulusLength: 2048 })
+    const pkcs1Pem = pair.privateKey.export({ type: 'pkcs1', format: 'pem' }) as string
+    const env: Env = {
+      FRIENDS_DB: db,
+      FRIENDS_TOKEN_SECRET: SECRET,
+      GITHUB_APP_ID: '555000',
+      GITHUB_APP_PRIVATE_KEY: pkcs1Pem,
+    }
+
+    const profiles: Record<string, { id: number; login: string; name: string }> = {
+      gh_a: { id: 1, login: 'alice', name: 'Alice' },
+      gh_b: { id: 2, login: 'bob', name: 'Bob' },
+      gh_c: { id: 3, login: 'charlie', name: 'Charlie' },
+    }
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    let mintedCount = 0
+
+    const mockFetch = async (url: string, init: RequestInit): Promise<Response> => {
+      if (url === 'https://api.github.com/user') {
+        const tok = ((init.headers as Record<string, string>)?.authorization ?? '').replace(/^Bearer\s+/i, '')
+        const p = profiles[tok]
+        return p ? new Response(JSON.stringify(p), { status: 200 }) : new Response(null, { status: 401 })
+      }
+      if (url === 'https://api.github.com/app/installations/9001/access_tokens') {
+        mintedCount++
+        expect(JSON.parse(String(init.body))).toEqual({ repositories: ['med-notes'], permissions: { contents: 'read' } })
+        return new Response(JSON.stringify({ token: 'ghs_inst_readonly', expires_at: '2026-11-22T06:00:00Z' }), { status: 201 })
+      }
+      if (url === 'https://api.github.com/repos/alice/med-notes/git/trees/HEAD?recursive=1') {
+        expect((init.headers as Record<string, string>)?.authorization).toBe('Bearer ghs_inst_readonly')
+        if ((init.headers as Record<string, string>)?.['if-none-match'] === '"tree-etag-1"') {
+          return new Response(null, { status: 304, headers: { etag: '"tree-etag-1"' } })
+        }
+        return new Response(
+          JSON.stringify({
+            tree: [
+              { path: '.yaseendocs/settings.json', type: 'blob' },
+              { path: '.git/HEAD', type: 'blob' },
+              { path: 'Biochem', type: 'tree' },
+              { path: 'Biochem/ATP Synthase.md', type: 'blob' },
+              { path: 'Biochem/img/atp.png', type: 'blob' },
+              { path: 'README.md', type: 'blob' },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json', etag: '"tree-etag-1"' } },
+        )
+      }
+      if (url === 'https://api.github.com/repos/alice/med-notes/contents/Biochem/ATP%20Synthase.md') {
+        const md = [
+          '---',
+          'kind: card',
+          '---',
+          '```card',
+          'What powers ATP synthase?',
+          '---',
+          'Proton motive force ![diagram](./img/atp.png)',
+          '```',
+          '<!-- card: BIO-7, "ATP Synthase", 2026-11-20T12:00:00.000Z good 10s -->',
+        ].join('\n')
+        return new Response(md, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } })
+      }
+      if (url === 'https://api.github.com/repos/alice/med-notes/contents/Biochem/img/atp.png') {
+        return new Response(pngBytes, { status: 200, headers: { 'content-type': 'application/octet-stream' } })
+      }
+      return new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 })
+    }
+
+    const signIn = async (tok: string) =>
+      ((await (await handle(req('/api/friends/session', { method: 'POST', body: JSON.stringify({ githubToken: tok }) }), env, mockFetch)).json()) as { token: string }).token
+
+    const authA = { authorization: `Bearer ${await signIn('gh_a')}` }
+    const authB = { authorization: `Bearer ${await signIn('gh_b')}` }
+    const authC = { authorization: `Bearer ${await signIn('gh_c')}` }
+
+    // Friend Alice <-> Bob and Alice <-> Charlie
+    const inv1 = (await (await handle(req('/api/friends/invites', { method: 'POST', headers: authA }), env, mockFetch)).json()) as { code: string }
+    await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authB, body: JSON.stringify({ code: inv1.code }) }), env, mockFetch)
+    const inv2 = (await (await handle(req('/api/friends/invites', { method: 'POST', headers: authA }), env, mockFetch)).json()) as { code: string }
+    await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authC, body: JSON.stringify({ code: inv2.code }) }), env, mockFetch)
+
+    // Group createdAt is included on board
+    await handle(req('/api/friends/groups', { method: 'POST', headers: authA, body: JSON.stringify({ name: 'Bio Squad' }) }), env, mockFetch)
+    const boardA0 = (await (await handle(req('/api/friends/board', { method: 'GET', headers: authA }), env, mockFetch)).json()) as {
+      groups: { createdAt: string }[]
+    }
+    expect(boardA0.groups[0].createdAt).toBeTruthy()
+
+    // Default deck settings: mode = 'none'
+    const s0 = await handle(req('/api/friends/decks/settings', { method: 'GET', headers: authA }), env, mockFetch)
+    expect(s0.status).toBe(200)
+    expect(await s0.json()).toEqual({ mode: 'none', vaults: [], allowedFriendIds: [] })
+
+    // Bob cannot browse when Alice is 'none'
+    const forbiddenTree = await handle(req('/api/friends/decks/1/tree?repo=alice/med-notes', { method: 'GET', headers: authB }), env, mockFetch)
+    expect(forbiddenTree.status).toBe(403)
+
+    // Alice enables mode = 'selected' for Bob (id 2) only, with @main stripped from repo slug
+    const putSettings = await handle(
+      req('/api/friends/decks/settings', {
+        method: 'PUT',
+        headers: authA,
+        body: JSON.stringify({
+          mode: 'selected',
+          vaults: [{ repo: 'Alice/Med-Notes@main', installationId: 9001, name: 'Med Notes' }],
+          allowedFriendIds: [2],
+        }),
+      }),
+      env,
+      mockFetch,
+    )
+    expect(putSettings.status).toBe(200)
+    expect(await putSettings.json()).toEqual({
+      ok: true,
+      mode: 'selected',
+      vaults: [{ repo: 'alice/med-notes', installationId: 9001, name: 'Med Notes' }],
+      allowedFriendIds: [2],
+    })
+
+    // Board: Bob sees canBrowseDeck: true + browsableVaults; Charlie sees canBrowseDeck: false
+    const boardB = (await (await handle(req('/api/friends/board', { method: 'GET', headers: authB }), env, mockFetch)).json()) as {
+      friends: { id: number; canBrowseDeck: boolean; browsableVaults: { repo: string; name: string }[] }[]
+    }
+    expect(boardB.friends[0]).toMatchObject({ id: 1, canBrowseDeck: true, browsableVaults: [{ repo: 'alice/med-notes', name: 'Med Notes' }] })
+    const boardC = (await (await handle(req('/api/friends/board', { method: 'GET', headers: authC }), env, mockFetch)).json()) as {
+      friends: { id: number; canBrowseDeck: boolean; browsableVaults: { repo: string; name: string }[] }[]
+    }
+    expect(boardC.friends[0]).toMatchObject({ id: 1, canBrowseDeck: false, browsableVaults: [] })
+
+    // Charlie is blocked from tree (403)
+    const charlieTree = await handle(req('/api/friends/decks/1/tree?repo=alice/med-notes', { method: 'GET', headers: authC }), env, mockFetch)
+    expect(charlieTree.status).toBe(403)
+
+    // Bob fetches tree -> filters out .yaseendocs/ and .git/, returns ETag, supports 304
+    const bobTree = await handle(req('/api/friends/decks/1/tree?repo=alice/med-notes', { method: 'GET', headers: authB }), env, mockFetch)
+    expect(bobTree.status).toBe(200)
+    expect(bobTree.headers.get('etag')).toBe('"tree-etag-1"')
+    expect(await bobTree.json()).toEqual({
+      repo: 'alice/med-notes',
+      name: 'Med Notes',
+      files: [
+        { path: 'Biochem/ATP Synthase.md', title: 'ATP Synthase', kind: 'md' },
+        { path: 'Biochem/img/atp.png', title: 'atp.png', kind: 'asset' },
+        { path: 'README.md', title: 'README', kind: 'md' },
+      ],
+    })
+    const bobTree304 = await handle(
+      req('/api/friends/decks/1/tree?repo=alice/med-notes', { method: 'GET', headers: { ...authB, 'if-none-match': '"tree-etag-1"' } }),
+      env,
+      mockFetch,
+    )
+    expect(bobTree304.status).toBe(304)
+
+    // Path traversal & dotfile rejected (400)
+    const trav = await handle(req('/api/friends/decks/1/file?repo=alice/med-notes&path=../secret.md', { method: 'GET', headers: authB }), env, mockFetch)
+    expect(trav.status).toBe(400)
+    const dotf = await handle(req('/api/friends/decks/1/file?repo=alice/med-notes&path=.yaseendocs/settings.json', { method: 'GET', headers: authB }), env, mockFetch)
+    expect(dotf.status).toBe(400)
+
+    // Bob fetches file -> SM-2 review line stripped on the fly, relative assetPaths extracted
+    const bobFile = await handle(req('/api/friends/decks/1/file?repo=alice/med-notes&path=Biochem/ATP%20Synthase.md', { method: 'GET', headers: authB }), env, mockFetch)
+    expect(bobFile.status).toBe(200)
+    const fileData = (await bobFile.json()) as { path: string; title: string; markdown: string; assetPaths: string[] }
+    expect(fileData.path).toBe('Biochem/ATP Synthase.md')
+    expect(fileData.title).toBe('ATP Synthase')
+    expect(fileData.markdown).toContain('Proton motive force')
+    expect(fileData.markdown).not.toContain('BIO-7')
+    expect(fileData.markdown).not.toContain('<!-- card:')
+    expect(fileData.assetPaths).toEqual(['Biochem/img/atp.png'])
+
+    // Bob fetches asset -> safe Content-Type + private cache-control + exact bytes
+    const bobAsset = await handle(req('/api/friends/decks/1/asset?repo=alice/med-notes&path=Biochem/img/atp.png', { method: 'GET', headers: authB }), env, mockFetch)
+    expect(bobAsset.status).toBe(200)
+    expect(bobAsset.headers.get('content-type')).toBe('image/png')
+    expect(bobAsset.headers.get('cache-control')).toBe('private, max-age=300')
+    expect(new Uint8Array(await bobAsset.arrayBuffer())).toEqual(pngBytes)
+    expect(mintedCount).toBe(4)
+
+    // DELETE /api/friends/me cleans up deck_vaults and deck_permissions
+    const delA = await handle(req('/api/friends/me', { method: 'DELETE', headers: authA }), env, mockFetch)
+    expect(delA.status).toBe(200)
+    const leftVaults = await db.prepare('SELECT COUNT(*) AS cnt FROM deck_vaults WHERE owner_id = ?').bind(1).first<{ cnt: number }>()
+    const leftPerms = await db.prepare('SELECT COUNT(*) AS cnt FROM deck_permissions WHERE owner_id = ?').bind(1).first<{ cnt: number }>()
+    expect(leftVaults?.cnt).toBe(0)
+    expect(leftPerms?.cnt).toBe(0)
   })
 })

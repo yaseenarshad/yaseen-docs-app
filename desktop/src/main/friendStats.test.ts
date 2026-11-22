@@ -168,7 +168,8 @@ describe('friendStats (YAZ-5069)', () => {
     expect(s.days.every((d) => d.done)).toBe(true)
     const off = friendStats([vault([card('GEO-1', S_REVIEWS)], { ...S, enabled: false })], NOW)
     expect(off.totals.dueLeft).toBe(0)
-    expect(off.totals.streak).toBe(13)
+    expect(off.totals.cards).toBe(0)
+    expect(off.totals.streak).toBe(0)
   })
 
   it('two copies of one ID on a page count one time in `dueLeft`, as the Inbox shows one', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildAcceptedCardFile, parseInviteInput, sanitizeSharedCard } from './friendsShare'
+import { buildAcceptedCardFile, extractRelativeAssetPaths, parseInviteInput, sanitizeSharedCard, sanitizeSharedMarkdown } from './friendsShare'
 import { qrCodeSvg } from './qrSvg'
 
 describe('shared/friendsShare and qrSvg (YAZ-6217)', () => {
@@ -38,5 +38,33 @@ describe('shared/friendsShare and qrSvg (YAZ-6217)', () => {
     expect(svg.startsWith('<svg ')).toBe(true)
     expect(svg).toContain('role="img"')
     expect(svg).toContain('<path d="M')
+  })
+
+  it('sanitizeSharedMarkdown strips private card review lines while preserving markdown and extractRelativeAssetPaths finds relative assets safely', () => {
+    const raw = [
+      '# ATP Synthase',
+      '',
+      '![Diagram](./img/atp.png "ATP")',
+      '![[../shared/cycle.webp|300]]',
+      '![[GEO-140]]',
+      '<img src="chart.svg" />',
+      '![External](https://example.com/a.png)',
+      '![Escape](../../etc/passwd.png)',
+      '![Hidden](.yaseendocs/secret.png)',
+      '```card',
+      'What powers ATP synthase?',
+      '---',
+      'Proton motive force',
+      '```',
+      '<!-- card: BIO-101, 2026-11-20T12:00:00.000Z good 8s -->',
+    ].join('\n')
+    const clean = sanitizeSharedMarkdown(raw)
+    expect(clean).toContain('# ATP Synthase')
+    expect(clean).toContain('Proton motive force')
+    expect(clean).not.toContain('BIO-101')
+    expect(clean).not.toContain('<!-- card:')
+
+    const assets = extractRelativeAssetPaths(clean, 'Biochem/ATP.md')
+    expect(assets).toEqual(['Biochem/img/atp.png', 'shared/cycle.webp', 'Biochem/chart.svg'])
   })
 })

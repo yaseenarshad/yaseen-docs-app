@@ -1,6 +1,9 @@
 import {
   createFriendsApiClient,
   FriendsApiError,
+  type DeckFilePayload,
+  type DeckSettingsPayload,
+  type DeckTreePayload,
   type FriendsApiClient,
   type FriendsBoardPayload,
   type SharedCardItem,
@@ -46,6 +49,11 @@ export interface FriendsService {
   deleteSharedCard(cardId: string): Promise<{ ok: true } | { ok: false; error: string }>
   importCards(input: ImportCardsInput): Promise<{ ok: true; paths: string[] } | { ok: false; error: string }>
   deleteMe(): Promise<{ ok: true } | { ok: false; error: string }>
+  getDeckSettings(): Promise<{ ok: true; settings: DeckSettingsPayload } | { ok: false; error: string }>
+  saveDeckSettings(input: DeckSettingsPayload): Promise<{ ok: true; settings: DeckSettingsPayload } | { ok: false; error: string }>
+  browseDeckTree(ownerId: number, repo: string): Promise<{ ok: true; tree: DeckTreePayload } | { ok: false; error: string }>
+  browseDeckFile(ownerId: number, repo: string, path: string): Promise<{ ok: true; file: DeckFilePayload } | { ok: false; error: string }>
+  browseDeckAsset(ownerId: number, repo: string, path: string): Promise<{ ok: true; mime: string; dataBase64: string } | { ok: false; error: string }>
 }
 
 function errorText(err: unknown): string {
@@ -181,6 +189,8 @@ function createDemoFriendsService(deps: FriendsServiceDeps): FriendsService {
         statsAt: iso(-120_000),
         sharedCardCount: 12,
         buddyStreak: computeBuddyStreak(meStats.days, mayaStats.days, startMs),
+        canBrowseDeck: true,
+        browsableVaults: [{ repo: 'maya/med-notes', name: 'Med Notes' }],
       },
       {
         id: 3,
@@ -236,6 +246,7 @@ function createDemoFriendsService(deps: FriendsServiceDeps): FriendsService {
         isAdmin: true,
         myStatus: 'active',
         inviteCode: 'medstudy2026',
+        createdAt: iso(-20 * 86_400_000),
         members: [
           { id: 1, login: 'yaseen', name: 'Yaseen', avatarUrl: avatars.yaseen, since: iso(-20 * 86_400_000), stats: meStats, statsAt: iso(-60_000) },
           { id: 2, login: 'maya', name: 'Maya', avatarUrl: avatars.maya, since: iso(-19 * 86_400_000), stats: mayaStats, statsAt: iso(-120_000) },
@@ -324,6 +335,7 @@ function createDemoFriendsService(deps: FriendsServiceDeps): FriendsService {
         isAdmin: false,
         myStatus: 'active',
         inviteCode: 'spanish2026',
+        createdAt: iso(-10 * 86_400_000),
         members: [
           { id: 5, login: 'trevor', name: 'Trevor', avatarUrl: avatars.trevor, since: iso(-10 * 86_400_000), stats: trevorStats, statsAt: iso(-900_000) },
           { id: 6, login: 'ali', name: 'Ali', avatarUrl: avatars.ali, since: iso(-8 * 86_400_000), stats: aliStats, statsAt: iso(-1_500_000) },
@@ -341,6 +353,7 @@ function createDemoFriendsService(deps: FriendsServiceDeps): FriendsService {
         isAdmin: true,
         myStatus: 'active',
         inviteCode: 'mcatgrind26',
+        createdAt: iso(-25 * 86_400_000),
         members: [
           { id: 2, login: 'maya', name: 'Maya', avatarUrl: avatars.maya, since: iso(-25 * 86_400_000), stats: mayaStats, statsAt: iso(-120_000) },
           { id: 5, login: 'trevor', name: 'Trevor', avatarUrl: avatars.trevor, since: iso(-18 * 86_400_000), stats: trevorStats, statsAt: iso(-900_000) },
@@ -374,6 +387,45 @@ function createDemoFriendsService(deps: FriendsServiceDeps): FriendsService {
     boardState.incomingCards,
     ...boardState.groups.flatMap((g) => [g.sharedCards, ...g.sharedFolders.map((f) => f.cards)]),
   ]
+
+  let demoDeckSettings: DeckSettingsPayload = {
+    mode: 'none',
+    vaults: [],
+    allowedFriendIds: [],
+  }
+
+  const demoDeckFiles: Record<string, { title: string; markdown: string; assetPaths: string[] }> = {
+    'Biochem/ATP Synthase.md': {
+      title: 'ATP Synthase',
+      markdown:
+        'How does **ATP Synthase** ($F_0 F_1$ complex) couple the proton gradient to ATP synthesis?\n---\nProtons flow down their electrochemical gradient through the $F_0$ channel, spinning the $c$-ring and $\\gamma$-stalk. Conformational changes in the three $F_1$ $\\beta$-subunits cycle through **Open → Loose → Tight** states to phosphorylate ADP + $P_i$ → ATP.\n\n- Inhibited by **oligomycin** (blocks $F_0$ proton channel)\n- Uncouplers (e.g., DNP, thermogenin/UCP1) dissipate the gradient as heat',
+      assetPaths: [],
+    },
+    'Biochem/PFK-1 Regulation.md': {
+      title: 'PFK-1 Regulation',
+      markdown:
+        'What are the key allosteric regulators of **PFK-1** (the committed step of glycolysis)?\n---\n- **Activators:** Fructose-2,6-bisphosphate (most potent), AMP, ADP\n- **Inhibitors:** ATP, Citrate, low pH ($H^+$)\n\nRemember: insulin raises F-2,6-BP via PFK-2 activation; glucagon lowers it via PKA phosphorylation.',
+      assetPaths: [],
+    },
+    'Biochem/Henderson-Hasselbalch.md': {
+      title: 'Henderson-Hasselbalch',
+      markdown:
+        'Write the **Henderson-Hasselbalch equation** and state what happens when $[A^-] = [HA]$.\n---\n$$\\text{pH} = \\text{p}K_a + \\log_{10}\\frac{[A^-]}{[HA]}$$\n\nWhen $[A^-] = [HA]$, $\\log_{10}(1) = 0$, so **$\\text{pH} = \\text{p}K_a$** (maximum buffering capacity).',
+      assetPaths: [],
+    },
+    'Spanish/Subjunctive Triggers.md': {
+      title: 'Subjunctive Triggers',
+      markdown:
+        'What does the **WEIRDO** acronym stand for in Spanish subjunctive triggers?\n---\n- **W**ishes / desires (*esperar que*, *querer que*)\n- **E**motions (*alegrarse de que*, *temer que*)\n- **I**mpersonal expressions (*es importante que*)\n- **R**ecommendations (*sugerir que*, *recomendar que*)\n- **D**oubt / denial (*dudar que*, *no creer que*)\n- **O**jalá (*ojalá que*)',
+      assetPaths: [],
+    },
+    'README.md': {
+      title: 'README',
+      markdown:
+        '# Maya\'s Med Notes\n\nHigh-yield spaced repetition cards for **Biochemistry** and **Spanish**.\n\n- `Biochem/` — Metabolism, bioenergetics, and acid-base equilibrium\n- `Spanish/` — Subjunctive mood & verb drills',
+      assetPaths: [],
+    },
+  }
 
   const stubClient = createFriendsApiClient({
     origin: deps.origin,
@@ -545,6 +597,49 @@ function createDemoFriendsService(deps: FriendsServiceDeps): FriendsService {
       boardState.invites = []
       return { ok: true as const }
     },
+    getDeckSettings: async () => ({ ok: true as const, settings: structuredClone(demoDeckSettings) }),
+    saveDeckSettings: async (input) => {
+      demoDeckSettings = {
+        mode: input.mode,
+        vaults: input.vaults.map((v) => ({ ...v })),
+        allowedFriendIds: [...input.allowedFriendIds],
+      }
+      return { ok: true as const, settings: structuredClone(demoDeckSettings) }
+    },
+    browseDeckTree: async (ownerId, repo) => {
+      if (ownerId !== 2 || repo.toLowerCase() !== 'maya/med-notes') {
+        return { ok: false as const, error: 'forbidden' }
+      }
+      return {
+        ok: true as const,
+        tree: {
+          repo: 'maya/med-notes',
+          name: 'Med Notes',
+          files: Object.entries(demoDeckFiles).map(([path, f]) => ({
+            path,
+            title: f.title,
+            kind: 'md' as const,
+          })),
+        },
+      }
+    },
+    browseDeckFile: async (ownerId, repo, path) => {
+      if (ownerId !== 2 || repo.toLowerCase() !== 'maya/med-notes') {
+        return { ok: false as const, error: 'forbidden' }
+      }
+      const entry = demoDeckFiles[path]
+      if (!entry) return { ok: false as const, error: 'not_found' }
+      return {
+        ok: true as const,
+        file: {
+          path,
+          title: entry.title,
+          markdown: entry.markdown,
+          assetPaths: [...entry.assetPaths],
+        },
+      }
+    },
+    browseDeckAsset: async () => ({ ok: false as const, error: 'not_found' }),
   }
 }
 
@@ -641,6 +736,29 @@ export function createFriendsService(deps: FriendsServiceDeps): FriendsService {
       wrap(async () => {
         await client.deleteMe()
         return { ok: true as const }
+      }),
+    getDeckSettings: () =>
+      wrap(async () => ({ ok: true as const, settings: await client.getDeckSettings() })),
+    saveDeckSettings: (input) =>
+      wrap(async () => {
+        const res = await client.saveDeckSettings(input)
+        return {
+          ok: true as const,
+          settings: { mode: res.mode, vaults: res.vaults, allowedFriendIds: res.allowedFriendIds },
+        }
+      }),
+    browseDeckTree: (ownerId, repo) =>
+      wrap(async () => ({ ok: true as const, tree: await client.getDeckTree(ownerId, repo) })),
+    browseDeckFile: (ownerId, repo, path) =>
+      wrap(async () => ({ ok: true as const, file: await client.getDeckFile(ownerId, repo, path) })),
+    browseDeckAsset: (ownerId, repo, path) =>
+      wrap(async () => {
+        const res = await client.getDeckAssetBytes(ownerId, repo, path)
+        return {
+          ok: true as const,
+          mime: res.contentType,
+          dataBase64: Buffer.from(res.bytes).toString('base64'),
+        }
       }),
   }
 }

@@ -1,8 +1,11 @@
 import { lazy, Suspense, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { FRIENDS_ENABLED } from '@shared/features'
+import { useApp } from '../app/AppState'
 import { useOverlay } from '../app/browserHistory'
 import { useMenuToggle } from '../app/menuToggle'
 import { useCopyPath } from '../screens/copyPath'
+import { Toast, useToast } from '../screens/Toast'
 import { MenuTitle, isCut } from './menuTitle'
 import type { PageFolds } from './folds'
 import './find/pageTools.css'
@@ -25,6 +28,7 @@ import './find/pageTools.css'
  */
 const FindBar = lazy(() => import('./find/FindBar'))
 const HeadingsSheet = lazy(() => import('./find/HeadingsSheet'))
+const ShareCardSheet = lazy(() => import('../friends/ui/ShareCardSheet'))
 
 export type PageTool = 'find' | 'headings' | null
 
@@ -76,10 +80,13 @@ const foldAllIcon = (collapse: boolean) => (
 )
 
 export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor): { button: ReactNode; bar: ReactNode; sheet: ReactNode } {
+  const app = useApp()
   const { label = 'Page tools', find = 'Find in page', headings = true } = file
   const [menu, setMenu] = useState(false)
   const [tool, setTool] = useState<PageTool>(null)
   const [cut, setCut] = useState(false)
+  const [sharePage, setSharePage] = useState<{ title: string; markdown: string } | null>(null)
+  const [said, say] = useToast(2500)
   const box = useRef<HTMLDivElement>(null)
   // The open tool is an overlay: a Back closes it, and the page stays. The menu: the app's one rule for menus: ⋯
   // again, a tap outside (only that), Escape or Back closes it.
@@ -117,6 +124,19 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
     setMenu(false)
     await copyPath(file.path)
   }
+  const openSharePage = async () => {
+    setMenu(false)
+    const vault = app.vaultKey
+    if (!vault) return
+    const raw = await app.services.store.read(vault, file.path).catch(() => null)
+    const markdown =
+      typeof raw === 'string' ? raw : raw instanceof Uint8Array ? new TextDecoder().decode(raw) : ''
+    if (!markdown.trim()) {
+      say('Could not read page to share.')
+      return
+    }
+    setSharePage({ title: file.title, markdown })
+  }
   const button = (
     <div className="page-tools" ref={box}>
       <button type="button" className="icon-btn page-tools__btn" aria-label={label} aria-haspopup="menu" aria-expanded={menu} onClick={toggle}>
@@ -137,6 +157,11 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
               {headings && (
                 <button type="button" role="menuitem" className="page-tools__item" onClick={() => pick('headings')}>
                   <span aria-hidden="true">☰</span> Headings
+                </button>
+              )}
+              {FRIENDS_ENABLED && headings && (
+                <button type="button" role="menuitem" className="page-tools__item" onClick={() => void openSharePage()}>
+                  <span aria-hidden="true">↗</span> Share page with friend or group…
                 </button>
               )}
               {/* YAZ-5568: the Mac's fold-all button's rule: Collapse all while anything is open, else Expand all. */}
@@ -194,14 +219,34 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
         <FindBar host={host} onClose={close} />
       </Suspense>
     ),
-    sheet:
-      tool === 'headings' &&
-      overFrame(
-        host.current,
-        <Suspense fallback={null}>
-          <HeadingsSheet host={host} onClose={close} />
-        </Suspense>,
-      ),
+    sheet: (
+      <>
+        {said !== null && <Toast text={said} />}
+        {tool === 'headings' &&
+          overFrame(
+            host.current,
+            <Suspense fallback={null}>
+              <HeadingsSheet host={host} onClose={close} />
+            </Suspense>,
+          )}
+        {sharePage !== null &&
+          overFrame(
+            host.current,
+            <Suspense fallback={null}>
+              <ShareCardSheet
+                title={sharePage.title}
+                markdown={sharePage.markdown}
+                kind="page"
+                onClose={() => setSharePage(null)}
+                onShared={(msg) => {
+                  setSharePage(null)
+                  say(msg)
+                }}
+              />
+            </Suspense>,
+          )}
+      </>
+    ),
   }
 }
 

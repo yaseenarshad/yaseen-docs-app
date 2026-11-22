@@ -23,7 +23,7 @@ import type { SystemHotkey } from './macosHotkeys'
 import type { VaultIcons } from './vaultIcons'
 import type { RendererCommand, RendererReply } from './automationNavigation'
 import type { FilesOrderState, FilesSort } from './filesOrder'
-import type { FriendsBoardPayload } from './friendsApi'
+import type { DeckFilePayload, DeckSettingsPayload, DeckTreePayload, DeckVaultConfig, FriendsBoardPayload } from './friendsApi'
 
 /** Result of `fs:backfill-created` (YAZ-6168): how many files were stamped and how many were skipped. */
 export interface BackfillCreatedResult {
@@ -251,7 +251,7 @@ export const CONTRACT = {
     setFolderState: invoke<[folderId: string, status: 'pending' | 'accepted' | 'dismissed'], { ok: true } | { ok: false; error: string }>('friends:set-folder-state', 2),
     deleteSharedCard: invoke<[cardId: string], { ok: true } | { ok: false; error: string }>('friends:delete-shared-card', 1),
     importCards: invoke<
-      [input: { root: string; dir: string; cards: { id: string; title: string; markdown: string; senderLogin: string; upNext?: boolean }[]; createFolder?: string }],
+      [input: { root: string; dir: string; cards: { id: string; title: string; markdown: string; senderLogin: string; upNext?: boolean; attachments?: { name: string; mime: string; dataBase64: string }[] }[]; createFolder?: string }],
       { ok: true; paths: string[] } | { ok: false; error: string }
     >('friends:import-cards', 1),
     deleteMe: invoke<[], { ok: true } | { ok: false; error: string }>('friends:delete-me', 0),
@@ -259,6 +259,24 @@ export const CONTRACT = {
       [vaultPath: string, included: boolean],
       { ok: true; knownVaults: { path: string; name: string; included: boolean }[] } | { ok: false; error: string }
     >('friends:set-vault-included', 2),
+    getDeckSettings: invoke<[], { ok: true; settings: DeckSettingsPayload } | { ok: false; error: string }>('friends:get-deck-settings', 0),
+    saveDeckSettings: invoke<
+      [input: DeckSettingsPayload],
+      { ok: true; settings: DeckSettingsPayload } | { ok: false; error: string }
+    >('friends:save-deck-settings', 1),
+    listInstallableRepos: invoke<[], { ok: true; repos: DeckVaultConfig[] } | { ok: false; error: string }>('friends:list-installable-repos', 0),
+    browseDeckTree: invoke<
+      [ownerId: number, repo: string],
+      { ok: true; tree: DeckTreePayload } | { ok: false; error: string }
+    >('friends:browse-deck-tree', 2),
+    browseDeckFile: invoke<
+      [ownerId: number, repo: string, path: string],
+      { ok: true; file: DeckFilePayload } | { ok: false; error: string }
+    >('friends:browse-deck-file', 3),
+    browseDeckAsset: invoke<
+      [ownerId: number, repo: string, path: string],
+      { ok: true; mime: string; dataBase64: string } | { ok: false; error: string }
+    >('friends:browse-deck-asset', 3),
     onInviteLink: push<{ kind: 'friend' | 'group'; code: string }>('friends:invite-link'),
   },
   /** Targeted mutators (not a generic patch) so several windows never lose each other's writes. */

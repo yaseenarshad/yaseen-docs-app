@@ -250,7 +250,10 @@ describe('createMacSender (D1 Friends API, YAZ-6219)', () => {
   it('skips vaults in excludedVaults so they never count toward cards or due-done completion (YAZ-6275)', async () => {
     const { clock } = fakeClock()
     const countedRoots: string[] = []
-    const sendStats = vi.fn(async () => ({ ok: true as const, statsAt: new Date(clock.now()).toISOString() }))
+    const sendStats = vi.fn(async (_stats: unknown, _zone?: string | null, _opts?: { force?: boolean }) => ({
+      ok: true as const,
+      statsAt: new Date(clock.now()).toISOString(),
+    }))
     const sender = createMacSender({
       readToken: async () => 'ghu_tok',
       client: {
@@ -298,5 +301,53 @@ describe('createMacSender (D1 Friends API, YAZ-6219)', () => {
     expect(clearSession).toHaveBeenCalledTimes(1)
     expect(countPayload([])).toBe('[]')
     await sender.stop()
+  })
+
+  it('vaultsChanged clears cached state, bypasses 5-min throttle, and sends with force: true (YAZ-6284)', async () => {
+    const { clock } = fakeClock()
+    let stored: MacSendSaved | null = null
+    const excluded = new Set<string>()
+    const sendStats = vi.fn(async (_stats: unknown, _zone?: string | null, _opts?: { force?: boolean }) => ({
+      ok: true as const,
+      statsAt: new Date(clock.now()).toISOString(),
+    }))
+    const sender = createMacSender({
+      readToken: async () => 'ghu_tok',
+      client: {
+        board: async () => makeBoard({ me: { ...makeBoard().me, vaults: ['yaseen/notes', 'yaseen/scratch'] } }),
+        sendStats,
+        clearSession: vi.fn(),
+      },
+      vaults: async () =>
+        new Map([
+          ['yaseen/notes', '/vault/notes'],
+          ['yaseen/scratch', '/vault/scratch'],
+        ]),
+      excludedVaults: () => excluded,
+      count: async () => makeVault(2),
+      stats: async (_t, now, _c, zone) => friendStats([makeVault(2)], now, zone ?? undefined),
+      state: {
+        load: async () => stored,
+        save: async (s) => {
+          stored = s
+        },
+      },
+      clock,
+    })
+
+    expect((await sender.attempt('pass')).status).toBe('sent')
+    expect(sendStats).toHaveBeenCalledTimes(1)
+    expect(sendStats.mock.calls[0][2]).toBeUndefined()
+
+    // Within 5-min throttle, normal attempt waits
+    expect((await sender.attempt('pass')).status).toBe('waiting')
+    expect(sendStats).toHaveBeenCalledTimes(1)
+
+    // Excluding a vault + calling vaultsChanged() bypasses throttle and sends with { force: true }
+    excluded.add('/vault/scratch')
+    expect((await sender.vaultsChanged()).status).toBe('sent')
+    await sender.stop()
+    expect(sendStats).toHaveBeenCalledTimes(2)
+    expect(sendStats.mock.calls[1][2]).toEqual({ force: true })
   })
 })

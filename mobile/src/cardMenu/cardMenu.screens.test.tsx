@@ -90,7 +90,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     expect(head.querySelector('.card__more')!.getAttribute('aria-label')).toBe('Card actions: Speed of light')
     const menu = await openMenu()
     expect(menu.getAttribute('aria-label')).toBe('Card actions: RV-17')
-    expect(rows(menu)).toEqual(['Move to Up next', 'Archive card', 'Fix later', 'Title in reviewDefault ›'])
+    expect(rows(menu)).toEqual(['Move to Up next', 'Archive card', 'Fix later', 'Title in reviewDefault ›', 'Share with friend or group…'])
     // The ⋯ again closes it.
     await tap(head.querySelector<HTMLElement>('.card__more')!)
     expect(h!.host.querySelector('.card-menu')).toBeNull()
@@ -108,7 +108,7 @@ describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
     const t = await app()
     await openCard('river of madrid', /^River of Madrid/)
     const menu = await openMenu()
-    expect(rows(menu)).toEqual(['Move to Up next', 'Archive card', 'Fix later', 'Title in reviewDefault ›'])
+    expect(rows(menu)).toEqual(['Move to Up next', 'Archive card', 'Fix later', 'Title in reviewDefault ›', 'Share with friend or group…'])
     expect(h!.button(/Headings/)).toBeNull()
 
     await tap(row(menu, 'off'))
@@ -198,7 +198,7 @@ describe('a page card\'s ⋯ (YAZ-5504)', () => {
     await tap(cards[2].querySelector<HTMLElement>('.card__more')!)
     await waitFor(() => cards[2].querySelector('[data-action="off"]') !== null && !row(cards[2], 'off').disabled)
     expect(cards[2].querySelector('.card__more')!.getAttribute('aria-expanded')).toBe('true')
-    expect(rows(cards[2].querySelector('.card-menu')!)).toEqual(['Move to Up next', 'Unarchive card', 'Fix later', 'Title in reviewNever ›'])
+    expect(rows(cards[2].querySelector('.card-menu')!)).toEqual(['Move to Up next', 'Unarchive card', 'Fix later', 'Title in reviewNever ›', 'Share with friend or group…'])
     // The ⋯ again closes it.
     await tap(cards[2].querySelector<HTMLElement>('.card__more')!)
     expect(h!.host.querySelector('.card-menu')).toBeNull()

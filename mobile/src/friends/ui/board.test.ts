@@ -224,7 +224,6 @@ describe('"You vs <friend>" against a hand-made fixture (decision 23)', () => {
       ['new cards left', 510, 530],
       // The last 30 days: you 80 remembered, 10 forgot → 89 %; the October day is outside. Sam 9 of 10 → 90 %.
       ['remembered', 89, 90],
-      ['mature cards', 940, 810],
       ['added this week', 35, 60],
       // Days with a card in the last 30: you 7 (offset -5 had none), Sam 6 (no day at -5).
       ['days reviewed of 30', 7, 6],

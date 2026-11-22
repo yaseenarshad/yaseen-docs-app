@@ -37,6 +37,44 @@ export interface SharedFolderItem {
   cards: SharedCardItem[]
 }
 
+export type DeckShareMode = 'none' | 'all' | 'selected'
+
+export interface DeckVaultConfig {
+  repo: string
+  installationId: number
+  name: string
+}
+
+export interface DeckSettingsPayload {
+  mode: DeckShareMode
+  vaults: DeckVaultConfig[]
+  allowedFriendIds: number[]
+}
+
+export interface BrowsableVault {
+  repo: string
+  name: string
+}
+
+export interface DeckTreeFile {
+  path: string
+  title: string
+  kind: 'md' | 'asset'
+}
+
+export interface DeckTreePayload {
+  repo: string
+  name: string
+  files: DeckTreeFile[]
+}
+
+export interface DeckFilePayload {
+  path: string
+  title: string
+  markdown: string
+  assetPaths: string[]
+}
+
 export interface FriendBoardMember {
   id: number
   login: string
@@ -47,6 +85,8 @@ export interface FriendBoardMember {
   statsAt: string | null
   sharedCardCount: number
   buddyStreak?: number
+  canBrowseDeck?: boolean
+  browsableVaults?: BrowsableVault[]
 }
 
 export interface GroupBoardMember {
@@ -66,6 +106,7 @@ export interface GroupBoardItem {
   isAdmin: boolean
   myStatus: 'pending' | 'active'
   inviteCode: string | null
+  createdAt?: string
   members: GroupBoardMember[]
   pending: { id: number; login: string; name: string; avatarUrl: string | null }[]
   banned?: { id: number; login: string; name: string }[]
@@ -112,8 +153,13 @@ export interface FriendsApiClient {
   ensureSession(): Promise<string>
   clearSession(): void
   board(force?: boolean): Promise<FriendsBoardPayload>
-  sendStats(stats: FriendStats, zone?: string | null): Promise<{ ok: true; statsAt: string }>
+  sendStats(stats: FriendStats, zone?: string | null, opts?: { force?: boolean }): Promise<{ ok: true; statsAt: string }>
   updatePrefs(prefs: { vaults?: string[]; zone?: string | null; nickname?: string | null }): Promise<{ ok: true; vaults: string[]; zone: string | null; nickname: string | null }>
+  getDeckSettings(): Promise<DeckSettingsPayload>
+  saveDeckSettings(input: DeckSettingsPayload): Promise<{ ok: true } & DeckSettingsPayload>
+  getDeckTree(ownerId: number, repo: string): Promise<DeckTreePayload>
+  getDeckFile(ownerId: number, repo: string, path: string): Promise<DeckFilePayload>
+  getDeckAssetBytes(ownerId: number, repo: string, path: string): Promise<{ bytes: Uint8Array; contentType: string }>
   createInvite(): Promise<{ code: string; link: string; expiresAt: string }>
   acceptInvite(code: string): Promise<{ kind: 'friend'; friendId: number } | { kind: 'group'; groupId: string; status: string; name: string }>
   removeFriend(userId: number, block?: boolean): Promise<{ ok: true }>
@@ -201,10 +247,10 @@ export function createFriendsApiClient(opts: FriendsApiClientOptions): FriendsAp
       cachedBoard = res.data!
       return cachedBoard
     },
-    async sendStats(stats, zone) {
+    async sendStats(stats, zone, opts) {
       const res = await authed<{ ok: true; statsAt: string }>('/api/friends/stats', {
         method: 'PUT',
-        body: JSON.stringify({ stats, ...(zone !== undefined && { zone }) }),
+        body: JSON.stringify({ stats, ...(zone !== undefined && { zone }), ...(opts?.force === true && { force: true }) }),
       })
       cachedEtag = null
       return res.data!
@@ -216,6 +262,53 @@ export function createFriendsApiClient(opts: FriendsApiClientOptions): FriendsAp
       })
       cachedEtag = null
       return res.data!
+    },
+    async getDeckSettings() {
+      const res = await authed<DeckSettingsPayload>('/api/friends/decks/settings', { method: 'GET' })
+      return res.data!
+    },
+    async saveDeckSettings(input) {
+      const res = await authed<{ ok: true } & DeckSettingsPayload>('/api/friends/decks/settings', {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      })
+      cachedEtag = null
+      return res.data!
+    },
+    async getDeckTree(ownerId, repo) {
+      const q = new URLSearchParams({ repo }).toString()
+      const res = await authed<DeckTreePayload>(`/api/friends/decks/${ownerId}/tree?${q}`, { method: 'GET' })
+      return res.data!
+    },
+    async getDeckFile(ownerId, repo, path) {
+      const q = new URLSearchParams({ repo, path }).toString()
+      const res = await authed<DeckFilePayload>(`/api/friends/decks/${ownerId}/file?${q}`, { method: 'GET' })
+      return res.data!
+    },
+    async getDeckAssetBytes(ownerId, repo, path) {
+      const q = new URLSearchParams({ repo, path }).toString()
+      const run = async (retry: boolean): Promise<{ bytes: Uint8Array; contentType: string }> => {
+        const token = await ensureSession()
+        const res = await doFetch(`${base}/api/friends/decks/${ownerId}/asset?${q}`, {
+          method: 'GET',
+          headers: { authorization: `Bearer ${token}` },
+        })
+        if (res.status === 401 && retry) {
+          sessionToken = null
+          sessionExpMs = 0
+          return run(false)
+        }
+        if (!res.ok) {
+          const errBody = (await res.json().catch(() => null)) as { error?: string } | null
+          throw new FriendsApiError(res.status, errBody?.error ?? 'request_failed')
+        }
+        const buf = await res.arrayBuffer()
+        return {
+          bytes: new Uint8Array(buf),
+          contentType: res.headers.get('content-type') ?? 'application/octet-stream',
+        }
+      }
+      return run(true)
     },
     async createInvite() {
       const res = await authed<{ code: string; link: string; expiresAt: string }>('/api/friends/invites', { method: 'POST' })

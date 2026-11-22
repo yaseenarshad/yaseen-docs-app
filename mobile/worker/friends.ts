@@ -23,13 +23,19 @@
  */
 import { CALLBACK_ORIGINS } from '../src/auth/githubAppConfig'
 import type { D1Database } from './d1Types'
+import { cardFileTitle } from '../../shared/cardFileFormat'
 import { computeBuddyStreak } from '../../shared/friendsBoard'
+import type { DeckShareMode } from '../../shared/friendsApi'
+import { extractRelativeAssetPaths, sanitizeSharedMarkdown } from '../../shared/friendsShare'
 import { FRIENDS_TOKEN_TTL_S, fetchGithubProfile, signFriendsToken, upsertUserProfile, verifyFriendsToken } from './friendsAuth'
+import { mintReadOnlyRepoToken } from './githubAppJwt'
 import type { FriendDay, FriendStats } from '../../shared/friendStatsFormat'
 
 export interface FriendsEnv {
   FRIENDS_TOKEN_SECRET?: string
   FRIENDS_DB?: D1Database
+  GITHUB_APP_ID?: string
+  GITHUB_APP_PRIVATE_KEY?: string
 }
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>
@@ -75,10 +81,71 @@ async function sha256Hex(text: string): Promise<string> {
     .join('')
 }
 
+/** Canonicalizes `owner/repo` (stripping any `@branch` suffix and lowercasing). */
+export function normalizeRepoSlug(raw: string): string | null {
+  const stripped = raw.trim().replace(/@[^/\s]+$/, '')
+  if (!/^[^/\s@]+\/[^/\s@]+$/.test(stripped)) return null
+  return stripped.toLowerCase()
+}
+
+/** Validates a vault-relative file path, rejecting traversal (`..`), dotfiles/dotdirs, and `.yaseendocs/`. */
+export function isSafeDeckPath(rawPath: string): string | null {
+  const trimmed = rawPath.trim()
+  if (!trimmed || trimmed.length > 500 || trimmed.startsWith('/') || trimmed.includes('\\') || trimmed.includes('\0')) {
+    return null
+  }
+  const parts = trimmed.split('/')
+  for (const part of parts) {
+    if (!part || part === '.' || part === '..' || part.startsWith('.')) return null
+  }
+  return parts.join('/')
+}
+
+const encodeGithubPath = (path: string): string =>
+  path
+    .split('/')
+    .map((seg) => encodeURIComponent(seg))
+    .join('/')
+
+function basenameOf(path: string, stripMd = false): string {
+  const name = path.split('/').pop() ?? path
+  return stripMd && name.toLowerCase().endsWith('.md') ? name.slice(0, -3) : name
+}
+
+function titleFromDeckMarkdown(raw: string, path: string): string {
+  const cardTitle = cardFileTitle(raw).trim()
+  if (cardTitle) return cardTitle
+  const fmMatch = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw)
+  if (fmMatch) {
+    const titleLine = /^title:\s*(.+)$/m.exec(fmMatch[1])
+    if (titleLine) {
+      const val = titleLine[1].trim().replace(/^['"]|['"]$/g, '').trim()
+      if (val) return val
+    }
+  }
+  const heading = /^#\s+(.+)$/m.exec(raw)
+  if (heading) {
+    const val = heading[1].trim()
+    if (val) return val
+  }
+  return basenameOf(path, true)
+}
+
+function safeAssetContentType(path: string): string {
+  const lower = path.toLowerCase()
+  if (lower.endsWith('.png')) return 'image/png'
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+  if (lower.endsWith('.webp')) return 'image/webp'
+  if (lower.endsWith('.gif')) return 'image/gif'
+  if (lower.endsWith('.svg')) return 'image/svg+xml'
+  return 'application/octet-stream'
+}
+
 /**
- * Two-device "never lower today's count" guard (YAZ-6200 Item 2):
- * If an older/unsynced device pushes stats for the same local day with fewer cards/seconds/answers
- * than already stored in D1, keep the higher day counts so friends never see progress jump backwards.
+ * Two-device "never lower counts or wipe past days" guard (YAZ-6200 Item 2, YAZ-6284):
+ * - Today (`days[0]`): never lowers counts/seconds/answers and never overwrites `done: true` with `done: false`.
+ * - Past days (`days[1..]`): merges overlapping days by `Math.max` on counts and `||` on `done` so partial-vault
+ *   devices never wipe prior days' totals.
  */
 export function mergeStatsNeverLower(prev: FriendStats | null, next: FriendStats): FriendStats {
   if (prev === null || !Array.isArray(prev.days) || prev.days.length === 0 || !Array.isArray(next.days) || next.days.length === 0) {
@@ -86,29 +153,54 @@ export function mergeStatsNeverLower(prev: FriendStats | null, next: FriendStats
   }
   const prevByDay = new Map<string, FriendDay>()
   for (const d of prev.days) prevByDay.set(d.day, d)
-  const latestDay = next.days[0]?.day
-  if (!latestDay) return next
-  const prevToday = prevByDay.get(latestDay)
-  if (!prevToday) return next
-  const nextToday = next.days[0]
-  if (nextToday.cards >= prevToday.cards && nextToday.seconds >= prevToday.seconds) return next
-  const mergedToday: FriendDay = {
-    ...nextToday,
-    cards: Math.max(nextToday.cards, prevToday.cards),
-    seconds: Math.max(nextToday.seconds, prevToday.seconds),
-    remembered: Math.max(nextToday.remembered, prevToday.remembered),
-    forgot: Math.max(nextToday.forgot, prevToday.forgot),
-    newCards: Math.max(nextToday.newCards, prevToday.newCards),
-    done: nextToday.done || prevToday.done,
+
+  let changed = false
+  const mergedDays = next.days.map((nd) => {
+    const pd = prevByDay.get(nd.day)
+    if (!pd) return nd
+    const cards = Math.max(nd.cards, pd.cards)
+    const seconds = Math.max(nd.seconds, pd.seconds)
+    const remembered = Math.max(nd.remembered, pd.remembered)
+    const forgot = Math.max(nd.forgot, pd.forgot)
+    const newCards = Math.max(nd.newCards, pd.newCards)
+    const done = nd.done || pd.done
+    if (
+      cards !== nd.cards ||
+      seconds !== nd.seconds ||
+      remembered !== nd.remembered ||
+      forgot !== nd.forgot ||
+      newCards !== nd.newCards ||
+      done !== nd.done
+    ) {
+      changed = true
+      return { ...nd, cards, seconds, remembered, forgot, newCards, done }
+    }
+    return nd
+  })
+
+  const nextDaySet = new Set(mergedDays.map((d) => d.day))
+  const latestDay = mergedDays[0].day
+  const extras: FriendDay[] = []
+  for (const pd of prev.days) {
+    if (!nextDaySet.has(pd.day) && pd.day < latestDay) extras.push(pd)
   }
+  if (extras.length > 0) {
+    changed = true
+    mergedDays.push(...extras)
+    mergedDays.sort((a, b) => (a.day > b.day ? -1 : a.day < b.day ? 1 : 0))
+    if (mergedDays.length > 90) mergedDays.length = 90
+  }
+
+  if (!changed) return next
+  const maxCards = mergedDays.reduce((m, d) => Math.max(m, d.cards), 0)
   return {
     ...next,
-    days: [mergedToday, ...next.days.slice(1)],
+    days: mergedDays,
     totals: {
       ...next.totals,
       streak: Math.max(next.totals.streak, prev.totals.streak),
       bestStreak: Math.max(next.totals.bestStreak, prev.totals.bestStreak),
-      bestDay: Math.max(next.totals.bestDay, prev.totals.bestDay, mergedToday.cards),
+      bestDay: Math.max(next.totals.bestDay, prev.totals.bestDay, maxCards),
       bestWeek: Math.max(next.totals.bestWeek, prev.totals.bestWeek),
     },
   }
@@ -205,13 +297,36 @@ export async function handleFriends(
     // Friends
     const friendRows = await db
       .prepare(
-        `SELECT u.github_id, u.login, u.name, u.avatar_url, u.nickname, u.stats_json, u.stats_at, f.created_at AS friend_since
+        `SELECT u.github_id, u.login, u.name, u.avatar_url, u.nickname, u.stats_json, u.stats_at, u.deck_share_mode, f.created_at AS friend_since
          FROM friendships f
          JOIN users u ON u.github_id = CASE WHEN f.user_a = ? THEN f.user_b ELSE f.user_a END
          WHERE f.user_a = ? OR f.user_b = ?`,
       )
       .bind(meId, meId, meId)
       .all<Record<string, unknown>>()
+
+    // Deck vaults & per-friend permissions for friends
+    const vaultsByOwner = new Map<number, { repo: string; name: string }[]>()
+    const allowedOwners = new Set<number>()
+    if (friendRows.results.length > 0) {
+      const friendIds = friendRows.results.map((r) => Number(r.github_id))
+      const placeholders = friendIds.map(() => '?').join(', ')
+      const vaultRows = await db
+        .prepare(`SELECT owner_id, repo_slug, name FROM deck_vaults WHERE owner_id IN (${placeholders}) ORDER BY name ASC`)
+        .bind(...friendIds)
+        .all<Record<string, unknown>>()
+      for (const v of vaultRows.results) {
+        const oid = Number(v.owner_id)
+        const list = vaultsByOwner.get(oid) ?? []
+        list.push({ repo: String(v.repo_slug), name: String(v.name) })
+        vaultsByOwner.set(oid, list)
+      }
+      const permRows = await db
+        .prepare(`SELECT owner_id FROM deck_permissions WHERE friend_id = ? AND allowed = 1 AND owner_id IN (${placeholders})`)
+        .bind(meId, ...friendIds)
+        .all<Record<string, unknown>>()
+      for (const p of permRows.results) allowedOwners.add(Number(p.owner_id))
+    }
 
     // Shared card counts per friend (both directions)
     const sharedCounts = await db
@@ -237,7 +352,7 @@ export async function handleFriends(
     // Groups I belong to (excluding groups I am banned from)
     const myGroups = await db
       .prepare(
-        `SELECT g.id, g.name, g.admin_id, g.invite_code, gm.status AS my_status, gm.since AS my_since
+        `SELECT g.id, g.name, g.admin_id, g.invite_code, g.created_at, gm.status AS my_status, gm.since AS my_since
          FROM group_members gm
          JOIN groups g ON g.id = gm.group_id
          WHERE gm.user_id = ? AND gm.status != 'banned'`,
@@ -351,6 +466,7 @@ export async function handleFriends(
         isAdmin,
         myStatus: String(g.my_status),
         inviteCode: isAdmin || g.my_status === 'active' ? String(g.invite_code) : null,
+        createdAt: String(g.created_at),
         members: activeMembers,
         pending: [],
         banned: bannedMembers,
@@ -393,6 +509,9 @@ export async function handleFriends(
       const fid = Number(f.github_id)
       const sharedCount = sharedCountBy.get(fid) ?? 0
       const fStats = f.stats_json ? (safeParseJson(String(f.stats_json)) as FriendStats | null) : null
+      const vaults = vaultsByOwner.get(fid) ?? []
+      const shareMode = String(f.deck_share_mode ?? 'none')
+      const canBrowseDeck = vaults.length > 0 && (shareMode === 'all' || (shareMode === 'selected' && allowedOwners.has(fid)))
       return {
         id: fid,
         login: String(f.login),
@@ -403,6 +522,8 @@ export async function handleFriends(
         statsAt: f.stats_at ? String(f.stats_at) : null,
         sharedCardCount: sharedCount,
         buddyStreak: computeBuddyStreak(meStatsParsed?.days, fStats?.days, nowMs),
+        canBrowseDeck,
+        browsableVaults: canBrowseDeck ? vaults : [],
       }
     })
 
@@ -442,31 +563,45 @@ export async function handleFriends(
     const incoming = body.stats as FriendStats
     if (incoming.v !== 1 || !Array.isArray(incoming.days) || typeof incoming.totals !== 'object') return refuse(400, 'bad_stats')
 
+    const force = body.force === true
     const existing = await db.prepare('SELECT stats_json FROM users WHERE github_id = ?').bind(meId).first<{ stats_json: string | null }>()
     const prevStats = existing?.stats_json ? (safeParseJson(existing.stats_json) as FriendStats | null) : null
-    const merged = mergeStatsNeverLower(prevStats, incoming)
+    const merged = force ? incoming : mergeStatsNeverLower(prevStats, incoming)
 
     const zone = typeof body.zone === 'string' && body.zone.length <= 64 ? body.zone : undefined
     const lastDone = merged.days.find((d) => d.done)?.day ?? null
     const stmts = [
       db
         .prepare(
-          'UPDATE users SET stats_json = ?, stats_at = ?, zone = COALESCE(?, zone), streak_current = ?, streak_best = ?, last_done_day = COALESCE(?, last_done_day), updated_at = ? WHERE github_id = ?',
+          force
+            ? 'UPDATE users SET stats_json = ?, stats_at = ?, zone = COALESCE(?, zone), streak_current = ?, streak_best = ?, last_done_day = ?, updated_at = ? WHERE github_id = ?'
+            : 'UPDATE users SET stats_json = ?, stats_at = ?, zone = COALESCE(?, zone), streak_current = ?, streak_best = ?, last_done_day = COALESCE(?, last_done_day), updated_at = ? WHERE github_id = ?',
         )
         .bind(JSON.stringify(merged), nowIso, zone ?? null, merged.totals.streak, merged.totals.bestStreak, lastDone, nowIso, meId),
     ]
+    if (force) {
+      stmts.push(db.prepare('DELETE FROM daily_activity WHERE user_id = ?').bind(meId))
+    }
     // Populate indexed daily_activity for recent 14 days (future cross-user communal queries, D13)
     for (const d of merged.days.slice(0, 14)) {
       stmts.push(
         db
           .prepare(
-            `INSERT INTO daily_activity (user_id, day, cards, seconds, done, streak)
-             VALUES (?, ?, ?, ?, ?, ?)
-             ON CONFLICT(user_id, day) DO UPDATE SET
-               cards = MAX(daily_activity.cards, excluded.cards),
-               seconds = MAX(daily_activity.seconds, excluded.seconds),
-               done = MAX(daily_activity.done, excluded.done),
-               streak = MAX(daily_activity.streak, excluded.streak)`,
+            force
+              ? `INSERT INTO daily_activity (user_id, day, cards, seconds, done, streak)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(user_id, day) DO UPDATE SET
+                   cards = excluded.cards,
+                   seconds = excluded.seconds,
+                   done = excluded.done,
+                   streak = excluded.streak`
+              : `INSERT INTO daily_activity (user_id, day, cards, seconds, done, streak)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(user_id, day) DO UPDATE SET
+                   cards = MAX(daily_activity.cards, excluded.cards),
+                   seconds = MAX(daily_activity.seconds, excluded.seconds),
+                   done = MAX(daily_activity.done, excluded.done),
+                   streak = MAX(daily_activity.streak, excluded.streak)`,
           )
           .bind(meId, d.day, d.cards, d.seconds, d.done ? 1 : 0, merged.totals.streak),
       )
@@ -495,7 +630,14 @@ export async function handleFriends(
 
     let vaultsJson = String(cur.vaults_json ?? '[]')
     if (Array.isArray(body.vaults)) {
-      const cleaned = [...new Set(body.vaults.filter((v): v is string => typeof v === 'string' && /^[^/\s]+\/[^/\s]+$/.test(v.trim())).map((v) => v.trim().toLowerCase()))].slice(0, 50)
+      const cleaned = [
+        ...new Set(
+          body.vaults
+            .filter((v): v is string => typeof v === 'string')
+            .map((v) => normalizeRepoSlug(v))
+            .filter((v): v is string => v !== null),
+        ),
+      ].slice(0, 50)
       vaultsJson = JSON.stringify(cleaned)
     }
     const zone = body.zone === null ? null : typeof body.zone === 'string' && body.zone.length <= 64 ? body.zone : (cur.zone as string | null)
@@ -595,6 +737,7 @@ export async function handleFriends(
     const [a, b] = canonicalPair(meId, otherId)
     const stmts = [
       db.prepare('DELETE FROM friendships WHERE user_a = ? AND user_b = ?').bind(a, b),
+      db.prepare('DELETE FROM deck_permissions WHERE (owner_id = ? AND friend_id = ?) OR (owner_id = ? AND friend_id = ?)').bind(meId, otherId, otherId, meId),
     ]
     if (url.searchParams.get('block') === '1') {
       stmts.push(db.prepare('INSERT OR IGNORE INTO blocks (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)').bind(meId, otherId, nowIso))
@@ -870,11 +1013,228 @@ export async function handleFriends(
     return answer(200, { ok: true })
   }
 
-  // 16. DELETE /api/friends/me — Delete my Friends data cleanly (Item 10)
+  // 16. GET / PUT /api/friends/decks/settings — manage shared deck browsing permissions & vaults
+  if (path === '/api/friends/decks/settings') {
+    if (method === 'GET') {
+      const userRow = await db.prepare('SELECT deck_share_mode FROM users WHERE github_id = ?').bind(meId).first<{ deck_share_mode?: string }>()
+      if (!userRow) return refuse(401, 'unauthorized')
+      const modeRaw = userRow.deck_share_mode ?? 'none'
+      const mode: DeckShareMode = modeRaw === 'all' || modeRaw === 'selected' ? modeRaw : 'none'
+      const vaultRows = await db
+        .prepare('SELECT repo_slug, installation_id, name FROM deck_vaults WHERE owner_id = ? ORDER BY name ASC')
+        .bind(meId)
+        .all<{ repo_slug: string; installation_id: number; name: string }>()
+      const permRows = await db
+        .prepare('SELECT friend_id FROM deck_permissions WHERE owner_id = ? AND allowed = 1 ORDER BY friend_id ASC')
+        .bind(meId)
+        .all<{ friend_id: number }>()
+      return answer(200, {
+        mode,
+        vaults: vaultRows.results.map((v) => ({
+          repo: String(v.repo_slug),
+          installationId: Number(v.installation_id),
+          name: String(v.name),
+        })),
+        allowedFriendIds: permRows.results.map((p) => Number(p.friend_id)),
+      })
+    }
+    if (method === 'PUT') {
+      const body = await readJsonBody(request)
+      if (!body) return refuse(400, 'bad_request')
+      const mode = body.mode
+      if (mode !== 'none' && mode !== 'all' && mode !== 'selected') return refuse(400, 'bad_mode')
+
+      const vaultsIn = Array.isArray(body.vaults) ? body.vaults : []
+      const cleanVaultMap = new Map<string, { repo: string; installationId: number; name: string }>()
+      for (const raw of vaultsIn) {
+        if (!raw || typeof raw !== 'object') return refuse(400, 'bad_vault')
+        const v = raw as Record<string, unknown>
+        const repo = typeof v.repo === 'string' ? normalizeRepoSlug(v.repo) : null
+        const installationId = typeof v.installationId === 'number' && Number.isInteger(v.installationId) && v.installationId > 0 ? v.installationId : null
+        const name = typeof v.name === 'string' ? v.name.replace(/\s+/g, ' ').trim().slice(0, 80) : ''
+        if (!repo || installationId === null) return refuse(400, 'bad_vault')
+        const fallbackName = repo.split('/')[1] ?? repo
+        cleanVaultMap.set(repo, { repo, installationId, name: name || fallbackName })
+      }
+      const cleanVaults = [...cleanVaultMap.values()].slice(0, 50)
+
+      const allowedIdsIn = Array.isArray(body.allowedFriendIds) ? body.allowedFriendIds : []
+      const cleanAllowedIds = [
+        ...new Set(allowedIdsIn.filter((id): id is number => typeof id === 'number' && Number.isInteger(id) && id > 0 && id !== meId)),
+      ].slice(0, 500)
+
+      const stmts = [
+        db.prepare('UPDATE users SET deck_share_mode = ?, updated_at = ? WHERE github_id = ?').bind(mode, nowIso, meId),
+        db.prepare('DELETE FROM deck_vaults WHERE owner_id = ?').bind(meId),
+        db.prepare('DELETE FROM deck_permissions WHERE owner_id = ?').bind(meId),
+      ]
+      for (const v of cleanVaults) {
+        stmts.push(
+          db
+            .prepare('INSERT INTO deck_vaults (owner_id, repo_slug, installation_id, name, updated_at) VALUES (?, ?, ?, ?, ?)')
+            .bind(meId, v.repo, v.installationId, v.name, nowIso),
+        )
+      }
+      for (const fid of cleanAllowedIds) {
+        stmts.push(
+          db
+            .prepare('INSERT INTO deck_permissions (owner_id, friend_id, allowed, updated_at) VALUES (?, ?, 1, ?)')
+            .bind(meId, fid, nowIso),
+        )
+      }
+      await db.batch(stmts)
+      return answer(200, { ok: true, mode, vaults: cleanVaults, allowedFriendIds: cleanAllowedIds })
+    }
+    return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'GET, PUT' } })
+  }
+
+  // 17. GET /api/friends/decks/:ownerId/(tree|file|asset) — read-only shared deck proxy
+  const deckRoute = /^\/api\/friends\/decks\/(\d+)\/(tree|file|asset)$/.exec(path)
+  if (deckRoute) {
+    if (method !== 'GET') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'GET' } })
+    const ownerId = Number(deckRoute[1])
+    const kind = deckRoute[2]
+    const rawRepo = url.searchParams.get('repo') ?? ''
+    const repoSlug = normalizeRepoSlug(rawRepo)
+    if (!repoSlug) return refuse(400, 'bad_repo')
+
+    // Verify friendship + deck sharing permission (owner can also preview own shared vault if configured)
+    if (ownerId !== meId) {
+      const [a, b] = canonicalPair(meId, ownerId)
+      const friendship = await db.prepare('SELECT 1 FROM friendships WHERE user_a = ? AND user_b = ?').bind(a, b).first()
+      if (!friendship) return refuse(403, 'forbidden')
+      const ownerRow = await db.prepare('SELECT deck_share_mode FROM users WHERE github_id = ?').bind(ownerId).first<{ deck_share_mode?: string }>()
+      const mode = ownerRow?.deck_share_mode ?? 'none'
+      if (mode === 'none') return refuse(403, 'forbidden')
+      if (mode === 'selected') {
+        const perm = await db
+          .prepare('SELECT allowed FROM deck_permissions WHERE owner_id = ? AND friend_id = ? AND allowed = 1')
+          .bind(ownerId, meId)
+          .first()
+        if (!perm) return refuse(403, 'forbidden')
+      } else if (mode !== 'all') {
+        return refuse(403, 'forbidden')
+      }
+    }
+
+    const vaultRow = await db
+      .prepare('SELECT repo_slug, installation_id, name FROM deck_vaults WHERE owner_id = ? AND repo_slug = ?')
+      .bind(ownerId, repoSlug)
+      .first<{ repo_slug: string; installation_id: number; name: string }>()
+    if (!vaultRow) return refuse(403, 'forbidden')
+
+    const [repoOwner, repoName] = String(vaultRow.repo_slug).split('/')
+    const installationId = Number(vaultRow.installation_id)
+    const vaultName = String(vaultRow.name)
+
+    if (kind === 'tree') {
+      const minted = await mintReadOnlyRepoToken(env, installationId, repoName, fetch, Math.floor(nowMs / 1000))
+      if (!minted.ok) return refuse(minted.status, minted.error)
+
+      const ghHeaders: Record<string, string> = {
+        accept: 'application/vnd.github+json',
+        authorization: `Bearer ${minted.token}`,
+        'user-agent': 'yaseen-docs-worker',
+        'x-github-api-version': '2022-11-28',
+      }
+      const inm = request.headers.get('if-none-match')
+      if (inm) ghHeaders['if-none-match'] = inm
+
+      let gh: Response
+      try {
+        gh = await fetch(
+          `https://api.github.com/repos/${encodeURIComponent(repoOwner)}/${encodeURIComponent(repoName)}/git/trees/HEAD?recursive=1`,
+          { method: 'GET', headers: ghHeaders },
+        )
+      } catch {
+        return refuse(502, 'github_unreachable')
+      }
+      const ghEtag = gh.headers.get('etag')
+      if (gh.status === 304) {
+        return new Response(null, { status: 304, headers: { ...HEADERS, ...(ghEtag ? { etag: ghEtag } : {}) } })
+      }
+      if (gh.status === 404) return refuse(404, 'not_found')
+      if (!gh.ok) return refuse(502, 'github_error')
+
+      let data: { tree?: unknown }
+      try {
+        data = (await gh.json()) as { tree?: unknown }
+      } catch {
+        return refuse(502, 'github_error')
+      }
+      const rawTree = Array.isArray(data?.tree) ? data.tree : []
+      const files: { path: string; title: string; kind: 'md' | 'asset' }[] = []
+      for (const entry of rawTree) {
+        if (!entry || typeof entry !== 'object') continue
+        const item = entry as { path?: unknown; type?: unknown }
+        if (item.type !== 'blob' || typeof item.path !== 'string') continue
+        const safePath = isSafeDeckPath(item.path)
+        if (!safePath) continue
+        const isMd = safePath.toLowerCase().endsWith('.md')
+        files.push({
+          path: safePath,
+          title: basenameOf(safePath, isMd),
+          kind: isMd ? 'md' : 'asset',
+        })
+      }
+      return answer(200, { repo: String(vaultRow.repo_slug), name: vaultName, files }, ghEtag ? { etag: ghEtag } : {})
+    }
+
+    const safePath = isSafeDeckPath(url.searchParams.get('path') ?? '')
+    if (!safePath) return refuse(400, 'bad_path')
+
+    const minted = await mintReadOnlyRepoToken(env, installationId, repoName, fetch, Math.floor(nowMs / 1000))
+    if (!minted.ok) return refuse(minted.status, minted.error)
+
+    let gh: Response
+    try {
+      gh = await fetch(
+        `https://api.github.com/repos/${encodeURIComponent(repoOwner)}/${encodeURIComponent(repoName)}/contents/${encodeGithubPath(safePath)}`,
+        {
+          method: 'GET',
+          headers: {
+            accept: 'application/vnd.github.raw+json',
+            authorization: `Bearer ${minted.token}`,
+            'user-agent': 'yaseen-docs-worker',
+            'x-github-api-version': '2022-11-28',
+          },
+        },
+      )
+    } catch {
+      return refuse(502, 'github_unreachable')
+    }
+    if (gh.status === 404) return refuse(404, 'not_found')
+    if (!gh.ok) return refuse(502, 'github_error')
+
+    if (kind === 'file') {
+      const raw = await gh.text()
+      const title = titleFromDeckMarkdown(raw, safePath)
+      const markdown = sanitizeSharedMarkdown(raw)
+      const assetPaths = extractRelativeAssetPaths(markdown, safePath)
+      return answer(200, { path: safePath, title, markdown, assetPaths })
+    }
+
+    // kind === 'asset'
+    const bytes = await gh.arrayBuffer()
+    return new Response(bytes, {
+      status: 200,
+      headers: {
+        'content-type': safeAssetContentType(safePath),
+        'cache-control': 'private, max-age=300',
+        'x-content-type-options': 'nosniff',
+        'referrer-policy': 'no-referrer',
+        'content-security-policy': "default-src 'none'; sandbox",
+      },
+    })
+  }
+
+  // 18. DELETE /api/friends/me — Delete my Friends data cleanly (Item 10)
   if (path === '/api/friends/me') {
     if (method !== 'DELETE') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'DELETE' } })
     await db.batch([
       db.prepare('DELETE FROM friendships WHERE user_a = ? OR user_b = ?').bind(meId, meId),
+      db.prepare('DELETE FROM deck_permissions WHERE owner_id = ? OR friend_id = ?').bind(meId, meId),
+      db.prepare('DELETE FROM deck_vaults WHERE owner_id = ?').bind(meId),
       db.prepare('DELETE FROM invites WHERE creator_id = ? OR group_id IN (SELECT id FROM groups WHERE admin_id = ?)').bind(meId, meId),
       db.prepare('DELETE FROM shared_card_states WHERE user_id = ? OR shared_card_id IN (SELECT id FROM shared_cards WHERE group_id IN (SELECT id FROM groups WHERE admin_id = ?))').bind(meId, meId),
       db.prepare('DELETE FROM shared_cards WHERE sender_id = ? OR to_user_id = ? OR group_id IN (SELECT id FROM groups WHERE admin_id = ?)').bind(meId, meId, meId),

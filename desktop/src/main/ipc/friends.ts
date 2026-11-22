@@ -1,17 +1,19 @@
 import { isRecord } from '@shared/guards'
 import { CONTRACT } from '@shared/ipc'
 import type { FriendsSendView } from '@shared/types'
-import type { SharedCardStatus } from '@shared/friendsApi'
+import type { DeckShareMode, DeckVaultConfig, SharedCardStatus } from '@shared/friendsApi'
 import type { FriendsService } from '../friends/service'
 import { handle } from './envelope'
 
 export interface FriendsIpcTarget {
   look(): Promise<FriendsSendView>
   setVaultIncluded?(vaultPath: string, included: boolean): Promise<{ ok: true; knownVaults: { path: string; name: string; included: boolean }[] } | { ok: false; error: string }>
+  listInstallableRepos?(): Promise<{ ok: true; repos: DeckVaultConfig[] } | { ok: false; error: string }>
   service: FriendsService
 }
 
 const CARD_STATUSES = new Set<SharedCardStatus>(['pending', 'accepted', 'dismissed'])
+const DECK_SHARE_MODES = new Set<DeckShareMode>(['none', 'all', 'selected'])
 
 function isPositiveInt(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v > 0
@@ -149,17 +151,23 @@ export function registerFriendsIpc(getTarget: FriendsIpcTarget | (() => Promise<
     if (!isRecord(input) || typeof input.root !== 'string' || typeof input.dir !== 'string' || !Array.isArray(input.cards)) {
       return { ok: false as const, error: 'Invalid import payload' }
     }
-    const cards: { id: string; title: string; markdown: string; senderLogin: string; upNext?: boolean }[] = []
+    const cards: { id: string; title: string; markdown: string; senderLogin: string; upNext?: boolean; attachments?: { name: string; mime: string; dataBase64: string }[] }[] = []
     for (const c of input.cards) {
       if (!isRecord(c) || typeof c.id !== 'string' || typeof c.title !== 'string' || typeof c.markdown !== 'string' || typeof c.senderLogin !== 'string') {
         return { ok: false as const, error: 'Invalid card in import payload' }
       }
+      const attachments = Array.isArray(c.attachments)
+        ? c.attachments
+            .filter((a): a is { name: string; mime: string; dataBase64: string } => isRecord(a) && typeof a.name === 'string' && typeof a.mime === 'string' && typeof a.dataBase64 === 'string')
+            .map((a) => ({ name: a.name, mime: a.mime, dataBase64: a.dataBase64 }))
+        : undefined
       cards.push({
         id: c.id,
         title: c.title,
         markdown: c.markdown,
         senderLogin: c.senderLogin,
         ...(typeof c.upNext === 'boolean' ? { upNext: c.upNext } : {}),
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
       })
     }
     const { service } = await resolve()
@@ -183,5 +191,59 @@ export function registerFriendsIpc(getTarget: FriendsIpcTarget | (() => Promise<
     const target = await resolve()
     if (!target.setVaultIncluded) return { ok: false as const, error: 'Vault preferences unavailable' }
     return target.setVaultIncluded(vaultPath, included)
+  })
+
+  handle(CONTRACT.friends.getDeckSettings, async () => {
+    const { service } = await resolve()
+    return service.getDeckSettings()
+  })
+
+  handle(CONTRACT.friends.saveDeckSettings, async (input: unknown) => {
+    if (!isRecord(input) || typeof input.mode !== 'string' || !DECK_SHARE_MODES.has(input.mode as DeckShareMode)) {
+      return { ok: false as const, error: 'Invalid deck share mode' }
+    }
+    if (!Array.isArray(input.vaults) || !Array.isArray(input.allowedFriendIds)) {
+      return { ok: false as const, error: 'Invalid deck settings payload' }
+    }
+    const vaults: DeckVaultConfig[] = []
+    for (const v of input.vaults) {
+      if (!isRecord(v) || !isNonEmptyString(v.repo) || !isPositiveInt(v.installationId) || !isNonEmptyString(v.name)) {
+        return { ok: false as const, error: 'Invalid vault in deck settings' }
+      }
+      vaults.push({ repo: v.repo.trim().toLowerCase(), installationId: v.installationId, name: v.name.trim() })
+    }
+    const allowedFriendIds = input.allowedFriendIds.filter(isPositiveInt)
+    const { service } = await resolve()
+    return service.saveDeckSettings({ mode: input.mode as DeckShareMode, vaults, allowedFriendIds })
+  })
+
+  handle(CONTRACT.friends.listInstallableRepos, async () => {
+    const target = await resolve()
+    if (!target.listInstallableRepos) return { ok: false as const, error: 'Installable repos unavailable' }
+    return target.listInstallableRepos()
+  })
+
+  handle(CONTRACT.friends.browseDeckTree, async (ownerId: unknown, repo: unknown) => {
+    if (!isPositiveInt(ownerId) || !isNonEmptyString(repo)) {
+      return { ok: false as const, error: 'Invalid ownerId or repo' }
+    }
+    const { service } = await resolve()
+    return service.browseDeckTree(ownerId, repo.trim().toLowerCase())
+  })
+
+  handle(CONTRACT.friends.browseDeckFile, async (ownerId: unknown, repo: unknown, path: unknown) => {
+    if (!isPositiveInt(ownerId) || !isNonEmptyString(repo) || !isNonEmptyString(path)) {
+      return { ok: false as const, error: 'Invalid ownerId, repo, or path' }
+    }
+    const { service } = await resolve()
+    return service.browseDeckFile(ownerId, repo.trim().toLowerCase(), path.trim())
+  })
+
+  handle(CONTRACT.friends.browseDeckAsset, async (ownerId: unknown, repo: unknown, path: unknown) => {
+    if (!isPositiveInt(ownerId) || !isNonEmptyString(repo) || !isNonEmptyString(path)) {
+      return { ok: false as const, error: 'Invalid ownerId, repo, or path' }
+    }
+    const { service } = await resolve()
+    return service.browseDeckAsset(ownerId, repo.trim().toLowerCase(), path.trim())
   })
 }

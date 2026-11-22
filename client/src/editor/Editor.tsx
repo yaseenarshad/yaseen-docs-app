@@ -1,5 +1,7 @@
 import { useUnit } from '../vault/unitWord'
 import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { FRIENDS_ENABLED } from '@shared/features'
 import { DEFAULT_SETTINGS, folderSettingsPath, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentPosition, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type FindFolds, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
 import { fileKind } from '@shared/fileKind'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -129,6 +131,7 @@ const DrawingModal = lazy(() => import('../drawings/DrawingModal').then((m) => (
 const ImageModal = lazy(() => import('./image/ImageModal').then((m) => ({ default: m.ImageModal })))
 const FrontmatterPanel = lazy(() => import('./FrontmatterPanel').then((m) => ({ default: m.FrontmatterPanel })))
 const CommentsSection = lazy(() => import('../comments/CommentsSection').then((m) => ({ default: m.CommentsSection })))
+const ShareCardModal = lazy(() => import('../friends/ShareCardModal').then((m) => ({ default: m.ShareCardModal })))
 
 /**
  * A save flips the chip unsaved → saving → saved, and each flip re-renders CrepeHost; these sections
@@ -857,6 +860,21 @@ function CrepeHost({
   diskRef.current = disk
   const reviewOn = useReviewOn(root)
   const convert = useCardConvert({ root, path: file.path, wikilinks, reviewOn, inFolderPage, disk: () => diskRef.current, allowFileAction: vaultScope.allowFileAction, onNotice, onReread, onOpenCardFile: onOpenFile })
+  const [sharePage, setSharePage] = useState<{ title: string; markdown: string } | null>(null)
+  const pageMenuRows = useCallback(() => {
+    const base = [...convert.rows()]
+    if (FRIENDS_ENABLED && !inFolderPage) {
+      base.push({
+        label: 'Share page with friend or group…',
+        divider: base.length === 0,
+        onToggle: () => {
+          const fallbackTitle = file.path.split('/').pop()?.replace(/\.md$/i, '') ?? 'Untitled page'
+          setSharePage({ title: titleRef.current || fallbackTitle, markdown: diskRef.current })
+        },
+      })
+    }
+    return base
+  }, [convert, file.path, inFolderPage])
   const inlineDrawing = useInlineDrawing({ root, path: file.path, title: () => titleRef.current, disk: () => diskRef.current, getView: () => (crepeRef.current === null ? null : editorViewOf(crepeRef.current)), flushPage: () => autosave.flushNow(), wikilinks, viewOnlyLinks, allowFileAction: vaultScope.allowFileAction, onNotice, onOpenInTab: tabId === undefined || onOpenInlineDrawing === undefined ? undefined : (index, background) => onOpenInlineDrawing(tabId, index, background) })
   /** The timed "Allow edits" of THIS tab (YAZ-4939): at zero the page saves (including any open card editor, YAZ-6052), then locks again. */
   const unlock = useTimedUnlock(() => {
@@ -1694,7 +1712,7 @@ function CrepeHost({
         <StatusChips zoom={documentZoom} onZoom={changeZoom} readOnly={lockedBase ? { asking: askingUnlock, onAsk: askUnlock, onAllow: (choice) => { setAskingUnlock(false); unlock.allow(choice) }, onCancel: () => setAskingUnlock(false), onTurnOff: diskReadOnly && !vaultLocked ? () => { setAskingUnlock(false); void setReadOnly(false) } : undefined, editingUntil: unlock.until, onLock: unlock.lock, lockKeys: true, onReturn: caretBack } : null} sync={sync} onSyncNow={onSyncNow} save={autosave.status}>
           {foldAllButton}
           {/* The cog's row reads the page's lock; a click while a timed unlock runs is "Lock now". */}
-          <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : askUnlock()) : void setReadOnly(true))} {...cog} rows={convert.rows} />
+          <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : askUnlock()) : void setReadOnly(true))} {...cog} rows={pageMenuRows} />
         </StatusChips>
       )}
       {/* The one-line note of outside changes (YAZ-3704 D6) takes the conflict bar's place and hides while it shows. */}
@@ -1807,6 +1825,18 @@ function CrepeHost({
           <ImageModal key={openImage.images[openImage.index].src} images={openImage.images} index={openImage.index} onClose={() => setOpenImage(null)} />
         </Suspense>
       )}
+      {sharePage !== null &&
+        createPortal(
+          <Suspense fallback={null}>
+            <ShareCardModal
+              kind="page"
+              card={sharePage}
+              onShared={(summary) => onNotice?.(summary)}
+              onClose={() => setSharePage(null)}
+            />
+          </Suspense>,
+          document.body,
+        )}
     </>
   )
 }
