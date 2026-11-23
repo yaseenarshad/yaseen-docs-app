@@ -1646,6 +1646,7 @@ export async function handleFriends(
   if (path === '/api/friends/me') {
     if (method !== 'DELETE') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'DELETE' } })
     await db.batch([
+      db.prepare('DELETE FROM push_deliveries WHERE user_id = ?').bind(meId),
       db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').bind(meId),
       db.prepare('DELETE FROM notification_prefs WHERE user_id = ?').bind(meId),
       db.prepare('DELETE FROM friendships WHERE user_a = ? OR user_b = ?').bind(meId, meId),

@@ -64,6 +64,25 @@ function safeParseStats(raw: unknown): FriendStats | null {
   }
 }
 
+const PUSH_DEDUPE_RETENTION_MS = 30 * 86_400_000
+
+/**
+ * Atomically claims an idempotency key `(userId, dedupeKey)` in D1 (`push_deliveries`).
+ * Returns `true` only for the first caller; concurrent or repeat callers receive `false`.
+ */
+export async function claimNotificationOnce(
+  db: D1Database,
+  userId: number,
+  dedupeKey: string,
+  nowIso: string,
+): Promise<boolean> {
+  const res = await db
+    .prepare('INSERT OR IGNORE INTO push_deliveries (user_id, dedupe_key, created_at) VALUES (?, ?, ?)')
+    .bind(userId, dedupeKey, nowIso)
+    .run()
+  return Number(res.meta?.changes ?? 0) > 0
+}
+
 /** Sends `payload` to registered push subscriptions for `userId` (optionally a single `endpoint`) and prunes 404/410 rows. */
 export async function notifyUser(
   env: WebPushEnv,
@@ -155,6 +174,8 @@ export async function notifyFriendsOnDoneTransition(
     .bind(meId, meId, meId)
     .all<Record<string, unknown>>()
 
+  const nowIso = new Date(nowMs).toISOString()
+
   for (const row of friendRows.results) {
     const friendId = Number(row.github_id)
     const fStats = safeParseStats(row.stats_json)
@@ -163,6 +184,7 @@ export async function notifyFriendsOnDoneTransition(
     const friendDoneToday = Boolean(fStats?.days.find((d) => d.day === todayRow.day)?.done)
 
     if (buddyStreakEnabled && buddyStreak > 0) {
+      if (!(await claimNotificationOnce(db, friendId, `friend-done:${meId}:${todayRow.day}`, nowIso))) continue
       const body = friendDoneToday
         ? `🎉 You & ${meName} hit a ${buddyStreak}-day buddy streak!`
         : `${meName} finished today — finish yours to hit a ${buddyStreak + 1}-day buddy streak!`
@@ -185,6 +207,7 @@ export async function notifyFriendsOnDoneTransition(
     const mode = String(row.friend_finished_mode ?? 'all')
     const selectedIds = parseIdList(row.friend_finished_ids_json)
     if (mode === 'all' || (mode === 'selected' && selectedIds.includes(meId))) {
+      if (!(await claimNotificationOnce(db, friendId, `friend-done:${meId}:${todayRow.day}`, nowIso))) continue
       await notifyUser(
         env,
         db,
@@ -266,6 +289,7 @@ export async function notifyFriendInviteAccepted(
     .bind(inviterId)
     .first<{ shared_cards: number }>()
   if (pref && Number(pref.shared_cards) !== 1) return
+  if (!(await claimNotificationOnce(db, inviterId, `friend-accept:${acceptorId}`, new Date(nowMs).toISOString()))) return
 
   await notifyUser(
     env,
@@ -356,6 +380,7 @@ export async function runDailyReminders(
 
     const dueLeft = Number(stats.totals?.dueLeft ?? 0)
     if (dueLeft <= 0) continue
+    if (!(await claimNotificationOnce(db, userId, `daily-reminder:${localDate}`, nowIso))) continue
 
     const streak = Number(stats.totals?.streak ?? 0)
     const body = `${dueLeft} due cards left today — keep your ${streak}-day streak going.`
@@ -388,6 +413,9 @@ export async function runDailyReminders(
         .run()
     }
   }
+
+  const cutoffIso = new Date(nowMs - PUSH_DEDUPE_RETENTION_MS).toISOString()
+  await db.prepare('DELETE FROM push_deliveries WHERE created_at < ?').bind(cutoffIso).run()
 
   return { checked, sent, failed }
 }
