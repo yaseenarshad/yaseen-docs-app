@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
+import type { LinkOpenTarget } from '@shared/links'
 import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, placeVaults, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type InboxCarry, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type ScreenPoint, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type TearOffResult, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
@@ -117,6 +118,8 @@ export interface WindowHost {
    * arrow keys keep browsing), or hidden with null — never closed: the renderer reuses it. No popup yet: nothing.
    */
   showPreview(win: ManagedWindow, bounds: WindowBounds | null): void
+  /** Optional hook invoked when a vault deep link carries `?open=inbox` or `?open=today` (YAZ-5967, YAZ-6373). */
+  onOpenTarget?(win: ManagedWindow, vaultPath: string, openTarget: LinkOpenTarget): void
 }
 
 export interface WindowManager extends WindowLookup {
@@ -284,10 +287,11 @@ export interface WindowManager extends WindowLookup {
   /**
    * A path from outside the app — a `yaseendocs://` link, Finder's Open With (files), `open -a`.
    * A FOLDER is "Open Folder…" on it (YAZ-2556 D1): it goes to `openRecentBeside`, trailing slash
-   * off, whatever vault contains it and whatever `rootOverride` says. A file (E1, GRO-2171):
-   * validate, then `resolveLinkTarget` routes it.
+   * off, whatever vault contains it and whatever `rootOverride` says. When `openTarget` is set
+   * (`?open=inbox` or `?open=today`, YAZ-6373), forwards it to `host.onOpenTarget`. A file (E1,
+   * GRO-2171): validate, then `resolveLinkTarget` routes it.
    */
-  routeToFile(path: string, rootOverride?: string | null): void
+  routeToFile(path: string, rootOverride?: string | null, openTarget?: LinkOpenTarget): void
   /** The unobtrusive can't-open surface (E1): un-minimize + focus a live window, send `link:notice`. Never a dialog. With no live window, the Welcome window opens and says it (YAZ-2589 A2). */
   linkNotice(message: string): void
   /** A notice about ONE vault (YAZ-2677 S45): `link:notice` to each live window that shows `root`, held like any link push until its page listens. No window is raised, and none opens for it. */
@@ -1259,13 +1263,37 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       if (win !== undefined && !win.isDestroyed()) win.close()
     },
 
-    routeToFile(path, rootOverride) {
+    routeToFile(path, rootOverride, openTarget) {
       // A FOLDER from outside — a link, or `open -a` — is "Open Folder…" on it
       // (YAZ-2556 D1): the one open-recent door raises that vault's windows, or opens it. A link keeps
       // a trailing slash, and the door keys the vault's bucket by the path it is given: slash off.
+      const normalized = stripSlash(path)
       if (host.dirExists(path)) {
-        openRecentBeside(stripSlash(path))
+        openRecentBeside(normalized)
+        if (openTarget !== undefined) {
+          const matching = store
+            .get()
+            .windows.filter((w) => !isFilesWindow(w) && w.roots.some((root) => stripSlash(root) === normalized))
+            .map((w) => ({ id: w.id, win: live.get(w.id) }))
+            .filter((w): w is { id: string; win: ManagedWindow } => w.win !== undefined && !w.win.isDestroyed())
+          const rank = (id: string): number => {
+            const at = focusOrder.indexOf(id)
+            return at === -1 ? Number.POSITIVE_INFINITY : at
+          }
+          const top = matching.sort((a, b) => rank(a.id) - rank(b.id))[0]?.win
+          if (top !== undefined) host.onOpenTarget?.(top, normalized, openTarget)
+        }
         return
+      }
+      // Missing vault or folder link (YAZ-6373): show a clear folder-not-found notice when the path
+      // is a known vault, carries a vault openTarget, or has an explicit trailing slash.
+      if (!host.exists(path) && fileKind(path) === null) {
+        const state = store.get()
+        const isKnownVault = state.folders[normalized] !== undefined || state.recents.some((r) => stripSlash(r.path) === normalized)
+        if (isKnownVault || openTarget !== undefined || path.endsWith('/')) {
+          linkNotice(`Can't open ${normalized}: folder not found`)
+          return
+        }
       }
       // Validate first (E1): a supported file kind and a live regular file. Anything off →
       // notice, never a dialog; renderer dispatch decides Markdown editor vs read-only viewer.

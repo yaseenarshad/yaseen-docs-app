@@ -2779,3 +2779,47 @@ describe('createWindowManager: transient read-only windows (YAZ-4502)', () => {
     expect(store.get().recents.map((r) => r.path)).toEqual(['/v'])
   })
 })
+
+describe('createWindowManager: routeToFile openTarget and missing vault notice (YAZ-6373)', () => {
+  it('forwards openTarget to host.onOpenTarget when opening a new vault window or raising an existing one', () => {
+    const onOpenTarget = vi.fn()
+    const { host, created } = makeHost([AREA], () => false, (p) => p === '/v/work' || p === '/v/work/')
+    host.onOpenTarget = onOpenTarget
+    const manager = createWindowManager(store, host)
+
+    // Opens a new window for /v/work and forwards 'inbox'.
+    manager.routeToFile('/v/work/', null, 'inbox')
+    expect(created).toHaveLength(1)
+    expect(onOpenTarget).toHaveBeenCalledTimes(1)
+    expect(onOpenTarget).toHaveBeenCalledWith(created[0].win, '/v/work', 'inbox')
+
+    // Raises existing window and forwards 'today' to the most recently focused window on /v/work.
+    manager.openWindow({ root: '/v/work', file: null })
+    expect(created).toHaveLength(2)
+    created[1].win.emit('focus')
+    onOpenTarget.mockClear()
+
+    manager.routeToFile('/v/work', null, 'today')
+    expect(onOpenTarget).toHaveBeenCalledTimes(1)
+    expect(onOpenTarget).toHaveBeenCalledWith(created[1].win, '/v/work', 'today')
+  })
+
+  it('shows a clear folder-not-found notice when a known vault or vault link folder is missing', () => {
+    store.pushRecent('/v/missing', 1)
+    const { host, created } = makeHost([AREA], () => false, () => false)
+    const manager = createWindowManager(store, host)
+    manager.restore('none')
+    const win = created[0].win
+    manager.handleLinkReady(win.webContents)
+
+    manager.routeToFile('/v/missing')
+    manager.routeToFile('/v/also-missing', null, 'inbox')
+    manager.routeToFile('/v/trailing-slash/')
+
+    expect(win.webContents.send.mock.calls).toEqual([
+      [CONTRACT.link.onNotice.channel, "Can't open /v/missing: folder not found"],
+      [CONTRACT.link.onNotice.channel, "Can't open /v/also-missing: folder not found"],
+      [CONTRACT.link.onNotice.channel, "Can't open /v/trailing-slash: folder not found"],
+    ])
+  })
+})

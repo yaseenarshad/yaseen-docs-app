@@ -25,9 +25,16 @@ export const isAppLink = (url: string): boolean => LINK_SCHEMES.some((s) => url.
  */
 const encodePath = (path: string): string => encodeURI(path).replace(/#/g, '%23').replace(/\?/g, '%3F')
 
-/** The `yaseendocs://` link that opens `path` (absolute). */
-export function fileLink(path: string): string {
-  return SCHEME + encodePath(path)
+/** Optional target view opened when a vault deep link (`?open=inbox` or `?open=today`) activates (YAZ-5967, YAZ-6373). */
+export type LinkOpenTarget = 'inbox' | 'today'
+
+const isOpenTarget = (value: string): value is LinkOpenTarget => value === 'inbox' || value === 'today'
+
+/** The `yaseendocs://` link that opens `path` (absolute), with optional `?open=inbox|today`. */
+export function fileLink(path: string, opts?: { open?: LinkOpenTarget }): string {
+  const base = SCHEME + encodePath(path)
+  if (opts?.open !== undefined && isOpenTarget(opts.open)) return `${base}?open=${opts.open}`
+  return base
 }
 
 /** `decodeURIComponent` that answers null for malformed percent-encoding instead of throwing. */
@@ -41,29 +48,38 @@ function decode(encoded: string): string | null {
 
 /**
  * Parses a `yaseendocs://` or `yaseendraw://` link back to its absolute path (+ optional
- * `?root=` override). Null for any other scheme, a relative/empty path, or malformed
- * percent-encoding. Manual string parsing on purpose: `new URL()` host-parses the double-slash
- * form (`yaseendocs://Users/...`) unpredictably for non-special schemes — here it simply decodes
- * to a relative path and is rejected.
+ * `?root=` override and optional `?open=inbox|today` target view). Null for any other scheme,
+ * a relative/empty path, or malformed percent-encoding. Manual string parsing on purpose:
+ * `new URL()` host-parses the double-slash form (`yaseendocs://Users/...`) unpredictably for
+ * non-special schemes — here it simply decodes to a relative path and is rejected.
  */
-export function parseFileLink(url: string): { path: string; root: string | null } | null {
+export function parseFileLink(url: string): { path: string; root: string | null; open?: LinkOpenTarget } | null {
   const scheme = LINK_SCHEMES.find((s) => url.startsWith(`${s}://`))
   if (scheme === undefined) return null
   let rest = url.slice(scheme.length + 3)
   let root: string | null = null
+  let open: LinkOpenTarget | undefined
   const q = rest.indexOf('?')
   if (q !== -1) {
     for (const pair of rest.slice(q + 1).split('&')) {
       const eq = pair.indexOf('=')
-      if (eq === -1 || pair.slice(0, eq) !== 'root') continue
-      const decoded = decode(pair.slice(eq + 1))
-      if (decoded === null) return null
-      // A non-absolute override could never contain the (absolute) path: no override at all.
-      if (decoded.startsWith('/')) root = decoded
+      if (eq === -1) continue
+      const key = pair.slice(0, eq)
+      const rawValue = pair.slice(eq + 1)
+      if (key === 'root') {
+        const decoded = decode(rawValue)
+        if (decoded === null) return null
+        // A non-absolute override could never contain the (absolute) path: no override at all.
+        if (decoded.startsWith('/')) root = decoded
+      } else if (key === 'open') {
+        const decoded = decode(rawValue)
+        if (decoded === null) return null
+        if (isOpenTarget(decoded)) open = decoded
+      }
     }
     rest = rest.slice(0, q)
   }
   const path = decode(rest)
   if (path === null || !path.startsWith('/')) return null
-  return { path, root }
+  return open === undefined ? { path, root } : { path, root, open }
 }
