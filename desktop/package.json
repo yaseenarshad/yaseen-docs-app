@@ -22,7 +22,7 @@
     "productName": "Yaseen Docs",
     "directories": { "output": "dist-app" },
     "files": ["out/**", "!node_modules/@typescript/**"],
-    "extraResources": [{ "from": "build/bin", "to": "bin" }, { "from": "../share/dist/assets", "to": "share-viewer" }, { "from": "../skills/card-skill", "to": "card-skill" }],
+    "extraResources": [{ "from": "build/bin", "to": "bin" }, { "from": "build/icon.png", "to": "icon.png" }, { "from": "../share/dist/assets", "to": "share-viewer" }, { "from": "../skills/card-skill", "to": "card-skill" }],
     "afterPack": "build/adhocSign.cjs",
     "mac": {
       "target": [

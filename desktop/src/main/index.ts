@@ -59,7 +59,7 @@ import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
 import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
 import { initMint, macId } from './vaultIndex/mint'
 import { createWindowManager } from './windows'
-import { createDockIconController, type DockIconController } from './dockIcon'
+import { createDockIconController, defaultDockIconPath, type DockIconController } from './dockIcon'
 import { installVaultLauncher, removeVaultLauncher, vaultLauncherBinaryPath } from './vaultLauncher'
 import { dropLanded } from './dragLanding'
 import { blockFileNavigation, createWindowOpenHandler } from './windowOpenPolicy'
@@ -509,7 +509,7 @@ app.whenReady().then(() => {
   subscribeMenuRebuildOnActiveFile(store, applyIfMoved)
   rebuildMenuOnFocus = applyIfMoved
   if (process.platform === 'darwin' && !hiddenE2E && app.dock !== undefined) {
-    const defaultIconPath = app.isPackaged ? join(process.resourcesPath, 'icon.icns') : join(__dirname, '../../build/icon.png')
+    const defaultIconPath = defaultDockIconPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname })
     const dock = app.dock
     dockIcon = createDockIconController<Electron.NativeImage>({
       store,

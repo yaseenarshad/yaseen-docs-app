@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type WindowEntry } from '@shared/types'
-import { createDockIconController, resolveDockIconPath } from './dockIcon'
+import { createDockIconController, defaultDockIconPath, resolveDockIconPath } from './dockIcon'
 
 const bounds = { x: 0, y: 0, width: 800, height: 600 }
 const makeWin = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({
@@ -263,5 +263,13 @@ describe('createDockIconController (YAZ-6374)', () => {
     expect(exists).toHaveBeenCalled()
     expect(setDockIcon).toHaveBeenLastCalledWith(`img:${DEFAULT_ICON}`)
     controller.dispose()
+  })
+
+  it('resolves a PNG default Dock icon path in both dev and packaged builds (YAZ-6386)', () => {
+    const devPath = defaultDockIconPath({ isPackaged: false, resourcesPath: '/app/Contents/Resources', mainDir: '/repo/desktop/out/main' })
+    const packagedPath = defaultDockIconPath({ isPackaged: true, resourcesPath: '/app/Contents/Resources', mainDir: '/repo/desktop/out/main' })
+    expect(devPath.endsWith('/build/icon.png')).toBe(true)
+    expect(packagedPath).toBe('/app/Contents/Resources/icon.png')
+    expect(packagedPath.endsWith('.icns')).toBe(false)
   })
 })

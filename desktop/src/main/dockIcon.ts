@@ -1,5 +1,15 @@
+import { join } from 'node:path'
 import { rootOfPath, stripSlash, type AppState } from '@shared/types'
 import type { Store } from './store'
+
+/**
+ * Resolves the default Yaseen Docs PNG icon path for `app.dock.setIcon()` (YAZ-6386).
+ * Electron's `nativeImage.createFromPath()` decodes PNG/JPEG, not `.icns`, so packaged builds
+ * ship `build/icon.png` in `Contents/Resources/icon.png` via `extraResources`.
+ */
+export function defaultDockIconPath(opts: { isPackaged: boolean; resourcesPath: string; mainDir: string }): string {
+  return opts.isPackaged ? join(opts.resourcesPath, 'icon.png') : join(opts.mainDir, '../../build/icon.png')
+}
 
 /**
  * Resolves the PNG icon path to show in the macOS Dock for the currently focused window (YAZ-5967, YAZ-6374).
