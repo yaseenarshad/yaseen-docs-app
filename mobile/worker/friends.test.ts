@@ -15,8 +15,9 @@ const MIGRATION_0002_SQL = readFileSync(join(__dirname, 'migrations/0002_drop_ma
 const MIGRATION_0003_SQL = readFileSync(join(__dirname, 'migrations/0003_shared_decks.sql'), 'utf8')
 const MIGRATION_0004_SQL = readFileSync(join(__dirname, 'migrations/0004_custom_avatar.sql'), 'utf8')
 const MIGRATION_0005_SQL = readFileSync(join(__dirname, 'migrations/0005_push_notifications.sql'), 'utf8')
+const MIGRATION_0006_SQL = readFileSync(join(__dirname, 'migrations/0006_push_dedupe.sql'), 'utf8')
 
-/** Real SQLite-backed D1 adapter executing the exact production migrations (0001..0005). */
+/** Real SQLite-backed D1 adapter executing the exact production migrations (0001..0006). */
 function makeSqliteD1(): D1Database {
   const sqlite = new DatabaseSync(':memory:')
   sqlite.exec(MIGRATION_SQL)
@@ -24,6 +25,7 @@ function makeSqliteD1(): D1Database {
   sqlite.exec(MIGRATION_0003_SQL)
   sqlite.exec(MIGRATION_0004_SQL)
   sqlite.exec(MIGRATION_0005_SQL)
+  sqlite.exec(MIGRATION_0006_SQL)
 
   const makeStmt = (sql: string, params: unknown[] = []): D1PreparedStatement => {
     const cleanParams = () => params.map((p) => (p === undefined ? null : p)) as (string | number | Uint8Array | null)[]
@@ -1107,7 +1109,8 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
     await flush()
     expect(sentPushes).toHaveLength(0)
 
-    // Now Bob finishes today -> Alice gets "🎉 You & Bob hit a 3-day buddy streak!"
+    // Now Bob finishes today with 3 concurrent PUT /api/friends/stats calls ->
+    // atomic push_deliveries dedupe ensures Alice gets ONLY ONE "🎉 You & Bob hit a 3-day buddy streak!"
     const bobDone: FriendStats = {
       ...bobInitial,
       days: [
@@ -1115,7 +1118,11 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
         ...bobInitial.days.slice(1),
       ],
     }
-    await handleFriends(req('/api/friends/stats', { method: 'PUT', headers: authB, body: JSON.stringify({ stats: bobDone }) }), env, combinedFetch, fixedNow, ctx)
+    await Promise.all([
+      handleFriends(req('/api/friends/stats', { method: 'PUT', headers: authB, body: JSON.stringify({ stats: bobDone }) }), env, combinedFetch, fixedNow, ctx),
+      handleFriends(req('/api/friends/stats', { method: 'PUT', headers: authB, body: JSON.stringify({ stats: bobDone }) }), env, combinedFetch, fixedNow, ctx),
+      handleFriends(req('/api/friends/stats', { method: 'PUT', headers: authB, body: JSON.stringify({ stats: bobDone }) }), env, combinedFetch, fixedNow, ctx),
+    ])
     await flush()
     expect(sentPushes).toHaveLength(1)
     expect(sentPushes[0]).toMatchObject({
@@ -1123,6 +1130,24 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
       payload: { body: '🎉 You & Bob hit a 3-day buddy streak!' },
     })
     sentPushes.length = 0
+
+    // Even if force:true flips Bob done->false->true again the same day, atomic dedupe still prevents a duplicate push
+    await handleFriends(
+      req('/api/friends/stats', { method: 'PUT', headers: authB, body: JSON.stringify({ stats: bobInitial, force: true }) }),
+      env,
+      combinedFetch,
+      fixedNow,
+      ctx,
+    )
+    await handleFriends(
+      req('/api/friends/stats', { method: 'PUT', headers: authB, body: JSON.stringify({ stats: bobDone, force: true }) }),
+      env,
+      combinedFetch,
+      fixedNow,
+      ctx,
+    )
+    await flush()
+    expect(sentPushes).toHaveLength(0)
 
     // Alice shares a card to Bob (sharedCards=true) and Charlie (sharedCards=false) -> only Bob is notified
     await handleFriends(
