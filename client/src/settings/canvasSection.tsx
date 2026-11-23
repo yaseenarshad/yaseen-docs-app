@@ -21,7 +21,7 @@
 import type { ReactNode } from 'react'
 import { DEFAULT_CANVAS_PREFS, FOLD_ARROW_MIN_SIZE_MAX, FOLD_ARROW_MIN_SIZE_MIN, FOLD_ARROW_SIZE_MAX, FOLD_ARROW_SIZE_MIN, FONT_FAMILY_OPTIONS, NEW_TEXT_SCREEN_SIZE_MAX, NEW_TEXT_SCREEN_SIZE_MIN, NEW_TEXT_WRAP_MARGIN_MAX, SNAP_COLOR_PRESETS, type CanvasPrefs, type NewElementStyleMode, type FoldArrowMode, type FoldArrowThickness, type Roughness, type SelectOn, type SettingsState, type SnapGapStyle, type TextAlign, type TextEdgeDoubleClickMode } from '@shared/types'
 import { Segmented, Select, Stepper } from './controls'
-import { DIAGRAM_DARK_COLORS_OPTIONS, EMBED_REST_OPTIONS, newBoardFolderOptions, newPageDrawingOptions, ON_OFF_OPTIONS, type Option } from './options'
+import { DIAGRAM_DARK_COLORS_OPTIONS, DRAWING_POSITION_OPTIONS, EMBED_REST_OPTIONS, newBoardFolderOptions, newPageDrawingOptions, ON_OFF_OPTIONS, type Option } from './options'
 import { unit } from './unitLabel'
 import type { SettingDef, SettingsSection } from './registry'
 
@@ -465,6 +465,15 @@ export const CANVAS_SECTION: SettingsSection = {
           keywords: ['embed', 'new drawing', 'new diagram', 'folder', 'assets', 'slash', 'location'],
           render: (ctx) => (
             <Segmented options={newBoardFolderOptions((text) => unit(ctx, text))} value={ctx.settings.newBoardFolder} onChange={(newBoardFolder) => ctx.onChange({ ...ctx.settings, newBoardFolder })} ariaLabel="New drawings and diagrams go to" />
+          ),
+        },
+        {
+          id: 'drawingPosition',
+          label: 'Drawing position',
+          hint: "Where drawings and diagrams sit in a page. A drawing's own Position menu can override this.",
+          keywords: ['embed', 'drawing', 'diagram', 'position', 'align', 'alignment', 'left', 'center', 'centre'],
+          render: ({ settings, onChange }) => (
+            <Segmented options={DRAWING_POSITION_OPTIONS} value={settings.drawingPosition ?? 'left'} onChange={(drawingPosition) => onChange({ ...settings, drawingPosition })} ariaLabel="Drawing position" />
           ),
         },
       ],

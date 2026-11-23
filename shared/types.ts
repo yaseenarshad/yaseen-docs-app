@@ -2482,6 +2482,11 @@ export interface SettingsState {
    * cards read anywhere: `data-table-position` on `.app`, one rule in `table.css`. The file never changes.
    */
   tablePosition: TablePosition
+  /**
+   * Settings › Drawings and diagrams › Embeds in pages › Drawing position (YAZ-6354): `left` (default) or `center`
+   * for inline drawings, embedded drawings, and draw.io diagrams in pages.
+   */
+  drawingPosition: TablePosition
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
   /**
@@ -3269,6 +3274,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableStickyHeader: true,
   tableTextInCells: 'wrap',
   tablePosition: 'left',
+  drawingPosition: 'left',
   tableNowMark: 'line',
   tableNextShade: false,
   tableNextColour: 'red',
