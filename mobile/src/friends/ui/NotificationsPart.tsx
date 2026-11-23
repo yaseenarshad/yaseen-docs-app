@@ -39,6 +39,14 @@ export function urlBase64ToUint8Array(base64Url: string): Uint8Array<ArrayBuffer
   return out
 }
 
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.byteLength !== b.byteLength) return false
+  for (let i = 0; i < a.byteLength; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
 export function detectIosNotStandalone(): boolean {
   const where = whereAmI(browserFacts())
   return where === 'ios-safari' || where === 'ios-other'
@@ -55,6 +63,7 @@ export default function NotificationsPart() {
   const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_NOTIFICATION_PREFS)
   const [subscribedCount, setSubscribedCount] = useState(0)
   const [deviceSubscribed, setDeviceSubscribed] = useState(false)
+  const [deviceEndpoint, setDeviceEndpoint] = useState<string | null>(null)
   const [friends, setFriends] = useState<{ id: number; name: string }[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -63,7 +72,9 @@ export default function NotificationsPart() {
   const [status, setStatus] = useState<string | null>(null)
 
   const isIosNotStandalone = detectIosNotStandalone()
-  const pushOn = deviceSubscribed || subscribedCount > 0
+  // Track subscription per device — another device's subscription in D1 must not make this phone look enabled.
+  const pushOn = deviceSubscribed
+  const otherDevicesCount = Math.max(0, subscribedCount - (deviceSubscribed ? 1 : 0))
 
   useEffect(() => {
     const load = serviceOf(app.services.friends)
@@ -96,8 +107,9 @@ export default function NotificationsPart() {
         if (!isFriendsDemo() && typeof navigator !== 'undefined' && navigator.serviceWorker && typeof navigator.serviceWorker.getRegistration === 'function') {
           const reg = await navigator.serviceWorker.getRegistration().catch(() => undefined)
           const sub = await reg?.pushManager?.getSubscription?.().catch(() => null)
-          if (live && sub) {
+          if (live && sub && (notifRes?.subscribedCount ?? 0) > 0) {
             setDeviceSubscribed(true)
+            setDeviceEndpoint(sub.endpoint)
           }
         }
       })
@@ -166,7 +178,11 @@ export default function NotificationsPart() {
         typeof window === 'undefined' ||
         !('PushManager' in window)
       ) {
-        setStatus('Push notifications are not supported in this browser.')
+        setStatus(
+          isIosNotStandalone
+            ? 'On iPhone, add Yaseen Docs to your Home Screen first, then open it from there to enable notifications.'
+            : 'Push notifications are not supported in this browser.',
+        )
         return
       }
 
@@ -183,11 +199,19 @@ export default function NotificationsPart() {
       }
 
       const reg = await navigator.serviceWorker.ready
+      const expectedKey = urlBase64ToUint8Array(config.vapidPublicKey)
       let sub = await reg.pushManager.getSubscription()
+      if (sub) {
+        const existingKey = sub.options?.applicationServerKey
+        if (existingKey && !bytesEqual(new Uint8Array(existingKey), expectedKey)) {
+          await sub.unsubscribe().catch(() => false)
+          sub = null
+        }
+      }
       if (!sub) {
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(config.vapidPublicKey),
+          applicationServerKey: expectedKey,
         })
       }
       const json = sub.toJSON()
@@ -208,7 +232,8 @@ export default function NotificationsPart() {
         return
       }
       setDeviceSubscribed(true)
-      setSubscribedCount((c) => Math.max(1, c))
+      setDeviceEndpoint(endpoint)
+      setSubscribedCount((c) => c + 1)
       setStatus('Notifications enabled on this device.')
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not enable notifications.')
@@ -237,7 +262,7 @@ export default function NotificationsPart() {
         return
       }
 
-      let endpoint = ''
+      let endpoint = deviceEndpoint ?? ''
       if (typeof navigator !== 'undefined' && navigator.serviceWorker) {
         const reg =
           typeof navigator.serviceWorker.getRegistration === 'function'
@@ -257,6 +282,7 @@ export default function NotificationsPart() {
         }
       }
       setDeviceSubscribed(false)
+      setDeviceEndpoint(null)
       setSubscribedCount((c) => Math.max(0, c - 1))
       setStatus('Notifications disabled on this device.')
     } catch (err) {
@@ -271,17 +297,35 @@ export default function NotificationsPart() {
       setStatus('Test notifications are not available right now.')
       return
     }
+    if (!deviceSubscribed) {
+      setStatus('Enable notifications on this device first.')
+      return
+    }
     setTestBusy(true)
     setStatus(null)
     try {
-      const res = await service.sendTestPush()
+      const res = await service.sendTestPush(deviceEndpoint ?? undefined)
       if (!res.ok) {
         setStatus(res.error || 'Could not send test notification.')
         return
       }
       if (res.sent > 0) {
         setStatus('Test notification sent')
+      } else if (res.failed > 0) {
+        const code = res.failedStatuses?.[0]
+        if (code === 404 || code === 410) {
+          setDeviceSubscribed(false)
+          setDeviceEndpoint(null)
+          setSubscribedCount((c) => Math.max(0, c - 1))
+        }
+        setStatus(
+          code
+            ? `Test notification failed (HTTP ${code}). Try disabling and re-enabling on this device.`
+            : 'Test notification failed. Try disabling and re-enabling on this device.',
+        )
       } else {
+        setDeviceSubscribed(false)
+        setDeviceEndpoint(null)
         setStatus('Enable notifications on this device first.')
       }
     } catch (err) {
@@ -318,8 +362,19 @@ export default function NotificationsPart() {
               disabled={pushBusy || loading}
               onClick={() => void (pushOn ? disablePush() : enablePush())}
             >
-              {pushBusy ? 'Updating…' : pushOn ? 'Disable on this device' : 'Enable notifications'}
+              {pushBusy
+                ? 'Updating…'
+                : pushOn
+                  ? 'Disable on this device'
+                  : otherDevicesCount > 0
+                    ? 'Enable on this device'
+                    : 'Enable notifications'}
             </button>
+            {!pushOn && otherDevicesCount > 0 && (
+              <p className="muted fr-notif-note">
+                Notifications are on for {otherDevicesCount} other {otherDevicesCount === 1 ? 'device' : 'devices'}, not this device yet.
+              </p>
+            )}
           </div>
 
           <div className="fr-notif-group">

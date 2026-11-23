@@ -1617,6 +1617,14 @@ export async function handleFriends(
 
   if (path === '/api/friends/push/test') {
     if (method !== 'POST') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'POST' } })
+    const body = await readJsonBody(request)
+    let onlyEndpoint: string | undefined
+    if (body && body.endpoint !== undefined) {
+      if (typeof body.endpoint !== 'string') return refuse(400, 'bad_endpoint')
+      const trimmed = body.endpoint.trim()
+      if (!trimmed || trimmed.length > 2048) return refuse(400, 'bad_endpoint')
+      onlyEndpoint = trimmed
+    }
     const res = await notifyUser(
       env,
       db,
@@ -1624,8 +1632,14 @@ export async function handleFriends(
       { title: 'Yaseen Docs', body: 'Push notifications are working!', url: '/friends', tag: 'push-test' },
       fetch,
       nowMs,
+      onlyEndpoint,
     )
-    return answer(200, { ok: true, sent: res.sent, failed: res.failed })
+    return answer(200, {
+      ok: true,
+      sent: res.sent,
+      failed: res.failed,
+      ...(res.failedStatuses.length > 0 ? { failedStatuses: res.failedStatuses } : {}),
+    })
   }
 
   // 18. DELETE /api/friends/me — Delete my Friends data cleanly (Item 10)

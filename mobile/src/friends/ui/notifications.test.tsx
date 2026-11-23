@@ -148,10 +148,10 @@ describe('Mobile Settings › Notifications (Web Push)', () => {
     await waitFor(() => updateNotificationPrefs.mock.calls.length === 4)
     expect(updateNotificationPrefs).toHaveBeenLastCalledWith({ sharedCards: false })
 
-    // Send test notification
+    // Send test notification before enabling on this device prompts to enable first
     await mounted.click('Send test notification')
-    await waitFor(() => mounted.text().includes('Test notification sent'))
-    expect(sendTestPush).toHaveBeenCalledTimes(1)
+    await waitFor(() => mounted.text().includes('Enable notifications on this device first.'))
+    expect(sendTestPush).not.toHaveBeenCalled()
   })
 
   it('shows the iOS Home Screen tip only on non-standalone iOS browsers', async () => {
@@ -304,5 +304,79 @@ describe('Mobile Settings › Notifications (Web Push)', () => {
     const unsubRes = await svc.unsubscribePush!('https://demo.push.local/device')
     expect(unsubRes).toEqual({ ok: true })
     expect((await svc.getNotificationPrefs!())?.subscribedCount).toBe(0)
+  })
+
+  it('keeps this device Off when another device is subscribed, then targets this device endpoint on test push', async () => {
+    let activeSub: {
+      endpoint: string
+      toJSON: () => { endpoint: string; keys: { p256dh: string; auth: string } }
+      unsubscribe: () => Promise<boolean>
+    } | null = null
+
+    const reg = {
+      pushManager: {
+        getSubscription: vi.fn(async () => activeSub),
+        subscribe: vi.fn(async () => {
+          activeSub = {
+            endpoint: 'https://web.push.apple.com/QIPHONE123',
+            toJSON: () => ({
+              endpoint: 'https://web.push.apple.com/QIPHONE123',
+              keys: { p256dh: 'iphone_p256dh', auth: 'iphone_auth' },
+            }),
+            unsubscribe: vi.fn(async () => true),
+          }
+          return activeSub
+        }),
+      },
+    }
+
+    Object.defineProperty(globalThis, 'Notification', {
+      value: { requestPermission: vi.fn(async () => 'granted' as NotificationPermission), permission: 'default' },
+      configurable: true,
+      writable: true,
+    })
+    Object.defineProperty(window, 'PushManager', { value: function PushManager() {}, configurable: true, writable: true })
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: { ready: Promise.resolve(reg), getRegistration: vi.fn(async () => reg) },
+      configurable: true,
+    })
+
+    const sendTestPush = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true as const, sent: 1, failed: 0 })
+      .mockResolvedValueOnce({ ok: true as const, sent: 0, failed: 1, failedStatuses: [403] })
+    const subscribePush = vi.fn(async () => ({ ok: true as const }))
+
+    const board = demoBoard(NOW)
+    const { h: mounted } = await openSettings(board, (s) => {
+      // Simulate Mac Chrome already subscribed in D1, while this iPhone has no local PushSubscription
+      s.getNotificationPrefs = vi.fn(async () => ({ prefs: { ...DEFAULT_NOTIFICATION_PREFS }, subscribedCount: 1 }))
+      s.getPushConfig = vi.fn(async () => ({ vapidPublicKey: 'AQID' }))
+      s.subscribePush = subscribePush
+      s.sendTestPush = sendTestPush
+    })
+
+    expect(mounted.text()).toMatch(/Notifications\s*Off/)
+    await mounted.click('Notifications')
+    expect(mounted.text()).toContain('Enable on this device')
+    expect(mounted.text()).toContain('Notifications are on for 1 other device, not this device yet.')
+
+    // Clicking test before enabling on this device does not send to another device
+    await mounted.click('Send test notification')
+    await waitFor(() => mounted.text().includes('Enable notifications on this device first.'))
+    expect(sendTestPush).not.toHaveBeenCalled()
+
+    // Enabling on this device registers its APNs endpoint, then test push targets that endpoint
+    await mounted.click('Enable on this device')
+    await waitFor(() => mounted.text().includes('Disable on this device'))
+    expect(mounted.text()).toMatch(/Notifications\s*On/)
+
+    await mounted.click('Send test notification')
+    await waitFor(() => mounted.text().includes('Test notification sent'))
+    expect(sendTestPush).toHaveBeenCalledWith('https://web.push.apple.com/QIPHONE123')
+
+    // Surfaces push service HTTP error code if delivery fails
+    await mounted.click('Send test notification')
+    await waitFor(() => mounted.text().includes('Test notification failed (HTTP 403)'))
   })
 })
