@@ -248,6 +248,19 @@ describe('Settings › GitHub (YAZ-5645 slice 2)', () => {
     for (let i = 0; i < 200 && t.went.length === before; i++) await h!.settle()
     expect(new URL(t.went.at(-1)!).searchParams.get('prompt')).toBe('select_account')
   })
+
+  it('Add vault jumps straight to the repo picker for an already signed-in GitHub account without asking to sign in again', async () => {
+    const t = await phoneWithGithub()
+    await vaultOnGithub(t, 'code-add-direct')
+    await h!.click('Settings')
+    await h!.waitText('Add vault')
+    await h!.click('Add vault')
+    await h!.waitText('Signed in as @yaseen. Choose the repo of your vault.')
+    expect(h!.button('Sign in with GitHub')).toBeNull()
+    expect(h!.button('Choose repos on GitHub')).not.toBeNull()
+    expect(h!.button('Use a token instead')).not.toBeNull()
+    expect(h!.button('Another GitHub account')).not.toBeNull()
+  })
 })
 
 describe('a repo taken off the app\'s list on GitHub (YAZ-5645 slice 2, edge case 5)', () => {

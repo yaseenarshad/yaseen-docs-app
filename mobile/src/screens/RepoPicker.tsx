@@ -43,9 +43,11 @@ export interface RepoPickerProps {
   onChooseRepos?: () => void
   /** GitHub: "Sign in with GitHub" again (the account was signed out). */
   onSignInGithub?: () => void
+  /** GitHub: add a vault from a different GitHub account (Add vault flow). */
+  onAnotherAccount?: () => void
 }
 
-export default function RepoPicker({ source, onOtherToken, onTyped, onChooseRepos, onSignInGithub }: RepoPickerProps) {
+export default function RepoPicker({ source, onOtherToken, onTyped, onChooseRepos, onSignInGithub, onAnotherAccount }: RepoPickerProps) {
   const app = useApp()
   const github = source.kind === 'github' ? source.login : null
   const githubAccess = app.githubAccess
@@ -192,6 +194,11 @@ export default function RepoPicker({ source, onOtherToken, onTyped, onChooseRepo
       <button type="button" className="link-btn" onClick={onOtherToken}>
         Use a token instead
       </button>
+      {onAnotherAccount !== undefined && (
+        <button type="button" className="link-btn" onClick={onAnotherAccount}>
+          Another GitHub account
+        </button>
+      )}
     </div>
   ) : (
     <div className="repo-picker__ways">

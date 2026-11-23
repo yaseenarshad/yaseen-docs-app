@@ -114,7 +114,8 @@ export function SignIn({ mode }: { mode: SignInMode }) {
     setHelp(null)
     setStep('token')
   }
-  const picking = app.github.kind === 'picking' && mode.kind !== 'again' ? app.github.login : null
+  const existingGithub = mode.kind === 'add' && step === 'start' && app.github.kind === 'none' ? (app.githubAccounts[0] ?? null) : null
+  const picking = mode.kind !== 'again' ? (app.github.kind === 'picking' ? app.github.login : existingGithub) : null
   const failed = app.github.kind === 'failed' ? app.github.help : null
   const ready = app.phase === 'ready'
   const title = mode.kind === 'first' ? 'Yaseen Docs' : mode.kind === 'add' ? 'Add a vault' : 'Sign in again'
@@ -122,7 +123,14 @@ export function SignIn({ mode }: { mode: SignInMode }) {
     <Frame title={title} back={mode.kind === 'first' || (mode.kind === 'again' && !ready) ? undefined : () => app.go({ type: 'back' })}>
       {mode.kind !== 'again' && (step === 'start' || step === 'token') && picking === null && <InstallHint />}
       {picking !== null ? (
-        <RepoPicker source={{ kind: 'github', login: picking }} onOtherToken={useToken} onTyped={() => (app.endGithub(), typed())} onChooseRepos={chooseRepos} onSignInGithub={() => toGithub()} />
+        <RepoPicker
+          source={{ kind: 'github', login: picking }}
+          onOtherToken={useToken}
+          onTyped={() => (app.endGithub(), typed())}
+          onChooseRepos={chooseRepos}
+          onSignInGithub={() => toGithub()}
+          onAnotherAccount={mode.kind === 'add' ? () => toGithub(true) : undefined}
+        />
       ) : step === 'start' ? (
         <div className="stack">
           {mode.kind === 'first' && <p className="lead">Your vault is a repo on GitHub. Sign in, then choose it.</p>}
