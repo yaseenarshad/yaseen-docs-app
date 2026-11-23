@@ -1,4 +1,4 @@
-import { MAX_CANVAS_CARDS, MAX_CANVAS_FRAMES, cleanCardsAdded, cleanUpNextTaken, isTocSource, type CanvasCard, type CanvasFrame, type FolderPatch, type TabCanvasPatch } from '@shared/types'
+import { MAX_CANVAS_CARDS, MAX_CANVAS_FRAMES, cleanCardsAdded, cleanUpNextTaken, cleanVaultLauncher, isTocSource, type CanvasCard, type CanvasFrame, type FolderPatch, type TabCanvasPatch } from '@shared/types'
 import { cleanCourseState, defaultCourseState, type CoursePatch } from '@shared/courseState'
 import { isRecord } from '@shared/guards'
 import { CONTRACT } from '@shared/ipc'
@@ -46,6 +46,16 @@ function requireFolderPatch(raw: unknown): FolderPatch {
     const added = cleanCardsAdded(raw.added)
     if (added === null) throw new BridgeFailure('BAD_REQUEST', "'added' must be { day, newCards, upNext }")
     patch.added = added
+  }
+  // macOS Vault App launcher metadata (YAZ-5967, YAZ-6374).
+  if (raw.launcher !== undefined) {
+    if (raw.launcher === null) {
+      patch.launcher = null
+    } else {
+      const launcher = cleanVaultLauncher(raw.launcher)
+      if (launcher === null) throw new BridgeFailure('BAD_REQUEST', "'launcher' must be a valid VaultLauncherInfo or null")
+      patch.launcher = launcher
+    }
   }
   return patch
 }

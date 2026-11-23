@@ -69,18 +69,22 @@ export function glideView(view: HTMLElement, dy: number): void {
   scrollViewTo(view, view.scrollTop + dy / cssZoom(view))
 }
 
-/** Smooth-scrolls `view` by a larger step on Up/Down (YAZ-6057). Chains target while held so repeats never stall. */
-export function arrowGlide(view: HTMLElement, delta: -1 | 1): void {
+/**
+ * Smooth-scrolls `view` by a larger step on Up/Down (YAZ-6057). Chains target while held so repeats never stall.
+ * Returns `true` when the view moved, or `false` when already at the top/bottom edge (YAZ-6393).
+ */
+export function arrowGlide(view: HTMLElement, delta: -1 | 1): boolean {
   const max = Math.max(0, view.scrollHeight - view.clientHeight)
-  if (max < 1) return
+  if (max < 1) return false
   const step = Math.max(ARROW_SCROLL_MIN_PX, Math.round(view.clientHeight * ARROW_SCROLL_FRACTION))
   const now = Date.now()
   const prev = arrowState.get(view)
   const base = prev !== undefined && now - prev.at <= ARROW_CHAIN_MS ? prev.target : view.scrollTop
   const target = Math.min(max, Math.max(0, base + delta * step))
-  if (Math.abs(target - view.scrollTop) < 1 && (prev === undefined || Math.abs(target - prev.target) < 1)) return
+  if (Math.abs(target - view.scrollTop) < 1 && (prev === undefined || Math.abs(target - prev.target) < 1)) return false
   arrowState.set(view, { target, at: now })
   scrollViewTo(view, target)
+  return true
 }
 
 /**

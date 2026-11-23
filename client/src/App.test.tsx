@@ -7364,7 +7364,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     act(() => button(el, 'Close settings')?.click())
     show('/w/b.md')
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ...Array.from({ length: 4 }, () => ['Cards', 'Vault: w']), ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
+    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ['Cards', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
   })
 
   it('two vaults that have no answer on IDs: no box for either, and nothing is written (YAZ-2677 S4)', async () => {
@@ -8529,7 +8529,7 @@ describe('App CLI navigation acknowledgement (YAZ-4502)', () => {
 describe('App: the card skill in the sidebar (YAZ-5108)', () => {
   const SKILL = '/demo-profile/card-skill'
   const START = `${SKILL}/Start here.md`
-  const skillOn = (settings: Partial<AppState['settings']> = {}): AppState => ({ ...defaultAppState(), settings: { ...defaultAppState().settings, ...settings } })
+  const skillOn = (settings: Partial<AppState['settings']> = {}): AppState => ({ ...defaultAppState(), settings: { ...defaultAppState().settings, cardSkillInSidebar: true, ...settings } })
   const reviews = (on: boolean) => (b: ReturnType<typeof installBridge>) => b.bridge.vaultConfig.read.mockImplementation(async (root?: string, name?: string) => (name === 'review.json' ? { enabled: root === SKILL ? false : on } : name === 'read-only.json' && root === SKILL ? { on: true } : null))
   const shown = () => captured.sidebar?.vaults.map((vault) => [vault.root, vault.app === true]) ?? []
   const rootsWritten = (bridge: ReturnType<typeof installBridge>['bridge']) => (bridge.window.setIdentity.mock.calls as unknown as [{ roots?: string[] }][]).flatMap(([patch]) => patch.roots ?? [])

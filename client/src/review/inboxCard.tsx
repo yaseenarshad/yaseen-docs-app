@@ -65,6 +65,8 @@ export interface CardSteps {
    * end in first. False when nothing happened (the end, in view).
    */
   stepOn: (by?: 'key' | 'mouse') => boolean
+  /** Open the next side without revealing hidden blanks on earlier sides (YAZ-6393). */
+  openNextSide: () => boolean
   /** A click on a blank (YAZ-5049 round 4): THAT word shows, the view stays put. */
   showWord: (word: number) => void
   /** A click on a shown word (round 6): it hides again and is marked next. */
@@ -119,6 +121,11 @@ export function useCardSteps(text: string | null, cardKey: string | null, viewRe
     },
     [done, after, text, step, viewRef, titleNow, mark, counts, title, nextSide],
   )
+  const openNextSide = useCallback((): boolean => {
+    if (text === null || step.sides >= counts.length) return false
+    setStep({ ...step, sides: step.sides + 1, key: step.key })
+    return true
+  }, [text, step, counts.length])
   const showWord = useCallback(
     (word: number) => {
       if (text === null) return
@@ -138,7 +145,7 @@ export function useCardSteps(text: string | null, cardKey: string | null, viewRe
     setStep({ ...START, key: cardKey })
     if (viewRef.current !== null) viewRef.current.scrollTop = 0
   }, [cardKey, viewRef])
-  return { counts, step, done, nextSide, titleNow, mark, onLastSide, stepOn, showWord, hideWord, restart }
+  return { counts, step, done, nextSide, titleNow, mark, onLastSide, stepOn, openNextSide, showWord, hideWord, restart }
 }
 
 /**

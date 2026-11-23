@@ -498,6 +498,8 @@ export interface SettingsCtx {
   dailyPagesVault?: string
   /** Review › Card course › "Open the course" (YAZ-5120): App closes Settings and opens the course. */
   openCourse?: () => void
+  /** macOS Vault App launcher (YAZ-5967, YAZ-6375): absent with no vault open or on non-macOS bridges. */
+  vaultLauncher?: { root: string; defaultName: string; onChanged?: () => void }
 }
 
 export interface SettingDef {
@@ -639,6 +641,8 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
 const REVIEW_KEYWORDS = ['cards', 'review', 'reviews', 'flashcards', 'inbox', 'spaced repetition', 'fsrs', 'archive', 'archived']
 /** Unified Mac GitHub App sign-in row (YAZ-6190, D4): lazy-loaded in Settings › Sync. */
 const GithubAccountControl = lazy(() => import('./GithubAccountControl').then((m) => ({ default: m.GithubAccountControl })))
+/** macOS Vault App launcher control (YAZ-5967, YAZ-6375): lazy-loaded in Settings › General. */
+const VaultLauncherControl = lazy(() => import('./VaultLauncherControl').then((m) => ({ default: m.VaultLauncherControl })))
 /** "Friends" (YAZ-5086): the Mac's send of the numbers, under the token; it loads only when Settings shows it. */
 const FriendsSendControl = lazy(() => import('./FriendsSendControl').then((m) => ({ default: m.FriendsSendControl })))
 /** "GitHub" (YAZ-5098, YAZ-5652): the Mac's GitHub token; the Cards words find this row too ("friends" only with Friends on). */
@@ -647,7 +651,7 @@ const githubKeywords = () => [...REVIEW_KEYWORDS, 'github', 'token', ...(FRIENDS
 const CARD_SPACING_KEYWORDS = [...REVIEW_KEYWORDS, 'spacing', 'line spacing', 'line height', 'paragraph', 'space between blocks', 'gap', 'bullet', 'indent', 'view mode']
 
 /** Every Review row but the switch is there only while review is on. */
-const reviewOn = ({ review }: SettingsCtx): boolean => review?.settings.enabled === true
+const reviewOn = ({ review, ids }: SettingsCtx): boolean => review?.settings.enabled === true && ids?.enabled !== false
 
 /** The live spacing previews (YAZ-5050 round 2): loaded only when Settings shows one. */
 // YAZ-5696 round 2: the eye by Show card titles, its own chunk (its CSS too): no eager weight.
@@ -1076,6 +1080,28 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             render: (ctx) => (
               <Segmented options={vaultOpensOnOptions((text) => unit(ctx, text))} value={ctx.settings.vaultOpensOn} onChange={(vaultOpensOn) => ctx.onChange({ ...ctx.settings, vaultOpensOn })} ariaLabel="What a vault opens on" />
             ),
+          },
+        ],
+      },
+      {
+        // YAZ-5967, YAZ-6375: per-vault macOS `.app` launcher (hidden on non-macOS or when no vault is open).
+        title: 'Vault app',
+        hint: 'Create a macOS launcher app for Alfred, Spotlight, and the Dock.',
+        vault: true,
+        items: [
+          {
+            id: 'vaultLauncher',
+            label: 'Vault launcher',
+            hint: 'Opens this vault directly in Yaseen Docs and updates the Dock icon when focused.',
+            keywords: ['vault', 'app', 'launcher', 'alfred', 'spotlight', 'dock', 'icon', 'badge', 'macos'],
+            wide: true,
+            available: (ctx) => ctx.vaultLauncher !== undefined,
+            render: ({ vaultLauncher }) =>
+              vaultLauncher && (
+                <Suspense fallback={null}>
+                  <VaultLauncherControl root={vaultLauncher.root} defaultName={vaultLauncher.defaultName} onChanged={vaultLauncher.onChanged} />
+                </Suspense>
+              ),
           },
         ],
       },

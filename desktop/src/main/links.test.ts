@@ -13,6 +13,12 @@ describe('fileLink', () => {
     expect(fileLink('/v/a#1.md')).toBe('yaseendocs:///v/a%231.md')
     expect(fileLink('/v/what?.md')).toBe('yaseendocs:///v/what%3F.md')
   })
+
+  it('appends optional ?open=inbox or ?open=today when requested (YAZ-6373)', () => {
+    expect(fileLink('/Users/me/My Vault', { open: 'inbox' })).toBe('yaseendocs:///Users/me/My%20Vault?open=inbox')
+    expect(fileLink('/Users/me/My Vault', { open: 'today' })).toBe('yaseendocs:///Users/me/My%20Vault?open=today')
+    expect(fileLink('/Users/me/My Vault', {})).toBe('yaseendocs:///Users/me/My%20Vault')
+  })
 })
 
 describe('parseFileLink round-trips fileLink', () => {
@@ -64,6 +70,15 @@ describe('parseFileLink', () => {
   it('ignores a non-absolute root override', () => {
     expect(parseFileLink('yaseendocs:///v/a.md?root=rel')).toEqual({ path: '/v/a.md', root: null })
     expect(parseFileLink('yaseendocs:///v/a.md?root=')).toEqual({ path: '/v/a.md', root: null })
+  })
+
+  it('extracts optional ?open=inbox or ?open=today and round-trips fileLink (YAZ-6373)', () => {
+    expect(parseFileLink(fileLink('/Users/me/My Vault', { open: 'inbox' }))).toEqual({ path: '/Users/me/My Vault', root: null, open: 'inbox' })
+    expect(parseFileLink(fileLink('/Users/me/My Vault', { open: 'today' }))).toEqual({ path: '/Users/me/My Vault', root: null, open: 'today' })
+    expect(parseFileLink('yaseendocs:///v/a.md?root=%2Fv&open=inbox')).toEqual({ path: '/v/a.md', root: '/v', open: 'inbox' })
+    expect(parseFileLink('yaseendocs:///v/a.md?open=today&root=%2Fv')).toEqual({ path: '/v/a.md', root: '/v', open: 'today' })
+    expect(parseFileLink('yaseendocs:///v/a.md?open=unknown')).toEqual({ path: '/v/a.md', root: null })
+    expect(parseFileLink('yaseendocs:///v/a.md?open=%')).toBeNull()
   })
 })
 

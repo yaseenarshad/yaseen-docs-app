@@ -25,23 +25,23 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-describe('the switch "Card skill in the sidebar" (YAZ-5108)', () => {
-  it('starts on Show: the default, and a file from before it', async () => {
-    expect(DEFAULT_SETTINGS.cardSkillInSidebar).toBe(true)
+describe('the switch "Card skill in the sidebar" (YAZ-5108, YAZ-6395)', () => {
+  it('starts on Hide: the default, and a file from before it', async () => {
+    expect(DEFAULT_SETTINGS.cardSkillInSidebar).toBe(false)
     const { cardSkillInSidebar: _gone, ...legacy } = DEFAULT_SETTINGS
     await writeFile(file, JSON.stringify({ ...defaultAppState(), settings: legacy }))
-    expect(createStore(file).get().settings.cardSkillInSidebar).toBe(true)
+    expect(createStore(file).get().settings.cardSkillInSidebar).toBe(false)
   })
 
-  it('keeps Hide across a restart; junk falls back to Show and the IPC boundary refuses it', async () => {
+  it('keeps Show across a restart; junk falls back to Hide and the IPC boundary refuses it', async () => {
     const store = createStore(file)
-    store.setSettings({ ...store.get().settings, cardSkillInSidebar: false })
+    store.setSettings({ ...store.get().settings, cardSkillInSidebar: true })
     await store.flush()
-    expect((JSON.parse(await readFile(file, 'utf8')) as AppState).settings.cardSkillInSidebar).toBe(false)
-    expect(createStore(file).get().settings.cardSkillInSidebar).toBe(false)
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, cardSkillInSidebar: 'hide' })).toMatchObject({ cardSkillInSidebar: true })
+    expect((JSON.parse(await readFile(file, 'utf8')) as AppState).settings.cardSkillInSidebar).toBe(true)
+    expect(createStore(file).get().settings.cardSkillInSidebar).toBe(true)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, cardSkillInSidebar: 'hide' })).toMatchObject({ cardSkillInSidebar: false })
     expect(isSettings({ ...DEFAULT_SETTINGS, cardSkillInSidebar: 'hide' })).toBe(false)
-    expect(isSettings({ ...DEFAULT_SETTINGS, cardSkillInSidebar: false })).toBe(true)
+    expect(isSettings({ ...DEFAULT_SETTINGS, cardSkillInSidebar: true })).toBe(true)
   })
 })
 

@@ -47,6 +47,7 @@ import { registerStateIpc } from './state'
 import { registerPictureFoldersIpc, rememberPick } from './pictureFolders'
 import { registerStorageIpc } from './storage'
 import { registerVaultConfigIpc } from './vaultConfig'
+import { createUnsupportedVaultLauncherBackend, registerVaultLauncherIpc, type VaultLauncherBackend } from './vaultLauncher'
 import { registerWatchIpc } from './watch'
 import { registerWindowIpc } from './window'
 
@@ -75,6 +76,10 @@ export type IpcPlaces = ShareIpcPlaces & {
   openPath?: (appPath: string) => Promise<string> | string
   /** Optional listener invoked whenever GitHub App auth status changes (e.g. Friends session refresh; YAZ-6219). */
   onGithubAuthChange?: () => void
+  /** macOS Vault App launcher backend (YAZ-5967, YAZ-6374); omitted falls back to unsupported stub. */
+  vaultLauncher?: VaultLauncherBackend
+  /** Invoked when a vault launcher icon is created or removed so the Dock icon cache can be invalidated. */
+  onVaultLauncherIconChanged?: (iconPath: string) => void
 }
 
 export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; githubAuth: GithubAuthManager; secrets: Secrets; lsp: LspPool; libraryMoves: LibraryMoves } {
@@ -102,6 +107,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerSoundIpc()
   registerHomeIpc()
   registerCardFormatsIpc(userData)
+  registerVaultLauncherIpc(store, userData, places.vaultLauncher ?? createUnsupportedVaultLauncherBackend(), places.onVaultLauncherIconChanged)
   // The code tabs' language helpers (YAZ-3454, YAZ-3455): the quit sequence stops them (`stopAllLanguageServers`).
   // They run only while Settings › Code › "Jump across files" is on, and are a download in `<userData>/lsp`
   // (YAZ-3500). A dev build also takes the `node_modules` copies, unless YASEEN_DOCS_LSP_DOWNLOAD_ONLY=1

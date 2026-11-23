@@ -497,7 +497,13 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
         return
       }
       if (key.kind === 'scroll') {
-        if (!moreOpen && rootRef.current !== null) arrowGlide(rootRef.current, key.delta)
+        if (!moreOpen && rootRef.current !== null) {
+          const moved = arrowGlide(rootRef.current, key.delta)
+          // YAZ-6393: a fresh Down tap at the bottom opens the next side directly without revealing hidden blanks.
+          if (!moved && key.delta > 0 && !event.repeat && live.current.steps.openNextSide()) {
+            tourEvent('inbox-step-shown', card.path)
+          }
+        }
         return
       }
       if (key.kind === 'answer') {

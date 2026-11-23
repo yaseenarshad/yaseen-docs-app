@@ -4,7 +4,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, DEFAULT_TOOLBAR, HIGHLIGHT_CUSTOM_COLORS_KEPT, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ROW_HEIGHT_DEFAULT, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultLauncher, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, DEFAULT_TOOLBAR, HIGHLIGHT_CUSTOM_COLORS_KEPT, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ROW_HEIGHT_DEFAULT, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { MAX_PICTURE_FOLDERS } from './fs/picturesFolders'
 import { createStore, isCanvasPanel, isSettings, mergeFolderSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs, sanitizeToolbarPrefs, sanitizeHighlightCustomColors } from './store'
@@ -3545,5 +3545,78 @@ describe('Time in slot and Show seconds left the app settings (YAZ-5602 round 2:
     await fourth.flush()
     expect(createStore(file).slotTimeToMove()).toEqual({})
     expect(JSON.parse(await readFile(file, 'utf8')).settings).not.toHaveProperty('tableSlotTime')
+  })
+})
+
+describe('FolderState.launcher (YAZ-6374)', () => {
+  it('cleanVaultLauncher validates required fields, drops bad optional fields, and rejects malformed records', () => {
+    expect(
+      cleanVaultLauncher({
+        name: '  Work Docs  ',
+        appPath: '/Applications/Work Docs.app',
+        iconPath: '/userData/vault-icons/abc.png',
+        target: 'inbox',
+        badge: { kind: 'material', value: 'work', color: '#1d4ed8' },
+      }),
+    ).toEqual({
+      name: 'Work Docs',
+      appPath: '/Applications/Work Docs.app',
+      iconPath: '/userData/vault-icons/abc.png',
+      target: 'inbox',
+      badge: { kind: 'material', value: 'work', color: '#1d4ed8' },
+    })
+
+    // Invalid optional fields are dropped without discarding the valid launcher.
+    expect(
+      cleanVaultLauncher({
+        name: 'Work',
+        appPath: '/Applications/Work.app',
+        iconPath: '/userData/vault-icons/abc.png',
+        target: 'bogus',
+        badge: { kind: 'unknown', value: 'x', color: 'red' },
+      }),
+    ).toEqual({
+      name: 'Work',
+      appPath: '/Applications/Work.app',
+      iconPath: '/userData/vault-icons/abc.png',
+    })
+
+    // Missing or non-absolute paths, empty names, or non-objects are rejected.
+    expect(cleanVaultLauncher(null)).toBeNull()
+    expect(cleanVaultLauncher({ name: '', appPath: '/a.app', iconPath: '/a.png' })).toBeNull()
+    expect(cleanVaultLauncher({ name: 'Work', appPath: 'relative.app', iconPath: '/a.png' })).toBeNull()
+    expect(cleanVaultLauncher({ name: 'Work', appPath: '/a.app', iconPath: 'relative.png' })).toBeNull()
+  })
+
+  it('persists, sanitizes on load, and deletes FolderState.launcher via setFolder', async () => {
+    const launcher = {
+      name: 'Work',
+      appPath: '/Applications/Work.app',
+      iconPath: '/userData/vault-icons/abc.png',
+      target: 'today' as const,
+      badge: { kind: 'letters' as const, value: 'WK', color: '#0f766e' },
+    }
+    const s1 = createStore(file)
+    s1.setFolder('/vaults/work', { launcher })
+    expect(s1.get().folders['/vaults/work']?.launcher).toEqual(launcher)
+    await s1.flush()
+
+    // Reloading from disk keeps the valid launcher and drops junk entries on other vaults.
+    const raw = await onDisk()
+    ;(raw.folders as Record<string, unknown>)['/vaults/bad'] = {
+      ...raw.folders['/vaults/work'],
+      launcher: { name: 'Bad', appPath: 'not-abs', iconPath: '/x.png' },
+    }
+    await seed(raw)
+
+    const s2 = createStore(file)
+    expect(s2.get().folders['/vaults/work']?.launcher).toEqual(launcher)
+    expect(s2.get().folders['/vaults/bad']?.launcher).toBeUndefined()
+
+    // Patching launcher: null deletes the key cleanly.
+    s2.setFolder('/vaults/work', { launcher: null })
+    expect(s2.get().folders['/vaults/work']?.launcher).toBeUndefined()
+    await s2.flush()
+    expect((await onDisk()).folders['/vaults/work']?.launcher).toBeUndefined()
   })
 })
