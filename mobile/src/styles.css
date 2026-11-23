@@ -373,24 +373,6 @@ body:has(.app--swiping) {
   font-size: 15px;
 }
 
-.vault-switcher__add {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 8px 14px;
-  border: 0;
-  border-top: 1px solid var(--border);
-  background: transparent;
-  color: var(--accent);
-  font: inherit;
-  font-size: 15px;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-}
-
 /* The ONLY thing that scrolls (YAZ-5436): `min-height: 0` lets it be shorter than its content; `contain` keeps its scroll
    from passing to the frame at its top and its end; `relative` keeps a hidden (VoiceOver) element in it, not in the
    document's overflow. */

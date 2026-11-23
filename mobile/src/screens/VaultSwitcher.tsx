@@ -6,8 +6,8 @@ import { VaultBadge, vaultNumber } from './VaultBadge'
 
 /**
  * Top-left mobile Vault Switcher: turns the topbar vault title into a tappable dropdown
- * modeled after Desktop's `All Folders ▾` switcher, with search (when > 4 vaults),
- * active checkmark, and `+ Add vault…` right at the bottom.
+ * modeled after Desktop's `All Folders ▾` switcher, with search (when > 4 vaults)
+ * and active checkmark. Adding vaults lives in Settings only.
  */
 export function VaultSwitcher({ title }: { title: string }) {
   const app = useApp()
@@ -109,18 +109,6 @@ export function VaultSwitcher({ title }: { title: string }) {
                 })
               )}
             </div>
-            <button
-              type="button"
-              role="menuitem"
-              className="vault-switcher__add"
-              onClick={() => {
-                close()
-                app.go({ type: 'open', route: { kind: 'add-vault' } })
-              }}
-            >
-              <span aria-hidden="true">＋</span>
-              <span>Add vault…</span>
-            </button>
           </div>
         </>
       )}
