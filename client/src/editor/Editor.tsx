@@ -333,12 +333,8 @@ interface EditorProps {
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
-  /** Settings › Editor › Outside changes › Glow (YAZ-3704 D5): `settings.outsideChangeGlow`. Absent → until checked. */
-  outsideChangeGlow?: SettingsState['outsideChangeGlow']
-  /** Settings › Editor › Outside changes › Board border thickness (YAZ-6398). */
-  outsideOutlineThickness?: SettingsState['outsideOutlineThickness']
-  /** Settings › Editor › Outside changes › Board border colors (YAZ-6398). */
-  outsideOutlineColors?: SettingsState['outsideOutlineColors']
+  /** Settings › Editor › Outside changes › Glow & board borders (YAZ-3704 D5, YAZ-6398). Absent → defaults. */
+  outsideChangeGlow?: SettingsState['outsideChangeGlow']; outsideOutlineThickness?: SettingsState['outsideOutlineThickness']; outsideOutlineColors?: SettingsState['outsideOutlineColors']
   /** Settings › Editor › Find › Folded bullets (YAZ-4787): `settings.findFolds`. A page's `find-folds` key wins. Absent → the one you are on. */
   findFolds?: SettingsState['findFolds']
   /** Settings › Editor › Outside changes › Pin default: `settings.outsideListPinned`. Absent → not pinned (the dropdown), as the table of contents. */
@@ -575,9 +571,7 @@ function CrepeHost({
   previewScope,
   hotkeys,
   hotkeysAside,
-  outsideChangeGlow = DEFAULT_SETTINGS.outsideChangeGlow,
-  outsideOutlineThickness,
-  outsideOutlineColors,
+  outsideChangeGlow = DEFAULT_SETTINGS.outsideChangeGlow, outsideOutlineThickness, outsideOutlineColors,
   findFolds = DEFAULT_SETTINGS.findFolds,
   outsideListPinned = DEFAULT_SETTINGS.outsideListPinned,
   onChangeOutsideListPinned,
@@ -644,9 +638,7 @@ function CrepeHost({
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
-  outsideChangeGlow?: SettingsState['outsideChangeGlow']
-  outsideOutlineThickness?: SettingsState['outsideOutlineThickness']
-  outsideOutlineColors?: SettingsState['outsideOutlineColors']
+  outsideChangeGlow?: SettingsState['outsideChangeGlow']; outsideOutlineThickness?: SettingsState['outsideOutlineThickness']; outsideOutlineColors?: SettingsState['outsideOutlineColors']
   /** Settings › Editor › Find › Folded bullets (YAZ-4787): `settings.findFolds`. A page's `find-folds` key wins. Absent → the one you are on. */
   findFolds?: SettingsState['findFolds']
   /** Settings › Editor › Outside changes › Pin default: `settings.outsideListPinned`. Absent → not pinned (the dropdown), as the table of contents. */
