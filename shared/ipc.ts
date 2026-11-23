@@ -15,7 +15,7 @@ import type { FoundPage } from './pageBirth'
 import type { CardSkillDuplicate, CardSkillFormats } from './cardSkillFolder'
 import type { CoursePatch } from './courseState'
 import type { CourseAudioChange, CourseAudioSound } from './courseAudio'
-import type { AddToAutoSyncResult, AutoSyncStatus, ConnectRepoResult, CopyAsMode, CopyAsRich, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, GithubAuthStatus, GithubInstalledRepo, ListScope, PageMenuAction, PageMenuArg, MemoryTabFacts } from './types'
+import type { AddToAutoSyncResult, AutoSyncStatus, ConnectRepoResult, CopyAsMode, CopyAsRich, CreateVaultLauncherRequest, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, GithubAuthStatus, GithubInstalledRepo, ListScope, PageMenuAction, PageMenuArg, MemoryTabFacts, VaultLauncherStatus } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
 import type { IconPackInfo, IconPacksRequest, IconPacksStatus } from './iconPacks'
@@ -594,6 +594,8 @@ export const CONTRACT = {
     onTabAction: push<{ ref: TabRef; action: TabAction }>('link:tab-action'),
     /** A Files window asked this window to act (YAZ-3357 D2): open the page, its history, its Share dialog, a review, an Inbox or a session. */
     onOpenFromFiles: push<FilesAction>('link:open-from-files'),
+    /** A Vault App launcher asked this window to open a target view (`inbox` or `today`) in `root` (YAZ-5967, YAZ-6374). */
+    onOpenTarget: push<{ root: string; target: 'inbox' | 'today' }>('link:open-target'),
     /** A link could not be opened (bad URL, unsupported, missing or non-regular file): show `message` unobtrusively. */
     onNotice: push<string>('link:notice'),
     /** This window's three listeners above are on (YAZ-2589 A2): main sends the pushes it held while the page loaded. */
@@ -888,6 +890,15 @@ export const CONTRACT = {
     selectionColour: invoke<[], string | null>('app:selection-colour', 0),
     /** Fired in every window when the colour changes: a new Highlight colour, or a change of the Mac's or the app's appearance. */
     onSelectionColour: push<string | null>('app:selection-colour-changed'),
+  },
+  /** macOS Vault App launchers (YAZ-5967, YAZ-6374): per-vault `.app` bundles, cached PNG icons, and Dock icon updates. */
+  vaultLauncher: {
+    status: invoke<[root: string], VaultLauncherStatus>('vault-launcher:status', 1),
+    create: invoke<[req: CreateVaultLauncherRequest], VaultLauncherStatus>('vault-launcher:create', 1),
+    remove: invoke<[root: string], void>('vault-launcher:remove', 1),
+    reveal: invoke<[root: string], void>('vault-launcher:reveal', 1),
+    test: invoke<[root: string], void>('vault-launcher:test', 1),
+    icons: invoke<[], Record<string, string>>('vault-launcher:icons', 0),
   },
   /** The updater (YAZ-2976 D2): main owns it, and every window reads the same state. */
   update: {
