@@ -12,7 +12,7 @@
  *   `api.writeFile({ path, content, expectedMtime, quiet: true })` wrapped in `announcedWrite` so
  *   a sibling tab of the same `.md` page updates quietly without conflict.
  */
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { CanvasPanelState, CanvasPrefs, PageView } from '@shared/types'
 import { missingPicturesNotice, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
 import { splitFrontmatter } from '@shared/frontmatter'
@@ -36,6 +36,7 @@ import { openInlineDrawing, type DrawingScene } from './drawingScene'
 import { exportFileName } from './exportDrawing'
 import { ExcalidrawSurface, type DrawingSnapshot, type DrawingSurfaceApi } from './ExcalidrawSurface'
 import { pressed } from './drawingKeys'
+import { EXPORT_DRAWING_HINT, EXPORT_IMAGE_HINT } from './cogHints'
 import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
 import './drawingEditor.css'
 
@@ -297,6 +298,19 @@ function InlineDrawingHost({
     const base = drawingTitle !== '' ? `${drawingTitle}.excalidraw` : basename(path)
     await exportWithNotice(async () => api.dialog.saveDrawing({ defaultName: exportFileName(base), content: await s.exportScene() }), EXPORT_FAILED, onNotice)
   }
+
+  const cogActions = useRef({ exportDrawing })
+  cogActions.current = { exportDrawing }
+  useLayoutEffect(
+    () =>
+      chips.set({
+        pageRows: () => [
+          { label: 'Export Image or PDF…', hint: EXPORT_IMAGE_HINT, onToggle: () => surface.current?.openImageExport() },
+          { label: 'Export Excalidraw Drawing…', hint: EXPORT_DRAWING_HINT, onToggle: () => void cogActions.current.exportDrawing() },
+        ],
+      }),
+    [chips],
+  )
 
   const exportPdf = async (svg: string, size: { width: number; height: number }): Promise<void> => {
     if (board.retired.current) return

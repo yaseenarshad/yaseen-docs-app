@@ -75,6 +75,7 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
         surface.refreshes += 1
       },
       focus: () => {},
+      openAddSearch: () => {},
       replaceScene: (scene) => {
         surface.replaced.push(scene)
         return surface.nextReplaceVersion
