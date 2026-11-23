@@ -34,6 +34,7 @@ const DEFAULTED = {
   calendarScale: 'calendarScale',
   cardTitles: 'cardTitles',
   calendarCardStyle: 'calendarCardStyle',
+  calendarCardColor: 'calendarCardColor',
   hideWeekends: 'hideWeekends',
   weekLine: 'weekLine',
   dayLine: 'dayLine',
@@ -78,6 +79,7 @@ const ABSENT: { readonly [K in DefaultedKey]: unknown } = {
   calendarScale: 'month',
   cardTitles: 'clip',
   calendarCardStyle: 'accent',
+  calendarCardColor: '',
   hideWeekends: false,
   // YAZ-4878: 1 px lines in the app's line colour before the Settings rows existed; a view's `weekLine: 3` reads as before.
   weekLine: 1,

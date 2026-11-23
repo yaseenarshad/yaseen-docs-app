@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_FOLDER_PAGES, type IndexRecord, readColorStrength, writeColorStrength } from '@shared/types'
 import type { Row } from './engine'
 import { FileValue, fromYaml, render } from './expr'
-import { addDays, bucketByDay, calLineColor, calLineCss, calendarCardStyleOf, calendarDateKey, calendarStartColumn, calendarEndKey, daysBetween, layoutWeek, monthShadeColorOf, monthShadeCss, spanDays, spanLabel, spanOf, type Span, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
+import { addDays, bucketByDay, calLineColor, calLineCss, calendarCardColorOf, calendarCardColorVars, calendarCardStyleOf, calendarDateKey, calendarStartColumn, calendarEndKey, daysBetween, layoutWeek, monthShadeColorOf, monthShadeCss, spanDays, spanLabel, spanOf, type Span, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
 import type { ViewDef, ViewSet } from './viewSchema'
 
 const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
@@ -417,5 +417,39 @@ describe('a colour with a strength (YAZ-4878, YAZ-4906)', () => {
     expect(calendarCardStyleOf({ calendarCardStyle: 'bar' })).toBe('bar')
     expect(calendarCardStyleOf({ calendarCardStyle: 'plain' })).toBe('plain')
     expect(calendarCardStyleOf({ calendarCardStyle: 'unknown' as never })).toBe('accent')
+  })
+
+  it('YAZ-6344: calendarCardColorOf returns null when unset/empty/invalid and parses colour + strength; calendarCardColorVars maps washes and bar accent', () => {
+    expect(calendarCardColorOf({})).toBeNull()
+    expect(calendarCardColorOf({ calendarCardColor: '' })).toBeNull()
+    expect(calendarCardColorOf({ calendarCardColor: 'turquoise' })).toBeNull()
+    expect(calendarCardColorOf({ calendarCardColor: 'teal' })).toEqual({ color: 'teal', strength: 'medium' })
+    expect(calendarCardColorOf({ calendarCardColor: 'blue light' })).toEqual({ color: 'blue', strength: 'light' })
+    expect(calendarCardColorOf({ calendarCardColor: 'red strong' })).toEqual({ color: 'red', strength: 'strong' })
+
+    expect(calendarCardColorVars(null)).toEqual({
+      '--cal-card-accent': 'var(--accent)',
+      '--cal-card-fill-wash': '8%',
+      '--cal-card-border-wash': '24%',
+      '--cal-card-hover-wash': '48%',
+    })
+    expect(calendarCardColorVars({ color: 'gray', strength: 'light' })).toEqual({
+      '--cal-card-accent': 'var(--fg-muted)',
+      '--cal-card-fill-wash': '8%',
+      '--cal-card-border-wash': '24%',
+      '--cal-card-hover-wash': '48%',
+    })
+    expect(calendarCardColorVars({ color: 'teal', strength: 'medium' })).toEqual({
+      '--cal-card-accent': 'var(--table-fill-solid-teal)',
+      '--cal-card-fill-wash': '14%',
+      '--cal-card-border-wash': '36%',
+      '--cal-card-hover-wash': '62%',
+    })
+    expect(calendarCardColorVars({ color: 'purple', strength: 'strong' })).toEqual({
+      '--cal-card-accent': 'var(--table-fill-solid-purple)',
+      '--cal-card-fill-wash': '22%',
+      '--cal-card-border-wash': '50%',
+      '--cal-card-hover-wash': '78%',
+    })
   })
 })

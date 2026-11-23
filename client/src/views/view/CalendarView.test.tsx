@@ -2083,9 +2083,11 @@ describe('tell months apart (YAZ-5608): Shade every other month, and a line Betw
 
   it('YAZ-6331: CSS rules for month shade default (2%), card styles, White + Bar cut-start dashed preservation, and [data-color] border polish', () => {
     expect(viewsCss).toContain('--cal-month-shade: color-mix(in srgb, var(--fg) 2%, var(--bg));')
-    expect(viewsCss).toContain('background: color-mix(in srgb, var(--accent) 8%, var(--bg));')
-    expect(viewsCss).toContain('border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--bg));')
-    expect(viewsCss).toContain('border-color: color-mix(in srgb, var(--accent) 48%, var(--bg));')
+    expect(viewsCss).toContain('background: color-mix(in srgb, var(--cal-card-accent, var(--accent)) var(--cal-card-fill-wash, 8%), var(--bg));')
+    expect(viewsCss).toContain('border: 1px solid color-mix(in srgb, var(--cal-card-accent, var(--accent)) var(--cal-card-border-wash, 24%), var(--bg));')
+    expect(viewsCss).toContain('border-color: color-mix(in srgb, var(--cal-card-accent, var(--accent)) var(--cal-card-hover-wash, 48%), var(--bg));')
+    expect(viewsCss).toContain('border-left: 3px solid var(--cal-card-accent, var(--accent));')
+    expect(viewsCss).toContain('border-left-color: var(--cal-card-accent, var(--accent));')
     expect(viewsCss).toContain("[data-card-style='slate'] .view-cal__card:not([data-color])")
     expect(viewsCss).toContain("[data-card-style='bar'] .view-cal__card:not([data-color])")
     expect(viewsCss).toContain("[data-card-style='plain'] .view-cal__card:not([data-color])")
@@ -2093,5 +2095,53 @@ describe('tell months apart (YAZ-5608): Shade every other month, and a line Betw
     expect(viewsCss).toMatch(/\[data-card-style='bar'\]\s+\.view-cal__bar\.view-cal__bar--cut-start:not\(\[data-color\]\)\s*\{[^}]*border-left:\s*1px dashed/)
     // Colored cards border polish (Item 6).
     expect(viewsCss).toContain('border-color: color-mix(in srgb, var(--card-hue) 40%, var(--border));')
+  })
+
+  it('YAZ-6344: Calendar card colour picker shows for Soft Accent & White + Bar, emits --cal-card-* vars, supports Accent (default) and Reset', () => {
+    const { el, yaml } = mount(CALENDAR)
+    const cal = () => q<HTMLElement>(el, '.view-cal')
+    // Unset by default: no inline --cal-card-* vars on .view-cal.
+    expect(cal().style.getPropertyValue('--cal-card-accent')).toBe('')
+    openView(el)
+    // Colour dot is visible for Soft Accent.
+    expect(el.querySelector('.view-popover--properties [aria-label="Card style colour"]')).not.toBeNull()
+    pickIn(el, 'Card style colour', 'Teal')
+    expect(yaml()).toContain('calendarCardColor: teal light')
+    expect(cal().style.getPropertyValue('--cal-card-accent')).toBe('var(--table-fill-solid-teal)')
+    expect(cal().style.getPropertyValue('--cal-card-fill-wash')).toBe('8%')
+    expect(cal().style.getPropertyValue('--cal-card-border-wash')).toBe('24%')
+    expect(cal().style.getPropertyValue('--cal-card-hover-wash')).toBe('48%')
+    // Change strength to Strong.
+    pickIn(el, 'Card style colour', 'Strong')
+    expect(yaml()).toContain('calendarCardColor: teal strong')
+    expect(cal().style.getPropertyValue('--cal-card-fill-wash')).toBe('22%')
+    expect(cal().style.getPropertyValue('--cal-card-border-wash')).toBe('50%')
+    expect(cal().style.getPropertyValue('--cal-card-hover-wash')).toBe('78%')
+    // Switch to Soft Slate: colour dot hides.
+    click(seg(el, 'Card style').find((b) => b.textContent === 'Soft Slate')!)
+    expect(el.querySelector('.view-popover--properties [aria-label="Card style colour"]')).toBeNull()
+    // Switch to White: colour dot stays hidden.
+    click(seg(el, 'Card style').find((b) => b.textContent === 'White')!)
+    expect(el.querySelector('.view-popover--properties [aria-label="Card style colour"]')).toBeNull()
+    // Switch to White + Bar: colour dot reappears.
+    click(seg(el, 'Card style').find((b) => b.textContent === 'White + Bar')!)
+    expect(el.querySelector('.view-popover--properties [aria-label="Card style colour"]')).not.toBeNull()
+    // Picking Accent (default) clears calendarCardColor back to default.
+    pickIn(el, 'Card style colour', 'Accent (default)')
+    expect(yaml()).not.toContain('calendarCardColor')
+    expect(cal().style.getPropertyValue('--cal-card-accent')).toBe('')
+    // Pick Gray Medium and verify ↺ resets both calendarCardStyle and calendarCardColor.
+    pickIn(el, 'Card style colour', 'Gray')
+    pickIn(el, 'Card style colour', 'Medium')
+    expect(yaml()).toContain('calendarCardColor: gray')
+    expect(cal().style.getPropertyValue('--cal-card-accent')).toBe('var(--fg-muted)')
+    expect(cal().style.getPropertyValue('--cal-card-fill-wash')).toBe('14%')
+    const reset = el.querySelector<HTMLButtonElement>('.view-popover--properties [aria-label="Card style"]')?.closest('.view-settings-row')?.querySelector<HTMLButtonElement>('[aria-label="Reset to Settings"]')
+    expect(reset).not.toBeNull()
+    click(reset!)
+    expect(yaml()).not.toContain('calendarCardStyle')
+    expect(yaml()).not.toContain('calendarCardColor')
+    expect(cal().dataset.cardStyle).toBe('accent')
+    expect(cal().style.getPropertyValue('--cal-card-accent')).toBe('')
   })
 })
