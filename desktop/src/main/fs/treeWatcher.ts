@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { EventEmitter } from 'node:events'
+import { EventEmitter, once } from 'node:events'
 import { existsSync, rmSync, watch as fsWatch, type FSWatcher, type Stats } from 'node:fs'
 import { lstat, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -80,16 +80,10 @@ const isInside = (p: string, k: string): boolean => k.startsWith(p.endsWith(path
 
 /** How often a probe writes its file until it hears one. */
 const PROBE_MS = 10
-/**
- * How long a probe waits for macOS FSEvents before declaring the stream silent and falling back
- * to polling (YAZ-4279). Healthy FSEvents answers in 0–100 ms; 3 s of silence means `fseventsd`
- * is wedged or unavailable, so polling takes over instead of hanging `ready` forever.
- */
-const PROBE_TIMEOUT_MS = 3000
 
 interface Probe {
-  /** Resolves true once the probe has heard its own write, or false if the stream stayed silent past `PROBE_TIMEOUT_MS`. */
-  heard: Promise<boolean>
+  /** Resolves once the probe has heard its own write. */
+  heard: Promise<void>
   close(): Promise<void>
 }
 
@@ -122,29 +116,12 @@ async function probeStream(): Promise<Probe> {
   const probe = fsWatch(dir)
   const tick = setInterval(() => void writeFile(path.join(dir, 'probe'), '').catch(() => undefined), PROBE_MS)
   tick.unref()
-  let timeout: ReturnType<typeof setTimeout> | null = null
-  const heard = new Promise<boolean>((resolve) => {
-    const finish = (ok: boolean): void => {
-      clearInterval(tick)
-      if (timeout !== null) {
-        clearTimeout(timeout)
-        timeout = null
-      }
-      resolve(ok)
-    }
-    probe.once('change', () => finish(true))
-    probe.once('error', () => finish(false))
-    timeout = setTimeout(() => finish(false), PROBE_TIMEOUT_MS)
-    timeout.unref()
-  })
   return {
-    heard,
+    heard: once(probe, 'change')
+      .then(() => undefined)
+      .finally(() => clearInterval(tick)),
     async close() {
       clearInterval(tick)
-      if (timeout !== null) {
-        clearTimeout(timeout)
-        timeout = null
-      }
       probe.close()
       activeProbeDirs.delete(dir)
       await rm(dir, { recursive: true, force: true })
@@ -204,8 +181,8 @@ class Engine extends EventEmitter implements TreeWatcher {
   private polling: PollingWatcher | null = null
   /** macOS: a probe per watch this engine opened, all open until it closes — closing one would rebuild the stream, deaf again for a while. */
   private readonly probes: Promise<Probe>[] = []
-  /** Resolves true once the stream serving `native` hears — at once off macOS; false if macOS FSEvents stayed silent. */
-  private listening: Promise<boolean> = Promise.resolve(true)
+  /** Resolves once the stream serving `native` hears — at once off macOS; renewed with `native`. */
+  private listening: Promise<void> = Promise.resolve()
   private started = false
   private closed = false
   /**
@@ -266,20 +243,10 @@ class Engine extends EventEmitter implements TreeWatcher {
       return this.pollInstead()
     }
     await initial
-    const heard = await this.listening
+    await this.listening
     // YAZ-3044 A35: a close during the first walk or before the stream heard ends the start here —
     // no second walk of the vault, and no event from a closed watcher.
     if (this.closed) return
-    // If macOS FSEvents stayed silent past PROBE_TIMEOUT_MS, fall back to polling instead of staying deaf.
-    if (!heard) {
-      this.native?.close()
-      this.native = null
-      this.timers.forEach(clearTimeout)
-      this.timers.clear()
-      await Promise.all(this.probes.splice(0).map(closeProbe))
-      if (this.closed) return
-      return this.pollInstead()
-    }
     if (there) await this.resync()
     if (this.closed) return
     this.started = true
@@ -322,22 +289,11 @@ class Engine extends EventEmitter implements TreeWatcher {
   /** `w` is the watch now; a new probe must vouch for it, since one opened before it vouches for nothing. */
   private listen(w: FSWatcher): void {
     this.native = w
-    if (process.platform !== 'darwin') {
-      this.listening = Promise.resolve(true)
-      return
-    }
+    if (process.platform !== 'darwin') return
     const probe = probeStream()
     this.probes.push(probe)
     // A probe that cannot run (no temp folder) is reported, and the watch goes on unvouched.
-    this.listening = Promise.race([
-      probe
-        .then((p) => p.heard)
-        .catch((err: unknown) => {
-          this.emit('error', err)
-          return true
-        }),
-      this.whenClosed.then(() => false),
-    ])
+    this.listening = Promise.race([probe.then((p) => p.heard).catch((err: unknown) => void this.emit('error', err)), this.whenClosed])
   }
 
   private watchDir(): void {
