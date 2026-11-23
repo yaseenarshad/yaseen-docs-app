@@ -19,10 +19,12 @@
  * width) and `'|400'` (no text) round-trip byte-identically through them.
  */
 
+import type { EmbedAlign } from '@shared/embedOptions'
+
 /** `scheme:` per RFC 3986 — the `//` is not required (`data:`, `mailto:`). */
 const SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i
 
-const TRAILING_WIDTH_RE = /^(.*?)\|(\d+)$/
+const TRAILING_OPTIONS_RE = /^(.*?)\|(?:([1-9]\d*)(?: align=(left|center|right))?|align=(left|center|right))$/
 
 /** True for a src the browser resolves itself; false for a vault-relative path. */
 export function hasScheme(src: string): boolean {
@@ -69,14 +71,19 @@ export function imageSrc(root: string, pageDirRel: string, src: string): string 
   return `app://vault/${encodeURIComponent(root)}/${encodeRef(ref)}?from=${encodeURIComponent(pageDirRel)}`
 }
 
-/** `'x|400'` → text `x`, width 400; `'|400'` → `''`, 400; `'x'` / `'a|b'` → no width. */
-export function parseAlt(alt: string): { text: string; width: number | null } {
-  const m = TRAILING_WIDTH_RE.exec(alt)
-  if (m === null) return { text: alt, width: null }
-  return { text: m[1], width: Number(m[2]) }
+/** `'x|400'`, `'x|400 align=center'`, `'x|align=right'` → parsed options; `'x'`, `'a|b'`, `'a|0'`, `'a|400 bogus'` → plain alt text. */
+export function parseAlt(alt: string): { text: string; width: number | null; align: EmbedAlign | null } {
+  const m = TRAILING_OPTIONS_RE.exec(alt)
+  if (m === null) return { text: alt, width: null, align: null }
+  const width = m[2] === undefined ? null : Number(m[2])
+  const align = (m[3] ?? m[4] ?? null) as EmbedAlign | null
+  return { text: m[1], width, align }
 }
 
-/** The inverse of `parseAlt`: a null width writes the text alone. */
-export function formatAlt(text: string, width: number | null): string {
-  return width === null ? text : `${text}|${width}`
+/** The inverse of `parseAlt`: omits `align` when null/undefined and writes the text alone when neither is set. */
+export function formatAlt(text: string, width: number | null, align: EmbedAlign | null = null): string {
+  const parts: string[] = []
+  if (width !== null) parts.push(`${width}`)
+  if (align !== null && align !== undefined) parts.push(`align=${align}`)
+  return parts.length === 0 ? text : `${text}|${parts.join(' ')}`
 }

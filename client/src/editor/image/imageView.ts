@@ -72,7 +72,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { NodeSelection, Plugin, Selection } from '@milkdown/kit/prose/state'
 import type { Decoration, EditorView, NodeView, ViewMutationRecord } from '@milkdown/kit/prose/view'
 import { $prose, $view } from '@milkdown/kit/utils'
-import { optionsPipe, optionsSuffix, parseEmbedOptions, type EmbedOptions } from '@shared/embedOptions'
+import { optionsPipe, optionsSuffix, parseEmbedOptions, type EmbedAlign, type EmbedOptions } from '@shared/embedOptions'
 import { fileKind } from '@shared/fileKind'
 import { holdFrames } from '../../lib/colResize'
 import type { MenuRow } from '../blockHandleMenu'
@@ -127,6 +127,7 @@ class ImageNodeView implements NodeView {
   private status: Status = 'loading'
   private resolved = ''
   private text = ''
+  private align: EmbedAlign | null = null
   /** A board src's window (YAZ-4828), once its chunk is there; `boardOn` while the node shows a board. */
   private board: BoardWindowHandle | null = null
   private boardOn = false
@@ -212,12 +213,14 @@ class ImageNodeView implements NodeView {
     onOpenImage({ images, index })
   }
 
-  /** Alt text, `|width` and title onto the live `<img>` — no rebuild, no reload. */
+  /** Alt text, `|width`, `align=` and title onto the live `<img>` — no rebuild, no reload. */
   private patch(alt: string, title: string): void {
     const img = this.img
     if (img === null) return
-    const { text, width } = parseAlt(alt)
+    const { text, width, align } = parseAlt(alt)
     this.text = text
+    this.align = align
+    syncAlignAttr(this.dom, align)
     img.alt = text
     // No width in the markdown = no property on the element; the stylesheet's `auto` fallback
     // takes over.
@@ -238,6 +241,8 @@ class ImageNodeView implements NodeView {
     this.setStatus('broken')
     this.img = null
     this.handles = []
+    this.align = null
+    syncAlignAttr(this.dom, null)
     const chip = document.createElement('span')
     chip.className = IMAGE_BROKEN_CLASS
     chip.textContent = `Broken image: ${src}`
@@ -305,11 +310,11 @@ class ImageNodeView implements NodeView {
     holdFrames(true)
   }
 
-  /** ONE document change per gesture: the new width into the alt, everything else untouched. */
+  /** ONE document change per gesture: the new width into the alt, preserving alignment and everything else. */
   private commitWidth(width: number): void {
     const pos = this.getPos()
     if (pos === undefined) return
-    const alt = formatAlt(this.text, width)
+    const alt = formatAlt(this.text, width, this.align)
     if (alt === this.node.attrs.alt) return
     this.view.dispatch(this.view.state.tr.setNodeMarkup(pos, undefined, { ...this.node.attrs, alt }))
   }

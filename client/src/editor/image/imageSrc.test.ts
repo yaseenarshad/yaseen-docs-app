@@ -63,15 +63,36 @@ describe('pageDirRel', () => {
 
 describe('parseAlt / formatAlt', () => {
   it.each([
-    ['x|400', 'x', 400],
-    ['|400', '', 400],
-    ['x', 'x', null],
-    ['a|b', 'a|b', null],
-    ['', '', null],
-    ['a|b|300', 'a|b', 300],
-    ['x|40 ', 'x|40 ', null],
-  ] as const)('%j → text %j width %j, and back', (alt, text, width) => {
-    expect(parseAlt(alt)).toEqual({ text, width })
-    expect(formatAlt(text, width)).toBe(alt)
+    ['x|400', 'x', 400, null],
+    ['|400', '', 400, null],
+    ['x|400 align=left', 'x', 400, 'left'],
+    ['x|400 align=center', 'x', 400, 'center'],
+    ['x|400 align=right', 'x', 400, 'right'],
+    ['|400 align=center', '', 400, 'center'],
+    ['x|align=left', 'x', null, 'left'],
+    ['x|align=center', 'x', null, 'center'],
+    ['x|align=right', 'x', null, 'right'],
+    ['|align=right', '', null, 'right'],
+    ['a|b|300', 'a|b', 300, null],
+    ['a|b|300 align=center', 'a|b', 300, 'center'],
+    ['a|b|align=left', 'a|b', null, 'left'],
+    ['x', 'x', null, null],
+    ['a|b', 'a|b', null, null],
+    ['a|align=top', 'a|align=top', null, null],
+    ['a|0', 'a|0', null, null],
+    ['a|0 align=center', 'a|0 align=center', null, null],
+    ['a|400 bogus', 'a|400 bogus', null, null],
+    ['', '', null, null],
+    ['x|40 ', 'x|40 ', null, null],
+  ] as const)('%j → text %j width %j align %j, and back', (alt, text, width, align) => {
+    expect(parseAlt(alt)).toEqual({ text, width, align })
+    expect(formatAlt(text, width, align)).toBe(alt)
+  })
+
+  it('formatAlt omits align when null or undefined', () => {
+    expect(formatAlt('x', 400)).toBe('x|400')
+    expect(formatAlt('x', 400, undefined)).toBe('x|400')
+    expect(formatAlt('x', null)).toBe('x')
+    expect(formatAlt('x', null, undefined)).toBe('x')
   })
 })
