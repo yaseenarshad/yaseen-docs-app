@@ -6,6 +6,7 @@ import { TodayTab } from '../daily/TodayTab'
 import { setReviewTop } from './reviewTop'
 import { SyncStatus } from './SyncStatus'
 import { useEdgeBack } from './useEdgeBack'
+import { VaultSwitcher } from './VaultSwitcher'
 
 /**
  * The frame of every screen: the top bar, the screen, and (when a vault is open) the tab bar. The bars keep clear of
@@ -24,6 +25,7 @@ export function Frame({
   kind,
   tools,
   foot,
+  vaultSwitcher = false,
   children,
 }: {
   title: string
@@ -50,6 +52,8 @@ export function Frame({
   chip?: ReactNode
   /** Over the tab bar: the page arrows. */
   foot?: ReactNode
+  /** Turn the top-left title into a tappable Vault Switcher dropdown. */
+  vaultSwitcher?: boolean
   children: ReactNode
 }) {
   const app = useApp()
@@ -66,7 +70,11 @@ export function Frame({
           </button>
         )}
         {kind !== undefined && <KindIcon kind={kind} className="topbar__kind" />}
-        <h1 className={review ? 'topbar__title sr-only' : 'topbar__title'}>{title}</h1>
+        {vaultSwitcher && !review ? (
+          <VaultSwitcher title={title} />
+        ) : (
+          <h1 className={review ? 'topbar__title sr-only' : 'topbar__title'}>{title}</h1>
+        )}
         {chip}
         {tools}
         {review && <div ref={setReviewTop} className="topbar__review" />}

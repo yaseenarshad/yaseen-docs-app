@@ -217,6 +217,180 @@ body:has(.app--swiping) {
   text-overflow: ellipsis;
 }
 
+.vault-switcher {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.vault-switcher__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: var(--tap);
+  padding: 0 8px 0 0;
+  margin: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.vault-switcher__trigger:active {
+  opacity: 0.7;
+}
+
+.vault-switcher__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-switcher__badge,
+.vault-switcher__item-badge {
+  flex-shrink: 0;
+}
+
+.vault-switcher__caret {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+  transition: transform 0.14s ease;
+}
+
+.vault-switcher__caret.is-open {
+  transform: rotate(180deg);
+}
+
+.vault-switcher__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.vault-switcher__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: -4px;
+  z-index: 100;
+  width: min(296px, calc(100vw - 24px));
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.vault-switcher__search-wrap {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.vault-switcher__search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-side);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.vault-switcher__list {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.vault-switcher__empty {
+  margin: 0;
+  padding: 16px 12px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.vault-switcher__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vault-switcher__item.is-active {
+  background: var(--bg-side);
+}
+
+.vault-switcher__item-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.vault-switcher__item-name {
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-switcher__item-sub {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-switcher__check {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.vault-switcher__add {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
 /* The ONLY thing that scrolls (YAZ-5436): `min-height: 0` lets it be shorter than its content; `contain` keeps its scroll
    from passing to the frame at its top and its end; `relative` keeps a hidden (VoiceOver) element in it, not in the
    document's overflow. */
