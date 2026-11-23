@@ -68,6 +68,9 @@ const surface = {
   merged: [] as { base: unknown; disk: unknown }[],
   /** What `whenIdle` waits on: a gesture in flight until the test resolves it. */
   idle: Promise.resolve(true),
+  scrolledTo: [] as (readonly string[])[],
+  repaired: 0,
+  keepBothCalls: 0,
 }
 
 vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
@@ -106,6 +109,17 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
       whenIdle: () => surface.idle,
       clash: (ids) => {
         surface.clashes.push(ids)
+      },
+      scrollToElements: (ids) => {
+        surface.scrolledTo.push(ids)
+      },
+      repairScene: () => {
+        surface.repaired += 1
+        return { removedDeleted: 1, repairedCount: 1 }
+      },
+      keepBothScene: () => {
+        surface.keepBothCalls += 1
+        return { version: 99, duplicated: 2 }
       },
     } satisfies DrawingSurfaceApi)
     // The real engine renders this into its own top-right row; the stub just puts it on screen,
@@ -894,15 +908,15 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
   it('in this order: Read only, Link preview on hover, the count and size of the pictures in words (YAZ-4110 5B), the moves to the other places, then the two exports', async () => {
     surface.pictures = { bytes: 3.3 * MB, count: 6, missing: 0 }
     await openCog()
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '6 pictures in this file (3.3 MB)', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
-    // YAZ-4277 D5: a line above the fold arrow rows too, and above the hover outline's (YAZ-4469 demo).
-    expect(menuIn(container)?.querySelectorAll(':scope > .page-settings__divider') ?? []).toHaveLength(4)
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '6 pictures in this file (3.3 MB)', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…', 'Reload from disk', 'Repair drawing file'])
+    // YAZ-4277 D5: a line above the fold arrow rows too, above hover outline (YAZ-4469 demo), and above Reload from disk (YAZ-4279).
+    expect(menuIn(container)?.querySelectorAll(':scope > .page-settings__divider') ?? []).toHaveLength(5)
     expect(row('6 pictures in this file (3.3 MB)')!.className).not.toContain('warn')
   })
 
   it('no picture: no size row and no move; from 20 MB the size is amber; a "pictures out" board says where they are: the assets folder, or its own folder by its last name with the whole path on hover', async () => {
     await openCog()
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', 'Export Image or PDF…', 'Export Excalidraw Drawing…', 'Reload from disk', 'Repair drawing file'])
     act(() => cog().click())
     surface.pictures = { bytes: 20 * MB, count: 2, missing: 0 }
     act(() => cog().click())
@@ -912,12 +926,12 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
 
     surface.pictures = { bytes: 1000, count: 1, missing: 0 }
     await openCog({ json: withBlock({ pictures: 'assets' }) })
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in the assets folder (1000 B)', 'Keep pictures inside', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in the assets folder (1000 B)', 'Keep pictures inside', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…', 'Reload from disk', 'Repair drawing file'])
     act(() => root?.unmount())
     root = createRoot(container)
 
     await openCog({ json: withBlock({ pictures: 'assets', picturesFolder: 'Projects/Board pictures' }) })
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in Board pictures (1000 B)', 'Keep pictures inside', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in Board pictures (1000 B)', 'Keep pictures inside', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…', 'Reload from disk', 'Repair drawing file'])
     expect(row('1 picture in Board pictures (1000 B)')!.title).toBe('Projects/Board pictures')
   })
 
@@ -1000,12 +1014,12 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
   it('YAZ-3943 1F: pictures in neither the file, its folder nor assets/ are an amber row after the size, with the moves after them; all missing: the row alone', async () => {
     surface.pictures = { bytes: 1000, count: 1, missing: 3 }
     await openCog()
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in this file (1000 B)', '3 pictures are missing', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in this file (1000 B)', '3 pictures are missing', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…', 'Reload from disk', 'Repair drawing file'])
     expect(row('3 pictures are missing')!.className).toContain('page-settings__warn')
     act(() => cog().click())
     surface.pictures = { bytes: 0, count: 0, missing: 1 }
     act(() => cog().click())
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture is missing', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture is missing', 'Export Image or PDF…', 'Export Excalidraw Drawing…', 'Reload from disk', 'Repair drawing file'])
   })
 
   it('YAZ-4074 6A item 2: with a used picture missing, a move says why and opens no box and no folder window', async () => {
@@ -1040,7 +1054,7 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     expect(sheet()).toBeNull()
     expect(allow).not.toHaveBeenCalled()
     act(() => cog().click())
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in Boards (1000 B)', 'Folder not allowed on this Mac', 'Allow…', 'Keep pictures inside', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in Boards (1000 B)', 'Folder not allowed on this Mac', 'Allow…', 'Keep pictures inside', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…', 'Reload from disk', 'Repair drawing file'])
     expect(row('Folder not allowed on this Mac')!.className).toContain('page-settings__warn')
     act(() => row('Allow…')!.click())
     await act(async () => sheetButton('Allow').click())
@@ -1310,5 +1324,82 @@ describe('YAZ-3943 demo round 3 — what the confirm box before a picture move s
     expect(OUTSIDE_FOLDER_WARNING).toBe('This folder is outside the vault. Your other Macs, Version history and copies of the vault will not have these pictures unless you sync this folder yourself.')
     // A folder outside the home folder shows its whole path.
     expect(picturesMoveAsk('folder', { count: 1, bytes: 1 }, 'x', '/Volumes/Disk/pics', '/Users/me').body).toContain('to /Volumes/Disk/pics.')
+  })
+})
+
+describe('YAZ-4279 UI/UX: OutsideUpdateChip, Reload from disk, Repair drawing file, and Keep both', () => {
+  it('item 10: OutsideUpdateChip appears on onOutsideChange, Show pans to updated shapes, dismiss & 12s auto-dismiss hide it', async () => {
+    surface.scrolledTo = []
+    render()
+    await flush()
+    emit(1)
+    expect(container.querySelector('.outside-update-chip')).toBeNull()
+
+    act(() => surface.props!.onOutsideChange!(['s1', 's2']))
+    const chip = container.querySelector('.outside-update-chip')
+    expect(chip).not.toBeNull()
+    expect(chip!.textContent).toContain('Outside update: 2 shapes changed')
+
+    act(() => chip!.querySelector<HTMLButtonElement>('.outside-update-chip__show')!.click())
+    expect(surface.scrolledTo).toEqual([['s1', 's2']])
+
+    act(() => chip!.querySelector<HTMLButtonElement>('.outside-update-chip__dismiss')!.click())
+    expect(container.querySelector('.outside-update-chip')).toBeNull()
+
+    // Auto-dismiss after 12s.
+    act(() => surface.props!.onOutsideChange!(['s3']))
+    expect(container.querySelector('.outside-update-chip')!.textContent).toContain('1 shape changed')
+    await act(async () => {
+      vi.advanceTimersByTime(12_000)
+    })
+    expect(container.querySelector('.outside-update-chip')).toBeNull()
+  })
+
+  it('items 6 & 11: Reload from disk and Repair drawing file cog rows invoke their actions and emit notices', async () => {
+    const onNotice = vi.fn()
+    surface.repaired = 0
+    render({ onNotice })
+    await flush()
+    emit(1)
+
+    act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    const repairRow = [...(menuIn(container)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])].find((b) => b.textContent === 'Repair drawing file')!
+    expect(repairRow.disabled).toBe(false)
+    act(() => repairRow.click())
+    expect(surface.repaired).toBe(1)
+    expect(onNotice).toHaveBeenCalledWith('Drawing repaired and saved.')
+
+    load.mockResolvedValueOnce(loaded({ mtime: 300 }))
+    act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    const reloadRow = [...(menuIn(container)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])].find((b) => b.textContent === 'Reload from disk')!
+    await act(async () => {
+      reloadRow.click()
+      await Promise.resolve()
+    })
+    await flush()
+    expect(onNotice).toHaveBeenCalledWith('Reloaded from disk.')
+  })
+
+  it('item 12: Keep both on ConflictBar runs keepBothScene, clears the bar, and notifies', async () => {
+    const onNotice = vi.fn()
+    surface.keepBothCalls = 0
+    surface.nextMerge = { conflicts: ['r1'] }
+    render({ onNotice })
+    await flush()
+    emit(1)
+    emit(2)
+    load.mockResolvedValue(loaded({ mtime: 200 }))
+    watcherSaw({ type: 'change', path: PATH, mtime: 200 })
+    await flush()
+    const keepBothBtn = [...container.querySelectorAll<HTMLButtonElement>('.conflict-bar button')].find((b) => b.textContent === 'Keep both')
+    expect(keepBothBtn).toBeDefined()
+    await act(async () => {
+      keepBothBtn!.click()
+      await Promise.resolve()
+    })
+    await flush()
+    expect(surface.keepBothCalls).toBe(1)
+    expect(container.querySelector('.conflict-bar')).toBeNull()
+    expect(onNotice).toHaveBeenCalledWith('Kept both: 2 shapes duplicated.')
   })
 })

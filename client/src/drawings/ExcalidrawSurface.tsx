@@ -139,7 +139,13 @@ export interface DrawingSurfaceApi {
    * the file and any unsaved edits, and the answer is the version the engine will report for it. Never in ⌘Z's history:
    * the file's change is not the user's. What the file added or changed is outlined for `glow` (D5).
    */
-  mergeScene(base: SceneSide, disk: DrawingScene, glow: OutsideChangeGlow): { version: number } | { conflicts: string[] }
+  mergeScene(base: SceneSide, disk: DrawingScene, glow: OutsideChangeGlow): { version: number; changedIds?: string[] } | { conflicts: string[] }
+  /** Pan/scroll to bring the given element ids into view without forcing a full-scene fit (YAZ-4279 item 10). */
+  scrollToElements?(ids: readonly string[]): void
+  /** Drop tombstones, deduplicate ids, fix broken bindings, and re-measure alive text in place (YAZ-4279 item 11). */
+  repairScene?(): { removedDeleted: number; repairedCount: number }
+  /** Keep both sides on a conflict: merge non-clashing shapes and duplicate clashing disk shapes at +40,+40 (YAZ-4279 item 12). */
+  keepBothScene?(base: SceneSide, disk: DrawingScene, glow: OutsideChangeGlow): { version: number; duplicated: number }
   /** The shapes the conflict bar is about, outlined red (item 8); empty: the bar went. */
   clash(ids: readonly string[]): void
   /** True when no drag, resize, drawing or text edit is in flight (YAZ-4279): a merge waits for it. False: the canvas went first. */
@@ -223,6 +229,8 @@ export interface DrawingSurfaceProps {
   foldArrows?: FoldArrowMode
   /** The board's own "Hover outline" (YAZ-4469 demo), from its `yaseendraw` block; absent: the app's setting. */
   hoverOutline?: boolean
+  /** Called when an outside merge adds or updates shapes on the canvas (YAZ-4279 item 10). */
+  onOutsideChange?: (ids: string[]) => void
 }
 
 /**
@@ -310,6 +318,7 @@ export function ExcalidrawSurface({
   onExportPdf,
   foldArrows: boardFoldArrows,
   hoverOutline: boardHoverOutline,
+  onOutsideChange,
 }: DrawingSurfaceProps) {
   const [engine, setEngine] = useState<ExcalidrawModule | null>(null)
   // YAZ-4277 D1: one text box editor for the surface's life, on the loaded engine's box rules (the prop-stability rule);
@@ -386,6 +395,9 @@ export function ExcalidrawSurface({
   /** Read by `onLinkOpen`, which is made once. */
   const linksRef = useRef(links)
   linksRef.current = links
+  /** Read by `mergeScene`, which is made once (YAZ-4279 item 10). */
+  const outsideChangeRef = useRef(onOutsideChange)
+  outsideChangeRef.current = onOutsideChange
   /** The PDF button (YAZ-3943 D6): one engine prop for the surface's life, or none; the host's latest callback through a ref. */
   const exportPdfRef = useRef(onExportPdf)
   exportPdfRef.current = onExportPdf
@@ -774,6 +786,28 @@ export function ExcalidrawSurface({
     [withPanel, rail, rememberPanel, reportPrefs],
   )
 
+  // YAZ-4279 item 3: whenever `.drawing-surface` resizes (sidebar toggle, conflict bar open/close, window resize),
+  // schedule a single animation frame to re-measure Excalidraw's canvas offsets so zoom-at-cursor stays aligned.
+  const surfaceReady = engine !== null && initialData !== null
+  useEffect(() => {
+    if (!surfaceReady || typeof ResizeObserver === 'undefined') return
+    const root = rootRef.current
+    if (root === null) return
+    let rafId: number | null = null
+    const observer = new ResizeObserver(() => {
+      if (rafId !== null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        rawApiRef.current?.refresh()
+      })
+    })
+    observer.observe(root)
+    return () => {
+      observer.disconnect()
+      if (rafId !== null) cancelAnimationFrame(rafId)
+    }
+  }, [surfaceReady])
+
   /** The imperative handle, wrapped once into the engine-free API the host sees. */
   const onExcalidrawAPI = useCallback((api: ImperativeApi | null) => {
     // The engine hands null on unmount; the host's ref keeps the last live handle, which it never
@@ -853,7 +887,127 @@ export function ExcalidrawSurface({
         addNewFiles(api, disk.files)
         marks.current?.clash([])
         marks.current?.mark(merged.added, merged.changed, merged.elements, glow)
-        return { version }
+        const changedIds = [...merged.added, ...merged.changed]
+        if (changedIds.length > 0) outsideChangeRef.current?.(changedIds)
+        return { version, changedIds }
+      },
+      scrollToElements: (ids) => {
+        if (ids.length === 0) return
+        const want = new Set(ids)
+        const matching = api.getSceneElements().filter((el) => want.has(el.id))
+        if (matching.length > 0) api.setViewport({ target: matching, fit: 'contain', animation: true, offsets: { ui: true } })
+      },
+      repairScene: () => {
+        const raw = api.getSceneElementsIncludingDeleted() as readonly RepairableElement[]
+        let removedDeleted = 0
+        let repairedCount = 0
+        const byId = new Map<string, RepairableElement>()
+        for (const el of raw) {
+          if (el.isDeleted === true) {
+            removedDeleted += 1
+            continue
+          }
+          const prev = byId.get(el.id)
+          if (prev !== undefined) {
+            repairedCount += 1
+            if ((el.version ?? 0) >= (prev.version ?? 0)) byId.set(el.id, el)
+          } else {
+            byId.set(el.id, el)
+          }
+        }
+        const survivingIds = new Set(byId.keys())
+        const now = Date.now()
+        const cleaned: RepairableElement[] = []
+        for (const el of byId.values()) {
+          let dirty = false
+          const next: RepairableElement = { ...el }
+          if (typeof next.containerId === 'string' && !survivingIds.has(next.containerId)) {
+            next.containerId = null
+            dirty = true
+          }
+          if (typeof next.frameId === 'string' && !survivingIds.has(next.frameId)) {
+            next.frameId = null
+            dirty = true
+          }
+          if (Array.isArray(next.boundElements)) {
+            const valid = next.boundElements.filter((b) => typeof b?.id === 'string' && survivingIds.has(b.id))
+            if (valid.length !== next.boundElements.length) {
+              next.boundElements = valid.length > 0 ? valid : null
+              dirty = true
+            }
+          }
+          if (next.type === 'text' && typeof next.text === 'string' && next.originalText !== next.text) {
+            next.originalText = next.text
+            dirty = true
+          }
+          if (dirty) repairedCount += 1
+          next.version = (next.version ?? 0) + 1
+          next.versionNonce = Math.floor(Math.random() * 2 ** 31)
+          next.updated = now
+          cleaned.push(next)
+        }
+        const restored = mod.restoreElements(cleaned as unknown as ChangeArgs[0], null, { repairBindings: true, refreshDimensions: true }) as ChangeArgs[0]
+        api.updateScene({ elements: restored, captureUpdate: mod.CaptureUpdateAction.IMMEDIATELY })
+        return { removedDeleted, repairedCount }
+      },
+      keepBothScene: (base, disk, glow) => {
+        const live = { elements: api.getSceneElementsIncludingDeleted(), appState: api.getAppState() as unknown as Record<string, unknown> }
+        const merged = mergeLiveScene(mod, base, disk, live, boardKeys.current)
+        if (!('conflicts' in merged)) {
+          const elements = merged.elements as unknown as ChangeArgs[0]
+          const version = countVersion.current(elements)
+          api.updateScene({ elements, ...(Object.keys(merged.appState).length > 0 && { appState: merged.appState as unknown as EngineAppState }), captureUpdate: mod.CaptureUpdateAction.IMMEDIATELY })
+          addNewFiles(api, disk.files)
+          marks.current?.clash([])
+          marks.current?.mark(merged.added, merged.changed, merged.elements, glow)
+          return { version, duplicated: 0 }
+        }
+        const conflictIds = new Set(merged.conflicts)
+        const restoredDisk = mod.restoreElements(disk.elements as ChangeArgs[0], null) as unknown as readonly RepairableElement[]
+        const liveElements = live.elements as readonly RepairableElement[]
+        const liveById = new Map(liveElements.map((e) => [e.id, e]))
+        const idRemap = new Map<string, string>()
+        const clashingDisk = restoredDisk.filter((e) => e.isDeleted !== true && conflictIds.has(e.id))
+        for (const el of clashingDisk) {
+          idRemap.set(el.id, `${el.id}-copy-${Math.random().toString(36).slice(2, 8)}`)
+        }
+        const now = Date.now()
+        const combined: RepairableElement[] = [...liveElements]
+        // Include non-clashing alive disk elements that do not exist in live yet.
+        for (const el of restoredDisk) {
+          if (el.isDeleted === true || conflictIds.has(el.id)) continue
+          if (!liveById.has(el.id)) {
+            combined.push({ ...el, version: (el.version ?? 0) + 1, versionNonce: Math.floor(Math.random() * 2 ** 31), updated: now })
+          }
+        }
+        const duplicatedIds: string[] = []
+        for (const el of clashingDisk) {
+          const newId = idRemap.get(el.id)!
+          duplicatedIds.push(newId)
+          const copy: RepairableElement = {
+            ...el,
+            id: newId,
+            x: (typeof el.x === 'number' ? el.x : 0) + 40,
+            y: (typeof el.y === 'number' ? el.y : 0) + 40,
+            version: 1,
+            versionNonce: Math.floor(Math.random() * 2 ** 31),
+            updated: now,
+          }
+          if (typeof copy.containerId === 'string') copy.containerId = idRemap.get(copy.containerId) ?? null
+          if (typeof copy.frameId === 'string') copy.frameId = idRemap.get(copy.frameId) ?? null
+          if (Array.isArray(copy.boundElements)) {
+            const remapped = copy.boundElements.filter((b) => typeof b?.id === 'string' && idRemap.has(b.id)).map((b) => ({ ...b, id: idRemap.get(b.id)! }))
+            copy.boundElements = remapped.length > 0 ? remapped : null
+          }
+          combined.push(copy)
+        }
+        const elements = combined as unknown as ChangeArgs[0]
+        const version = countVersion.current(elements)
+        api.updateScene({ elements, captureUpdate: mod.CaptureUpdateAction.IMMEDIATELY })
+        addNewFiles(api, disk.files)
+        marks.current?.clash([])
+        marks.current?.mark(duplicatedIds, [], combined, glow)
+        return { version, duplicated: duplicatedIds.length }
       },
       clash: (ids) => marks.current?.clash(ids),
       whenIdle: () => (inGesture(api.getAppState() as unknown as Record<string, unknown>) ? new Promise<boolean>((done) => idleWaiters.current.push(done)) : Promise.resolve(true)),
@@ -1021,6 +1175,24 @@ const BUSY_APP_STATE_KEYS = [
 /** A gesture a merge must not land in (YAZ-4279): the busy set less an open dialog and a selected line, which can last. */
 const inGesture = (appState: Record<string, unknown>): boolean =>
   BUSY_APP_STATE_KEYS.some((k) => k !== 'openDialog' && k !== 'selectedLinearElement' && Boolean(appState[k])) || (appState.selectedLinearElement as { isDragging?: boolean } | null | undefined)?.isDragging === true
+
+/** Minimal shape fields inspected by `repairScene` and `keepBothScene` without importing engine element types. */
+interface RepairableElement {
+  id: string
+  type?: string
+  isDeleted?: boolean
+  version?: number
+  versionNonce?: number
+  updated?: number
+  x?: number
+  y?: number
+  containerId?: string | null
+  frameId?: string | null
+  boundElements?: readonly { id: string; type?: string }[] | null
+  text?: string
+  originalText?: string
+  [key: string]: unknown
+}
 
 /** Item 5: only the pictures the engine does not hold yet — a picture's id is its content's, so a held id is the same bytes. */
 function addNewFiles(api: ImperativeApi, files: Record<string, unknown> | null): void {

@@ -14,6 +14,13 @@ export type MarkKind = 'added' | 'changed' | 'clash'
 
 export const MARK_COLLABORATORS: Readonly<Record<MarkKind, string>> = { added: 'outside-added-63', changed: 'outside-changed-32', clash: 'outside-clash-8' }
 
+/** High-contrast colours for light and dark canvases (YAZ-4279 item 9). */
+export const MARK_COLORS: Readonly<Record<MarkKind, { background: string; stroke: string }>> = {
+  added: { background: '#16a34a', stroke: '#15803d' },
+  changed: { background: '#d97706', stroke: '#b45309' },
+  clash: { background: '#dc2626', stroke: '#b91c1c' },
+}
+
 const GLOW_MS: Readonly<Partial<Record<OutsideChangeGlow, number>>> = { '60s': 60_000, '5m': 300_000 }
 
 /** The engine's collaborator, as far as an outline needs one. */
@@ -21,6 +28,7 @@ export interface MarkCollaborator {
   id: string
   username: string
   selectedElementIds: Record<string, true>
+  color?: { background: string; stroke: string }
 }
 
 interface Shape {
@@ -100,7 +108,7 @@ export class OutsideMarks {
     const byKind = new Map<MarkKind, Record<string, true>>()
     for (const [id, { kind }] of this.marks) byKind.set(kind, { ...byKind.get(kind), [id]: true })
     const collaborators = new Map<string, MarkCollaborator>()
-    for (const [kind, ids] of byKind) collaborators.set(MARK_COLLABORATORS[kind], { id: MARK_COLLABORATORS[kind], username: 'Outside change', selectedElementIds: ids })
+    for (const [kind, ids] of byKind) collaborators.set(MARK_COLLABORATORS[kind], { id: MARK_COLLABORATORS[kind], username: 'Outside change', selectedElementIds: ids, color: MARK_COLORS[kind] })
     this.show(collaborators)
   }
 }

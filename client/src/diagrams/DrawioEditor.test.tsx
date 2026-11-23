@@ -526,10 +526,24 @@ describe('read only (YAZ-3076 D2)', () => {
 })
 
 describe("the cog on a diagram (YAZ-3943 D13: the drawing's rows are a drawing's only)", () => {
-  it('YAZ-4748 D10: has "Read only", then "Link preview on hover": no pictures row, no export rows', async () => {
+  it('YAZ-4748 D10: has "Read only", then "Link preview on hover", then "Reload from disk": no pictures row, no export rows', async () => {
     await opened()
     act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    expect([...(menuIn(container)?.querySelectorAll(':scope > *') ?? [])].map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓'])
+    expect([...(menuIn(container)?.querySelectorAll(':scope > *') ?? [])].map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', '', 'Reload from disk'])
+  })
+
+  it('YAZ-4279 item 6: Reload from disk reloads the diagram and shows a notice', async () => {
+    await opened()
+    load.mockResolvedValue({ path: PATH, xml: EDITED, mtime: 300, size: 1 })
+    act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    const reloadRow = [...(menuIn(container)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])].find((b) => b.textContent === 'Reload from disk')!
+    await act(async () => {
+      reloadRow.click()
+      await Promise.resolve()
+    })
+    await settle()
+    expect(posted).toContainEqual(expect.objectContaining({ action: 'load', xml: EDITED, yaseenKeepView: true }))
+    expect(notice).toHaveBeenCalledWith('Reloaded from disk.')
   })
 })
 
