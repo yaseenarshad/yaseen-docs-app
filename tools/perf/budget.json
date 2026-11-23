@@ -38,24 +38,24 @@
       "$comment": "Unbundled node_modules files inside app.asar (must stay 0)."
     },
     "rendererEagerJsBytes": {
-      "max": 3035000,
-      "$comment": "Renderer entry JS static import closure bytes (measured 3,026,498 B on feat/yaz-5040-inline-excalidraw; raised with Yasin's OK)."
+      "max": 3060000,
+      "$comment": "Renderer entry JS static import closure bytes (measured 3,045,129 B on feat/yaz-5967-vault-apps; raised with Yasin's OK)."
     },
     "rendererEagerCssBytes": {
-      "max": 305000,
-      "$comment": "Renderer entry CSS static closure bytes (measured 300,285 B on feat/yaz-5993-11-20-pr; raised with Yasin's OK)."
+      "max": 308000,
+      "$comment": "Renderer entry CSS static closure bytes (measured 301 KB on feat/yaz-5967-vault-apps; raised with Yasin's OK)."
     },
     "rendererTotalBytes": {
-      "max": 31800000,
-      "$comment": "Renderer out/ total bytes excluding excalidraw-assets (measured 31.47 MB on yaz-6008-speed)."
+      "max": 32000000,
+      "$comment": "Renderer out/ total bytes excluding excalidraw-assets (measured 31.83 MB on feat/yaz-5967-vault-apps; raised with Yasin's OK)."
     },
     "rendererMapBytes": {
       "max": 0,
       "$comment": "Shipped .map bytes inside out/renderer (must stay 0)."
     },
     "mainBundleBytes": {
-      "max": 1060000,
-      "$comment": "Main process and CLI bundle bytes in out/main (raised to 1.06 MB for YAZ-6200 Friends enabled; measured 1,034,142 B)."
+      "max": 1080000,
+      "$comment": "Main process and CLI bundle bytes in out/main (measured 1,063,848 B on feat/yaz-5967-vault-apps; raised with Yasin's OK)."
     },
     "shareViewerBytes": {
       "max": 2220000,
