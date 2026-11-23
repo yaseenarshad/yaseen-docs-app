@@ -10,7 +10,7 @@ import { formatDate, parseIsoDate, renderDate } from './expr/dates'
 import type { FolderSettings } from './folderSettingsRead'
 import { writableKey } from './readOnlyRows'
 import { allPropertyKeys } from './view/properties'
-import type { ViewDef, ViewSet } from './viewSchema'
+import type { CalendarCardStyle, ViewDef, ViewSet } from './viewSchema'
 
 /** The Calendar's scales (YAZ-4558 D22, YAZ-5588 Rolling) in the switch's order, with their words: the toolbar's switch and the View tab's "Opens in" share them. */
 export type CalendarScale = FolderPagesSettings['calendarScale']
@@ -21,6 +21,17 @@ export const CALENDAR_SCALES: readonly (readonly [CalendarScale, string])[] = [
 ]
 /** A view's scale as written (Settings' scale already filled in by the pane), Month for anything else. */
 export const calendarScaleOf = (view: ViewDef): CalendarScale => CALENDAR_SCALES.find(([s]) => s === view.calendarScale)?.[0] ?? 'month'
+
+/** A calendar's default card (pill) styles (YAZ-6331) in the switch's order, with their labels. */
+export const CALENDAR_CARD_STYLES: readonly (readonly [CalendarCardStyle, string])[] = [
+  ['accent', 'Soft Accent'],
+  ['slate', 'Soft Slate'],
+  ['bar', 'White + Bar'],
+  ['plain', 'White'],
+]
+/** A view's default card style (Settings already filled in by the pane), Soft Accent (`accent`) for anything else. */
+export const calendarCardStyleOf = (view: Pick<ViewDef, 'calendarCardStyle'>): CalendarCardStyle =>
+  CALENDAR_CARD_STYLES.find(([s]) => s === view.calendarCardStyle)?.[0] ?? 'accent'
 
 /** A day as the grid and a write name it: `YYYY-MM-DD`. */
 export type DayKey = string
@@ -242,6 +253,24 @@ export const monthLineColorOf = (view: Pick<ViewDef, 'monthLineColor'>): ColorSt
 
 /** Rolling's "Shade every other month" (YAZ-5608): every second month by its count from year 0, so the shade never moves as you scroll. */
 export const shadedMonth = (day: DayKey): boolean => (Number(day.slice(0, 4)) * 12 + Number(day.slice(5, 7)) - 1) % 2 === 1
+
+/** Rolling's alternating month shade colour and strength (YAZ-6331): stored `readColorStrength`, else Gray, Light. */
+export const monthShadeColorOf = (view: Pick<ViewDef, 'monthShadeColor'>): ColorStrengthValue =>
+  readColorStrength(view.monthShadeColor) ?? { color: 'gray', strength: 'light' }
+
+/**
+ * The CSS background for Rolling's alternating month shade (YAZ-6331):
+ * - Gray: Light 2%, Medium 4%, Strong 7% of `--fg` over `--bg`.
+ * - Other colours: Light 4%, Medium 8%, Strong 14% of `--table-fill-solid-<color>` over `--bg`.
+ */
+export function monthShadeCss({ color, strength }: ColorStrengthValue): string {
+  if (color === 'gray') {
+    const pct = strength === 'light' ? 2 : strength === 'medium' ? 4 : 7
+    return `color-mix(in srgb, var(--fg) ${pct}%, var(--bg))`
+  }
+  const pct = strength === 'light' ? 4 : strength === 'medium' ? 8 : 14
+  return `color-mix(in srgb, var(--table-fill-solid-${color}) ${pct}%, var(--bg))`
+}
 
 /**
  * Where "Between months" draws (YAZ-5608): a stepped line round each month's first days. A day whose day above (a week

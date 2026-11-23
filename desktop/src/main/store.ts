@@ -548,12 +548,18 @@ const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => 
   foldersFirst: isBool,
   calendarScale: oneOf(FOLDER_PAGE_CHOICES.calendarScale),
   cardTitles: oneOf(FOLDER_PAGE_CHOICES.cardTitles),
+  calendarCardStyle: oneOf(FOLDER_PAGE_CHOICES.calendarCardStyle),
   hideWeekends: isBool,
   // YAZ-4878: a width 1–12 and a colour the app reads; a file from before them reads 1 px, Gray.
   weekLine: (v) => calLine(v) === v,
   dayLine: (v) => calLine(v) === v,
   weekLineColor: (v) => readColorStrength(v) !== null,
   dayLineColor: (v) => readColorStrength(v) !== null,
+  // YAZ-6331: Rolling alternating month shade and Between months line defaults.
+  monthShade: isBool,
+  monthShadeColor: (v) => readColorStrength(v) !== null,
+  monthLine: (v) => v === 0 || calLine(v) === v,
+  monthLineColor: (v) => readColorStrength(v) !== null,
   showFolderPageFiles: isBool,
   askBeforeDelete: isBool,
   confirmChanges: isBool,

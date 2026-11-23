@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_FOLDER_PAGES, type IndexRecord, readColorStrength, writeColorStrength } from '@shared/types'
 import type { Row } from './engine'
 import { FileValue, fromYaml, render } from './expr'
-import { addDays, bucketByDay, calLineColor, calLineCss, calendarDateKey, calendarStartColumn, calendarEndKey, daysBetween, layoutWeek, spanDays, spanLabel, spanOf, type Span, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
+import { addDays, bucketByDay, calLineColor, calLineCss, calendarCardStyleOf, calendarDateKey, calendarStartColumn, calendarEndKey, daysBetween, layoutWeek, monthShadeColorOf, monthShadeCss, spanDays, spanLabel, spanOf, type Span, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
 import type { ViewDef, ViewSet } from './viewSchema'
 
 const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
@@ -395,5 +395,27 @@ describe('a colour with a strength (YAZ-4878, YAZ-4906)', () => {
     expect(calLineCss(calLineColor(undefined), 3)).toContain('--fg-muted')
     expect(calLineCss({ color: 'gray', strength: 'light' }, 1)).toContain('50%')
     expect(calLineCss({ color: 'blue', strength: 'strong' }, 1)).toBe('color-mix(in srgb, var(--table-fill-solid-blue) 100%, transparent)')
+  })
+
+  it('YAZ-6331: monthShadeColorOf defaults to Gray Light and monthShadeCss maps gray (2/4/7%) and colors (4/8/14%)', () => {
+    expect(monthShadeColorOf({})).toEqual({ color: 'gray', strength: 'light' })
+    expect(monthShadeColorOf({ monthShadeColor: 'invalid' })).toEqual({ color: 'gray', strength: 'light' })
+    expect(monthShadeColorOf({ monthShadeColor: 'blue' })).toEqual({ color: 'blue', strength: 'medium' })
+    expect(monthShadeColorOf({ monthShadeColor: 'teal strong' })).toEqual({ color: 'teal', strength: 'strong' })
+    expect(monthShadeCss({ color: 'gray', strength: 'light' })).toBe('color-mix(in srgb, var(--fg) 2%, var(--bg))')
+    expect(monthShadeCss({ color: 'gray', strength: 'medium' })).toBe('color-mix(in srgb, var(--fg) 4%, var(--bg))')
+    expect(monthShadeCss({ color: 'gray', strength: 'strong' })).toBe('color-mix(in srgb, var(--fg) 7%, var(--bg))')
+    expect(monthShadeCss({ color: 'blue', strength: 'light' })).toBe('color-mix(in srgb, var(--table-fill-solid-blue) 4%, var(--bg))')
+    expect(monthShadeCss({ color: 'blue', strength: 'medium' })).toBe('color-mix(in srgb, var(--table-fill-solid-blue) 8%, var(--bg))')
+    expect(monthShadeCss({ color: 'blue', strength: 'strong' })).toBe('color-mix(in srgb, var(--table-fill-solid-blue) 14%, var(--bg))')
+  })
+
+  it('YAZ-6331: calendarCardStyleOf defaults to accent and reads all four presets', () => {
+    expect(calendarCardStyleOf({})).toBe('accent')
+    expect(calendarCardStyleOf({ calendarCardStyle: 'accent' })).toBe('accent')
+    expect(calendarCardStyleOf({ calendarCardStyle: 'slate' })).toBe('slate')
+    expect(calendarCardStyleOf({ calendarCardStyle: 'bar' })).toBe('bar')
+    expect(calendarCardStyleOf({ calendarCardStyle: 'plain' })).toBe('plain')
+    expect(calendarCardStyleOf({ calendarCardStyle: 'unknown' as never })).toBe('accent')
   })
 })

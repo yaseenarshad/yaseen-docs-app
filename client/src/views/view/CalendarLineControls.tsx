@@ -94,3 +94,15 @@ export function CalLineControls({ label, width, color, onWidth, onColor, offable
     </span>
   )
 }
+
+/**
+ * The colour + strength dot for Rolling's "Shade every other month" (YAZ-6331): same `Dropdown` + `FillPicker` pattern
+ * as `CalLineControls`, shared by the View tab and Settings › Folder pages.
+ */
+export function MonthShadeColorPicker({ label, color, onColor }: { label: string; color: ColorStrengthValue; onColor: (next: ColorStrengthValue) => void }) {
+  return (
+    <Dropdown label={`${label} colour`} className="cal-line__colour" panelClassName="cal-line__panel view-style__panel ctx-menu--glyphs" trigger={<span className="table-menu-swatch cal-line__dot" style={{ background: calLineCss(color, 2) }} />}>
+      {() => <FillPicker label={label} strengths={COLOR_STRENGTHS} strength={color.strength} color={color.color} onStrength={(strength) => onColor({ color: color.color, strength: strength as ColorStrength })} onColor={(next) => onColor({ color: next as ColorName, strength: color.strength })} />}
+    </Dropdown>
+  )
+}

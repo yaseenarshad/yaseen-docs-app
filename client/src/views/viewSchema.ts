@@ -34,6 +34,9 @@ export interface GroupBySpec {
   layout?: 'path'
 }
 
+/** A calendar's default card (pill) style (YAZ-6331): Soft Accent (default), Soft Slate, White + Bar, or White. */
+export type CalendarCardStyle = 'accent' | 'slate' | 'bar' | 'plain'
+
 export interface ViewDef {
   /** 'table' | 'cards' | 'list' | 'map' | 'board' (ours) | anything else (unknown, preserved) */
   type: string
@@ -99,6 +102,8 @@ export interface ViewDef {
   calendarScale?: 'month' | 'week' | 'rolling'
   /** A calendar's card titles (YAZ-4558 D23): `wrap` = the full title on more lines. Absent = clip, one line with "…". */
   cardTitles?: 'clip' | 'wrap'
+  /** A calendar's default card (pill) style (YAZ-6331): Soft Accent, Soft Slate, White + Bar, or White. Absent = Settings › Folder pages (`accent`). */
+  calendarCardStyle?: CalendarCardStyle
   /** A Calendar's or Board's "Clicking a card opens" (YAZ-5582): a plain click's `window` or `background` tab. Absent = Same as Settings. */
   clickOpens?: 'window' | 'background'
   /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. Absent = the Settings › Folder pages default. */
@@ -114,6 +119,8 @@ export interface ViewDef {
   dayLineColor?: string
   /** A calendar's "Shade every other month" (YAZ-5608): `false` = Off. Absent = On (Rolling shades every second month). */
   monthShade?: boolean
+  /** Its colour and strength (`readColorStrength`, YAZ-6331). Absent = Settings › Folder pages (`gray light`). */
+  monthShadeColor?: string
   /** A calendar's line "Between months" (YAZ-5608): whole px, 1–12, a stepped line round each month. Absent = Off. */
   monthLine?: number
   /** Its colour (`readColorStrength`, as `weekLineColor`). Absent = Blue, Medium. */
