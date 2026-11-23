@@ -200,3 +200,8 @@
     display: none;
   }
 }
+
+/* Collapse adjacent dividers when FolderToolbar passes Page width / Position rows after switchesHeading (YAZ-6343). */
+.page-settings__menu > .page-settings__divider + .page-settings__divider {
+  display: none;
+}

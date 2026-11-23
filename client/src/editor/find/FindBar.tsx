@@ -133,6 +133,8 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
       // The Settings dialog is modal (YAZ-5968): while it is open ⌘F is its own section find's, never a bar's behind it.
       const settingsOpen = document.querySelector('.settings-dialog') !== null
       if (scope !== 'settings' && settingsOpen) return
+      // The drawing modal is modal (YAZ-6322): while it is open ⌘F belongs to Excalidraw's Add panel, never the page behind it.
+      if (document.querySelector('.drawing-modal-overlay') !== null) return
       // In a card's editor (YAZ-5026: the card's own list has no find), ⌘F is not the page's.
       if (active instanceof Element && active.closest('.card__editor') !== null) return
       // checkVisibility is absent under jsdom, where nothing is ever hidden — hence the ?? true.

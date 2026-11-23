@@ -24,8 +24,8 @@ import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { BROKEN_DRAWING_MESSAGE, DISCARD_PROMPT, DrawingModal } from './DrawingModal'
 import { ALLOW_FOLDER_TITLE, allowFolderBody } from './usePicturesFolderAllow'
 import { VaultReadOnly } from '../vault/readOnlyVault'
-import type { DrawingAppSettings, DrawingSurfaceProps } from './ExcalidrawSurface'
-import { DEFAULT_CANVAS_PREFS, type CanvasPrefs } from '@shared/types'
+import type { DrawingAppSettings, DrawingSurfaceApi, DrawingSurfaceProps } from './ExcalidrawSurface'
+import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPrefs } from '@shared/types'
 
 /** The app's drawing settings when a test sets none (YAZ-4436): the defaults, and no door that writes them. */
 const NO_SETTINGS: DrawingAppSettings = { canvasPrefs: undefined, onCanvasPrefsChange: undefined }
@@ -35,22 +35,43 @@ const NO_SETTINGS: DrawingAppSettings = { canvasPrefs: undefined, onCanvasPrefsC
 vi.mock('../api', async (original) => ({
   ...(await original<typeof import('../api')>()),
   // `app.home` and `pictureFolders` (YAZ-3943 demo round 3): the popup's ask for a board's outside pictures folder.
-  api: { readAsset: vi.fn(), drawing: { save: vi.fn(), load: vi.fn(), resolveAssets: vi.fn(), landAssets: vi.fn() }, window: { onFlush: vi.fn() }, hotkeys: { drawingInFront: vi.fn(async () => undefined) }, app: { home: vi.fn(async () => '/Users/me') }, pictureFolders: { list: vi.fn(async () => []), allow: vi.fn(async () => []) } },
+  api: { readAsset: vi.fn(), drawing: { save: vi.fn(), load: vi.fn(), resolveAssets: vi.fn(), landAssets: vi.fn() }, dialog: { saveDrawing: vi.fn(), savePdf: vi.fn() }, window: { onFlush: vi.fn() }, hotkeys: { drawingInFront: vi.fn(async () => undefined) }, app: { home: vi.fn(async () => '/Users/me') }, pictureFolders: { list: vi.fn(async () => []), allow: vi.fn(async () => []) } },
 }))
 
 /** The stand-in engine: it renders nothing and reports the props the modal handed it. */
-const seam = vi.hoisted(() => ({ props: null as DrawingSurfaceProps | null, mounts: 0 }))
+const seam = vi.hoisted(() => ({
+  props: null as DrawingSurfaceProps | null,
+  mounts: 0,
+  openImageExport: vi.fn(),
+  exportScene: vi.fn(async () => '{"type":"excalidraw","elements":[],"files":{}}\n'),
+  openAddSearch: vi.fn(),
+  openComponentsPanel: vi.fn(),
+}))
 vi.mock('./ExcalidrawSurface', () => ({
   ENGINE_LOAD_FAILED: "Can't open the drawing editor.",
   ExcalidrawSurface: (props: DrawingSurfaceProps) => {
     seam.props = props
     seam.mounts += 1
+    props.onApi?.({
+      refresh: () => undefined,
+      focus: () => undefined,
+      openAddSearch: seam.openAddSearch,
+      openComponentsPanel: seam.openComponentsPanel,
+      openImageExport: seam.openImageExport,
+      setCanvasBackground: () => undefined,
+      exportScene: seam.exportScene,
+      pictures: () => ({ bytes: 0, count: 0, missing: 0 }),
+      replaceScene: () => 0,
+      canvas: () => ({ scrollX: 0, scrollY: 0, zoom: 1 }),
+    } satisfies DrawingSurfaceApi)
     return <div className="fake-surface" />
   },
 }))
 
 const readAsset = vi.mocked(api.readAsset)
 const drawingSave = vi.mocked(api.drawing.save)
+const saveDrawingDialog = vi.mocked(api.dialog.saveDrawing)
+const savePdfDialog = vi.mocked(api.dialog.savePdf)
 const resolveAssets = vi.mocked(api.drawing.resolveAssets)
 const landAssets = vi.mocked(api.drawing.landAssets)
 const onFlush = vi.mocked(api.window.onFlush)
@@ -79,9 +100,18 @@ let outside: HTMLElement | null = null
 beforeEach(() => {
   seam.props = null
   seam.mounts = 0
+  seam.openImageExport.mockReset()
+  seam.exportScene.mockReset()
+  seam.exportScene.mockResolvedValue('{"type":"excalidraw","elements":[],"files":{}}\n')
+  seam.openAddSearch.mockReset()
+  seam.openComponentsPanel.mockReset()
   readAsset.mockReset()
   drawingSave.mockReset()
   drawingSave.mockResolvedValue({ path: PATH, mtime: 999, size: BYTES.length, persisted: [] })
+  saveDrawingDialog.mockReset()
+  saveDrawingDialog.mockResolvedValue({ path: '/tmp/Sketch.excalidraw' })
+  savePdfDialog.mockReset()
+  savePdfDialog.mockResolvedValue({ path: '/tmp/Sketch.pdf' })
   resolveAssets.mockReset()
   resolveAssets.mockResolvedValue({ files: {}, stored: [] })
   landAssets.mockReset()
@@ -687,8 +717,9 @@ describe('the engine seam (🔒 one file, YAZ-868 swaps it)', () => {
     expect(source('./DrawingModal.tsx')).not.toMatch(engineElement)
   })
 
-  it('the modal has no canvas panel (YAZ-3038): it never passes the prop that turns it on', () => {
-    expect(source('./DrawingModal.tsx')).not.toMatch(/onCanvasPanelChange|canvasPanel/)
+  it('threads canvasPanel and onCanvasPanelChange into ExcalidrawSurface (YAZ-6330)', () => {
+    expect(source('./DrawingModal.tsx')).toMatch(/canvasPanel=\{canvasPanel\}/)
+    expect(source('./DrawingModal.tsx')).toMatch(/onCanvasPanelChange=\{onCanvasPanelChange\}/)
     expect(source('./ExcalidrawSurface.tsx')).toMatch(/useState\(\(\) => onCanvasPanelChange !== undefined\)/)
   })
 })
@@ -934,19 +965,21 @@ describe('inline mode (YAZ-5040)', () => {
     expect(onSave).toHaveBeenCalledTimes(2)
   })
 
-  it('never renders a header "Move to its own file" button; shows "Open in tab" before close, flushes pending edits, closes, and calls onOpenInTab', async () => {
+  it('renders Explore-style [⋯] [↗] [✕] header; ↗ flushes pending edits, closes, and calls onOpenInTab', async () => {
     const onSave = vi.fn()
     const onMoveToFile = vi.fn(async (_compactJson: string) => undefined)
     const onOpenInTab = vi.fn()
     const { onClose } = await openInline({ json: '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}', onSave, onMoveToFile, onOpenInTab })
     const buttons = [...(container?.querySelectorAll<HTMLButtonElement>('.drawing-modal__bar button') ?? [])]
-    expect(buttons.map((b) => b.textContent)).toEqual(['Open in tab', '✕'])
+    expect(buttons.map((b) => b.textContent)).toEqual(['⋯', '↗', '✕'])
     expect(byText('Move to its own file')).toBeUndefined()
     const raw = JSON.stringify({ type: 'excalidraw', version: 2, elements: [{ id: 'i2', type: 'image', fileId: 'pic2' }], appState: {}, files: { pic2: { id: 'pic2', ...png('cGljMg==') } } }, null, 2)
     act(() => seam.props?.onSnapshot({ version: 1, serialize: () => ({ json: raw, files: {}, referenced: new Set() }) }))
     act(() => seam.props?.onSnapshot({ version: 2, serialize: () => ({ json: raw, files: { pic2: png('cGljMg==') }, referenced: new Set(['pic2']) }) }))
     landAssets.mockResolvedValueOnce({ persisted: ['pic2'] })
-    await click(byText('Open in tab'))
+    const openTabBtn = container?.querySelector<HTMLButtonElement>('button[aria-label="Open in tab"]')
+    expect(openTabBtn).not.toBeNull()
+    await click(openTabBtn!)
     expect(landAssets).toHaveBeenCalledWith({ root: ROOT, newFiles: [{ fileId: 'pic2', ...png('cGljMg==') }] })
     expect(onSave).toHaveBeenCalledTimes(1)
     const saved = onSave.mock.calls[0][0] as string
@@ -968,5 +1001,353 @@ describe('inline mode (YAZ-5040)', () => {
     root = null
     await openInline({ json, onSave: vi.fn() })
     expect(document.activeElement).toBe(container?.querySelector('.drawing-modal-overlay'))
+  })
+})
+
+describe('YAZ-6330: DrawingModal tab parity (canvasPanel, ⌘S, ⌘F, Escape guard, ⋯ menu, ↗ standalone, PDF)', () => {
+  it('threads canvasPanel and onCanvasPanelChange to ExcalidrawSurface', async () => {
+    const canvasPanel: CanvasPanelState = { ...DEFAULT_CANVAS_PANEL, docked: true, width: 340 }
+    const onCanvasPanelChange = vi.fn()
+    await open('ok', 100, { canvasPanel, onCanvasPanelChange })
+    expect(seam.props?.canvasPanel).toBe(canvasPanel)
+    const next: CanvasPanelState = { ...canvasPanel, width: 400 }
+    seam.props?.onCanvasPanelChange?.(next)
+    expect(onCanvasPanelChange).toHaveBeenCalledWith(next)
+  })
+
+  it('⌘S flushes pending edits immediately without waiting for the debounce timer', async () => {
+    const { overlay } = await open()
+    emit(1)
+    emit(2)
+    expect(drawingSave).not.toHaveBeenCalled()
+    await act(async () => {
+      overlay.dispatchEvent(new KeyboardEvent('keydown', { key: 's', code: 'KeyS', metaKey: true, bubbles: true, cancelable: true }))
+    })
+    expect(drawingSave).toHaveBeenCalledTimes(1)
+  })
+
+  it('⌘F while focus is on the modal overlay opens the Add panel search via surface.openAddSearch()', async () => {
+    const { overlay } = await open()
+    expect(document.activeElement).toBe(overlay)
+    const ev = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void overlay.dispatchEvent(ev))
+    expect(ev.defaultPrevented).toBe(true)
+    expect(seam.openAddSearch).toHaveBeenCalledTimes(1)
+  })
+
+  it('Escape closes an open ⋯ menu first and does not close the modal while an inner Excalidraw sidebar/dialog/presentation is open', async () => {
+    const { overlay, onClose } = await open()
+    const moreBtn = container!.querySelector<HTMLButtonElement>('button[aria-label="Drawing actions"]')!
+    await click(moreBtn)
+    expect(container!.querySelector('.drawing-modal__menu')).not.toBeNull()
+    await escOn(overlay)
+    expect(container!.querySelector('.drawing-modal__menu')).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+
+    const canvas = container!.querySelector('.drawing-modal__canvas')!
+    for (const cls of ['excalidraw-sidebar', 'presentation-player', 'Modal']) {
+      const inner = document.createElement('div')
+      inner.className = cls
+      canvas.appendChild(inner)
+      await escOn(inner)
+      expect(onClose).not.toHaveBeenCalled()
+      inner.remove()
+    }
+    const excal = document.createElement('div')
+    excal.className = 'excalidraw'
+    const dlg = document.createElement('div')
+    dlg.className = 'Dialog'
+    excal.appendChild(dlg)
+    canvas.appendChild(excal)
+    await escOn(dlg)
+    expect(onClose).not.toHaveBeenCalled()
+    excal.remove()
+
+    // With nothing inner open, Escape closes the modal.
+    await escOn(overlay)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('⋯ menu runs Export Image or PDF… and Export Excalidraw Drawing… (and omits Move to its own file for standalone popups)', async () => {
+    const onNotice = vi.fn()
+    await open('ok', 100, { onNotice })
+    const moreBtn = container!.querySelector<HTMLButtonElement>('button[aria-label="Drawing actions"]')!
+    await click(moreBtn)
+    const items = [...container!.querySelectorAll<HTMLButtonElement>('.drawing-modal__menu-item')].map((b) => b.textContent)
+    expect(items).toEqual(['Export Image or PDF…', 'Export Excalidraw Drawing…'])
+
+    await click(byText('Export Image or PDF…'))
+    expect(seam.openImageExport).toHaveBeenCalledTimes(1)
+    expect(container!.querySelector('.drawing-modal__menu')).toBeNull()
+
+    await click(moreBtn)
+    await click(byText('Export Excalidraw Drawing…'))
+    expect(seam.exportScene).toHaveBeenCalledTimes(1)
+    expect(saveDrawingDialog).toHaveBeenCalledWith({
+      defaultName: 'Sketch.excalidraw',
+      content: '{"type":"excalidraw","elements":[],"files":{}}\n',
+    })
+  })
+
+  it('⋯ menu in inline mode shows Move to its own file after a divider, flushes/serializes, and calls inline.onMoveToFile', async () => {
+    const onSave = vi.fn()
+    const onMoveToFile = vi.fn(async (_compactJson: string) => undefined)
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <DrawingModal
+          {...NO_SETTINGS}
+          root={ROOT}
+          theme="light"
+          onClose={vi.fn()}
+          inline={{
+            json: '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}',
+            pagePath: '/v/Notes.md',
+            onSave,
+            onMoveToFile,
+          }}
+        />,
+      )
+    })
+    const raw = JSON.stringify({ type: 'excalidraw', version: 2, elements: [{ id: 'r1', type: 'rectangle' }], appState: {}, files: {} }, null, 2)
+    act(() => seam.props?.onSnapshot({ version: 1, serialize: () => ({ json: raw, files: {}, referenced: new Set() }) }))
+    act(() => seam.props?.onSnapshot({ version: 2, serialize: () => ({ json: raw, files: {}, referenced: new Set() }) }))
+
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Drawing actions"]')!)
+    expect(container.querySelector('.drawing-modal__menu-divider')).not.toBeNull()
+    await click(byText('Move to its own file'))
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onMoveToFile).toHaveBeenCalledTimes(1)
+    const movedJson = onMoveToFile.mock.calls[0][0]
+    expect(movedJson).not.toContain('\n')
+    expect(JSON.parse(movedJson)).toMatchObject({ elements: [{ id: 'r1', type: 'rectangle' }], files: {} })
+  })
+
+  it('standalone ↗ Open in tab flushes edits, closes modal, and calls onOpenInTab with the resolved drawing path', async () => {
+    const onOpenInTab = vi.fn()
+    const { onClose } = await open('ok', 100, { onOpenInTab })
+    emit(1)
+    emit(2)
+    const openTabBtn = container!.querySelector<HTMLButtonElement>('button[aria-label="Open in tab"]')!
+    expect(openTabBtn.textContent).toBe('↗')
+    await click(openTabBtn)
+    expect(drawingSave).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onOpenInTab).toHaveBeenCalledWith(PATH)
+  })
+
+  it('threads onExportPdf to ExcalidrawSurface and saves PDF via api.dialog.savePdf', async () => {
+    const onNotice = vi.fn()
+    await open('ok', 100, { onNotice })
+    expect(seam.props?.onExportPdf).toBeTypeOf('function')
+    await act(async () => {
+      await seam.props?.onExportPdf?.('<svg/>', { width: 800, height: 600 })
+    })
+    expect(savePdfDialog).toHaveBeenCalledWith({
+      defaultName: 'Sketch.pdf',
+      svg: '<svg/>',
+      width: 800,
+      height: 600,
+    })
+  })
+
+  it('YAZ-6335: Escape does not close modal when undocked .sidebar, focused search input, or portaled .excalidraw-modal-container .Modal is open; docked sidebar allows Escape to close modal', async () => {
+    const { overlay, onClose } = await open()
+    const canvas = container!.querySelector('.drawing-modal__canvas')!
+
+    // 1. Undocked engine sidebar (.sidebar without .sidebar--docked) keeps modal open
+    const sidebar = document.createElement('div')
+    sidebar.className = 'sidebar'
+    canvas.appendChild(sidebar)
+    await escOn(overlay)
+    expect(onClose).not.toHaveBeenCalled()
+    sidebar.remove()
+
+    // 2. Focused search <input> inside the modal keeps modal open
+    const input = document.createElement('input')
+    canvas.appendChild(input)
+    input.focus()
+    await escOn(input)
+    expect(onClose).not.toHaveBeenCalled()
+    input.remove()
+
+    // 3. Portaled dialog on document.body (.excalidraw-modal-container .Modal) keeps modal open
+    const portal = document.createElement('div')
+    portal.className = 'excalidraw-modal-container'
+    const modal = document.createElement('div')
+    modal.className = 'Modal'
+    portal.appendChild(modal)
+    document.body.appendChild(portal)
+    await escOn(overlay)
+    expect(onClose).not.toHaveBeenCalled()
+    portal.remove()
+
+    // 4. Docked sidebar (.sidebar.sidebar--docked) does not swallow Escape — modal closes
+    const docked = document.createElement('div')
+    docked.className = 'sidebar sidebar--docked'
+    canvas.appendChild(docked)
+    await escOn(overlay)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    docked.remove()
+  })
+
+  it('YAZ-6335 (should-fix): Move to its own file returning early without closing keeps modal alive and autosaving', async () => {
+    const json = '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}'
+    const onSave = vi.fn()
+    const onMoveToFile = vi.fn().mockResolvedValue(undefined)
+    await open('ok', 100, { inline: { json, pagePath: '/v/Note.md', onSave, onMoveToFile } })
+    emit(1)
+    const moreBtn = container!.querySelector<HTMLButtonElement>('button[aria-label="Drawing actions"]')!
+    await click(moreBtn)
+    const moveBtn = [...container!.querySelectorAll<HTMLButtonElement>('.drawing-modal__menu button')].find((b) => b.textContent === 'Move to its own file')!
+    await click(moveBtn)
+    expect(onMoveToFile).toHaveBeenCalledTimes(1)
+    // Subsequent edit still autosaves if host kept the modal open (e.g. user cancelled allowFileAction).
+    emit(2)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600)
+    })
+    expect(onSave).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('YAZ-6341: ⌘F and ⌘C in DrawingModal capture phase', () => {
+  it('⌘F opens Add panel search from overlay, inline title input, and canvas (.excalidraw-container), and leaves .sidebar/.canvas-panel alone', async () => {
+    const json = '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}'
+    const { overlay } = await open('ok', 100, { inline: { json, pagePath: '/v/Note.md', title: 'Flow', onSave: vi.fn() } })
+
+    // 1. From overlay
+    overlay.focus()
+    const evOverlay = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void overlay.dispatchEvent(evOverlay))
+    expect(evOverlay.defaultPrevented).toBe(true)
+    expect(seam.openAddSearch).toHaveBeenCalledTimes(1)
+
+    // 2. From inline title input
+    const titleInput = container!.querySelector<HTMLInputElement>('.drawing-modal__title-input')!
+    titleInput.focus()
+    const evTitle = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void titleInput.dispatchEvent(evTitle))
+    expect(evTitle.defaultPrevented).toBe(true)
+    expect(seam.openAddSearch).toHaveBeenCalledTimes(2)
+
+    // 3. From canvas (.excalidraw-container inside .drawing-surface)
+    const canvasHost = container!.querySelector('.drawing-modal__canvas')!
+    const excalContainer = document.createElement('div')
+    excalContainer.className = 'drawing-surface'
+    const inner = document.createElement('div')
+    inner.className = 'excalidraw-container'
+    inner.tabIndex = 0
+    excalContainer.appendChild(inner)
+    canvasHost.appendChild(excalContainer)
+    inner.focus()
+    const evCanvas = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void inner.dispatchEvent(evCanvas))
+    expect(evCanvas.defaultPrevented).toBe(true)
+    expect(seam.openAddSearch).toHaveBeenCalledTimes(3)
+
+    // 4. Inside .sidebar / .canvas-panel: DrawingModal capture does NOT hijack it
+    const sidebar = document.createElement('div')
+    sidebar.className = 'sidebar'
+    const searchInput = document.createElement('input')
+    sidebar.appendChild(searchInput)
+    canvasHost.appendChild(sidebar)
+    searchInput.focus()
+    const evSidebar = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void searchInput.dispatchEvent(evSidebar))
+    expect(evSidebar.defaultPrevented).toBe(false)
+    expect(seam.openAddSearch).toHaveBeenCalledTimes(3)
+
+    excalContainer.remove()
+    sidebar.remove()
+  })
+
+  it('⌘C on overlay opens Components panel, while ⌘C in the title input is left alone for copying text', async () => {
+    const json = '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}'
+    const { overlay } = await open('ok', 100, { inline: { json, pagePath: '/v/Note.md', title: 'Flow', onSave: vi.fn() } })
+
+    overlay.focus()
+    const evOverlay = new KeyboardEvent('keydown', { key: 'c', code: 'KeyC', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void overlay.dispatchEvent(evOverlay))
+    expect(evOverlay.defaultPrevented).toBe(true)
+    expect(seam.openComponentsPanel).toHaveBeenCalledTimes(1)
+
+    const titleInput = container!.querySelector<HTMLInputElement>('.drawing-modal__title-input')!
+    titleInput.focus()
+    const evTitle = new KeyboardEvent('keydown', { key: 'c', code: 'KeyC', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void titleInput.dispatchEvent(evTitle))
+    expect(evTitle.defaultPrevented).toBe(false)
+    expect(seam.openComponentsPanel).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('YAZ-6342: per-drawing settings in inline DrawingModal', () => {
+  it('renders Link preview on hover, Fold arrows, and Hover outline above Export rows, updates ExcalidrawSurface live, and persists yaseendraw in compact JSON', async () => {
+    const onSave = vi.fn()
+    const initial = JSON.stringify({
+      yaseendraw: { hoverLinks: false, foldArrows: 'always', hoverOutline: false },
+      type: 'excalidraw',
+      version: 2,
+      elements: [],
+      appState: {},
+      files: {},
+    })
+    await open('ok', 100, {
+      canvasPrefs: { ...DEFAULT_CANVAS_PREFS, foldArrowsOpen: 'hover', hoverOutline: true },
+      inline: { json: initial, pagePath: '/v/Notes.md', onSave },
+    })
+
+    // Initial loaded settings reach ExcalidrawSurface
+    expect(seam.props?.foldArrows).toBe('always')
+    expect(seam.props?.hoverOutline).toBe(false)
+
+    // Baseline snapshot
+    const raw = JSON.stringify({ type: 'excalidraw', version: 2, elements: [{ id: 'r1', type: 'rectangle' }], appState: {}, files: {} })
+    act(() => seam.props?.onSnapshot({ version: 1, serialize: () => ({ json: raw, files: {}, referenced: new Set() }) }))
+
+    const moreBtn = container!.querySelector<HTMLButtonElement>('button[aria-label="Drawing actions"]')!
+    await click(moreBtn)
+    const menu = container!.querySelector('.drawing-modal__menu')!
+    expect(menu.textContent).toContain('Link preview on hover')
+    expect(menu.textContent).toContain('Fold arrows (app: hover)')
+    expect(menu.textContent).toContain('Hover outline (app: on)')
+    // Settings appear above Export rows
+    expect(menu.textContent!.indexOf('Hover outline')).toBeLessThan(menu.textContent!.indexOf('Export Image or PDF…'))
+
+    const hoverLinksBtn = menu.querySelector<HTMLButtonElement>('button[role="menuitemcheckbox"]')!
+    expect(hoverLinksBtn.getAttribute('aria-checked')).toBe('false')
+
+    // Toggle Link preview on hover -> ON
+    await click(hoverLinksBtn)
+    expect(hoverLinksBtn.getAttribute('aria-checked')).toBe('true')
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(onSave.mock.calls[0][0] as string).yaseendraw).toEqual({ foldArrows: 'always', hoverOutline: false })
+
+    // Change Fold arrows -> Off
+    const foldGroup = menu.querySelector('[role="group"][aria-label="Fold arrows"]')!
+    const foldOffBtn = [...foldGroup.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Off')!
+    await click(foldOffBtn)
+    expect(seam.props?.foldArrows).toBe('off')
+    expect(onSave).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(onSave.mock.calls[1][0] as string).yaseendraw).toEqual({ foldArrows: 'off', hoverOutline: false })
+
+    // Change Hover outline -> On
+    const outlineGroup = menu.querySelector('[role="group"][aria-label="Hover outline"]')!
+    const outlineOnBtn = [...outlineGroup.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'On')!
+    await click(outlineOnBtn)
+    expect(seam.props?.hoverOutline).toBe(true)
+    expect(onSave).toHaveBeenCalledTimes(3)
+    expect(JSON.parse(onSave.mock.calls[2][0] as string).yaseendraw).toEqual({ foldArrows: 'off', hoverOutline: true })
+
+    // Reset Fold arrows -> App and Hover outline -> App: yaseendraw is omitted cleanly
+    const foldAppBtn = [...foldGroup.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'App')!
+    const outlineAppBtn = [...outlineGroup.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'App')!
+    await click(foldAppBtn)
+    await click(outlineAppBtn)
+    expect(seam.props?.foldArrows).toBeUndefined()
+    expect(seam.props?.hoverOutline).toBeUndefined()
+    expect(JSON.parse(onSave.mock.calls[4][0] as string).yaseendraw).toBeUndefined()
   })
 })

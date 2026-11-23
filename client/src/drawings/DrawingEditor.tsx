@@ -96,7 +96,7 @@ export const OUTSIDE_FOLDER_WARNING = 'This folder is outside the vault. Your ot
  * no size row and no move. A move writes the file, so Read only greys it out; the exports write elsewhere and stay.
  */
 /** The cog's "Fold arrows" choices (YAZ-4277 D5): the app setting (no key), or the board's own. */
-const FOLD_ARROW_CHOICES: readonly { value: 'app' | FoldArrowMode; label: string; title: string }[] = [
+export const FOLD_ARROW_CHOICES: readonly { value: 'app' | FoldArrowMode; label: string; title: string }[] = [
   { value: 'app', label: 'App', title: 'The app setting' },
   { value: 'hover', label: 'Hover', title: 'Arrows show on hover' },
   { value: 'always', label: 'Always', title: 'Arrows always show' },
@@ -104,13 +104,15 @@ const FOLD_ARROW_CHOICES: readonly { value: 'app' | FoldArrowMode; label: string
 ]
 
 /** The cog's "Hover outline" choices (YAZ-4469 demo): the app setting (no key), or the board's own. */
-const HOVER_OUTLINE_CHOICES: readonly { value: 'app' | boolean; label: string; title: string }[] = [
+export const HOVER_OUTLINE_CHOICES: readonly { value: 'app' | boolean; label: string; title: string }[] = [
   { value: 'app', label: 'App', title: 'The app setting' },
   { value: true, label: 'On', title: 'A faint outline shows what a click will pick' },
   { value: false, label: 'Off', title: 'No outline on hover' },
 ]
 
-export function drawingCogRows({ pictures, out, folder, home = '', folderAllowed, onAllowFolder, readOnly, onMovePictures, onExportImage, onExportDrawing, hoverLinks, onHoverLinks, foldArrows, onFoldArrows, appFoldArrows, hoverOutline, onHoverOutline, appHoverOutline }: {
+export function drawingCogRows({ includeReadOnly = true, pictures, out, folder, home = '', folderAllowed, onAllowFolder, readOnly, onMovePictures, onExportImage, onExportDrawing, hoverLinks, onHoverLinks, foldArrows, onFoldArrows, appFoldArrows, hoverOutline, onHoverOutline, appHoverOutline }: {
+  /** Omit the Read only slot (inline drawings inherit their host page's read-only state). */
+  includeReadOnly?: boolean
   pictures: { bytes: number; count: number; missing?: number }
   out: boolean
   /** The board's own pictures folder (demo round 3), vault-relative or absolute, while `out`; absent: the vault's `assets/`. */
@@ -140,7 +142,7 @@ export function drawingCogRows({ pictures, out, folder, home = '', folderAllowed
   appHoverOutline?: boolean
 }): PageSwitch[] {
   // The menu's "Read only" first, with its (i) (YAZ-4748 demo).
-  const rows: PageSwitch[] = [{ label: 'Read only', readOnlySlot: true, hint: readOnlyHint('drawing') }]
+  const rows: PageSwitch[] = includeReadOnly ? [{ label: 'Read only', readOnlySlot: true, hint: readOnlyHint('drawing') }] : []
   // It writes the file, so Read only greys it out, as "Move pictures out".
   if (onHoverLinks !== undefined) rows.push({ label: 'Link preview on hover', hint: linkPreviewHint('drawing'), on: hoverLinks === true, onToggle: onHoverLinks, disabled: readOnly })
   // YAZ-4277 D5: the board's choice pressed; it writes the file, so Read only greys it out too.

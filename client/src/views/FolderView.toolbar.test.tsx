@@ -573,3 +573,96 @@ describe('two folder pages on one `.folder.md` (YAZ-4596 S38)', () => {
     }
   })
 })
+
+describe('Page width and Position (YAZ-6343)', () => {
+  const widthPill = (el: ParentNode, text: string): HTMLButtonElement => button(q(cogMenu(el), '[role="group"][aria-label="Page width"]'), text)
+  const positionPill = (el: ParentNode, text: string): HTMLButtonElement => button(q(cogMenu(el), '[role="group"][aria-label="Position"]'), text)
+  const widthInput = (el: ParentNode): HTMLInputElement => q<HTMLInputElement>(cogMenu(el), 'input[aria-label="Page width in px"]')
+  const hostStyle = (el: ParentNode) => q<HTMLElement>(el, '.editor-host').style
+  const propsOnDisk = () => parseFrontmatter(splitFrontmatter(onDisk()).frontmatter).properties
+
+  it('defaults to Settings (no inline overrides), writes `page-width` for steps and Custom px, disables Position when Full, and removes the key on Default', async () => {
+    const el = await mount({ contentWidth: 'narrow', contentPosition: 'center' })
+    expect(hostStyle(el).getPropertyValue('--content-text-width')).toBe('')
+    expect(hostStyle(el).getPropertyValue('--column-start')).toBe('')
+
+    openCog(el)
+    expect(widthPill(el, 'Default').getAttribute('aria-pressed')).toBe('true')
+    expect(positionPill(el, 'Default').getAttribute('aria-pressed')).toBe('true')
+    expect(positionPill(el, 'Left').disabled).toBe(false)
+
+    // Pick Full: writes `page-width: full`, widens `.editor-host`, and disables Position.
+    click(widthPill(el, 'Full'))
+    expect(hostStyle(el).getPropertyValue('--content-text-width')).toBe('200vw')
+    expect(hostStyle(el).getPropertyValue('--column-start')).toBe('auto')
+    expect(positionPill(el, 'Left').disabled).toBe(true)
+    await flush()
+    expect(propsOnDisk()['page-width']).toBe('full')
+    feed()
+    await flush()
+    expect(widthPill(el, 'Full').getAttribute('aria-pressed')).toBe('true')
+
+    // Type Custom 1400 px: writes `page-width: 1400`, sets `--content-text-width: 1400px`, re-enables Position.
+    setValue(widthInput(el), '1400')
+    press(widthInput(el), 'Enter')
+    expect(hostStyle(el).getPropertyValue('--content-text-width')).toBe('1400px')
+    expect(positionPill(el, 'Left').disabled).toBe(false)
+    await flush()
+    expect(propsOnDisk()['page-width']).toBe(1400)
+    feed()
+    await flush()
+    expect(widthInput(el).value).toBe('1400')
+
+    // Back to Default: removes `page-width` from `.folder.md` and clears inline overrides.
+    click(widthPill(el, 'Default'))
+    expect(hostStyle(el).getPropertyValue('--content-text-width')).toBe('')
+    expect(hostStyle(el).getPropertyValue('--column-start')).toBe('')
+    await flush()
+    expect(propsOnDisk()['page-width']).toBeUndefined()
+    expect(onDisk()).toBe(VIEWS)
+  })
+
+  it('writes `page-position` (Left / Centre / Default), updates `--column-start`, and reads saved `page-width` and `page-position` on mount', async () => {
+    disk.set(SETTINGS_FILE, {
+      content: VIEWS.replace('---\n', '---\npage-width: 1400\npage-position: left\n'),
+      mtime: 50,
+    })
+    const el = await mount({ contentWidth: 'narrow', contentPosition: 'center' })
+    expect(hostStyle(el).getPropertyValue('--content-text-width')).toBe('1400px')
+    expect(hostStyle(el).getPropertyValue('--column-start')).toBe('0')
+
+    openCog(el)
+    expect(widthInput(el).value).toBe('1400')
+    expect(positionPill(el, 'Left').getAttribute('aria-pressed')).toBe('true')
+
+    // Switch Position to Centre
+    click(positionPill(el, 'Centre'))
+    expect(hostStyle(el).getPropertyValue('--column-start')).toBe('auto')
+    await flush()
+    expect(propsOnDisk()['page-position']).toBe('center')
+    feed()
+    await flush()
+
+    // Switch Position to Default: removes `page-position` while keeping `page-width: 1400`
+    click(positionPill(el, 'Default'))
+    expect(hostStyle(el).getPropertyValue('--content-text-width')).toBe('1400px')
+    expect(hostStyle(el).getPropertyValue('--column-start')).toBe('auto')
+    await flush()
+    expect(propsOnDisk()['page-position']).toBeUndefined()
+    expect(propsOnDisk()['page-width']).toBe(1400)
+  })
+
+  it('respects app `contentWidth: full` by disabling Position until folder overrides width', async () => {
+    const el = await mount({ contentWidth: 'full', contentPosition: 'left' })
+    openCog(el)
+    expect(positionPill(el, 'Left').disabled).toBe(true)
+
+    // Override folder width to Medium: Position becomes enabled and inherits app `contentPosition: left` (`--column-start: 0`).
+    click(widthPill(el, 'Medium'))
+    expect(positionPill(el, 'Left').disabled).toBe(false)
+    expect(hostStyle(el).getPropertyValue('--content-text-width')).toBe('900px')
+    expect(hostStyle(el).getPropertyValue('--column-start')).toBe('0')
+    await flush()
+    expect(propsOnDisk()['page-width']).toBe('medium')
+  })
+})

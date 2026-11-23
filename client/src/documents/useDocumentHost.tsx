@@ -363,7 +363,7 @@ export function DocumentChips({ store, className, lead }: { store: Store<ChipSta
   return (
     <div className={className}>
       {lead}
-      {actions !== null && <PageSettings readOnly={readOnly} onToggleReadOnly={actions.toggle} rows={pageRows ?? undefined} />}
+      {(actions !== null || pageRows !== null) && <PageSettings readOnly={readOnly} onToggleReadOnly={actions?.toggle} rows={pageRows ?? undefined} />}
       {actions !== null && readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={actions.ask} onAllow={actions.allow} onCancel={actions.cancel} onTurnOff={canTurnOff ? actions.turnOff : undefined} editingUntil={editingUntil} onLock={actions.lock} />}
       {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
       <SaveIndicator status={status} />

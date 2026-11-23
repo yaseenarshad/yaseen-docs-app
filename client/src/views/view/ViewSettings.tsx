@@ -4,8 +4,8 @@ import { GROUP_INDENTS, type Mutate, type ViewDef, type ViewSet, groupIndentOf, 
 import { TextField } from './TextField'
 import { cardWidth } from './cardWidth'
 import { type ColorStrengthValue, calLine, writeColorStrength } from '@shared/types'
-import { CALENDAR_SCALES, calLineColor, calendarScaleOf, hideWeekendsDefault, hidesWeekends, monthLineColorOf, monthLineOf } from '../calendar'
-import { CalLineControls } from './CalendarLineControls'
+import { CALENDAR_CARD_STYLES, CALENDAR_SCALES, calLineColor, calendarCardColorOf, calendarCardStyleOf, calendarScaleOf, hideWeekendsDefault, hidesWeekends, monthLineColorOf, monthLineOf, monthShadeColorOf } from '../calendar'
+import { CalLineControls, CalendarCardColorPicker, MonthShadeColorPicker } from './CalendarLineControls'
 import { markerStyleOf } from './ListView'
 import { SubfoldersSwitch } from './SubfoldersSwitch'
 import { GroupGuideSettings, HeaderRowStyleRow, TableLookSettings } from './TableLookSettings'
@@ -213,6 +213,28 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
             />
             <FromSettings own={own} viewKey="cardTitles" viewIndex={viewIndex} onUpdate={onUpdate} />
           </div>
+          {/* Calendar default card (pill) style (YAZ-6331, YAZ-6344): Soft Accent, Soft Slate, White + Bar, White, plus colour + strength for Soft Accent and White + Bar. */}
+          <div className="view-settings-row">
+            <RowLabel icon="cardStyle">Card style</RowLabel>
+            <ChoiceSeg
+              label="Card style"
+              value={calendarCardStyleOf(view)}
+              options={CALENDAR_CARD_STYLES}
+              onChange={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'calendarCardStyle', next, defaults))}
+            />
+            <FromSettings own={own} viewKey="calendarCardStyle" also="calendarCardColor" viewIndex={viewIndex} onUpdate={onUpdate} />
+          </div>
+          {(calendarCardStyleOf(view) === 'accent' || calendarCardStyleOf(view) === 'bar') && (
+            <div className="view-settings-row">
+              <RowLabel icon="cardStyle">Card colour</RowLabel>
+              <CalendarCardColorPicker
+                label="Card style"
+                color={calendarCardColorOf(view)}
+                onColor={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'calendarCardColor', next === null ? '' : writeColorStrength(next), defaults))}
+              />
+              <FromSettings own={own} viewKey="calendarCardColor" viewIndex={viewIndex} onUpdate={onUpdate} />
+            </div>
+          )}
           <label className="view-settings-row">
             <RowLabel icon="hideWeekends">Hide weekends</RowLabel>
             <input
@@ -250,22 +272,27 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
           <p className="view-menu__label">Lines</p>
           <CalendarLineRow label="Between weeks" widthKey="weekLine" colorKey="weekLineColor" view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
           <CalendarLineRow label="Between days" widthKey="dayLine" colorKey="dayLineColor" view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
-          {/* Tell months apart (YAZ-5608): Rolling shades every other month (On by default), and a stepped line can go round each month. */}
+          {/* Tell months apart (YAZ-5608, YAZ-6331): Rolling shades every other month (On by default, with colour + strength), and a stepped line can go round each month. */}
           <div className="view-settings-row">
             <RowLabel icon="monthShade">Shade every other month</RowLabel>
-            <ChoiceSeg
-              label="Shade every other month"
-              value={view.monthShade === false ? 'off' : 'on'}
-              options={[['on', 'On'], ['off', 'Off']] as const}
-              onChange={(next) =>
-                onUpdate((d) => {
-                  if (next === 'off') d.views[viewIndex].monthShade = false
-                  else delete d.views[viewIndex].monthShade
-                })
-              }
-            />
+            <span className="cal-line">
+              <ChoiceSeg
+                label="Shade every other month"
+                value={view.monthShade === false ? 'off' : 'on'}
+                options={[['on', 'On'], ['off', 'Off']] as const}
+                onChange={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'monthShade', next === 'on', defaults))}
+              />
+              {view.monthShade !== false && (
+                <MonthShadeColorPicker
+                  label="Shade every other month"
+                  color={monthShadeColorOf(view)}
+                  onColor={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'monthShadeColor', writeColorStrength(next), defaults))}
+                />
+              )}
+            </span>
+            <FromSettings own={own} viewKey="monthShade" also="monthShadeColor" viewIndex={viewIndex} onUpdate={onUpdate} />
           </div>
-          <MonthLineRow view={view} viewIndex={viewIndex} onUpdate={onUpdate} />
+          <MonthLineRow view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
           {/* Cross out when (YAZ-4864): a card whose page matches these rows is crossed out whole. */}
           {crossOut !== undefined && (
             <>
@@ -355,10 +382,11 @@ function CalendarLineRow({ label, widthKey, colorKey, view, own, viewIndex, onUp
 }
 
 /**
- * "Between months" (YAZ-5608): Off (no key), or a width and a colour with the "Between weeks" controls. Saved with the
- * view alone: Settings › Folder pages has no default for it.
+ * "Between months" (YAZ-5608, YAZ-6331): Off (0), or a width and a colour with the "Between weeks" controls, defaulting
+ * to Settings › Folder pages with a single ↺ reset for both keys.
  */
-function MonthLineRow({ view, viewIndex, onUpdate }: { view: ViewDef; viewIndex: number; onUpdate: Mutate }) {
+function MonthLineRow({ view, own, viewIndex, onUpdate }: { view: ViewDef; own: ViewDef; viewIndex: number; onUpdate: Mutate }) {
+  const defaults = useViewDefaults()
   return (
     <div className="view-settings-row">
       <RowLabel icon="lineWidth">Between months</RowLabel>
@@ -369,19 +397,13 @@ function MonthLineRow({ view, viewIndex, onUpdate }: { view: ViewDef; viewIndex:
         color={monthLineColorOf(view)}
         onWidth={(px) =>
           onUpdate((d) => {
-            if (px === 0) {
-              delete d.views[viewIndex].monthLine
-              delete d.views[viewIndex].monthLineColor
-            } else d.views[viewIndex].monthLine = px
+            chooseOwn(d.views[viewIndex], 'monthLine', px, defaults)
+            if (px === 0) delete d.views[viewIndex].monthLineColor
           })
         }
-        onColor={(next: ColorStrengthValue) =>
-          onUpdate((d) => {
-            d.views[viewIndex].monthLineColor = writeColorStrength(next)
-          })
-        }
+        onColor={(next: ColorStrengthValue) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'monthLineColor', writeColorStrength(next), defaults))}
       />
-      <span className="view-from-settings" aria-hidden="true" />
+      <FromSettings own={own} viewKey="monthLine" also="monthLineColor" viewIndex={viewIndex} onUpdate={onUpdate} />
     </div>
   )
 }

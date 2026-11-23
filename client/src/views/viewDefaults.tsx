@@ -33,11 +33,17 @@ const DEFAULTED = {
   foldersFirst: 'foldersFirst',
   calendarScale: 'calendarScale',
   cardTitles: 'cardTitles',
+  calendarCardStyle: 'calendarCardStyle',
+  calendarCardColor: 'calendarCardColor',
   hideWeekends: 'hideWeekends',
   weekLine: 'weekLine',
   dayLine: 'dayLine',
   weekLineColor: 'weekLineColor',
   dayLineColor: 'dayLineColor',
+  monthShade: 'monthShade',
+  monthShadeColor: 'monthShadeColor',
+  monthLine: 'monthLine',
+  monthLineColor: 'monthLineColor',
 } as const satisfies Partial<Record<keyof ViewDef, keyof FolderPagesSettings>>
 export type DefaultedKey = keyof typeof DEFAULTED
 const DEFAULTED_KEYS = Object.keys(DEFAULTED) as DefaultedKey[]
@@ -72,12 +78,19 @@ const ABSENT: { readonly [K in DefaultedKey]: unknown } = {
   foldersFirst: true,
   calendarScale: 'month',
   cardTitles: 'clip',
+  calendarCardStyle: 'accent',
+  calendarCardColor: '',
   hideWeekends: false,
   // YAZ-4878: 1 px lines in the app's line colour before the Settings rows existed; a view's `weekLine: 3` reads as before.
   weekLine: 1,
   dayLine: 1,
   weekLineColor: 'gray',
   dayLineColor: 'gray',
+  // YAZ-6331: Rolling alternating month shade (on, Gray Light) and Between months line (Off, Blue Medium).
+  monthShade: true,
+  monthShadeColor: 'gray light',
+  monthLine: 0,
+  monthLineColor: 'blue',
 }
 
 /**

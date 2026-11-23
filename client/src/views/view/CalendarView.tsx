@@ -5,7 +5,7 @@ import { edgeScroller } from '../../lib/edgeScroll'
 import { type CardClick, openByKey } from '../../lib/openGesture'
 import { clickCard } from './cardClick'
 import {
-  type BarPlace, type CalendarScale, type DayKey, CALENDAR_SCALES, type Span, type SpanPreview, bucketByDay, addDays, calLineColor, calLineCss, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthEdges, monthLineColorOf, monthLineOf, monthStart, monthWeeks, rollingEnds, shadedMonth, spanDays, spanOf, timeFirst, timeOf,
+  type BarPlace, type CalendarScale, type DayKey, CALENDAR_SCALES, type Span, type SpanPreview, bucketByDay, addDays, calLineColor, calLineCss, calendarCardColorOf, calendarCardColorVars, calendarCardStyleOf, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthEdges, monthLineColorOf, monthLineOf, monthShadeColorOf, monthShadeCss, monthStart, monthWeeks, rollingEnds, shadedMonth, spanDays, spanOf, timeFirst, timeOf,
   firstShownOfMonth, todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends,
 } from '../calendar'
 import { type ColorStrengthValue, type IndexRecord, calLine, headerRowAttrs } from '@shared/types'
@@ -211,11 +211,14 @@ function gridLines(view: ViewDef): CSSProperties | undefined {
   const day = calLine(view.dayLine)
   const weekColor = calLineColor(view.weekLineColor)
   const dayColor = calLineColor(view.dayLineColor)
-  // "Between months" (YAZ-5608): its width and colour, for the days' month edges (views.css); Off sets nothing.
+  // "Between months" (YAZ-5608) and "Shade every other month" (YAZ-6331): custom properties for views.css.
   const month = monthLineOf(view)
-  const monthVars: Record<string, string> = month === 0 ? {} : { '--cal-month-line': `${month}px`, '--cal-month-line-color': calLineCss(monthLineColorOf(view), month) }
+  const monthVars: Record<string, string> = {
+    ...(month === 0 ? {} : { '--cal-month-line': `${month}px`, '--cal-month-line-color': calLineCss(monthLineColorOf(view), month) }),
+    ...(view.monthShade !== false ? { '--cal-month-shade': monthShadeCss(monthShadeColorOf(view)) } : {}),
+  }
   const plain = (c: ColorStrengthValue) => c.color === 'gray' && c.strength === 'medium'
-  if (week === 1 && day === 1 && plain(weekColor) && plain(dayColor)) return month === 0 ? undefined : (monthVars as unknown as CSSProperties)
+  if (week === 1 && day === 1 && plain(weekColor) && plain(dayColor)) return Object.keys(monthVars).length === 0 ? undefined : (monthVars as unknown as CSSProperties)
   return {
     '--cal-week-line': `${week}px`,
     '--cal-day-line': `${day}px`,
@@ -936,8 +939,15 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]') !== null) return
     if (e.shiftKey ? history.redo() : history.undo()) e.preventDefault()
   }
+  const cardColor = calendarCardColorOf(view)
   return (
-    <div ref={rootRef} className={`view-cal${rolling ? ' view-cal--rolling' : ''}${resize === null ? '' : ' view-cal--resizing'}`} onKeyDown={onUndoKey}>
+    <div
+      ref={rootRef}
+      className={`view-cal${rolling ? ' view-cal--rolling' : ''}${resize === null ? '' : ' view-cal--resizing'}`}
+      data-card-style={calendarCardStyleOf(view)}
+      style={cardColor === null ? undefined : (calendarCardColorVars(cardColor) as CSSProperties)}
+      onKeyDown={onUndoKey}
+    >
       <div className="view-cal__nav">
         {/* The title alone at the left, the controls at the right (YAZ-3746 13M): views.css gives the title the room between. */}
         <h3 className="view-cal__month">{title}</h3>

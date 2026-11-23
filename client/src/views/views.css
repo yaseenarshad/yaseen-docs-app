@@ -2293,10 +2293,10 @@
   color: var(--accent);
 }
 
-/* "Shade every other month" (YAZ-5608): Rolling's every second month a little darker than the page, in light and dark
+/* "Shade every other month" (YAZ-5608, YAZ-6331): Rolling's every second month a little darker than the page, in light and dark
    mode alike; the cards and bars draw over it with their own background. A drop's highlight comes later and wins. */
 .view-cal {
-  --cal-month-shade: color-mix(in srgb, var(--fg) 4%, var(--bg));
+  --cal-month-shade: color-mix(in srgb, var(--fg) 2%, var(--bg));
 }
 
 .view-cal__day--shade {
@@ -2418,7 +2418,8 @@
 }
 
 .view-cal__card {
-  /* A column of lines (YAZ-4857): the name's line, then the shown columns' lines, the board's `cardLines`. */
+  /* A column of lines (YAZ-4857): the name's line, then the shown columns' lines, the board's `cardLines`.
+     Default pill style (YAZ-6331): Soft Accent. */
   position: relative;
   display: flex;
   flex-direction: column;
@@ -2427,14 +2428,46 @@
   padding: 2px 6px;
   font-size: 12px;
   line-height: 18px;
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--cal-card-accent, var(--accent)) var(--cal-card-fill-wash, 8%), var(--bg));
+  border: 1px solid color-mix(in srgb, var(--cal-card-accent, var(--accent)) var(--cal-card-border-wash, 24%), var(--bg));
   border-radius: 4px;
   cursor: pointer;
 }
 
 .view-cal__card:hover {
   border-color: var(--fg-muted);
+}
+
+.view-cal__card:not([data-color]):hover {
+  border-color: color-mix(in srgb, var(--cal-card-accent, var(--accent)) var(--cal-card-hover-wash, 48%), var(--bg));
+}
+
+/* Calendar default card (pill) styles (YAZ-6331): Soft Slate, White + Bar, White. Colored cards ([data-color]) keep their own fill. */
+[data-card-style='slate'] .view-cal__card:not([data-color]) {
+  background: color-mix(in srgb, var(--fg) 5%, var(--bg));
+  border-color: color-mix(in srgb, var(--fg) 14%, var(--bg));
+}
+
+[data-card-style='bar'] .view-cal__card:not([data-color]) {
+  background: var(--bg);
+  border-color: color-mix(in srgb, var(--fg) 14%, var(--bg));
+  border-left: 3px solid var(--cal-card-accent, var(--accent));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+[data-card-style='plain'] .view-cal__card:not([data-color]) {
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+[data-card-style='slate'] .view-cal__card:not([data-color]):hover,
+[data-card-style='bar'] .view-cal__card:not([data-color]):hover,
+[data-card-style='plain'] .view-cal__card:not([data-color]):hover {
+  border-color: var(--fg-muted);
+}
+
+[data-card-style='bar'] .view-cal__card:not([data-color]):not(.view-cal__bar--cut-start):hover {
+  border-left-color: var(--cal-card-accent, var(--accent));
 }
 
 .view-cal__card:focus {
@@ -2463,6 +2496,11 @@
   border-left-style: dashed;
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
+}
+
+/* White + Bar keeps the dashed cut edge on continuation weeks instead of a 3px solid accent bar (YAZ-6331). */
+[data-card-style='bar'] .view-cal__bar.view-cal__bar--cut-start:not([data-color]) {
+  border-left: 1px dashed color-mix(in srgb, var(--fg) 14%, var(--bg));
 }
 
 .view-cal__bar.view-cal__bar--cut-end {
@@ -2588,7 +2626,10 @@
 :is(.view-cal__card, .view-board__card)[data-color='black'][data-color-strength='medium'] { --card-wash: 60%; }
 :is(.view-cal__card, .view-board__card)[data-color='black'][data-color-strength='light'] { --card-wash: 30%; }
 :is(.view-cal__card, .view-board__card)[data-color='black'][data-color-strength='strong'] { --card-wash: 100%; }
-:is(.view-cal__card, .view-board__card)[data-color] { background: color-mix(in srgb, var(--card-hue) var(--card-wash, 30%), var(--bg)); }
+:is(.view-cal__card, .view-board__card)[data-color] {
+  background: color-mix(in srgb, var(--card-hue) var(--card-wash, 30%), var(--bg));
+  border-color: color-mix(in srgb, var(--card-hue) 40%, var(--border));
+}
 
 /* A card's text colour and weight (YAZ-4906 round 2, `cardStyleAttrs`): the page's `text_color` (the header row's Text
    choices: Muted, White, or a colour as its cell text colour, darker in light and lighter in dark, `table.css`) and

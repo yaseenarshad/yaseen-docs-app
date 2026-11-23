@@ -19,7 +19,7 @@ const LINK_PILL_ROWS = ['linkPills']
 // Preview links on hover (`folderLinks`) beside Preview rows; Confirm changes after Ask before deleting (YAZ-3746 13AN).
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and
 // their style (YAZ-4798) after Group indent.
-const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', 'folderPagesVault', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'cardClickOpens', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
+const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', 'folderPagesVault', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'cardClickOpens', 'calendarScale', 'cardTitles', 'calendarCardStyle', 'hideWeekends', 'weekLine', 'dayLine', 'monthShade', 'monthLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 const ids = (hits: readonly SettingHit[]) => hits.map((h) => h.item.id)
 /** The Hotkeys page's rows, in page order. */
 const hotkeyRows = () => ids(settingCandidates(ctx()).filter((h) => h.section.id === 'hotkeys'))
@@ -342,7 +342,7 @@ describe('searchSettings', () => {
     }
     // And a grouped folder table's Group line style (YAZ-4798), whose Thread is the sidebar's.
     expect(ids(searchSettings(settingCandidates(ctx()), 'thread'))).toEqual(['sidebarThreadColor', 'sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'folderPages.groupLineStyle'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'accent'))).toEqual(['sidebarThreadColor', 'threadColor'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'accent'))).toEqual(['sidebarThreadColor', 'threadColor', 'folderPages.calendarCardStyle'])
   })
 
   it('YAZ-5977: "search size" and "explore size" find the pointer to the zoom menu', () => {
