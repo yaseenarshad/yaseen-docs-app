@@ -60,6 +60,7 @@ import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
 import { initMint, macId } from './vaultIndex/mint'
 import { createWindowManager } from './windows'
 import { createDockIconController, type DockIconController } from './dockIcon'
+import { installVaultLauncher, removeVaultLauncher, vaultLauncherBinaryPath } from './vaultLauncher'
 import { dropLanded } from './dragLanding'
 import { blockFileNavigation, createWindowOpenHandler } from './windowOpenPolicy'
 import { createUpdater, runFile, shortVersion, spawnDetached } from './updater'
@@ -125,7 +126,7 @@ function handleLink(url: string): void {
     manager.linkNotice(`Can't open link: ${url}`)
     return
   }
-  manager.routeToFile(parsed.path, parsed.root)
+  manager.routeToFile(parsed.path, parsed.root, parsed.open)
 }
 
 /** macOS fires `open-url` before `ready` on cold start; Linux/Windows pass protocol URLs in `process.argv`. */
@@ -541,6 +542,35 @@ app.whenReady().then(() => {
     openPath: (appPath) => shell.openPath(appPath),
     onGithubAuthChange: () => friendsTokenChanged?.(),
     onVaultLauncherIconChanged: (iconPath) => dockIcon?.invalidate(iconPath),
+    vaultLauncher: process.platform === 'darwin'
+      ? {
+          supported: true,
+          install: async (params) => {
+            const binaryPath = vaultLauncherBinaryPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname })
+            const res = await installVaultLauncher(
+              {
+                name: params.name,
+                vaultPath: params.root,
+                iconPng: params.png,
+                openTarget: params.target === 'inbox' || params.target === 'today' ? params.target : undefined,
+                previousAppPath: params.previousAppPath,
+                binaryPath,
+              },
+              { trashItem: (p) => shell.trashItem(p) },
+            )
+            return { appPath: res.appPath }
+          },
+          remove: async (appPath, root) => {
+            await removeVaultLauncher(appPath, root, { trashItem: (p) => shell.trashItem(p) })
+          },
+          reveal: (appPath) => shell.showItemInFolder(appPath),
+          launch: async (appPath) => {
+            const err = await shell.openPath(appPath)
+            if (err !== '') throw new Error(err)
+          },
+          exists: existsSync,
+        }
+      : undefined,
   }, settingsFolder)
   githubAuth = auth
   // Friends backend (YAZ-6219): D1 API service + background stats sender, reusing GitHub App auth (`githubAuth.getValidAuth()`).

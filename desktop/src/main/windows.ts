@@ -1281,7 +1281,10 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
             return at === -1 ? Number.POSITIVE_INFINITY : at
           }
           const top = matching.sort((a, b) => rank(a.id) - rank(b.id))[0]?.win
-          if (top !== undefined) host.onOpenTarget?.(top, normalized, openTarget)
+          if (top !== undefined) {
+            if (host.onOpenTarget !== undefined) host.onOpenTarget(top, normalized, openTarget)
+            else sendLink(top, CONTRACT.link.onOpenTarget.channel, { root: normalized, target: openTarget })
+          }
         }
         return
       }
