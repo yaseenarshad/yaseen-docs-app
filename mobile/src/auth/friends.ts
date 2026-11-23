@@ -23,14 +23,16 @@ const CHOICE = 'friendsVault'
 /** Pure: from the vaults in list order, with what their check learned, and the person's choice (a vault id). */
 export function friendsAccount(vaults: readonly { vault: string; account: VaultAccount | undefined }[], chosen: string | null): FriendsAccount {
   if (vaults.length === 0) return { kind: 'no-vaults' }
-  const checked = vaults.filter((v) => v.account !== undefined)
+  const eligible = vaults.filter((v) => v.account !== undefined && v.account.gists !== 'no')
   const logins: string[] = []
-  for (const v of checked) {
-    const login = v.account!.login
-    if (!logins.some((l) => l.toLowerCase() === login.toLowerCase())) logins.push(login)
+  for (const v of vaults) {
+    const login = v.account?.login
+    if (login !== undefined && !logins.some((l) => l.toLowerCase() === login.toLowerCase())) logins.push(login)
   }
-  const use = checked.find((v) => v.vault === chosen) ?? checked[0]
-  if (use === undefined) return { kind: 'unchecked' }
+  const use = eligible.find((v) => v.vault === chosen) ?? eligible[0]
+  if (use === undefined) {
+    return vaults.some((v) => v.account === undefined) ? { kind: 'unchecked' } : { kind: 'no-gists', logins }
+  }
   const login = use.account!.login
   return logins.length > 1 ? { kind: 'two-accounts', vault: use.vault, login, logins } : { kind: 'ok', vault: use.vault, login }
 }

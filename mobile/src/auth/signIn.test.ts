@@ -271,7 +271,7 @@ describe("GitHub's order of checks for a write is not proven (403 before 422, or
 
   it('sign-in does not probe POST /gists (Friends uses D1, YAZ-6326)', async () => {
     expect(await signIn({ repo: 'yaseen/vault', token: NO_GISTS }, deps)).toMatchObject({ ok: true, account: { gists: 'unknown' } })
-    expect(github.calls.filter((c) => c.path === '/gists')).toHaveLength(0)
+    expect(github.calls.filter((c) => c.url.endsWith('/gists'))).toHaveLength(0)
   })
 })
 

@@ -12,23 +12,23 @@ describe('which account acts for friends (round 13, item 4; YAZ-6326 D1 Friends)
     expect(friendsAccount([], null)).toEqual({ kind: 'no-vaults' })
   })
 
-  it('uses the first checked vault regardless of legacy gists flag (Friends uses D1, not Gists)', () => {
+  it('uses the first checked vault (including gists: unknown from D1 sign-ins)', () => {
     const state = friendsAccount(
       [
         { vault: 'yaseen/a@main', account: account('yaseen', 'no') },
-        { vault: 'yaseen/b@main', account: account('yaseen', 'yes') },
-        { vault: 'yaseen/c@main', account: account('yaseen', 'unknown') },
+        { vault: 'yaseen/b@main', account: account('yaseen', 'unknown') },
+        { vault: 'yaseen/c@main', account: account('yaseen', 'yes') },
       ],
       null,
     )
-    expect(state).toEqual({ kind: 'ok', vault: 'yaseen/a@main', login: 'yaseen' })
+    expect(state).toEqual({ kind: 'ok', vault: 'yaseen/b@main', login: 'yaseen' })
     expect(friendsMessage(state)).toBeNull()
   })
 
   it('the person can choose another checked vault, falling back to first when gone', () => {
     const vaults = [
       { vault: 'yaseen/b@main', account: account('yaseen', 'unknown') },
-      { vault: 'yaseen/c@main', account: account('yaseen', 'no') },
+      { vault: 'yaseen/c@main', account: account('yaseen', 'yes') },
     ]
     expect(friendsAccount(vaults, 'yaseen/c@main')).toEqual({ kind: 'ok', vault: 'yaseen/c@main', login: 'yaseen' })
     expect(friendsAccount(vaults, 'gone/x@main')).toMatchObject({ vault: 'yaseen/b@main' })
@@ -58,7 +58,7 @@ describe('which account acts for friends (round 13, item 4; YAZ-6326 D1 Friends)
     list = addVault(addVault(addVault(list, v('yaseen/a')), v('yaseen/b')), v('yaseen/c'))
     await saveVaultList(store, list)
     await saveAccount(store, 'yaseen/a@main', account('yaseen', 'unknown'))
-    await saveAccount(store, 'yaseen/b@main', account('yaseen', 'no'))
+    await saveAccount(store, 'yaseen/b@main', account('yaseen', 'unknown'))
     expect(await loadFriendsAccount(store)).toMatchObject({ kind: 'ok', vault: 'yaseen/a@main' })
     await chooseFriendsVault(store, 'yaseen/b@main')
     expect(await loadFriendsAccount(store)).toMatchObject({ kind: 'ok', vault: 'yaseen/b@main' })
