@@ -84,7 +84,7 @@ export const DISCARD_PROMPT = 'Changes are not saved. Discard them?'
 const FORGET_PANEL = (): void => undefined
 const EXPORT_FAILED = "The Excalidraw drawing couldn't be exported."
 const PDF_FAILED = "The PDF couldn't be exported."
-const INNER_ESCAPE_SELECTOR = '.sidebar, .sidebar--docked, .excalidraw-sidebar, .presentation-player, .Modal, .excalidraw .Dialog, .excalidraw-modal-container .Modal'
+const INNER_ESCAPE_SELECTOR = '.sidebar:not(.sidebar--docked), .excalidraw-sidebar, .presentation-player, .Modal, .excalidraw .Dialog, .excalidraw-modal-container .Modal'
 const PORTALED_ESCAPE_SELECTOR = '.excalidraw-modal-container .Modal, .excalidraw .Dialog'
 
 /** Inline mode (YAZ-5040): edits a ```` ```excalidraw ```` block inside a `.md` page instead of a standalone `.excalidraw` file. */

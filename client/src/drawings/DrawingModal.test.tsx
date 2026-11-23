@@ -1150,19 +1150,19 @@ describe('YAZ-6330: DrawingModal tab parity (canvasPanel, ⌘S, ⌘F, Escape gua
     })
   })
 
-  it('YAZ-6335: Escape does not close modal when engine .sidebar, focused search input, or portaled .excalidraw-modal-container .Modal is open', async () => {
+  it('YAZ-6335: Escape does not close modal when undocked .sidebar, focused search input, or portaled .excalidraw-modal-container .Modal is open; docked sidebar allows Escape to close modal', async () => {
     const { overlay, onClose } = await open()
     const canvas = container!.querySelector('.drawing-modal__canvas')!
 
-    // 1. Engine sidebar uses .sidebar / .sidebar--docked
+    // 1. Undocked engine sidebar (.sidebar without .sidebar--docked) keeps modal open
     const sidebar = document.createElement('div')
-    sidebar.className = 'sidebar sidebar--docked'
+    sidebar.className = 'sidebar'
     canvas.appendChild(sidebar)
     await escOn(overlay)
     expect(onClose).not.toHaveBeenCalled()
     sidebar.remove()
 
-    // 2. Focused search <input> inside the modal
+    // 2. Focused search <input> inside the modal keeps modal open
     const input = document.createElement('input')
     canvas.appendChild(input)
     input.focus()
@@ -1170,7 +1170,7 @@ describe('YAZ-6330: DrawingModal tab parity (canvasPanel, ⌘S, ⌘F, Escape gua
     expect(onClose).not.toHaveBeenCalled()
     input.remove()
 
-    // 3. Portaled dialog on document.body (.excalidraw-modal-container .Modal)
+    // 3. Portaled dialog on document.body (.excalidraw-modal-container .Modal) keeps modal open
     const portal = document.createElement('div')
     portal.className = 'excalidraw-modal-container'
     const modal = document.createElement('div')
@@ -1181,9 +1181,13 @@ describe('YAZ-6330: DrawingModal tab parity (canvasPanel, ⌘S, ⌘F, Escape gua
     expect(onClose).not.toHaveBeenCalled()
     portal.remove()
 
-    // Once all inner UI is gone, Escape closes the modal.
+    // 4. Docked sidebar (.sidebar.sidebar--docked) does not swallow Escape — modal closes
+    const docked = document.createElement('div')
+    docked.className = 'sidebar sidebar--docked'
+    canvas.appendChild(docked)
     await escOn(overlay)
     expect(onClose).toHaveBeenCalledTimes(1)
+    docked.remove()
   })
 
   it('YAZ-6335 (should-fix): Move to its own file returning early without closing keeps modal alive and autosaving', async () => {
