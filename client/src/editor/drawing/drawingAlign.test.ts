@@ -4,6 +4,7 @@ import { EMPTY_INLINE_SCENE_JSON } from '@shared/inlineDrawing'
 import type { BoardWindowHandle, BoardWindowHost } from '../embed/types'
 import { blockMenuItems } from '../blockHandleMenu'
 import { createCrepe, editorViewOf, getMarkdownForSave } from '../createCrepe'
+import { toggleOutlineFold } from '../outline/outlineFolding'
 
 vi.mock('../embed/loadBoardWindow', () => ({
   loadBoardWindow: () =>
@@ -179,5 +180,21 @@ describe('6-dot block handle menu Position rows for pictures (YAZ-6424)', () => 
 
     expect(blockMenuItems(view, { pos: positions[0]!, inside: positions[0]! }).some((i) => i.kind !== 'strip' && i.label === 'Position')).toBe(false)
     expect(blockMenuItems(view, { pos: positions[1]!, inside: positions[1]! }).some((i) => i.kind !== 'strip' && i.label === 'Position')).toBe(false)
+  })
+
+  it('omits Position flyout when a picture bullet is folded (YAZ-6427)', async () => {
+    const md = '* ![Shot|480](images/shot.png)\n'
+    const { view } = await mount(md)
+    let itemPos = -1
+    view.state.doc.descendants((node, pos) => {
+      if (itemPos === -1 && node.type.name === 'list_item') itemPos = pos
+    })
+    expect(itemPos).toBeGreaterThanOrEqual(0)
+
+    expect(blockMenuItems(view, { pos: itemPos, inside: itemPos }).some((i) => i.kind !== 'strip' && i.label === 'Position')).toBe(true)
+    toggleOutlineFold(itemPos)(view.state, view.dispatch)
+
+    expect(blockMenuItems(view, { pos: itemPos, inside: itemPos }).some((i) => i.kind !== 'strip' && i.label === 'Position')).toBe(false)
+    expect(blockMenuItems(view, { pos: itemPos + 1, inside: itemPos + 1 }).some((i) => i.kind !== 'strip' && i.label === 'Position')).toBe(false)
   })
 })

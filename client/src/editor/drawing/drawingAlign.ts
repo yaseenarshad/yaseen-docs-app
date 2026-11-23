@@ -10,6 +10,7 @@ import { optionsSuffix, parseEmbedOptions, type EmbedAlign, type EmbedOptions } 
 import { drawingTitleOf, formatDrawingLine } from '@shared/inlineDrawing'
 import type { MenuRow, RowProvider } from '../blockHandleMenu'
 import { formatAlt, parseAlt } from '../image/imageSrc'
+import { outlineCollapsedPositions } from '../outline/outlineFolding'
 import { tablerIcon, type TablerIcon } from '../table/tableIcons'
 import { boardCheckOf, boardEmbedsIn, cardCheckOf, type BoardEmbedMatch } from './boardEmbedScan'
 import { isBoardSrc } from './boardEmbedText'
@@ -118,6 +119,10 @@ function loneBoardEmbedAt(view: EditorView, paraPos: number, paragraph: ProseNod
   return embed
 }
 
+function isCollapsedImageBullet(view: EditorView, listItemPos: number): boolean {
+  return outlineCollapsedPositions(view.state).has(listItemPos)
+}
+
 function drawingTargetAt(view: EditorView, pos: number): DrawingTarget | null {
   const { doc } = view.state
   if (pos < 0 || pos >= doc.content.size) return null
@@ -127,6 +132,8 @@ function drawingTargetAt(view: EditorView, pos: number): DrawingTarget | null {
   if (node.type.name === 'paragraph') {
     const embed = loneBoardEmbedAt(view, pos, node)
     if (embed !== null) return { kind: 'embed', paraPos: pos, embed }
+    const $pos = doc.resolve(pos)
+    if ($pos.depth > 0 && $pos.parent.type.name === 'list_item' && isCollapsedImageBullet(view, $pos.before($pos.depth))) return null
     const image = loneImageInParagraph(pos, node)
     return image === null ? null : { kind: 'image', ...image }
   }
@@ -136,6 +143,7 @@ function drawingTargetAt(view: EditorView, pos: number): DrawingTarget | null {
     if (node.firstChild.type.name === 'paragraph') {
       const embed = loneBoardEmbedAt(view, childPos, node.firstChild)
       if (embed !== null) return { kind: 'embed', paraPos: childPos, embed }
+      if (isCollapsedImageBullet(view, pos)) return null
       const image = loneImageInParagraph(childPos, node.firstChild)
       return image === null ? null : { kind: 'image', ...image }
     }
