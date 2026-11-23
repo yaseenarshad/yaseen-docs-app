@@ -1618,8 +1618,13 @@ export async function handleFriends(
   if (path === '/api/friends/push/test') {
     if (method !== 'POST') return new Response(null, { status: 405, headers: { ...HEADERS, allow: 'POST' } })
     const body = await readJsonBody(request)
-    const rawEndpoint = typeof body?.endpoint === 'string' ? body.endpoint.trim() : ''
-    const onlyEndpoint = rawEndpoint.length > 0 && rawEndpoint.length <= 2048 ? rawEndpoint : undefined
+    let onlyEndpoint: string | undefined
+    if (body && body.endpoint !== undefined) {
+      if (typeof body.endpoint !== 'string') return refuse(400, 'bad_endpoint')
+      const trimmed = body.endpoint.trim()
+      if (!trimmed || trimmed.length > 2048) return refuse(400, 'bad_endpoint')
+      onlyEndpoint = trimmed
+    }
     const res = await notifyUser(
       env,
       db,

@@ -39,6 +39,14 @@ export function urlBase64ToUint8Array(base64Url: string): Uint8Array<ArrayBuffer
   return out
 }
 
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.byteLength !== b.byteLength) return false
+  for (let i = 0; i < a.byteLength; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
 export function detectIosNotStandalone(): boolean {
   const where = whereAmI(browserFacts())
   return where === 'ios-safari' || where === 'ios-other'
@@ -191,11 +199,19 @@ export default function NotificationsPart() {
       }
 
       const reg = await navigator.serviceWorker.ready
+      const expectedKey = urlBase64ToUint8Array(config.vapidPublicKey)
       let sub = await reg.pushManager.getSubscription()
+      if (sub) {
+        const existingKey = sub.options?.applicationServerKey
+        if (existingKey && !bytesEqual(new Uint8Array(existingKey), expectedKey)) {
+          await sub.unsubscribe().catch(() => false)
+          sub = null
+        }
+      }
       if (!sub) {
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(config.vapidPublicKey),
+          applicationServerKey: expectedKey,
         })
       }
       const json = sub.toJSON()
@@ -246,7 +262,7 @@ export default function NotificationsPart() {
         return
       }
 
-      let endpoint = ''
+      let endpoint = deviceEndpoint ?? ''
       if (typeof navigator !== 'undefined' && navigator.serviceWorker) {
         const reg =
           typeof navigator.serviceWorker.getRegistration === 'function'
@@ -297,12 +313,19 @@ export default function NotificationsPart() {
         setStatus('Test notification sent')
       } else if (res.failed > 0) {
         const code = res.failedStatuses?.[0]
+        if (code === 404 || code === 410) {
+          setDeviceSubscribed(false)
+          setDeviceEndpoint(null)
+          setSubscribedCount((c) => Math.max(0, c - 1))
+        }
         setStatus(
           code
             ? `Test notification failed (HTTP ${code}). Try disabling and re-enabling on this device.`
             : 'Test notification failed. Try disabling and re-enabling on this device.',
         )
       } else {
+        setDeviceSubscribed(false)
+        setDeviceEndpoint(null)
         setStatus('Enable notifications on this device first.')
       }
     } catch (err) {
