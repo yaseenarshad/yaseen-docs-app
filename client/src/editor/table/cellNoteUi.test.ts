@@ -5,6 +5,8 @@
  * mark; ⌘. in a cell bullet zooms the bullet, and in a card is a no-op; Tab indents in the card; the table menu's cell
  * note rows; Backspace and Delete step over the mark; the one "Add cell note" button; the preview on the whole cell.
  */
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { undo } from '@milkdown/kit/prose/history'
@@ -15,11 +17,13 @@ import type { MenuAction, MenuItem } from '../../sidebar/menuSections'
 import { getMarkdownForSave, setMarkdown, zoomPageTo } from '../createCrepe'
 import { applyExternalMarkdown } from '../external/applyExternalMarkdown'
 import { mount, pressKey, typeText, unmountAll } from '../marks/markTestKit'
-import { noteMenuSections } from '../noteMenu'
+import { pageMenuSections } from '../pageMenu'
 import { canZoomInto, getZoomedItemPos, zoomKeyAt, ZOOM_CRUMB_CLASS, ZOOM_HIDDEN_CLASS } from '../outline/zoom'
 import { cellNoteButtonPlacements } from './cellNoteButton'
+import { setCellNoteButtonSetting } from './timeFormatSetting'
 import { CELL_NOTE_CELL_OPEN_CLASS, CELL_NOTE_OPEN_CLASS, canOpenCellNote, openCellNote, setCellNotePinnedAtStart, setCellNoteTemplate } from './cellNoteCard'
-import { cellNotePreviewLines } from './cellNotePreview'
+import { cellHoverCardRuns, fitCard } from './cellHoverCard'
+import { cellNotePreviewLines, CELL_NOTE_BOX_WIDTH, setCellNotePreviewLines } from './cellNotePreview'
 import { isCellNoteHidden, openCellNoteLabel } from './cellNotes'
 import { cellPos } from './tableTestKit'
 
@@ -79,6 +83,8 @@ const caretAt = (view: EditorView, text: string, offset = text.length) => {
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)))
 }
 const click = (el: Element) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+/** A key as the browser sends it, a `keydown` on the editor: every DOM handler and keymap sees it. True when one took it. */
+const domKey = (view: EditorView, key: string, shiftKey = false): boolean => !view.dom.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true }))
 /** A pointer event in the cell at (row, col), at its top-right corner (the mark's triangle, 5A-18) or at `x`, `y`. */
 const inCell = (view: EditorView, type: string, row = 1, col = 1, x = 197, y = 33) => {
   const cell = view.nodeDOM(cellPos(view, row, col)) as HTMLElement
@@ -183,7 +189,7 @@ describe('the cell note card (the demo)', () => {
   })
 })
 
-describe('previous and next note, and the open note\'s cell (round 2 of the demo)', () => {
+describe('previous and next note, and the open page\'s cell (round 2 of the demo)', () => {
   const TWO = '| a          | b          |\n| ---------- | ---------- |\n| x[^cell-2] | y          |\n| z          | w[^cell-1] |\n\n[^cell-2]: first\n\n[^cell-1]: second\n\nEnd\n'
   const head = (root: HTMLElement) => card(root)!.querySelector('.cell-note-card__head')!
   const steps = (root: HTMLElement) => [...head(root).querySelectorAll<HTMLButtonElement>('.cell-note-card__step:not(.cell-note-card__history)')]
@@ -304,6 +310,23 @@ describe('round 3 of the demo', () => {
     expect(view.state.selection.from).toBeLessThan(5)
   })
 
+  it('↓ on the card\'s last line and ⇧↑ on it stay in the card, with a hidden note right after it: no gap cursor (YAZ-4395)', async () => {
+    const { view } = await mount(TWO, zoomOpts())
+    inCell(view, 'click', 1, 0)
+    expect(openCellNoteLabel(view.state)).toBe('cell-2')
+    // jsdom has no line boxes: every line is a textblock's edge, where Crepe's gap cursor would take the key.
+    view.endOfTextblock = () => true
+    caretAt(view, 'first', 2)
+    expect(domKey(view, 'ArrowDown')).toBe(true)
+    expect(view.state.selection.constructor.name).toBe('TextSelection')
+    expect([view.state.selection.$head.parent.textContent, view.state.selection.$head.parentOffset]).toEqual(['first', 5])
+    expect(domKey(view, 'ArrowDown')).toBe(true)
+    expect([view.state.selection.$head.parent.textContent, view.state.selection.$head.parentOffset]).toEqual(['first', 5])
+    expect(domKey(view, 'ArrowUp', true)).toBe(true)
+    expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to)).toBe('first')
+    expect(openCellNoteLabel(view.state)).toBe('cell-2')
+  })
+
   it('a new tab\'s card starts pinned when the setting is on', async () => {
     setCellNotePinnedAtStart(true)
     const { root, view } = await mount(NOTES, zoomOpts())
@@ -316,7 +339,7 @@ describe('round 3 of the demo', () => {
 
 describe('round 4 of the demo', () => {
   const menu = (view: EditorView, row: number, col: number): MenuAction[] =>
-    noteMenuSections(view, null, vi.fn(), cellPos(view, row, col) + 2)
+    pageMenuSections(view, null, vi.fn(), cellPos(view, row, col) + 2)
       .flat()
       .flatMap((item: MenuItem) => (item.children === undefined ? [item] : item.children.flat()))
 
@@ -442,7 +465,7 @@ describe('⌘. on a cell (D9) and an empty note (D15)', () => {
 
 describe('the table menu (D8)', () => {
   const all = (view: EditorView, row: number, col: number): MenuAction[] =>
-    noteMenuSections(view, null, vi.fn(), cellPos(view, row, col) + 2)
+    pageMenuSections(view, null, vi.fn(), cellPos(view, row, col) + 2)
       .flat()
       .flatMap((item: MenuItem) => (item.children === undefined ? [item] : item.children.flat()))
   const ids = (view: EditorView, row: number, col: number) => all(view, row, col).map((item) => item.id).filter((id) => id.includes('note'))
@@ -491,6 +514,9 @@ describe('the mark (D8)', () => {
 describe('the "Add cell note" button (D8, 5A-7)', () => {
   const buttons = () => [...document.querySelectorAll<HTMLButtonElement>('.cell-note-button')]
   const shownButton = () => buttons().find((button) => button.dataset.show === 'true') ?? null
+  // Settings › Tables › Cell notes › Add button is off by default (YAZ-4790 demo): these tests turn it on.
+  beforeEach(() => setCellNoteButtonSetting(true))
+  afterEach(() => setCellNoteButtonSetting(false))
   const hover = (view: EditorView, row: number, col: number) => (view.nodeDOM(cellPos(view, row, col)) as HTMLElement).dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
   /** Each cell a box: 100 × 30 px at (col, row); the editor's box at (10, 20). */
   const boxes = (view: EditorView) => {
@@ -567,7 +593,27 @@ describe('the "Add cell note" button (D8, 5A-7)', () => {
     expect(shownButton()).toBe(button)
   })
 
-  it('a typed key in the cell places nothing; a read-only note shows no button', async () => {
+  it('YAZ-4790: Settings › Add button off shows none; a table\'s own `notebutton` shows it; `nonotebutton` hides it while Settings is on', async () => {
+    const TABLE = '| a | b |\n| - | - |\n| c | d |\n'
+    setCellNoteButtonSetting(false)
+    let { view } = await mount(TABLE, zoomOpts())
+    boxes(view)
+    hover(view, 1, 0)
+    expect(shownButton()).toBeNull()
+    await unmountAll()
+    ;({ view } = await mount(`${TABLE}\n<!-- table: notebutton -->\n`, zoomOpts()))
+    boxes(view)
+    hover(view, 1, 0)
+    expect(shownButton()?.getAttribute('aria-label')).toBe('Add cell note')
+    await unmountAll()
+    setCellNoteButtonSetting(true)
+    ;({ view } = await mount(`${TABLE}\n<!-- table: nonotebutton -->\n`, zoomOpts()))
+    boxes(view)
+    hover(view, 1, 0)
+    expect(shownButton()).toBeNull()
+  })
+
+  it('a typed key in the cell places nothing; a read-only page shows no button', async () => {
     const { crepe, view } = await mount(NOTES, zoomOpts())
     boxes(view)
     view.hasFocus = () => true
@@ -589,8 +635,10 @@ describe('the "Add cell note" button (D8, 5A-7)', () => {
 })
 
 describe('the preview (D14)', () => {
-  it('the first 6 lines as plain text, a bullet as "• "', () => {
-    const lines = (markdown: string) => mount(markdown).then(({ view }) => cellNotePreviewLines(view.state.doc.child(1)))
+  afterEach(() => setCellNotePreviewLines(20))
+
+  it('the first lines as plain text, a bullet as "• "', () => {
+    const lines = (markdown: string) => mount(markdown).then(({ view }) => cellNotePreviewLines(view.state.doc.child(1), 6))
     return Promise.all([
       lines('| a |\n| - |\n| x[^cell-1] |\n\n[^cell-1]: * one\n    * two\n    * three\n').then((out) => expect(out).toEqual(['• one', '• two', '• three'])),
       lines('| a |\n| - |\n| x[^cell-1] |\n\n[^cell-1]: Top\n\n    1. first\n       * kid\n    2. second\n\n    * [ ] todo\n    * x\n    * y\n').then((out) =>
@@ -630,6 +678,358 @@ describe('the preview (D14)', () => {
     vi.advanceTimersByTime(400)
     expect(document.querySelector('.cell-note-preview')).toBeNull()
   })
+
+  /** A table whose "x" cell has a note of `count` bullets: "• 1" to "• count". */
+  const longNote = (count: number) => `| a |\n| - |\n| x[^cell-1] |\n\n[^cell-1]: ${Array.from({ length: count }, (_, i) => `* ${i + 1}`).join('\n    ')}\n`
+  const bullets = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => `• ${from + i}`)
+  /** The box's lines after a rest on the note's cell. */
+  const boxLines = async (view: EditorView) => {
+    inCell(view, 'mousemove', 1, 0, 150, 45)
+    vi.advanceTimersByTime(400)
+    const lines = [...document.querySelectorAll('.cell-note-preview .cell-note-preview__line')].map((el) => el.textContent)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    return lines
+  }
+
+  it('YAZ-5717: 20 lines then "…" when the note has more; the setting changes the count, clamped to 6–60', async () => {
+    vi.useFakeTimers()
+    document.elementsFromPoint = () => []
+    const { view: thirty } = await mount(longNote(30))
+    expect(await boxLines(thirty)).toEqual([...bullets(1, 20), '…'])
+    const { view: twenty } = await mount(longNote(20))
+    expect(await boxLines(twenty)).toEqual(bullets(1, 20))
+    setCellNotePreviewLines(6)
+    expect(await boxLines(thirty)).toEqual([...bullets(1, 6), '…'])
+    setCellNotePreviewLines(100)
+    const { view: seventy } = await mount(longNote(70))
+    expect(await boxLines(seventy)).toEqual([...bullets(1, 60), '…'])
+    setCellNotePreviewLines(2)
+    expect(await boxLines(seventy)).toEqual([...bullets(1, 6), '…'])
+  })
+
+  it('YAZ-5717: the box stays inside the window: left of the cell at the right edge, moved up at the bottom', async () => {
+    vi.useFakeTimers()
+    document.elementsFromPoint = () => []
+    const { view } = await mount(NOTES, zoomOpts())
+    // jsdom lays out nothing: the box is as tall as 300px wherever it is put.
+    const own = HTMLElement.prototype.getBoundingClientRect
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('cell-note-preview') ? new DOMRect(parseFloat(this.style.left), parseFloat(this.style.top), CELL_NOTE_BOX_WIDTH, 300) : own.call(this)
+    })
+    const cell = view.nodeDOM(cellPos(view, 1, 1)) as HTMLElement
+    // The cell's right edge at 900 of jsdom's 1024 × 768 window, its top at 700.
+    cell.getBoundingClientRect = () => new DOMRect(800, 700, 100, 30)
+    cell.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 850, clientY: 710 }))
+    vi.advanceTimersByTime(400)
+    const box = document.querySelector<HTMLElement>('.cell-note-preview')!
+    // 900 + 4 + 360 > 1024: left of the corner. 700 + 300 > 768 - 8: up, 8px from the bottom.
+    expect([box.style.left, box.style.top]).toEqual([`${900 - 4 - CELL_NOTE_BOX_WIDTH}px`, `${768 - 8 - 300}px`])
+    spy.mockRestore()
+  })
+
+  it('YAZ-5717: in a short window the lines past the box\'s bottom go, and the last one that shows reads "…"', () => {
+    const box = document.createElement('div')
+    const body = document.createElement('div')
+    box.appendChild(body)
+    for (let i = 1; i <= 10; i++) {
+      const line = document.createElement('div')
+      line.className = 'cell-note-preview__line'
+      line.textContent = `Line ${i}`
+      // Each line 20px tall from y = 40.
+      line.getBoundingClientRect = () => new DOMRect(0, 20 + i * 20, 300, 20)
+      body.appendChild(line)
+    }
+    // The box ends at 148: less its 8px padding, the lines must end by 140. Lines 1 to 5 fit (line 5 ends at 140); line 5 becomes "…".
+    box.getBoundingClientRect = () => new DOMRect(0, 0, 360, 148)
+    fitCard(box)
+    expect(Array.from(box.querySelectorAll('.cell-note-preview__line'), (l) => l.textContent)).toEqual(['Line 1', 'Line 2', 'Line 3', 'Line 4', '…'])
+    // A box with room keeps every line.
+    const roomy = box.cloneNode(true) as HTMLElement
+    roomy.getBoundingClientRect = () => new DOMRect(0, 0, 360, 1000)
+    roomy.querySelectorAll<HTMLElement>('.cell-note-preview__line').forEach((l) => (l.getBoundingClientRect = () => new DOMRect(0, 40, 300, 20)))
+    fitCard(roomy)
+    expect(roomy.querySelectorAll('.cell-note-preview__line')).toHaveLength(5)
+  })
+
+  it('YAZ-5717: the CSS gives the note box 360px, at most the window less 16px, and lines that wrap', () => {
+    const css = readFileSync(resolve(__dirname, 'cellHoverCard.css'), 'utf8')
+    const rule = (selector: string) => css.match(new RegExp(`^${selector.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`, 'm'))?.[1] ?? ''
+    expect(CELL_NOTE_BOX_WIDTH).toBe(360)
+    expect(rule('.cell-note-preview')).toContain(`width: ${CELL_NOTE_BOX_WIDTH}px;`)
+    expect(rule('.cell-note-preview')).toContain('max-height: calc(100vh - 16px);')
+    expect(rule('.cell-note-preview__line')).toContain('white-space: pre-wrap;')
+    expect(rule('.cell-note-preview__line')).toContain('overflow-wrap: anywhere;')
+    // The title stays on one row with "…".
+    expect(rule('.cell-note-preview__header')).toContain('white-space: nowrap;')
+    // The hanging indent: the lead (indent and marker) is its own column, so a wrapped row starts under the text.
+    expect(rule('.cell-note-preview__line')).toContain('display: flex;')
+    expect(rule('.cell-note-preview__lead')).toContain('flex: none;')
+    expect(rule('.cell-note-preview__lead')).toContain('white-space: pre;')
+  })
+
+  it('YAZ-5780: the clamped full text has no bottom padding inside its clip, so no half row shows under its last row', () => {
+    const css = readFileSync(resolve(__dirname, 'cellHoverCard.css'), 'utf8')
+    const text = css.match(/^\.cell-note-preview__text\s*\{([^}]*)\}/m)?.[1] ?? ''
+    expect(text).toContain('-webkit-line-clamp')
+    expect(text).toContain('overflow: hidden;')
+    // `overflow: hidden` clips at the padding box: the space under the text is a transparent border, outside the clip.
+    expect(text).toMatch(/padding: 8px 12px 0;/)
+    expect(text).toMatch(/border-bottom: 8px solid transparent;/)
+  })
+
+  it('YAZ-5717: a line\'s lead (its indent and marker) is apart from its text, so a wrapped row hangs under the text; nested ones keep their indent', async () => {
+    vi.useFakeTimers()
+    document.elementsFromPoint = () => []
+    const { view } = await mount('| a |\n| - |\n| x[^cell-1] |\n\n[^cell-1]: Top\n\n    1. first\n       * kid\n    * [ ] todo\n')
+    inCell(view, 'mousemove', 1, 0, 150, 45)
+    vi.advanceTimersByTime(400)
+    const lines = [...document.querySelectorAll<HTMLElement>('.cell-note-preview .cell-note-preview__line')]
+    expect(lines.map((l) => l.textContent)).toEqual(['Top', '1. first', '  • kid', '☐ todo'])
+    expect(lines.map((l) => l.querySelector('.cell-note-preview__lead')?.textContent ?? '')).toEqual(['', '1. ', '  • ', '☐ '])
+    expect(lines.map((l) => l.querySelector('.cell-note-preview__line-text')?.textContent ?? l.textContent)).toEqual(['Top', 'first', 'kid', 'todo'])
+  })
+})
+
+describe('the full-text card of a cut cell (YAZ-4901)', () => {
+  /** A clipped table: "Flights" has a note, "Museum" a line then bullets, "free" is plain. jsdom cuts nothing by itself. */
+  const CLIPPED = ['| Day | Plan |', '| - | - |', '| Monday | Flights[^cell-1] |', '| Tuesday | Museum<ul><li>Park</li><li>Zoo</li></ul> |', '| Friday | free |', '', '<!-- table: nowrap -->', '', '[^cell-1]: Book the window seat.', '', '    * bullet a', '    * bullet b', ''].join('\n')
+  /** The cell's first line wider inside than out (cut), or not. */
+  const cut = (view: EditorView, row: number, col: number, on = true) => {
+    const line = (view.nodeDOM(cellPos(view, row, col)) as HTMLElement).querySelector('p')!
+    Object.defineProperty(line, 'scrollWidth', { value: on ? 300 : 100, configurable: true })
+    Object.defineProperty(line, 'clientWidth', { value: 100, configurable: true })
+  }
+  const card = () => document.querySelector<HTMLElement>('.cell-note-preview')
+  const textLines = (box: HTMLElement) => [...box.querySelectorAll('.cell-note-preview__text-line')].map((el) => el.textContent)
+  const open = async () => {
+    vi.useFakeTimers()
+    document.elementsFromPoint = () => []
+    const { view } = await mount(CLIPPED, zoomOpts())
+    return view
+  }
+
+  it('a cut cell with no note: its lines (a bullet as "• ") after 250 ms, under the cell at its left edge, as wide as its text up to 240; no title; a cell that is not cut shows nothing', async () => {
+    const view = await open()
+    cut(view, 2, 1)
+    inCell(view, 'mousemove', 2, 1, 150, 45)
+    vi.advanceTimersByTime(249)
+    expect(card()).toBeNull()
+    vi.advanceTimersByTime(1)
+    const box = card()!
+    expect(textLines(box)).toEqual(['Museum', '• Park', '• Zoo'])
+    expect(box.querySelector('.cell-note-preview__header')).toBeNull()
+    expect(view.dom.hasAttribute('title')).toBe(false)
+    // `inCell` gives the cell a 100×30 box at (100, 30): under it, at its left; as wide as its text (YAZ-4903), up to
+    // the cell's 100 clamped to 240.
+    expect([box.style.left, box.style.top, box.style.width, box.style.maxWidth]).toEqual(['100px', '64px', 'max-content', '240px'])
+    // "free" is not cut: nothing, at any wait.
+    inCell(view, 'mousemove', 3, 1, 150, 45)
+    expect(card()).toBeNull()
+    vi.advanceTimersByTime(400)
+    expect(card()).toBeNull()
+  })
+
+  it('a cut cell WITH a note: ONE card after 250 ms, the full text then the note part; a note cell that is not cut keeps the note box (400 ms, beside the corner)', async () => {
+    const view = await open()
+    cut(view, 1, 1)
+    inCell(view, 'mousemove', 1, 1, 150, 45)
+    vi.advanceTimersByTime(250)
+    expect(document.querySelectorAll('.cell-note-preview')).toHaveLength(1)
+    const box = card()!
+    expect(textLines(box)).toEqual(['Flights'])
+    expect(box.querySelector('.cell-note-preview__header')!.textContent).toBe('Note: Plan · Monday')
+    expect(box.querySelector('.cell-note-preview__hint')!.textContent).toBe('Click the corner to open')
+    expect([...box.querySelectorAll('.cell-note-preview__line')].map((el) => el.textContent)).toEqual(['Book the window seat.', '• bullet a', '• bullet b'])
+    expect(box.style.top).toBe('64px')
+    // Off every cell for the warm run, then the same cell wide again: the note box as before, to the right of the corner.
+    inCell(view, 'mouseout', 3, 1, 0, 0)
+    vi.advanceTimersByTime(500)
+    cut(view, 1, 1, false)
+    inCell(view, 'mousemove', 1, 1, 150, 45)
+    vi.advanceTimersByTime(399)
+    expect(card()).toBeNull()
+    vi.advanceTimersByTime(1)
+    const note = card()!
+    expect(note.querySelector('.cell-note-preview__text')).toBeNull()
+    expect(note.querySelector('.cell-note-preview__header')!.textContent).toBe('Note: Plan · Monday')
+    expect([note.style.left, note.style.top]).toEqual(['204px', '30px'])
+  })
+
+  it('warm: after one card, the next cut cell\'s card shows at once; off every cell for 500 ms it waits again; a key closes the card and ends the run', async () => {
+    const view = await open()
+    cut(view, 2, 1)
+    cut(view, 3, 1)
+    inCell(view, 'mousemove', 2, 1, 150, 45)
+    vi.advanceTimersByTime(250)
+    expect(textLines(card()!)).toEqual(['Museum', '• Park', '• Zoo'])
+    inCell(view, 'mousemove', 3, 1, 150, 45)
+    expect(textLines(card()!)).toEqual(['free'])
+    // Off the table (the paragraph after it) and back within 500 ms: still at once.
+    view.dom.querySelector('p:last-of-type')!.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+    expect(card()).toBeNull()
+    vi.advanceTimersByTime(499)
+    inCell(view, 'mousemove', 2, 1, 150, 45)
+    expect(textLines(card()!)).toEqual(['Museum', '• Park', '• Zoo'])
+    // Off for 500 ms: the dwell again.
+    inCell(view, 'mouseout', 2, 1, 0, 0)
+    vi.advanceTimersByTime(500)
+    inCell(view, 'mousemove', 3, 1, 150, 45)
+    expect(card()).toBeNull()
+    vi.advanceTimersByTime(250)
+    expect(textLines(card()!)).toEqual(['free'])
+    // A key: the card goes, and the next cell waits its 250 ms.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }))
+    expect(card()).toBeNull()
+    inCell(view, 'mousemove', 2, 1, 150, 45)
+    expect(card()).toBeNull()
+    vi.advanceTimersByTime(250)
+    expect(card()).not.toBeNull()
+  })
+
+  it('no card while the caret is in that cell; a key or a caret move builds nothing', async () => {
+    const view = await open()
+    cut(view, 3, 1)
+    view.dom.focus()
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 3, 1) + 2)))
+    inCell(view, 'mousemove', 3, 1, 150, 45)
+    vi.advanceTimersByTime(250)
+    expect(card()).toBeNull()
+    const builds = cellHoverCardRuns.builds
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 2, 1) + 2)))
+    vi.advanceTimersByTime(250)
+    expect(cellHoverCardRuns.builds).toBe(builds)
+    expect(card()).toBeNull()
+  })
+
+  describe('with a long note (YAZ-5717)', () => {
+    /** "Flights" is cut and has a note of 30 bullets; "free" is plain. */
+    const LONG = ['| Day | Plan |', '| - | - |', '| Monday | Flights[^cell-1] |', '| Friday | free |', '', '<!-- table: nowrap -->', '', `[^cell-1]: ${Array.from({ length: 30 }, (_, i) => `* line ${i + 1}`).join('\n    ')}`, ''].join('\n')
+    const realHeight = window.innerHeight
+    afterEach(() => {
+      Object.defineProperty(window, 'innerHeight', { value: realHeight, configurable: true })
+      vi.restoreAllMocks()
+    })
+    /**
+     * jsdom lays out nothing. This lays out the card as a browser would: `natural` px tall, capped by its inline
+     * `max-height` and by the CSS one (the window less 16px); the full-text part from the card's top, `textHeight` px
+     * tall, in 12.5px text; then the note's title and hint, `headHeight` px; then each note line, 20px tall. `natural`
+     * is a number, or `'content'`: as tall as what the card holds now, with 8px under the last note line.
+     */
+    const layout = (natural: number | 'content', windowHeight: number, textHeight = 40, headHeight = 20) => {
+      Object.defineProperty(window, 'innerHeight', { value: windowHeight, configurable: true })
+      const isCard = (el: HTMLElement) => el.classList.contains('cell-note-preview')
+      const content = (card: HTMLElement) =>
+        (card.querySelector('.cell-note-preview__text') ? textHeight : 0) + (card.querySelector('.cell-note-preview__header') ? headHeight + card.querySelectorAll('.cell-note-preview__line').length * 20 + 8 : 0)
+      const height = (card: HTMLElement) => Math.min(natural === 'content' ? content(card) : natural, parseFloat(card.style.maxHeight) || Infinity, windowHeight - 16)
+      const own = HTMLElement.prototype.getBoundingClientRect
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+        return isCard(this) ? height(this) : 0
+      })
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+        return isCard(this) ? 320 : 0
+      })
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        if (isCard(this)) return new DOMRect(parseFloat(this.style.left), parseFloat(this.style.top), 320, height(this))
+        const card = this.closest<HTMLElement>('.cell-note-preview')
+        if (card !== null && this.classList.contains('cell-note-preview__text')) return new DOMRect(parseFloat(card.style.left), parseFloat(card.style.top), 320, textHeight)
+        if (card === null || !this.classList.contains('cell-note-preview__line')) return own.call(this)
+        const index = [...card.querySelectorAll('.cell-note-preview__line')].indexOf(this)
+        return new DOMRect(parseFloat(card.style.left), parseFloat(card.style.top) + textHeight + headHeight + index * 20, 300, 20)
+      })
+      const style = window.getComputedStyle
+      vi.spyOn(window, 'getComputedStyle').mockImplementation((el, pseudo) =>
+        el instanceof HTMLElement && el.classList.contains('cell-note-preview__text') ? ({ fontSize: '12.5px' } as CSSStyleDeclaration) : style(el, pseudo),
+      )
+    }
+    /** Rest on a cut cell at `rect` (row 1, "Flights" with the note, or row 2, "free" with none), and give its card. */
+    const rest = async (rect: DOMRect, row = 1) => {
+      vi.useFakeTimers()
+      document.elementsFromPoint = () => []
+      const { view } = await mount(LONG, zoomOpts())
+      cut(view, row, 1)
+      const cell = view.nodeDOM(cellPos(view, row, 1)) as HTMLElement
+      cell.getBoundingClientRect = () => rect
+      cell.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: rect.left + 10, clientY: rect.top + 10 }))
+      vi.advanceTimersByTime(250)
+      return card()!
+    }
+    /** The card's note lines: the last one reads "…", and each one ends above the card's bottom less its 8px padding. */
+    const expectFitted = (box: HTMLElement) => {
+      const lines = [...box.querySelectorAll<HTMLElement>('.cell-note-preview__line')]
+      const bottom = box.getBoundingClientRect().bottom - 8
+      expect(lines.length).toBeGreaterThan(1)
+      expect(lines.length).toBeLessThan(21)
+      expect(lines.map((l) => l.textContent)).toEqual([...Array.from({ length: lines.length - 1 }, (_, i) => `• line ${i + 1}`), '…'])
+      for (const line of lines) expect(line.getBoundingClientRect().bottom).toBeLessThanOrEqual(bottom)
+    }
+
+    it('1A (YAZ-5746): in a short window the card drops the note lines that it cuts, and the last one that shows reads "…"', async () => {
+      layout(600, 420)
+      expectFitted(await rest(new DOMRect(100, 30, 100, 30)))
+    })
+
+    it('1B (YAZ-5747): a card taller than the room under and above never covers its cell: it takes the side with more room, as tall as that room, 8px from the window\'s edge', async () => {
+      // A 718px window; the cell from 360 to 401: 305px under it, 348px above it. The card wants 600px.
+      layout(600, 718)
+      const above = await rest(new DOMRect(100, 360, 100, 41))
+      const rect = above.getBoundingClientRect()
+      expect([rect.top, rect.bottom]).toEqual([8, 360 - 4])
+      expectFitted(above)
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await unmountAll()
+      // The cell higher up, from 300 to 341: now under it has more room (369px against 288px).
+      layout(600, 718)
+      const under = await rest(new DOMRect(100, 300, 100, 41))
+      expect([under.getBoundingClientRect().top, under.getBoundingClientRect().bottom]).toEqual([341 + 4, 718 - 8])
+      expectFitted(under)
+    })
+
+    it('1B follow-up (YAZ-5747): a cut card whose full text the cap cuts clamps that text to the rows that fit, so it ends with "…"; a note under it goes', async () => {
+      // A 200px window, the cell from 60 to 90: 98px under it, 48px above. The text part wants 300px.
+      // Rows that fit: the card's bottom 192, less 8px padding under and 8px over the text, in 17.5px rows: 4.
+      layout(400, 200, 300)
+      const plain = await rest(new DOMRect(100, 60, 100, 30), 2)
+      expect(plain.getBoundingClientRect().bottom).toBe(200 - 8)
+      expect(plain.querySelector<HTMLElement>('.cell-note-preview__text')!.style.getPropertyValue('--fit-lines')).toBe('4')
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await unmountAll()
+      // The same with a note: the text clamps the same way, and the note's part, all under the cut, goes.
+      layout(400, 200, 300)
+      const noted = await rest(new DOMRect(100, 60, 100, 30))
+      expect(noted.querySelector<HTMLElement>('.cell-note-preview__text')!.style.getPropertyValue('--fit-lines')).toBe('4')
+      expect(noted.querySelector('.cell-note-preview__header, .cell-note-preview__hint, .cell-note-preview__body')).toBeNull()
+    })
+
+    it('1E (YAZ-5758): the text fits but the note\'s title or first line does not: the note\'s part goes, and the text ends with a "…" row (clamped to the rows that fit)', async () => {
+      // A 250px window, the cell from 200 to 230: above it 188px, the card at 8 to 196. The text part (150px) fits;
+      // the first note line (178 to 198) does not end by 196 - 8.
+      layout(600, 250, 150)
+      const box = await rest(new DOMRect(100, 200, 100, 30))
+      expect(box.querySelector('.cell-note-preview__header, .cell-note-preview__hint, .cell-note-preview__body')).toBeNull()
+      expect(textLines(box)).toEqual(['Flights', '…'])
+      // (196 - 8 - (8 + 8)) / 17.5: 9 rows fit.
+      expect(box.querySelector<HTMLElement>('.cell-note-preview__text')!.style.getPropertyValue('--fit-lines')).toBe('9')
+    })
+
+    it('a card above its cell that the fit makes shorter moves down: its bottom is 4px above the cell again', async () => {
+      // A 718px window, the cell from 360 to 401: the card goes above, capped to 348px (8 to 356). Its 21 note lines
+      // start 65px under its top: 13 fit, and the card shrinks to 40 + 25 + 13 × 20 + 8 = 333px.
+      layout('content', 718, 40, 25)
+      const box = await rest(new DOMRect(100, 360, 100, 41))
+      expect(box.querySelectorAll('.cell-note-preview__line')).toHaveLength(13)
+      expect([box.getBoundingClientRect().top, box.getBoundingClientRect().bottom]).toEqual([360 - 4 - 333, 360 - 4])
+    })
+  })
+
+  it('a read-only page shows the card too', async () => {
+    const view = await open()
+    cut(view, 3, 1)
+    view.setProps({ editable: () => false })
+    inCell(view, 'mousemove', 3, 1, 150, 45)
+    vi.advanceTimersByTime(250)
+    expect(textLines(card()!)).toEqual(['free'])
+  })
 })
 
 describe('the corner opens the note (5A-18)', () => {
@@ -644,7 +1044,7 @@ describe('the corner opens the note (5A-18)', () => {
   })
 })
 
-describe('a read-only note (5A-6, 5A-22)', () => {
+describe('a read-only page (5A-6, 5A-22)', () => {
   const EMPTY = '| a          |\n| ---------- |\n| b[^cell-1] |\n\n[^cell-1]: <br />\n\nEnd\n'
 
   it('closing an empty cell note\'s card changes nothing', async () => {
@@ -658,7 +1058,7 @@ describe('a read-only note (5A-6, 5A-22)', () => {
     expect(view.state.doc.eq(doc)).toBe(true)
   })
 
-  it('canOpenCellNote: a read-only note opens only a cell note that is there', async () => {
+  it('canOpenCellNote: a read-only page opens only a cell note that is there', async () => {
     const { crepe, view } = await mount(NOTES, zoomOpts())
     expect(canOpenCellNote(view, cellPos(view, 3, 1))).toBe(true)
     crepe.setReadonly(true)

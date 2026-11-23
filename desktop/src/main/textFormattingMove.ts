@@ -1,7 +1,9 @@
 import { stat } from 'node:fs/promises'
-import { TEXT_FORMATTING_FILE, textFormattingFile } from '@shared/textFormatting'
+import { TEXT_FORMATTING_FILE, TEXT_FORMATTING_VERSION, sanitizeSpacing, textFormattingFile } from '@shared/textFormatting'
+import { placeVaults, type SettingsState } from '@shared/types'
 import type { Store } from './store'
 import { readConfigDetailed, writeConfig } from './vaultConfig'
+import { seedVaultPart, type MoveStep } from './vaultSettingsMove'
 
 /**
  * The 1.0.15 heading styles move once into the vaults (YAZ-3066, decision D11 on YAZ-3048). 1.0.15
@@ -20,7 +22,8 @@ import { readConfigDetailed, writeConfig } from './vaultConfig'
 export async function moveLegacyHeadingStyles(store: Pick<Store, 'get' | 'takeLegacyHeadingStyles'>): Promise<void> {
   const legacy = store.takeLegacyHeadingStyles()
   if (Object.keys(legacy).length === 0) return
-  const roots = [...new Set(store.get().windows.flatMap((w) => w.roots))]
+  const state = store.get()
+  const roots = [...new Set(state.windows.flatMap((w) => placeVaults(state.folders, w.roots)))]
   await Promise.all(
     roots.map(async (root) => {
       try {
@@ -32,4 +35,24 @@ export async function moveLegacyHeadingStyles(store: Pick<Store, 'get' | 'takeLe
       }
     }),
   )
+}
+
+/**
+ * YAZ-5485: the page spacing (`lineSpacing`, `blockGap`, `pageBulletIndent`, `pageBulletGap`) moves once into the
+ * `spacing` key of each open vault's text-formatting.json (version 2), by the vault settings rules (`seedVaultPart`):
+ * every vault of every window, as the 1.0.15 heading styles moved (it was the look of every vault); the key is added to
+ * a file that has other keys; a file that has `spacing`, or is not valid JSON, is left; the defaults move nothing.
+ */
+export function pageSpacingPart(s: Pick<SettingsState, 'lineSpacing' | 'blockGap' | 'pageBulletIndent' | 'pageBulletGap'>): Record<string, unknown> | null {
+  const spacing = sanitizeSpacing({ line: s.lineSpacing, blockGap: s.blockGap, bulletIndent: s.pageBulletIndent, bulletGap: s.pageBulletGap })
+  return spacing === null || Object.keys(spacing).length === 0 ? null : { version: TEXT_FORMATTING_VERSION, spacing }
+}
+
+export const PAGE_SPACING_MOVE: MoveStep = {
+  name: 'the page spacing',
+  key: (s) => pageSpacingPart(s),
+  run: async (roots, s, store, canSeed) => {
+    const part = pageSpacingPart(s)
+    for (const root of roots) await seedVaultPart(root, TEXT_FORMATTING_FILE, part, ['spacing'], store, canSeed, `${TEXT_FORMATTING_FILE}#spacing`)
+  },
 }

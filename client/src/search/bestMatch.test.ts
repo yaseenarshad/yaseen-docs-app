@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { holdsId } from '@shared/noteId'
+import { holdsId } from '@shared/pageId'
 import type { TreeNode } from '@shared/types'
 import { readNeedle } from '../links/completion'
 import { bestScores, matchScore } from './bestMatch'
@@ -28,10 +28,18 @@ describe('matchScore (YAZ-3511 D12)', () => {
 })
 
 describe('bestScores (YAZ-3511 D12)', () => {
-  it('a note takes the best of its rows; a folder the best inside it; a folder the cut did not open is not walked (edge cases 30, 33)', () => {
+  it('a page takes the best of its rows; a folder the best inside it; a folder the cut did not open is not walked (edge cases 30, 33)', () => {
     const results = [row('/v/Docs/n.md', 'Project plan'), row('/v/Docs/n.md', 'plan'), row('/v/m.md', 'Plan B'), { ...row('/v/Big', 'Plans'), kind: 'dir' as const }]
     const cut = [dir('/v/Docs', [file('/v/Docs/n.md')]), file('/v/m.md'), dir('/v/Big', [file('/v/Big/x.md')])]
     const scores = bestScores(results, 'plan', cut, new Set(['/v/Docs']))
     expect(Object.fromEntries(scores)).toEqual({ '/v/Docs/n.md': 1, '/v/Docs': 1, '/v/m.md': 2, '/v/Big': 2 })
+  })
+})
+
+describe('Best match for `#3` (YAZ-2571 round 5)', () => {
+  it('the exact number scores 0, a longer number that starts with it 1', () => {
+    const results = [{ ...row('/v/a.md', 'Thirty', 'EMB-30'), label: 'EMB-30 — Thirty' }, { ...row('/v/b.md', 'Three', 'EMB-3'), label: 'EMB-3 — Three' }]
+    const scores = bestScores(results, '#3', [file('/v/a.md'), file('/v/b.md')], new Set())
+    expect(Object.fromEntries(scores)).toEqual({ '/v/a.md': 1, '/v/b.md': 0 })
   })
 })

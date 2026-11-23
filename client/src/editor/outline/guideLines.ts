@@ -13,10 +13,12 @@
  *    markdown untouched), and swallow the event so the caret never moves — the list's owner folds
  *    only via its chevron, ⌘↑ or the line one level up;
  *  - mousemove/mouseleave → `outline-guide-hover` on the list, so ONLY strip hover highlights
- *    the line (CSS `ul:hover::before` would light up while merely editing text inside).
+ *    the line (CSS `ul:hover::before` would light up while merely editing text inside). It is a node
+ *    DECORATION (YAZ-4783): a class set on the list element by hand reads to ProseMirror as an outside
+ *    DOM change, so it drew the whole list item again, and a code block in it rebuilt its editor (a flash).
  */
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
-import type { EditorView } from '@milkdown/kit/prose/view'
+import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
 import { isListItem, LIST_NODE_NAMES } from './listNodes'
@@ -78,16 +80,29 @@ const nestedListPos = (view: EditorView, list: HTMLElement): number | null => {
 
 export const guideLines = $prose(
   () => {
-    let hovered: HTMLElement | null = null
-    const setHovered = (list: HTMLElement | null) => {
-      if (hovered === list) return
-      hovered?.classList.remove(GUIDE_HOVER_CLASS)
-      list?.classList.add(GUIDE_HOVER_CLASS)
-      hovered = list
+    // The hovered nested list's position, or null: a metadata-only transaction moves it, off the history, only when it
+    // changes (never on a keystroke); a doc change maps it.
+    const setHovered = (view: EditorView, list: HTMLElement | null) => {
+      const pos = list === null ? null : nestedListPos(view, list)
+      if (pos === pluginKey.getState(view.state)) return
+      view.dispatch(view.state.tr.setMeta(pluginKey, pos).setMeta('addToHistory', false))
     }
-    return new Plugin({
+    return new Plugin<number | null>({
       key: pluginKey,
+      state: {
+        init: () => null,
+        apply: (tr, pos) => {
+          const next = tr.getMeta(pluginKey) as number | null | undefined
+          if (next !== undefined) return next
+          return pos === null || !tr.docChanged ? pos : tr.mapping.mapResult(pos).deleted ? null : tr.mapping.map(pos)
+        },
+      },
       props: {
+        decorations: (state) => {
+          const pos = pluginKey.getState(state) as number | null | undefined
+          const node = pos == null ? null : state.doc.nodeAt(pos)
+          return node == null ? null : DecorationSet.create(state.doc, [Decoration.node(pos!, pos! + node.nodeSize, { class: GUIDE_HOVER_CLASS })])
+        },
         handleDOMEvents: {
           mousedown: (view, event) => {
             // Folding off (YAZ-4094 F1): the line folds nothing, so the press is the page's (fix 5).
@@ -103,16 +118,15 @@ export const guideLines = $prose(
             return true
           },
           mousemove: (view, event) => {
-            setHovered(isFoldingOn(view.state) ? stripHit(view, event) : null)
+            setHovered(view, isFoldingOn(view.state) ? stripHit(view, event) : null)
             return false
           },
-          mouseleave: () => {
-            setHovered(null)
+          mouseleave: (view) => {
+            setHovered(view, null)
             return false
           },
         },
       },
-      view: () => ({ destroy: () => setHovered(null) }),
     })
   },
 )

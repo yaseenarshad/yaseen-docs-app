@@ -1,16 +1,8 @@
-import type { DragEvent } from 'react'
-
 /**
  * The insertion-slot arithmetic BOTH horizontal tab strips reorder by — the window's tab bar
  * (GRO-2235) and a folder's view tabs (YAZ-1471). One spelling, so the two strips cannot
  * drift apart: a slot is an index in the WITH-dragged-item list and runs 0…length.
  */
-
-/** The slot a pointer at `clientX` over the item at `i` means: BEFORE it (`i`) or AFTER it (`i + 1`), by the target's own horizontal midpoint. */
-export function insertionSlot(e: DragEvent, i: number): number {
-  const r = e.currentTarget.getBoundingClientRect()
-  return e.clientX < r.left + r.width / 2 ? i : i + 1
-}
 
 /** The FINAL index the item grabbed at `from` lands on when dropped at `slot` — past the grab point the slot shifts one left, because the dragged item leaves the list before it re-enters it. */
 export function dropIndex(from: number, slot: number): number {
@@ -35,16 +27,27 @@ export function slotUnder(strip: HTMLElement | null, x: number, y: number): numb
   return slotAt(strip, Math.max(x, r.left + 1))
 }
 
+/** The way a list runs (YAZ-4606): a strip of tabs or columns runs along x, a menu's list along y. */
+export type Axis = 'x' | 'y'
+
+/** Where an item's layout place starts on the axis, in client px: the container's own start, less its scroll. */
+export function layoutOrigin(strip: HTMLElement, axis: Axis = 'x'): number {
+  const r = strip.getBoundingClientRect()
+  return axis === 'x' ? r.left + strip.clientLeft - strip.scrollLeft : r.top + strip.clientTop - strip.scrollTop
+}
+
 /**
  * The slot at a client x of a strip (0…tabs), by each tab's midpoint WHERE THE LAYOUT PUTS IT (YAZ-3808 6A). The live
  * gap draws the tabs aside with `transform`, which `offsetLeft` does not see: the slot under a pointer stays put while
- * the tabs part around it, so the gap cannot flicker. The strip is its tabs' offset parent.
+ * the tabs part around it, so the gap cannot flicker. The strip is its tabs' offset parent. A vertical list reads y
+ * (`offsetTop`), and a folder page's list names its own items (YAZ-4606).
  */
-export function slotAt(strip: HTMLElement, x: number): number {
-  const origin = strip.getBoundingClientRect().left + strip.clientLeft - strip.scrollLeft
-  const tabs = strip.querySelectorAll<HTMLElement>('[data-tab]')
+export function slotAt(strip: HTMLElement, x: number, axis: Axis = 'x', selector = '[data-tab]'): number {
+  const origin = layoutOrigin(strip, axis)
+  const tabs = strip.querySelectorAll<HTMLElement>(selector)
   for (let i = 0; i < tabs.length; i++) {
-    if (x < origin + tabs[i].offsetLeft + tabs[i].offsetWidth / 2) return i
+    const at = axis === 'x' ? tabs[i].offsetLeft + tabs[i].offsetWidth / 2 : tabs[i].offsetTop + tabs[i].offsetHeight / 2
+    if (x < origin + at) return i
   }
   return tabs.length
 }

@@ -8,7 +8,7 @@
  * the clipboard, the menu data and `fs/copy.ts` each in isolation; only two live windows on two
  * vaults prove that the push, the label ("Paste 1 item" in a window that never copied anything),
  * the copy under Finder's next free name as often as it is pasted (the vaults are plain,
- * YAZ-2523 🔒 V3, so a note's copy is a byte copy; `names.spec.ts` copies in a vault that uses IDs)
+ * YAZ-2523 🔒 V3, so a page's copy is a byte copy; `names.spec.ts` copies in a vault that uses IDs)
  * and the cut's ride through the rename pipeline (source gone, bytes identical, clipboard cleared
  * after the one paste, 🔒 D2) all happen together, with the real watcher echoing the tree.
  *

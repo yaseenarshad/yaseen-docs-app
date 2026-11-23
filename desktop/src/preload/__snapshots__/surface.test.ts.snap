@@ -8,9 +8,17 @@ on window:views
 on window:tabs
 on menu:paste-as
 on menu:copy-as
+app.cardFormats/1: invoke app:card-formats ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 app.home/0: invoke app:home []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+app.onSelectionColour/1: on app:selection-colour-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off app:selection-colour-changed
+app.selectionColour/0: invoke app:selection-colour []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 app.sound/1: invoke app:sound ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+automation.onRequest/1: on automation:request -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off automation:request
+automation.ready/1: invoke automation:ready ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+automation.reply/1: invoke automation:reply ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+backfillCreated/1: invoke fs:backfill-created ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 boardHead/1: invoke fs:board-head ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+cardSkill.duplicate/2: invoke card-skill:duplicate ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 coldDiff/1: invoke fs:cold-diff ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 components.delete/1: invoke components:delete ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 components.list/0: invoke components:list []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -19,6 +27,10 @@ components.preview/1: invoke components:preview ["a0"]; => "answer"; !> {"code":
 components.read/1: invoke components:read ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 components.rename/1: invoke components:rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 components.save/1: invoke components:save ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+courseAudio.chapter/1: invoke course-audio:chapter ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+courseAudio.chapterStarting/1: invoke course-audio:chapter-starting ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+courseAudio.onChange/1: on course-audio:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off course-audio:changed
+courseAudio.open/1: invoke course-audio:open ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 createBoard/1: invoke fs:create-board ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 createDir/1: invoke fs:create-dir ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 createFile/1: invoke fs:create-file ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -28,17 +40,24 @@ dialog.openDrawing/0: invoke dialog:open-file []; => "answer"; !> {"code":"NOT_F
 dialog.saveDrawing/1: invoke dialog:save-file ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 dialog.saveImage/1: invoke dialog:save-image ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 dialog.savePdf/1: invoke dialog:save-pdf ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+downloadImage/1: invoke fs:download-image ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+drawing.landAssets/1: invoke drawing:land-assets ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 drawing.libraryFolder/0: invoke drawing:library-folder []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 drawing.load/1: invoke drawing:load ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+drawing.resolveAssets/1: invoke drawing:resolve-assets ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 drawing.save/1: invoke drawing:save ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-favorites.get/1: invoke favorites:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+favoriteFolders.get/2: invoke favoriteFolders:get ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+favoriteFolders.onChanged/1: on favoriteFolders:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off favoriteFolders:changed
+favoriteFolders.set/3: invoke favoriteFolders:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+favorites.get/2: invoke favorites:get ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 favorites.onChanged/1: on favorites:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off favorites:changed
-favorites.set/2: invoke favorites:set ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+favorites.set/3: invoke favorites:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.clip/1: invoke fs:clip ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.clipState/0: invoke fs:clip-state []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.delete/1: invoke fs:delete ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.dragOut/1: invoke fs:drag-out ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.droppedHere/1: invoke fs:dropped-here ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+file.duplicate/1: invoke fs:duplicate ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.import/1: invoke fs:import ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.onClipChanged/1: on clip:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off clip:changed
 file.onDeleted/1: on file:deleted -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off file:deleted
@@ -51,17 +70,63 @@ file.putBack/1: invoke fs:put-back ["a0"]; => "answer"; !> {"code":"NOT_FOUND","
 file.rename/1: invoke fs:rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.repairRename/1: invoke file:repair-rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 file.retitle/1: invoke fs:retitle ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-focus.get/1: invoke focus:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+filesOrder.get/1: invoke filesOrder:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+filesOrder.onChanged/1: on filesOrder:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off filesOrder:changed
+filesOrder.setFolder/3: invoke filesOrder:set-folder ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+filesOrder.setSort/2: invoke filesOrder:set-sort ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+focus.get/2: invoke focus:get ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 focus.onChanged/1: on focus:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off focus:changed
-focus.set/2: invoke focus:set ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+focus.set/3: invoke focus:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+focusFolders.get/2: invoke focusFolders:get ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+focusFolders.onChanged/1: on focusFolders:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off focusFolders:changed
+focusFolders.set/3: invoke focusFolders:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.acceptInvite/1: invoke friends:accept-invite ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.banMember/2: invoke friends:ban-member ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.board/1: invoke friends:board ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.browseDeckAsset/3: invoke friends:browse-deck-asset ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.browseDeckFile/3: invoke friends:browse-deck-file ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.browseDeckTree/2: invoke friends:browse-deck-tree ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.createGroup/1: invoke friends:create-group ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.createInvite/0: invoke friends:create-invite []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.deleteAvatar/0: invoke friends:delete-avatar []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.deleteMe/0: invoke friends:delete-me []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.deleteSharedCard/1: invoke friends:delete-shared-card ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.getDeckSettings/0: invoke friends:get-deck-settings []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.importCards/1: invoke friends:import-cards ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.listInstallableRepos/0: invoke friends:list-installable-repos []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.onInviteLink/1: on friends:invite-link -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off friends:invite-link
+friends.removeFriend/2: invoke friends:remove-friend ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.removeMember/2: invoke friends:remove-member ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.renameGroup/2: invoke friends:rename-group ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.rotateGroupInvite/1: invoke friends:rotate-group-invite ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.saveDeckSettings/1: invoke friends:save-deck-settings ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.setCardState/2: invoke friends:set-card-state ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.setFolderState/2: invoke friends:set-folder-state ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.setVaultIncluded/2: invoke friends:set-vault-included ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.shareCards/1: invoke friends:share-cards ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.status/0: invoke friends:status []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.unbanMember/2: invoke friends:unban-member ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.updatePrefs/1: invoke friends:update-prefs ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.uploadAvatar/1: invoke friends:upload-avatar ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.addToAutoSync/1: invoke github:add-to-autosync ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.authStatus/0: invoke github:auth-status []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.autoSyncStatus/1: invoke github:autosync-status ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.connectRepo/2: invoke github:connect-repo ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.history/2: invoke github:history ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.listRepos/0: invoke github:list-repos []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.manageRepos/0: invoke github:manage-repos []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.onAuthChanged/1: on github:auth-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off github:auth-changed
 github.onStatus/1: on github:status-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off github:status-changed
+github.openAutoSync/0: invoke github:open-autosync []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.restore/3: invoke github:restore ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.setEnabled/2: invoke github:set-enabled ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.signIn/0: invoke github:sign-in []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+github.signOut/0: invoke github:sign-out []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.status/1: invoke github:status ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.syncNow/1: invoke github:sync-now ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.version/3: invoke github:version ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 hotkeys.drawingInFront/1: invoke hotkeys:drawing-in-front ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+hotkeys.noPageInFront/1: invoke hotkeys:no-page-in-front ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 hotkeys.recording/1: invoke hotkeys:recording ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 icons.get/1: invoke icons:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 icons.onChanged/1: on icons:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off icons:changed
@@ -84,6 +149,7 @@ link.onPopOutTab/1: on link:pop-out-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev"
 link.onSendTab/1: on link:send-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:send-tab
 link.onSetRoots/1: on link:set-roots -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:set-roots
 link.onTabAction/1: on link:tab-action -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:tab-action
+link.onTakeInbox/1: on link:take-inbox -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:take-inbox
 link.onTakeTab/1: on link:take-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:take-tab
 link.ready/0: invoke link:ready []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 lsp.cancelInstall/0: invoke lsp:cancel-install []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -96,12 +162,20 @@ lsp.install/0: invoke lsp:install []; => "answer"; !> {"code":"NOT_FOUND","messa
 lsp.onInstallProgress/1: on lsp:install-progress -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off lsp:install-progress
 lsp.open/1: invoke lsp:open ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 lsp.references/1: invoke lsp:references ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+makeDailyPage/1: invoke fs:make-daily-page ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.drawing/1: invoke media:drawing ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.drawingIndex/0: invoke media:drawing-index []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+media.favoriteCopies/0: invoke media:favorite-copies []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+media.favoriteElements/1: invoke media:favorite-elements ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.favorites/1: invoke media:favorites ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+media.favoritesForPanel/0: invoke media:favorites-for-panel []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.import/1: invoke media:import ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.onChanged/1: on media:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off media:changed
+media.onPacksProgress/1: on media:packs-progress -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off media:packs-progress
+media.packList/0: invoke media:pack-list []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+media.packs/1: invoke media:packs ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.preview/1: invoke media:preview ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+media.saveFavoriteElements/1: invoke media:save-favorite-elements ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.search/1: invoke media:search ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.used/1: invoke media:used ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 memory.report/0: invoke memory:report []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -111,7 +185,8 @@ menu.onBackNewTab/1: on menu:back-new-tab -> listener[[{"id":"0-0-0-0-0","ev":"e
 menu.onCanvasBackground/1: on menu:canvas-background -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:canvas-background
 menu.onCloseTab/1: on menu:close-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:close-tab
 menu.onCopyAs/1: (no IPC)
-menu.onDailyNote/1: on menu:daily-note -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:daily-note
+menu.onDailyPage/1: on menu:daily-page -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:daily-page
+menu.onExplore/1: on menu:explore -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:explore
 menu.onExportDrawing/1: on menu:export-drawing -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:export-drawing
 menu.onExportImage/1: on menu:export-image -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:export-image
 menu.onForward/1: on menu:forward -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:forward
@@ -134,7 +209,7 @@ menu.onTabOverview/1: on menu:tab-overview -> listener[[{"id":"0-0-0-0-0","ev":"
 menu.onToggleSidebar/1: on menu:toggle-sidebar -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:toggle-sidebar
 menu.onWhatsNew/1: on menu:whats-new -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:whats-new
 menu.onZoom/1: on menu:zoom -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:zoom
-mintNoteId/1: invoke fs:mint-note-id ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+mintPageId/1: invoke fs:mint-page-id ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 newPlaces.get/1: invoke newPlaces:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 newPlaces.onChanged/1: on newPlaces:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off newPlaces:changed
 newPlaces.set/2: invoke newPlaces:set ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -155,7 +230,9 @@ readPdf/1: invoke fs:read-pdf ["a0"]; => "answer"; !> {"code":"NOT_FOUND","messa
 readTextHead/1: invoke fs:read-text-head ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 secrets.has/1: invoke secrets:has ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 secrets.set/1: invoke secrets:set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+setBoardFoldArrows/1: invoke board:set-fold-arrows ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardHoverLinks/1: invoke board:set-hover-links ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+setBoardHoverOutline/1: invoke board:set-hover-outline ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardPictures/1: invoke board:set-pictures ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 setBoardReadOnly/1: invoke board:set-read-only ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 share.accounts/1: invoke share:accounts ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -175,12 +252,13 @@ shell.openDefault/1: invoke shell:openDefault ["a0"]; => "answer"; !> {"code":"N
 shell.openLink/1: invoke shell:open-link ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.openVsCode/1: invoke shell:openVsCode ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 shell.reveal/1: invoke shell:reveal ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-spell.suggestions/1: (no IPC)
+spell.suggestions/1: invoke spell:guesses ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.get/0: invoke state:get []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.onChange/1: on state:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off state:changed
 state.pushRecent/1: invoke state:push-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.removeRecent/1: invoke state:remove-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setBaseGroups/3: invoke state:set-base-groups ["a0","a1",["a","2"]]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.setCourse/1: invoke state:set-course ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setFavoritesOrder/2: invoke state:set-favorites-order ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setFocusOrder/2: invoke state:set-focus-order ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setFolder/2: invoke state:set-folder ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -197,13 +275,14 @@ state.systemHotkeys/0: invoke state:system-hotkeys []; => "answer"; !> {"code":"
 storage.shrink/2: invoke storage:shrink ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 storage.stats/1: invoke storage:stats ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 tree/1: invoke fs:tree ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+update.check/0: invoke update:check []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 update.notes/0: invoke update:notes []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 update.onState/1: on update:state-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off update:state-changed
 update.restart/0: invoke update:restart []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 update.state/0: invoke update:state []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultConfig.onChange/1: on vaultConfig:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off vaultConfig:changed
 vaultConfig.read/2: invoke vaultConfig:read ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-vaultConfig.write/3: invoke vaultConfig:write ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultConfig.write/4: invoke vaultConfig:write ["a0","a1","a2",null]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 watch/2: send watch:subscribe [{"id":"0-0-0-0-0","root":"a0"}]; on watch:event -> listener[["ev"]]; off watch:event; send watch:unsubscribe ["0-0-0-0-0"]
 window.addVaultAndTake/4: invoke window:add-vault-and-take ["a0","a1","a2",null]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.closeOther/1: invoke window:close-other ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -221,10 +300,11 @@ window.hiddenWindows/0: invoke window:hidden-windows-now []; => "answer"; !> {"c
 window.highlight/1: invoke window:highlight ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.highlightTab/2: invoke window:highlight-tab ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.identity/0: invoke window:identity []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.inboxToNewWindow/1: invoke window:inbox-to-new-window ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.minimizedWindows/0: invoke window:minimized-windows-now []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.moveInboxTo/2: invoke window:move-inbox-to ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.moveTab/5: invoke window:move-tab ["a0","a1","a2",null,null]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.moveTo/3: invoke window:move-to ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-window.noteClosed/1: invoke window:note-closed ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.onFlush/1: (no IPC)
 window.onGlow/1: on window:glow -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off window:glow
 window.onHiddenWindows/1: on window:hidden-windows -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off window:hidden-windows
@@ -238,6 +318,7 @@ window.openFiles/1: invoke window:open-files ["a0"]; => "answer"; !> {"code":"NO
 window.openFromFiles/1: invoke window:open-from-files ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.openRecent/1: invoke window:open-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.openSet/1: invoke window:open-set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.pageClosed/1: invoke window:page-closed ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.popOut/2: invoke window:pop-out ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.popOutTab/2: invoke window:pop-out-tab ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.raise/0: invoke window:raise []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

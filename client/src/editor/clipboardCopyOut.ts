@@ -4,10 +4,11 @@ import { DOMSerializer, Fragment, type Node as ProseNode, Slice } from '@milkdow
 import { type Command, type EditorState, Plugin, PluginKey, type Selection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
+import { hexOfRgb, rgbOf } from '../lib/colour'
 import { APP_CLIPBOARD } from './clipboardNumbers'
 import { clipboardPlainText } from './clipboardPlainText'
 import { eachVisibleTextblock } from './lineSelection'
-import { rowShortcuts } from './noteKeys'
+import { rowShortcuts } from './pageKeys'
 import { getZoomedItemPos } from './outline/zoom'
 import { CELL_NOTES_ATTR, cellNotesMarkdown, copySerializer } from './table/cellNoteClipboard'
 import { isCellNote } from './table/cellNotes'
@@ -42,8 +43,8 @@ export function bulletToCopy(state: EditorState, pos: number): CopyRange | null 
 }
 
 /**
- * A right-clicked bullet waiting for main's Copy as request: the next Copy as of the note takes it
- * (any mode), and only a Without folded lines copy uses it, while the note and its selection are
+ * A right-clicked bullet waiting for main's Copy as request: the next Copy as of the page takes it
+ * (any mode), and only a Without folded lines copy uses it, while the page and its selection are
  * still as they were. A request that failed forgets it (`forgetCopyVisible`).
  */
 const nextRange = new WeakMap<EditorView, CopyRange & { doc: ProseNode; selection: Selection }>()
@@ -77,7 +78,7 @@ const linesIn = (node: ProseNode): number => {
 /** The lines a copy left out: under folds, and in hidden cell notes (YAZ-3818 5A-15), counted apart for the toast. */
 interface LeftOut {
   folded: number
-  notes: number
+  cellNotes: number
 }
 
 /**
@@ -89,17 +90,17 @@ interface LeftOut {
  */
 const visibleSlice = (state: EditorState, range: CopyRange | null): { slice: Slice; left: LeftOut } => {
   const { selection, doc } = state
-  if (range === null && selection.ranges.length > 1) return { slice: selection.content(), left: { folded: 0, notes: 0 } }
+  if (range === null && selection.ranges.length > 1) return { slice: selection.content(), left: { folded: 0, cellNotes: 0 } }
   const { from: start, to: end } = range ?? selection
   const zoomed = getZoomedItemPos(state)
   const from = zoomed === null ? start : Math.max(start, zoomed)
   const to = zoomed === null ? end : Math.min(end, zoomed + doc.nodeAt(zoomed)!.nodeSize)
   const hidden = new Set<number>()
-  const left: LeftOut = { folded: 0, notes: 0 }
+  const left: LeftOut = { folded: 0, cellNotes: 0 }
   eachVisibleTextblock(state, from, to, () => {}, (pos) => {
     hidden.add(pos)
     const node = doc.nodeAt(pos)!
-    left[isCellNote(node) ? 'notes' : 'folded'] += linesIn(node)
+    left[isCellNote(node) ? 'cellNotes' : 'folded'] += linesIn(node)
   })
   const slice = doc.slice(from, to, true)
   if (hidden.size === 0) return { slice, left }
@@ -117,7 +118,7 @@ const visibleSlice = (state: EditorState, range: CopyRange | null): { slice: Sli
 export const copyNoticeCtx = createSlice<((text: string) => void) | null, 'copyNotice'>(null, 'copyNotice')
 
 /**
- * How a plain-text copy names a text's `[[links]]` (YAZ-3744 S8): as the note shows them, an ID link with its ID.
+ * How a plain-text copy names a text's `[[links]]` (YAZ-3744 S8): as the page shows them, an ID link with its ID.
  * createCrepe gives the editor's link sources; none (a bare mount) copies links as written.
  */
 export const copyLinkTextCtx = createSlice<((text: string) => string) | null, 'copyLinkText'>(null, 'copyLinkText')
@@ -129,14 +130,14 @@ export const copyLinkTextCtx = createSlice<((text: string) => string) | null, 'c
 export const copyMarkdownCtx = createSlice<((markdown: string) => string) | null, 'copyMarkdown'>(null, 'copyMarkdown')
 
 /** What the toast says: the lines a copy left out, folded ones and cell note ones by name, so a copy reads as meant. */
-const copiedText = ({ folded, notes }: LeftOut): string => {
+const copiedText = ({ folded, cellNotes }: LeftOut): string => {
   const lines = (count: number, kind: string) => `${count} ${kind} line${count === 1 ? '' : 's'}`
-  const parts = [...(folded > 0 ? [lines(folded, 'folded')] : []), ...(notes > 0 ? [lines(notes, 'cell note')] : [])]
+  const parts = [...(folded > 0 ? [lines(folded, 'folded')] : []), ...(cellNotes > 0 ? [lines(cellNotes, 'cell note')] : [])]
   return parts.length === 0 ? 'Copied. Nothing in it was folded' : `Copied, ${parts.join(' and ')} left out`
 }
 
 /**
- * The key for Without folded lines (YAZ-3653): the note row `note.copyVisible`, no key until the
+ * The key for Without folded lines (YAZ-3653): the page row `page.copyVisible`, no key until the
  * user picks one in Settings › Hotkeys. Main runs it as the Edit menu's row, so it copies what that
  * row copies: with nothing selected the bullet at the caret, else the selection.
  */
@@ -146,7 +147,7 @@ const copyVisible: Command = (state, dispatch) => {
   return true
 }
 
-export const copyVisibleHotkey = $shortcut((ctx) => rowShortcuts(ctx, 'note.copyVisible', 'CopyWithoutFoldedLines', { onRun: () => copyVisible }))
+export const copyVisibleHotkey = $shortcut((ctx) => rowShortcuts(ctx, 'page.copyVisible', 'CopyWithoutFoldedLines', { onRun: () => copyVisible }))
 
 /**
  * A copied cell's colours in the light theme (YAZ-3802, YAZ-3817): the text colours of table.css `:root`,
@@ -162,8 +163,7 @@ const COPY_TEXT: Record<TableColor, string> = {
   blue: '#1d5fbf', purple: '#7b3fbf', pink: '#c2185b', grey: '#6b6b6b', brown: '#8b5a2b',
 }
 /** `#rrggbb` at its wash (`FILL_WASH`, table.css `--table-fill-wash`) over white. */
-const washOverWhite = (hex: string): string =>
-  `#${[1, 3, 5].map((i) => Math.round(255 - (255 - parseInt(hex.slice(i, i + 2), 16)) * FILL_WASH).toString(16).padStart(2, '0')).join('')}`
+const washOverWhite = (hex: string): string => hexOfRgb(rgbOf(hex).map((c) => 255 - (255 - c) * FILL_WASH))
 const copyFill = (fill: string | null) => (fill === null ? undefined : fill.startsWith('#') ? washOverWhite(fill) : COPY_FILL[fill as TableColor])
 const copyText = (color: string | null) => (color === null ? undefined : color.startsWith('#') ? color : COPY_TEXT[color as TableColor])
 
@@ -207,7 +207,7 @@ function collapseTablesOf(doc: Document | undefined): void {
 
 /** Copy-only formats: readable text, rich HTML and explicitly requested Markdown; saves stay unchanged. */
 export const clipboardCopyOut = $prose((ctx) => {
-  // Read at each copy: the app's own HTML flavour keeps the raw links, so a paste into a note keeps them (S8).
+  // Read at each copy: the app's own HTML flavour keeps the raw links, so a paste into a page keeps them (S8).
   const plainText = (slice: Slice) => clipboardPlainText(slice, (ctx.isInjected(copyLinkTextCtx) ? ctx.get(copyLinkTextCtx) : null) ?? undefined)
   let copyMarkdown: ((slice: Slice, view: EditorView) => string) | undefined
   ctx.update(editorViewOptionsCtx, (prev) => {
@@ -239,8 +239,8 @@ export const clipboardCopyOut = $prose((ctx) => {
       const dom = serializeFragment(fragment, options, target)
       dom.firstElementChild?.setAttribute(APP_CLIPBOARD, 'true')
       // The copied cells' cell notes, as Markdown in one attribute (YAZ-4206 D13): a paste in the app adds them.
-      const notes = ctx.isInjected(editorViewCtx) ? cellNotesMarkdown(fragment, ctx.get(editorViewCtx).state.doc, copySerializer(ctx)) : null
-      if (notes !== null) dom.firstElementChild?.setAttribute(CELL_NOTES_ATTR, notes)
+      const cellNotes = ctx.isInjected(editorViewCtx) ? cellNotesMarkdown(fragment, ctx.get(editorViewCtx).state.doc, copySerializer(ctx)) : null
+      if (cellNotes !== null) dom.firstElementChild?.setAttribute(CELL_NOTES_ATTR, cellNotes)
       if (dom instanceof DocumentFragment) styleTables(dom)
       collapseTablesOf(options?.document)
       return dom

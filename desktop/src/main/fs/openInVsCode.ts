@@ -15,7 +15,7 @@ import { requireRequest } from './validate'
  * VS Code is installed at all is never asserted — an unhandled scheme is the OS' business,
  * exactly as it is for the `yaseendocs://` links this app itself registers.
  *
- * Every path SEGMENT is percent-encoded, separators left literal: `My Note.md` makes an invalid
+ * Every path SEGMENT is percent-encoded, separators left literal: `My Page.md` makes an invalid
  * URL raw, and encoding the whole path in one go would eat the `/` along with the spaces.
  *
  * The stat is the same load-bearing check `reveal.ts` explains: a dead `vscode://` URL opens an

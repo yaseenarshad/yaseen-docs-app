@@ -90,6 +90,22 @@ describe('open', () => {
     expect(popupOf(view)).toBeNull()
   })
 
+  it('a menu taller than the window gets the window\'s height and scrolls, and its own scroll keeps it open (YAZ-4970)', async () => {
+    const { view, item } = await mount(twoRows)
+    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const height = this.classList.contains('ctx-menu') ? 1000 : 0
+      return { width: 160, height, left: 0, top: 0, right: 160, bottom: height, x: 0, y: 0, toJSON: () => ({}) } as DOMRect
+    })
+    contextmenu(item)
+    spy.mockRestore()
+    const popup = popupOf(view)!
+    expect(popup.style.maxHeight).toBe(`${window.innerHeight - 16}px`)
+    expect(popup.style.overflowY).toBe('auto')
+    expect(popup.style.top).toBe('8px')
+    popup.dispatchEvent(new Event('scroll'))
+    expect(popupOf(view)).not.toBeNull()
+  })
+
   it('ignores a contextmenu on a paragraph', async () => {
     const { view } = await mount(twoRows)
     const e = contextmenu(view.dom.querySelector('p')!)
@@ -531,5 +547,33 @@ describe('the editor menu over the table (the YAZ-4163 demo)', () => {
 
   it('a captioned strip\'s hovered button rises over its neighbours, so its tooltip is not under the next row', () => {
     expect(zOf(/\.ctx-menu__strip--captioned > \.ctx-menu__strip-button:hover\s*\{([^}]*)\}/)).toBeGreaterThan(0)
+  })
+})
+
+describe('the current value in a picker (YAZ-4812)', () => {
+  const field = (stay: boolean): MenuNumberField => ({ kind: 'number', label: 'Line darkness', unit: '%', value: 50, presets: [10, 50], fallback: 50, min: 5, max: 100, error: 'e', stay, run: vi.fn() })
+  const current = (popup: HTMLElement) => {
+    popup.querySelector<HTMLButtonElement>('.block-menu-picker__value')!.click()
+    return [...popup.querySelectorAll<HTMLButtonElement>('.document-zoom__presets button')].find((b) => b.getAttribute('aria-pressed') === 'true' && b.textContent?.startsWith('50%'))!
+  }
+  it('a `stay` picker keeps the menu open on a click of its current value (drawn again), and runs nothing', () => {
+    const close = vi.fn()
+    const refresh = vi.fn((run: () => void) => run())
+    const f = field(true)
+    const popup = renderMenu(document.body, [f], close, refresh)
+    current(popup).click()
+    expect(close).not.toHaveBeenCalled()
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(f.run).not.toHaveBeenCalled()
+    popup.remove()
+  })
+  it('a picker without `stay` still closes the menu on that click', () => {
+    const close = vi.fn()
+    const f = field(false)
+    const popup = renderMenu(document.body, [f], close, vi.fn())
+    current(popup).click()
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(f.run).not.toHaveBeenCalled()
+    popup.remove()
   })
 })

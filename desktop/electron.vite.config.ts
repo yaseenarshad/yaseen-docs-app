@@ -3,11 +3,13 @@ import react from '@vitejs/plugin-react'
 import type { Plugin } from 'vite'
 import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import { cp, mkdir, rename, rm } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 // Relative, not `@shared`: this file runs in Node before any alias exists.
 import { DRAWIO_TAG } from '../shared/drawio'
 import { EXCALIDRAW_ASSET_DIR, excalidrawPackageFonts } from '../shared/excalidrawFonts'
+import { FRIENDS_ENABLED } from '../shared/features'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const shared = resolve(here, '../shared')
@@ -47,7 +49,11 @@ function excalidrawAssets(): Plugin {
       })
     },
     async writeBundle() {
-      await cp(fonts, resolve(rendererOut, EXCALIDRAW_ASSET_DIR, 'fonts'), { recursive: true })
+      // Drop CJK Xiaolai handwritten font (12.79 MB uncompressed .woff2, 94% of Excalidraw fonts; YAZ-6008 🔒 D8).
+      await cp(fonts, resolve(rendererOut, EXCALIDRAW_ASSET_DIR, 'fonts'), {
+        recursive: true,
+        filter: (src) => !src.includes('/Xiaolai') && !src.includes('\\Xiaolai'),
+      })
     },
   }
 }
@@ -86,12 +92,40 @@ export function renderSourcemapsAside(outDir: string, mapsDir: string): Plugin {
   return {
     name: 'yaseen-sourcemaps-aside',
     apply: 'build',
-    async writeBundle(_options, bundle) {
+    async writeBundle(options, bundle) {
+      const actualDir = options.dir ? resolve(options.dir) : outDir
+      if (actualDir !== outDir) return
       await rm(mapsDir, { recursive: true, force: true })
       for (const file of Object.keys(bundle).filter((f) => f.endsWith('.map'))) {
         await mkdir(dirname(resolve(mapsDir, file)), { recursive: true })
-        await rename(resolve(outDir, file), resolve(mapsDir, file))
+        await rename(resolve(actualDir, file), resolve(mapsDir, file))
       }
+    },
+  }
+}
+
+/**
+ * Strip dead weight from the desktop renderer build (YAZ-6008 🔒 D4):
+ * - 53 non-English Excalidraw locale chunks (-1.40 MB; English-only app per YAZ-2131 D1)
+ * - Duplicate main-thread HarfBuzz WASM fallback `subset-shared.chunk` (-1.82 MB; Electron 43 always has Workers)
+ * - Legacy KaTeX `.ttf` / `.woff` fallbacks (-0.82 MB; Chromium 136+ has 100% native WOFF2)
+ */
+function trimDesktopEngineDeadWeight(): Plugin {
+  const OFF = '\0yaseen-desktop-off'
+  return {
+    name: 'yaseen-trim-desktop-engine',
+    apply: 'build',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      if (!importer || !/(^|\/)(@excalidraw|engine\/packages)\//.test(importer)) return null
+      if (/\/locales\/(?!en-)[\w-]+\.js$/.test(source)) return OFF
+      if (/\/subset-shared\.chunk(\.js)?$/.test(source) && /subset-main/.test(importer)) return OFF
+      return null
+    },
+    load: (id) => (id === OFF ? 'throw new Error("pruned for desktop Electron")' : null),
+    transform(code, id) {
+      if (!/katex(\.min)?\.css$/.test(id.split('?')[0])) return null
+      return { code: code.replace(/,?\s*url\([^)]+\.(?:woff|ttf)\)\s*format\([^)]+\)/g, ''), map: null }
     },
   }
 }
@@ -106,6 +140,25 @@ export function renderSourcemapsAside(outDir: string, mapsDir: string): Plugin {
  */
 export const MONACO_TS_WORKER_FILE = /monaco-editor\/esm\/vs\/languages\/features\/typescript\/workerManager\.js$/
 const MONACO_TS_WORKER_URL = /new Worker\(new URL\(['"]ts\.worker\.js['"], import\.meta\.url\), \{ type: "module" \}\)/
+
+/**
+ * YAZ-5652: with Friends off (`shared/features.ts`), main's `import('./friends')` is never reached, and the build
+ * drops that code. But Rollup still loads the module, and its count worker (`countWorker?modulePath`) is emitted as a
+ * file of its own (92 KB) that nothing runs. Off, `./friends` from main's `index.ts` is an empty module instead.
+ */
+export function friendsOffInMain(on: boolean = FRIENDS_ENABLED): Plugin {
+  const STUB = '\0friends-off'
+  return {
+    name: 'yaseen:friends-off-in-main',
+    // Before Vite's own resolve, which would find the real `./friends` first.
+    enforce: 'pre',
+    resolveId(source, importer) {
+      if (on || source !== './friends' || importer === undefined) return null
+      return /[\\/]src[\\/]main[\\/]index\.ts$/.test(importer) ? STUB : null
+    },
+    load: (id) => (id === STUB ? "export function startFriendsSend() { throw new Error('Friends is off (YAZ-5652)') }" : null),
+  }
+}
 
 export function dropMonacoTsWorkerUrl(): Plugin {
   return {
@@ -122,7 +175,16 @@ export function dropMonacoTsWorkerUrl(): Plugin {
 
 /** The last local build's maps, per version (the ROOT package.json's, which `tools/packDesktop.mjs` stamps in; rebuilding a release tag reproduces them), gitignored. */
 const { version } = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf8')) as { version: string }
-const mapsDir = resolve(here, '.maps', version)
+const rendererMapsDir = resolve(here, '.maps', version, 'renderer')
+const mainOut = resolve(here, 'out/main')
+const mainMapsDir = resolve(here, '.maps', version, 'main')
+
+/**
+ * `yaml`'s ES-module build (YAZ-5509). Its `node` export is CommonJS, which Rollup cannot tree-shake, so the main
+ * build took all of it. The ES-module build (`browser/index.js`, the same code, checked against the CommonJS build
+ * in Node) lets the unused parts go. Main only: the renderer already resolves to this build.
+ */
+const yamlEsm = resolve(dirname(createRequire(import.meta.url).resolve('yaml/package.json')), 'browser/index.js')
 
 export default defineConfig({
   main: {
@@ -131,9 +193,11 @@ export default defineConfig({
     // `dependencies` by default, so chokidar is a devDependency and `externalizeDeps` is off;
     // `tools/mainBundle.test.mjs` fails if the bundle requires anything but Node built-ins and
     // electron (YAZ-2185).
-    resolve: { alias: { '@shared': shared } },
+    resolve: { alias: [{ find: '@shared', replacement: shared }, { find: /^yaml$/, replacement: yamlEsm }] },
+    plugins: [friendsOffInMain(), renderSourcemapsAside(mainOut, mainMapsDir)],
     // Two entries (YAZ-1617): the app, and the `yaseendocs` command the packaged shim runs as plain Node.
-    build: { externalizeDeps: false, rollupOptions: { input: { index: resolve(here, 'src/main/index.ts'), cli: resolve(here, 'src/cli/index.ts') } } },
+    // Minified with hidden sourcemaps in desktop/.maps/<version>/main (YAZ-6008 🔒 D10).
+    build: { outDir: mainOut, minify: 'esbuild', sourcemap: 'hidden', externalizeDeps: false, rollupOptions: { input: { index: resolve(here, 'src/main/index.ts'), cli: resolve(here, 'src/cli/index.ts') } } },
   },
   preload: {
     resolve: { alias: { '@shared': shared } },
@@ -141,7 +205,7 @@ export default defineConfig({
   },
   renderer: {
     root: client,
-    plugins: [react(), dropMonacoTsWorkerUrl(), excalidrawAssets(), drawioAssets(), renderSourcemapsAside(rendererOut, mapsDir)],
+    plugins: [react(), dropMonacoTsWorkerUrl(), trimDesktopEngineDeadWeight(), excalidrawAssets(), drawioAssets(), renderSourcemapsAside(rendererOut, rendererMapsDir)],
     resolve: {
       alias: { '@shared': shared },
       /**

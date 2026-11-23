@@ -28,7 +28,7 @@ const packages = {
     name: 'milkdown-crepe-7.22.1-yaz3550',
     url: 'https://registry.npmjs.org/@milkdown/crepe/-/crepe-7.22.1.tgz',
     integrity: '0BZTGBRV8lnlKsA3vmPK5Qyomjqd952493AIzfnbhiYwzHpluX03iMtOgHC6E2UcpMXP86P5CXhPUWjzDu+JZQ==',
-    maps: ['lib/esm/index.js.map', 'lib/esm/feature/block-edit/index.js.map', 'lib/cjs/index.js.map', 'lib/cjs/feature/block-edit/index.js.map'],
+    maps: ['lib/esm/index.js.map', 'lib/esm/feature/block-edit/index.js.map', 'lib/esm/feature/toolbar/index.js.map', 'lib/cjs/index.js.map', 'lib/cjs/feature/block-edit/index.js.map', 'lib/cjs/feature/toolbar/index.js.map'],
   },
 }
 const usage = `Usage: node tools/buildMilkdownPatch.mjs <${Object.keys(packages).join('|')}> [--source upstream.tgz] [--output patched.tgz]`

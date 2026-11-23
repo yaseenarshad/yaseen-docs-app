@@ -7,7 +7,7 @@
  * except the one open as a card beside its cell (`cellNoteCard.ts`, the YAZ-3818 demo); the hidden-line checks
  * (`lineSelection.ts`) skip it through `isCellNoteHidden`.
  *
- * `notesFollowTables` (D12): after a change that adds or removes a table, a cell note or a cell note's mark, each cell
+ * `pagesFollowTables` (D12): after a change that adds or removes a table, a cell note or a cell note's mark, each cell
  * note goes right under the table that holds its mark, in the order of the marks. A cell note with no mark in a table
  * cell stays where it is and shows (`cell-note--orphan`): no words are hidden for good. A typed key never runs it. Its
  * state also gives each cell that holds a mark the class that draws the corner triangle (`CELL_NOTE_CELL_CLASS`).
@@ -15,6 +15,7 @@
 import { footnoteDefinitionSchema } from '@milkdown/kit/preset/gfm'
 import { Fragment, type Node as ProseNode, type ResolvedPos } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
+import { TableMap } from '@milkdown/kit/prose/tables'
 import { ReplaceAroundStep, ReplaceStep, type Step } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import type { MarkdownNode } from '@milkdown/kit/transformer'
@@ -119,7 +120,7 @@ export const tableAround = (doc: ProseNode, cellPos: number): { pos: number; end
 /**
  * Add a cell note to the cell at `cellPos` (D4, D8): the mark at the END of the cell's first line (in a cell that
  * starts with a list, the first bullet's line), and a cell note with one empty line right under the table, among the
- * table's notes in the order of the marks. Find the note by its label (`notePosOf`): `notesFollowTables` may move it.
+ * table's notes in the order of the marks. Find the note by its label (`notePosOf`): `pagesFollowTables` may move it.
  * Declines on a cell that already has a cell note. `blocks`: what the new note holds instead (the template, round 3 of
  * the demo).
  */
@@ -235,11 +236,13 @@ export function cellNoteNameParts(doc: ProseNode, label: string): { column: stri
   const mark = markPosOf(doc, label)
   const cell = mark === null ? null : cellPosAround(doc.resolve(mark))
   if (cell === null) return { column: '', row: '' }
-  // table > row > cell.
+  // table > row > cell. The column and the row through the table map (YAZ-4792): a merged cell shifts the row's children.
   const $cell = doc.resolve(cell)
   const words = (node: ProseNode | null) => (node === null ? '' : node.textBetween(0, node.content.size, ' '))
-  const header = $cell.index(-1) === 0
-  return { column: words($cell.node(-1).firstChild!.maybeChild($cell.index())), row: header ? '' : words($cell.parent.firstChild) }
+  const table = $cell.node(-1)
+  const map = TableMap.get(table)
+  const { top, left } = map.findCell(cell - $cell.start(-1))
+  return { column: words(table.nodeAt(map.map[left]!)), row: top === 0 ? '' : words(table.nodeAt(map.map[top * map.width]!)) }
 }
 
 /** A cell note's title (D9), for its card and its preview: "Note: <column> · <row>", or "Note" when neither has words. */
@@ -251,7 +254,7 @@ export function cellNoteTitle(doc: ProseNode, label: string): string {
 }
 
 /**
- * The open cell note card (the YAZ-3818 demo, `cellNoteCard.ts`): the open note's label, its position and its cell's
+ * The open cell note card (the YAZ-3818 demo, `cellNoteCard.ts`): the open page's label, its position and its cell's
  * position (mapped), and the card's decorations. All null when no card is open. Here so `isCellNoteHidden` reads it.
  */
 export interface CellNoteCardState {
@@ -260,7 +263,23 @@ export interface CellNoteCardState {
   cell: number | null
   /** "All notes" (round 4 of the demo): the card shows every cell note of the page, read-only. */
   all: boolean
+  /** "All notes" of a calendar table (YAZ-4276): every time block of a column, in the card around the live note; else null. */
+  calendar: CalendarAll | null
   set: DecorationSet
+}
+
+/** The calendar "All notes" view (YAZ-4276, `cellNoteCard.ts`): one column of one calendar table, in the card. */
+export interface CalendarAll {
+  /** The column shown, as an index in a row: the live note's (D3; a column button makes a note of another live). */
+  column: number
+  /** The notes shown: the live note, the card (`isCellNoteHidden`). Mapped through each change. */
+  shown: readonly number[]
+  /** The notes this view made from an empty time block, by label: leaving the view removes those still empty (A9). */
+  made: readonly string[]
+  /** "Only filled" (A3): the empty time blocks do not show. */
+  onlyFilled: boolean
+  /** The cell the view opened from, mapped: the card stays under it while the live block changes. */
+  anchor: number
 }
 
 export const cellNoteCardKey = new PluginKey<CellNoteCardState>('mdapp-cell-note-card')
@@ -318,7 +337,13 @@ export function cellNoteCornerAt(view: EditorView, event: MouseEvent): HTMLEleme
 const isOrphan = (state: EditorState, pos: number): boolean => (cellNotesKey.getState(state)?.find(pos, pos + 1) ?? []).some((deco) => deco.from === pos)
 
 /** Is the cell note at `pos` hidden? Yes, unless it has no mark, or it is open as a card (the YAZ-3818 demo). */
-export const isCellNoteHidden = (state: EditorState, pos: number): boolean => !isOrphan(state, pos) && cellNoteCardKey.getState(state)?.pos !== pos
+export const isCellNoteHidden = (state: EditorState, pos: number): boolean => {
+  if (isOrphan(state, pos)) return false
+  const card = cellNoteCardKey.getState(state)
+  // A calendar's "All notes" (YAZ-4276) shows the live note as its card (`shown`); the other blocks are lines in it.
+  if (card?.calendar != null) return !card.calendar.shown.includes(pos)
+  return card?.pos !== pos
+}
 
 /** A node whose coming or going can move a cell note: a table, a cell note, a mark. */
 const isNoteNode = (node: ProseNode): boolean => node.type.name === 'table' || isCellNote(node) || isCellNoteMark(node)
@@ -417,7 +442,7 @@ function placeNotes(state: EditorState): Transaction | null {
  * D12. The state: the orphan decorations and the marked cells' class (5A-18), built again after a transaction that adds
  * or removes a table, a cell note or a mark, and mapped after any other: a typed key only maps them.
  */
-const notesFollowTables = $prose(
+const pagesFollowTables = $prose(
   () =>
     new Plugin<DecorationSet>({
       key: cellNotesKey,
@@ -459,4 +484,4 @@ const protectMarks = $prose(
 )
 
 /** Register with `editor.use(cellNotes)`, next to the table and cell schemas, before `inlineBreaks`. */
-export const cellNotes = [footnoteEmptyLines, cellNoteSchema, otherFootnotes, notesFollowTables, protectMarks].flat()
+export const cellNotes = [footnoteEmptyLines, cellNoteSchema, otherFootnotes, pagesFollowTables, protectMarks].flat()

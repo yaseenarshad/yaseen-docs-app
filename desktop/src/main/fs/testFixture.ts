@@ -1,11 +1,12 @@
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { _swept } from '../vaultIndex/idSweep'
+import { isAtomicTmp } from '@shared/fileKind'
+import { CARD_TITLES_MOVED, _swept } from '../vaultIndex/idSweep'
 import { COUNT_DIR, macId, type IdDoor } from '../vaultIndex/mint'
 import { BridgeFailure } from './fsUtils'
 
-/** Creates a temp vault that gives its notes IDs (`ids.json` says yes), with Markdown, view-only text/image, a file with no in-app viewer, and hidden entries; caller removes it via `cleanup`. */
+/** Creates a temp vault that gives its pages IDs (`ids.json` says yes), with Markdown, view-only text/image, a file with no in-app viewer, and hidden entries; caller removes it via `cleanup`. */
 export async function makeFixture(): Promise<{ root: string; cleanup: () => Promise<void> }> {
   const root = await mkdtemp(path.join(tmpdir(), 'mdapp-'))
   await mkdir(path.join(root, 'Zeta', 'inner'), { recursive: true })
@@ -19,7 +20,7 @@ export async function makeFixture(): Promise<{ root: string; cleanup: () => Prom
   await Promise.all([
     writeFile(path.join(root, 'b.md'), '# b\n'),
     writeFile(path.join(root, 'A.md'), '# A\n'),
-    writeFile(path.join(root, 'notes.txt'), 'not markdown'),
+    writeFile(path.join(root, 'pages.txt'), 'not markdown'),
     writeFile(path.join(root, 'book.epub'), 'no in-app viewer'),
     writeFile(path.join(root, '.hidden.md'), 'hidden'),
     writeFile(path.join(root, 'Zeta', 'inner', 'deep.md'), 'deep'),
@@ -47,15 +48,24 @@ export async function removeVault(...roots: string[]): Promise<void> {
   }
 }
 
+/** Where the sweep keeps its one-time marks (`CARD_TITLES_MOVED`). */
+const ONCE_DIR = path.dirname(CARD_TITLES_MOVED)
+
 /**
  * Everything under `dir`, hidden entries included: each file's text by its path from `dir`, each
- * folder as `<path>/`. What a test compares to prove that nothing else was written (YAZ-2523 🔒 V3).
+ * folder as `<path>/`, but the sweep's one-time marks. What a test compares to prove that nothing
+ * else was written (YAZ-2523 🔒 V3). A save's temp file in flight is no file of the vault.
  */
 export async function vaultFiles(dir: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
   for (const entry of await readdir(dir, { recursive: true, withFileTypes: true })) {
     const file = path.join(entry.parentPath, entry.name)
     const rel = path.relative(dir, file)
+    // The sweep's one-time marks (YAZ-5308, `idSweep.ts`): the vault's own state, no file a test wrote.
+    if (rel === ONCE_DIR || rel.startsWith(`${ONCE_DIR}${path.sep}`)) continue
+    // A save in flight (`atomicWrite`): its `.tmp-<hex>` sibling is renamed away at any moment, so a read of it can fail
+    // with ENOENT (a flaky CI run). It is never a file the vault keeps.
+    if (isAtomicTmp(entry.name)) continue
     if (entry.isDirectory()) out[`${rel}/`] = ''
     else out[rel] = await readFile(file, 'utf8')
   }

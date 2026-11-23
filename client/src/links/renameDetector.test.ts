@@ -10,7 +10,7 @@ describe('detectRenames (the E1c guard rails, GRO-2242 — locked)', () => {
   })
 
   it('a pure move (same basename, different folder) is still a valid hypothesis', () => {
-    expect(detectRenames([f('/v/Docs/N.md', 9, 50)], [f('/v/Notes/N.md', 9, 50)])).toEqual([{ oldPath: '/v/Docs/N.md', newPath: '/v/Notes/N.md' }])
+    expect(detectRenames([f('/v/Docs/N.md', 9, 50)], [f('/v/Pages/N.md', 9, 50)])).toEqual([{ oldPath: '/v/Docs/N.md', newPath: '/v/Pages/N.md' }])
   })
 
   it('the join key is EXACT equality: a size or mtime drift is no pair', () => {
@@ -28,7 +28,7 @@ describe('detectRenames (the E1c guard rails, GRO-2242 — locked)', () => {
     expect(detectRenames([f('/v/B.md', 7, 100)], [f('/v/B2.txt', 7, 100)])).toEqual([])
   })
 
-  it("a folder's settings file never pairs, and never makes a note's signature ambiguous (YAZ-2290 D8)", () => {
+  it("a folder's settings file never pairs, and never makes a page's signature ambiguous (YAZ-2290 D8)", () => {
     expect(detectRenames([f('/v/Old/.folder.md', 7, 100)], [f('/v/New/.folder.md', 7, 100)])).toEqual([])
     expect(detectRenames([f('/v/B.md', 7, 100), f('/v/Old/.folder.md', 7, 100)], [f('/v/B2.md', 7, 100)])).toEqual([{ oldPath: '/v/B.md', newPath: '/v/B2.md' }])
   })
@@ -93,13 +93,13 @@ describe('preRenameRecords (the engine wants the index as it WAS)', () => {
     expect(pre[1]).toEqual({ ...records[1], path: '/v/B.md', name: 'B.md', basename: 'B', title: 'B', folder: '' })
   })
 
-  it('a note with a frontmatter `title` keeps it: only an untitled note is titled by its old name (YAZ-2420 D14)', () => {
-    const records = [rec('/v/Sub/b2-k3m9x2pq7abc.md', { properties: { title: 'The B note' }, title: 'The B note' })]
+  it('a page with a frontmatter `title` keeps it: only an untitled page is titled by its old name (YAZ-2420 D14)', () => {
+    const records = [rec('/v/Sub/b2-k3m9x2pq7abc.md', { properties: { title: 'The B page' }, title: 'The B page' })]
     const pre = preRenameRecords(records, '/v', '/v/b-k3m9x2pq7abc.md', '/v/Sub/b2-k3m9x2pq7abc.md', true)
-    expect(pre[0]).toMatchObject({ path: '/v/b-k3m9x2pq7abc.md', basename: 'b-k3m9x2pq7abc', title: 'The B note' })
+    expect(pre[0]).toMatchObject({ path: '/v/b-k3m9x2pq7abc.md', basename: 'b-k3m9x2pq7abc', title: 'The B page' })
   })
 
-  it('where the vault does not use IDs a `title:` line is an ordinary property: the note is titled by its old file name (YAZ-2523 🔒 V12)', () => {
+  it('where the vault does not use IDs a `title:` line is an ordinary property: the page is titled by its old file name (YAZ-2523 🔒 V12)', () => {
     const records = [rec('/v/Sub/release.md', { properties: { title: 'Deploy checklist' } })]
     const pre = preRenameRecords(records, '/v', '/v/deploy.md', '/v/Sub/release.md', false)
     expect(pre[0]).toMatchObject({ path: '/v/deploy.md', basename: 'deploy', title: 'deploy' })

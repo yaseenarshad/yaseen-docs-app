@@ -1,0 +1,28 @@
+import { useCallback } from 'react'
+import { useApp } from '../app/AppState'
+import { serviceOf } from '../friends/ui/lazy'
+import { useVaultMedia } from '../media/ui/useVaultMedia'
+import { useMobileSettings } from '../page/mobileSettings'
+import { useVaultData } from '../search/vaultData'
+import type { ReviewLink } from './link'
+import { ReviewView, type ReviewViewProps } from './ReviewView'
+
+/**
+ * The Review tab's lazy chunk (4B): `ReviewView` with the app's media (`useVaultMedia`, the one way 4C's views use),
+ * so neither the card drawing nor 3D's media is in the first load.
+ */
+export type ReviewTabProps = Omit<ReviewViewProps, 'media'> & { link: ReviewLink }
+
+export function ReviewTab(props: ReviewTabProps) {
+  // `shown` passes through: the shell keeps the tab mounted while it is off the screen.
+  const app = useApp()
+  const media = useVaultMedia()
+  // YAZ-5880: the vault's Title room on the phone (`mobile.json`'s `titleRoom`, Only when it shows until it is read).
+  // Read only: no comments port (Review never loads the comments code); a sync's new data reads it again.
+  const titleRoom = useMobileSettings(useVaultData(), null).settings?.titleRoom ?? false
+  const getFriendsService = useCallback(async () => {
+    const get = serviceOf(app.services.friends)
+    return get === null ? null : get()
+  }, [app.services.friends])
+  return <ReviewView {...props} media={media} titleRoom={titleRoom} getFriendsService={getFriendsService} />
+}

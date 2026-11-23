@@ -60,6 +60,21 @@
   color: var(--fg);
 }
 
+/* A favorite folder's name over its rows (YAZ-4470, 11): grey words with the stack glyph, as the Favorites tab heads them. */
+.start__group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+.start__group svg {
+  color: var(--accent);
+}
+
 .start__row--dir {
   padding-left: 8px;
   color: var(--fg-dir);

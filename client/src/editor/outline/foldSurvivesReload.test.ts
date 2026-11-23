@@ -99,7 +99,7 @@ describe('folds survive setMarkdown (the external/AI-edit reload path)', () => {
   it('a collapsed image bullet (YAZ-1709) stays collapsed through the reload: its key is its alt text', async () => {
     const { reports, options } = liveWiring()
     const IMAGES = `* ![Shot|400](a.png)\n* Leaf\n`
-    const { crepe, root } = await mount({ defaultValue: IMAGES, folding: options, image: { root: '/v', notePath: '/v/n.md' } })
+    const { crepe, root } = await mount({ defaultValue: IMAGES, folding: options, image: { root: '/v', pagePath: '/v/n.md' } })
 
     toggleFor(root, OUTLINE_TOGGLE_CLASS, 'Shot').click()
     const key = getOutlineFoldKey('Shot', 0)

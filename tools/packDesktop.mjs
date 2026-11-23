@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * USAGE: node tools/packDesktop.mjs --mac | --win
+ * USAGE: node tools/packDesktop.mjs --mac | --win | --linux
  *
  * Runs electron-builder in desktop/ with the ROOT package.json version stamped in
  * (`extraMetadata.version`). A script that wrote `$npm_package_version` only expanded
@@ -28,7 +28,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const args = process.argv.slice(2)
 if (args.length === 0) {
-  console.error('usage: node tools/packDesktop.mjs --mac | --win')
+  console.error('usage: node tools/packDesktop.mjs --mac | --win | --linux')
   process.exit(2)
 }
 const { short, config } = packConfig(version)
@@ -42,6 +42,7 @@ await pack({
   config,
   ...(args.includes('--mac') ? { mac: [] } : {}),
   ...(args.includes('--win') ? { win: [] } : {}),
+  ...(args.includes('--linux') ? { linux: [] } : {}),
 })
 if (args.includes('--mac')) {
   const { build } = JSON.parse(readFileSync(join(root, 'desktop', 'package.json'), 'utf8'))

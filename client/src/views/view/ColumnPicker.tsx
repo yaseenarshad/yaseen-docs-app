@@ -26,6 +26,10 @@ export function ColumnPicker(props: ColumnPickerProps) {
   const list = useRef<HTMLDivElement>(null)
   const id = useId()
   const matches = options.filter((option) => matchesColumn(query, option.label, option.value))
+  // A key shows only under a name two columns share (YAZ-3746 13BF, as Columns ⚙ does, YAZ-1549): the Edit column
+  // panel shows every column's key. The search still finds a column by its key.
+  const labelCounts = new Map<string, number>()
+  for (const option of options) labelCounts.set(option.label, (labelCounts.get(option.label) ?? 0) + 1)
   const picked = (option: string): boolean => (props.multiple ? props.value.includes(option) : option === props.value)
   const text = props.multiple
     ? props.value.map((v) => options.find((option) => option.value === v)?.label ?? v).join(', ') || 'Choose…'
@@ -89,7 +93,7 @@ export function ColumnPicker(props: ColumnPickerProps) {
               <div key={option.value} id={`${id}-${i}`} role="option" data-value={option.value} aria-selected={picked(option.value)}
                 className={`column-picker__option${i === index ? ' column-picker__option--active' : ''}`}
                 onMouseEnter={() => setActive(i)} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option.value)}>
-                <span>{option.label}{option.value && option.label !== option.value && <small>{option.value}</small>}</span>
+                <span>{option.label}{option.value && (labelCounts.get(option.label) ?? 0) > 1 && <small>{option.value}</small>}</span>
                 <span className="column-picker__check" aria-hidden="true">{picked(option.value) ? '✓' : ''}</span>
               </div>
             ))}

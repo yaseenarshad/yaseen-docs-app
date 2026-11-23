@@ -1,9 +1,9 @@
 /**
- * idle: a window on a 200-note vault with 2 tabs, left alone for 60 s after a 5 s settle. CPU % and
+ * idle: a window on a 200-page vault with 2 tabs, left alone for 60 s after a 5 s settle. CPU % and
  * RSS at the end per process kind (main, renderer, gpu, utility), each kind summed over its processes.
  */
 import path from 'node:path'
-import { writeNote, writeVault } from '../genVault.mjs'
+import { writePageFile, writeVault } from '../genVault.mjs'
 import { helpers, sleep, usage } from '../lib/app.mjs'
 import { session } from '../lib/session.mjs'
 
@@ -11,7 +11,7 @@ const IDLE_MS = 60_000
 
 export function setup(dir) {
   const vault = writeVault(path.join(dir, 'vault'), 200)
-  return { profile: path.join(dir, 'profile'), vault, tabs: [writeNote(vault, 'Idle A', 'bullets', 200), writeNote(vault, 'Idle B', 'prose', 200)] }
+  return { profile: path.join(dir, 'profile'), vault, tabs: [writePageFile(vault, 'Idle A', 'bullets', 200), writePageFile(vault, 'Idle B', 'prose', 200)] }
 }
 
 export function run(app, { profile, vault, tabs }) {

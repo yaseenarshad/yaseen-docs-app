@@ -1,75 +1,27 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { MAX_WINDOW_ROOTS, rootOfPath, type IndexRecord, type TreeResponse } from '@shared/types'
-import { boardBaseName } from '@shared/fileKind'
+import { rootOfPath, type TreeResponse } from '@shared/types'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import { basename, dirname, stripExt } from './paths'
 import { fetchTree, latestTree, onTree } from './treeFeed'
 import { findDirNode, treeHasFile } from './treeState'
+import { NO_TITLES, fileLabel, pageLabel, pathTitles, type PathTitles } from './pathTitles'
+
+// The titles of paths moved to their own file (YAZ-5161), so code the phone shares reads them with no bridge; the names stay here too.
+export { fileLabel, pageLabel, pathTitles, type PathTitles }
 
 /**
  * Whether `path` is a FOLDER, by the window's newest Files tree (YAZ-2290 D3). Only the tree can
- * say: a folder may be named `Notes.md`. False until the first tree answers.
+ * say: a folder may be named `Pages.md`. False until the first tree answers.
  */
 export function isFolderPath(root: string | null, path: string): boolean {
-  const tree = root === null ? null : latestTree(root)
+  if (root === null) return false
+  // The vault root is a folder with no row of its own (YAZ-4921): its page is a tab, as any folder's.
+  if (isVaultRoot(root, path)) return true
+  const tree = latestTree(root)
   return tree !== null && findDirNode(tree.tree, path) !== null
 }
 
-/** Every note's and folder's title by its absolute path, a folder's by its directory's (YAZ-2420 🔒 D14). */
-export type PathTitles = ReadonlyMap<string, string>
-
-const titlesCache = new WeakMap<readonly IndexRecord[], WeakMap<readonly IndexRecord[], PathTitles>>()
-const NO_TITLES: PathTitles = new Map()
-/**
- * The Map last built for each vault of the window (YAZ-2602 D1), newest first. A snapshot does not
- * say whose it is, and need not: the paths of two vaults never meet, so the Map that holds a
- * snapshot's first path is its own vault's.
- */
-const latest: PathTitles[] = []
-
-/**
- * The index snapshot as `PathTitles`: a folder's record is its `.folder.md`, so its directory is the
- * key. Built once per snapshot — keyed by the identity of its two arrays, as `rowsByFolder` is —
- * because every rendered id link, each label holder and each notice asks. A snapshot that changed
- * no title keeps the Map its vault's last one had, so a save elsewhere in the vault — or in another
- * vault of the window — re-renders nothing that shows a name (YAZ-2194).
- */
-export function pathTitles(records: readonly IndexRecord[], folders: readonly IndexRecord[]): PathTitles {
-  let byFolders = titlesCache.get(records)
-  if (byFolders === undefined) titlesCache.set(records, (byFolders = new WeakMap()))
-  let titles = byFolders.get(folders)
-  if (titles === undefined) {
-    const built = new Map<string, string>()
-    for (const record of records) built.set(record.path, record.title)
-    for (const folder of folders) built.set(dirname(folder.path), folder.title)
-    const [path] = built.keys()
-    const at = path === undefined ? -1 : latest.findIndex((held) => held.has(path))
-    const last = path === undefined ? NO_TITLES : latest[at]
-    if (last !== undefined && built.size === last.size && [...built].every(([key, title]) => last.get(key) === title)) titles = last
-    else {
-      // Its vault's newer Map takes the older one's place; a vault not seen before joins the list.
-      if (at !== -1) latest.splice(at, 1)
-      latest.unshift((titles = built))
-      latest.length = Math.min(latest.length, MAX_WINDOW_ROOTS)
-    }
-    byFolders.set(folders, titles)
-  }
-  return titles
-}
-
-/**
- * A path as a NAME, wherever one is shown: its title (YAZ-2420 🔒 D14). A path the index does not
- * hold (not loaded yet, a PDF, an image, a board, a folder with no settings file) shows its file name: a
- * note, a drawing and a diagram hide their extension (YAZ-3536 D1); a folder's label is its whole name (YAZ-2290).
- */
-export const pageLabel = (path: string, folder: boolean, titles: PathTitles): string => titles.get(path) ?? (folder ? basename(path) : fileLabel(basename(path)))
-
-/** A file name with one app extension hidden at most: `Flow.md.excalidraw` → `Flow.md`, `Flow.excalidraw.md` → `Flow.excalidraw` (YAZ-3536). */
-export const fileLabel = (name: string): string => {
-  // `boardBaseName` is the board test too (its name whole = no board): one look at the extension, not `fileKind`'s six lists, on every row.
-  const bare = boardBaseName(name)
-  return bare !== name ? bare : stripExt(name)
-}
+/** `path` is the vault `root` itself (YAZ-4921), a trailing slash on the root aside. */
+export const isVaultRoot = (root: string, path: string): boolean => path === root.replace(/\/+$/, '')
 
 /** `pageLabel` of a path the Files tree says the kind of (`isFolderPath`). */
 export const pageName = (root: string | null, path: string, titles: PathTitles): string => pageLabel(path, isFolderPath(root, path), titles)
@@ -142,11 +94,14 @@ export function useFolderPaths(roots: readonly string[]): (path: string) => bool
  * What `path` is by the window's newest Files tree, off its one feed (YAZ-2191): a folder, a file,
  * or neither; null until a tree can say. A tab opened later reads the tree the sidebar already
  * holds. A tree that holds the path as neither may only be BEHIND: an in-app folder rename retargets
- * the tab before the tree that shows the new name lands, and a folder may be named `Notes.md`. So
+ * the tab before the tree that shows the new name lands, and a folder may be named `Pages.md`. So
  * nothing is said until a tree asked for NOW answers — the stale-tab probe's rule (`useVaultTree.ts`).
  */
 export function useTreeKind(root: string, path: string): 'dir' | 'file' | 'none' | null {
+  // The vault root itself (YAZ-4921): a folder the tree never lists, so no tree is waited for.
+  const isRoot = isVaultRoot(root, path)
   const held = useSyncExternalStore(useTreeLanded(root), () => {
+    if (isRoot) return 'dir'
     const tree = latestTree(root)
     if (tree === null) return null
     return findDirNode(tree.tree, path) !== null ? 'dir' : treeHasFile(tree.tree, path) ? 'file' : 'none'

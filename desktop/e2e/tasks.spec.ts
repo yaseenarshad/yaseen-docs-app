@@ -17,19 +17,19 @@ import { appWindow, editorOf, launchApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Tasks.md'
+const PAGE = 'Tasks.md'
 const BODY = '* Buy milk\n* Call Sam\n  * nested child\n'
 
 let userData: string
 let vault: string
-let notePath: string
+let pagePath: string
 let app: ElectronApplication
 let win: Page
 
 /** The item whose OWN line reads `text`, and its box (`bullet` / `unchecked` / `checked`). */
 const item = (w: Page, text: string) => editorOf(w).locator(`li.list-item:has(> .children > .content-dom > p:text-is("${text}"))`)
 const box = (w: Page, text: string) => item(w, text).locator(':scope > .label-wrapper > .label')
-const disk = () => readFile(notePath, 'utf8')
+const disk = () => readFile(pagePath, 'utf8')
 
 /** ⌘Enter with the caret in `text`'s line, retried until the box shows `next` (a key can drop mid-render). */
 async function cycleTo(w: Page, text: string, next: 'bullet' | 'unchecked' | 'checked'): Promise<void> {
@@ -45,8 +45,8 @@ async function cycleTo(w: Page, text: string, next: 'bullet' | 'unchecked' | 'ch
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'tasks-userdata-'))
   vault = await mkdtemp(path.join(tmpdir(), 'tasks-vault-'))
-  notePath = path.join(vault, NOTE)
-  await writeFile(notePath, BODY)
+  pagePath = path.join(vault, PAGE)
+  await writeFile(pagePath, BODY)
 })
 
 test.afterAll(async () => {
@@ -55,7 +55,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — ⌘Enter cycles a bullet → [ ] → [x] → bullet, and the file follows each time', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(box(win, 'Buy milk')).toHaveClass(/\bbullet\b/)
 

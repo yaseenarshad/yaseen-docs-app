@@ -1,10 +1,23 @@
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { ATOMIC_TMP_HEX_LEN, isAtomicTmp } from '@shared/fileKind'
-import { GITHUB_FILE_LIMIT_BYTES, type GithubSyncMerge, type GithubSyncStatus } from '@shared/types'
+import { GITHUB_FILE_LIMIT_BYTES, type ConnectRepoResult, type GithubSyncMerge, type GithubSyncStatus } from '@shared/types'
+import { gitAuthEnv } from './askpass'
 import { detectRepo } from './detect'
 import { git, GIT_TIMEOUT_CODE, installGitHint, resolveGit, zList, type GitResult } from './exec'
+import { repoOfRemote } from './repoOfRemote'
 import { ensureBoardMergeRule, resolveRebase } from './resolve'
+import { FRIENDS_LIST, dropLocalListChange, followRemoteList } from './friendsListRule'
+
+/** Auth provider injected by `ipc/github.ts` so `syncPass` stays Electron-free (YAZ-6190, D2). */
+export interface GitSyncAuthProvider {
+  getValidAuth(): Promise<{ token: string; login: string; email: string } | null>
+  isRepoAllowed?(repoFullName: string): Promise<'allowed' | 'not-allowed' | 'unknown'>
+}
+
+const VALID_REPO_FULL_NAME = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
+const NOT_FOUND_PATTERNS = [/repository not found/i, /\b404\b/]
+const isSshGithubRemote = (remoteUrl: string | null): boolean => remoteUrl !== null && /^(git@github\.com:|ssh:\/\/git@github\.com\/)/i.test(remoteUrl)
 
 /**
  * One sync pass (YAZ-1081, 2B): everything "make this vault and its GitHub remote agree" means,
@@ -12,20 +25,21 @@ import { ensureBoardMergeRule, resolveRebase } from './resolve'
  *
  * The order is fixed and load-bearing — commit, fetch, rebase, push:
  *   - COMMIT FIRST so the rebase has a clean tree to move. Nothing here ever stashes; a stash is
- *     a place work can be forgotten, and this app's promise is that the user's notes are always
+ *     a place work can be forgotten, and this app's promise is that the user's pages are always
  *     on disk exactly as they left them. ONE exception (🔒 YAZ-1801 D12, YAZ-3039): a TRACKED file held back
  *     as too large is the one edit a commit can never absorb, and it would make the rebase refuse
  *     ("unstaged changes"). Only those files are parked for the length of the rebase and their
  *     exact bytes copied back straight after (`parkWhileRebasing`) — files sync will never commit
  *     anyway, restored by a copy, never a merge.
- *   - REBASE, never merge. Two machines editing different notes replay cleanly and the history
+ *   - REBASE, never merge. Two machines editing different pages replay cleanly and the history
  *     stays a line anyone can read in the GitHub UI.
  *   - A rebase that CONFLICTS on drawings is settled and finished (YAZ-1897 in Draw, YAZ-3039 here,
  *     `resolve.ts`): a drawing merges shape by shape, a diagram keeps both copies, the vault's two
- *     list files merge per entry, and the pass reports what it merged. A NOTE conflict — and
- *     anything else `resolve.ts` does not settle — is aborted immediately, exactly as before (the
- *     lossless rule, YAZ-1081): git puts the working tree back byte-for-byte and the pass reports
- *     `attention/conflict`. A vault is never left in a half-finished rebase, and no `<<<<<<<`
+ *     list files merge per entry, and the pass reports what it merged. A PAGE merges its comments by
+ *     id and its text line by line; when both sides changed the same lines, both versions are kept
+ *     (YAZ-4615 D4, D9). Anything else `resolve.ts` does not settle is aborted immediately, exactly as
+ *     before (the lossless rule, YAZ-1081): git puts the working tree back byte-for-byte and the pass
+ *     reports `attention/conflict`. A vault is never left in a half-finished rebase, and no `<<<<<<<`
  *     marker ever lands in the user's prose.
  *
  * Every failure is CLASSIFIED rather than thrown (`classifyGitFailure`), because the three kinds
@@ -130,7 +144,7 @@ const NOTHING_TO_COMMIT = /nothing to commit|nothing added to commit|no changes 
 
 /**
  * git's refusal to START a rebase over a working tree that changed after the commit (YAZ-3044 A1):
- * a note autosaved between the pass's commit and its `rebase`. Not a conflict — a retry.
+ * a page autosaved between the pass's commit and its `rebase`. Not a conflict — a retry.
  */
 const REBASE_REFUSED = /cannot rebase: (you have unstaged changes|your index contains uncommitted changes)/i
 
@@ -170,12 +184,56 @@ function firstMeaningfulLine(res: GitResult): string {
 type RepoRef = GithubSyncStatus['repo']
 
 /** offline → `pending` (the manager retries on its own clock); auth → say so; anything else → verbatim. */
-function fromFailure(root: string, repo: RepoRef, res: GitResult): GithubSyncStatus {
+async function fromFailure(
+  root: string,
+  repo: RepoRef,
+  res: GitResult,
+  auth?: GitSyncAuthProvider,
+  signedIn?: boolean,
+): Promise<GithubSyncStatus> {
   const message = firstMeaningfulLine(res)
   const kind = classifyGitFailure(res)
+  const combined = `${res.stderr}\n${res.stdout}`
+  // Extra #5: when signed in with the GitHub App and GitHub refuses or hides the repo, check whether
+  // the repo is on the app's installed repo list so the UI offers "Allow this repo on GitHub" instead of looping.
+  if (signedIn && auth?.isRepoAllowed !== undefined && repo?.remoteUrl !== null && repo?.remoteUrl !== undefined && (kind === 'auth' || NOT_FOUND_PATTERNS.some((p) => p.test(combined)))) {
+    const slug = repoOfRemote(repo.remoteUrl)
+    if (slug !== null && (await auth.isRepoAllowed(slug).catch(() => 'unknown')) === 'not-allowed') {
+      return { root, state: 'attention', attention: 'repo-not-allowed', message: `Yaseen Docs is not allowed to access ${slug} on GitHub yet.`, repo }
+    }
+  }
   if (kind === 'offline') return { root, state: 'pending', message, repo }
   if (kind === 'auth') return { root, state: 'attention', attention: 'auth', message, repo }
   return { root, state: 'attention', attention: 'error', message, repo }
+}
+
+/** Runs a network git command (`fetch`/`push`), injecting `GIT_ASKPASS` when signed in (with `-c credential.helper=` so macOS Keychain never shadows it — YAZ-6204) and falling back from SSH to HTTPS if SSH auth fails (YAZ-6190, D2). */
+async function runNetworkGit(
+  bin: string,
+  root: string,
+  args: string[],
+  opts: { timeoutMs: number; remoteUrl: string | null; token: string | null },
+): Promise<GitResult> {
+  const authEnv = opts.token !== null ? await gitAuthEnv(opts.token) : undefined
+  const credArgs = opts.token !== null ? ['-c', 'credential.helper='] : []
+  const first = await git(bin, root, [...credArgs, ...args], { timeoutMs: opts.timeoutMs, env: authEnv })
+  if (first.code === 0 || opts.token === null || !isSshGithubRemote(opts.remoteUrl)) return first
+  if (classifyGitFailure(first) !== 'auth') return first
+  // SSH remote failed auth while signed in with GitHub App: retry over HTTPS with the signed-in token.
+  return git(bin, root, [...credArgs, '-c', 'url.https://github.com/.insteadOf=git@github.com:', '-c', 'url.https://github.com/.insteadOf=ssh://git@github.com/', ...args], {
+    timeoutMs: opts.timeoutMs,
+    env: authEnv,
+  })
+}
+
+/** Returns `-c user.name=... -c user.email=...` when git has no configured identity and the user is signed in with GitHub (YAZ-6190 D2, YAZ-6205). */
+async function fallbackIdentityArgs(bin: string, root: string, auth: { login: string; email: string } | null): Promise<string[]> {
+  if (auth === null) return []
+  const [nameRes, emailRes] = await Promise.all([git(bin, root, ['config', '--get', 'user.name']), git(bin, root, ['config', '--get', 'user.email'])])
+  const args: string[] = []
+  if (nameRes.code !== 0 || nameRes.stdout.trim() === '') args.push('-c', `user.name=${auth.login}`)
+  if (emailRes.code !== 0 || emailRes.stdout.trim() === '') args.push('-c', `user.email=${auth.email}`)
+  return args
 }
 
 /**
@@ -188,7 +246,10 @@ function fromFailure(root: string, repo: RepoRef, res: GitResult): GithubSyncSta
  * `fetched: true` says the idle pull's look (`lookAtRemote`) fetched origin a moment ago and found
  * news, so the pass rebases onto that fetch instead of making the same round trip again.
  */
-export async function syncPass(root: string, opts?: { candidates?: readonly string[]; flush?: boolean; fetched?: boolean }): Promise<GithubSyncStatus> {
+export async function syncPass(
+  root: string,
+  opts?: { candidates?: readonly string[]; flush?: boolean; fetched?: boolean; auth?: GitSyncAuthProvider },
+): Promise<GithubSyncStatus> {
   // No git binary is a CLASSIFICATION, never an exception: a Mac without the Command Line Tools
   // or a PC without Git for Windows is an ordinary machine, and the app must be able to say
   // "install it" (`installGitHint`, per OS) rather than crash a pass.
@@ -203,20 +264,28 @@ export async function syncPass(root: string, opts?: { candidates?: readonly stri
   // of every vault that has never been set up, and the settings panel still gets the facts.
   if (!facts.isRepo || facts.remoteUrl === null) return { root, state: 'off', repo }
 
+  const validAuth = opts?.auth !== undefined ? await opts.auth.getValidAuth().catch(() => null) : null
+  const token = validAuth?.token ?? null
+  const identArgs = await fallbackIdentityArgs(bin, root, validAuth)
+
   // ---------- 1. local edits become one commit (minus anything GitHub would refuse — D3) ----------
   await ensureBoardMergeRule(bin, root) // YAZ-1897 D2: boards never reach git's line merge
+  // YAZ-5083 round 5: the friends list file has one writer (the phone, by GitHub's API): a local change is dropped, so
+  // it can never become a commit, a merge or a conflict that stops this vault's sync.
+  await dropLocalListChange(bin, root)
   let tooLarge: string[] = []
   if (facts.dirty) {
     const staging = await stageWithinLimit(bin, root)
     tooLarge = staging.tooLarge
-    if (staging.failed !== null) return withTooLarge(fromFailure(root, repo, staging.failed), tooLarge)
+    if (staging.failed !== null) return withTooLarge(await fromFailure(root, repo, staging.failed, opts?.auth, token !== null), tooLarge)
     // Nothing staged — every dirty file was held back, or ignored — is not a commit to attempt:
     // git's wording for "only untracked files left" matches neither NOTHING_TO_COMMIT needle.
     const anything = (await git(bin, root, ['diff', '--cached', '--quiet'])).code !== 0
     // With a file held back, the subject is built from what IS staged: porcelain collapses an
     // untracked folder to `Folder/`, which would name the folder the held-back file sits in.
-    const named = tooLarge.length > 0 ? zList(await git(bin, root, ['diff', '--cached', '--name-only', '-z'])) : facts.dirtyFiles.filter((f) => !isAtomicTmp(f))
-    const committed = anything ? await git(bin, root, ['commit', '-m', commitMessage(named)]) : { code: 0, stdout: '', stderr: '' }
+    const named = tooLarge.length > 0 ? zList(await git(bin, root, ['diff', '--cached', '--name-only', '-z'])) : facts.dirtyFiles.filter((f) => !isAtomicTmp(f) && f !== FRIENDS_LIST)
+    const msg = commitMessage(named)
+    const committed = anything ? await git(bin, root, [...identArgs, 'commit', '-m', msg]) : { code: 0, stdout: '', stderr: '' }
     if (committed.code !== 0 && !NOTHING_TO_COMMIT.test(`${committed.stdout}\n${committed.stderr}`)) {
       // A machine with no `user.name`/`user.email` cannot commit at all, and no amount of retrying
       // changes that — it is a one-time setup step, so it gets its own attention state.
@@ -230,8 +299,8 @@ export async function syncPass(root: string, opts?: { candidates?: readonly stri
   // ---------- 2. learn what the remote has (skipped on flush — see the doc comment) ----------
   const flush = opts?.flush === true
   if (!flush && opts?.fetched !== true) {
-    const fetched = await git(bin, root, ['fetch', 'origin'], { timeoutMs: TRANSFER_TIMEOUT_MS })
-    if (fetched.code !== 0) return withTooLarge(fromFailure(root, repo, fetched), tooLarge)
+    const fetched = await runNetworkGit(bin, root, ['fetch', 'origin'], { timeoutMs: TRANSFER_TIMEOUT_MS, remoteUrl: facts.remoteUrl, token })
+    if (fetched.code !== 0) return withTooLarge(await fromFailure(root, repo, fetched, opts?.auth, token !== null), tooLarge)
   }
 
   const level = await divergence(bin, root)
@@ -245,7 +314,7 @@ export async function syncPass(root: string, opts?: { candidates?: readonly stri
     const span = (await git(bin, root, ['rev-parse', 'HEAD', '@{u}'])).stdout.split('\n')
     let refused = null as GitResult | null // set in the callback; the cast stops TS narrowing it to null
     const outcome = await parkWhileRebasing(bin, root, tooLarge, async () => {
-      const rebased = await git(bin, root, ['rebase', '@{u}'])
+      const rebased = await git(bin, root, [...identArgs, 'rebase', '@{u}'])
       if (rebased.code === 0) return true
       // YAZ-3044 A1: an autosave landed between the commit and the rebase, and git refused to
       // start. Nothing is stopped and nothing is lost: the next pass commits that save and rebases.
@@ -254,12 +323,12 @@ export async function syncPass(root: string, opts?: { candidates?: readonly stri
         return false
       }
       // YAZ-3039: settle the drawing conflicts and finish; it aborts (losslessly) whatever it cannot
-      // settle — a note conflict above all, which keeps Docs' own words below (YAZ-3028 D4).
+      // settle — a page conflict above all, which keeps Docs' own words below (YAZ-3028 D4).
       const report = await resolveRebase(bin, root, { before: span[0] ?? 'HEAD', upstream: span[1] ?? '@{u}' })
       merged = report ?? []
       return report !== null
     })
-    if (outcome !== true && outcome !== false) return withTooLarge(fromFailure(root, repo, outcome), tooLarge)
+    if (outcome !== true && outcome !== false) return withTooLarge(await fromFailure(root, repo, outcome, opts?.auth, token !== null), tooLarge)
     if (refused !== null) return withTooLarge({ root, state: 'pending', message: firstMeaningfulLine(refused), repo }, tooLarge)
     if (!outcome) {
       return withTooLarge({ root, state: 'attention', attention: 'conflict', message: 'the same lines changed on two machines — nothing was lost, but this needs a human', repo }, tooLarge)
@@ -268,10 +337,20 @@ export async function syncPass(root: string, opts?: { candidates?: readonly stri
   // Every answer from here on carries what the pass merged (and the held-back list), pushed or not.
   const done = (status: GithubSyncStatus): GithubSyncStatus => withTooLarge(merged.length > 0 ? { ...status, merged } : status, tooLarge)
 
+  // YAZ-5083 round 5: a local commit that changed the friends list (an older build, a commit by hand) never reaches
+  // GitHub: one commit on top puts GitHub's file back first. YAZ-5445: the quit flush too (it is local, no fetch): with
+  // HEAD on top of the last fetch its push is a fast forward, so it must not carry the list. Behind it (no rebase on a
+  // flush), the push is refused anyway, and the next open rebases and follows.
+  const followed = hasUpstream && (!flush || behind === 0) ? await followRemoteList(bin, root) : false
+
   // ---------- 4. publish ----------
-  if (ahead > 0) {
-    const pushed = await git(bin, root, hasUpstream ? ['push'] : ['push', '-u', 'origin', 'HEAD'], { timeoutMs: flush ? FLUSH_PUSH_TIMEOUT_MS : TRANSFER_TIMEOUT_MS })
-    if (pushed.code !== 0) return done(fromFailure(root, repo, pushed))
+  if (ahead > 0 || followed) {
+    const pushed = await runNetworkGit(bin, root, hasUpstream ? ['push'] : ['push', '-u', 'origin', 'HEAD'], {
+      timeoutMs: flush ? FLUSH_PUSH_TIMEOUT_MS : TRANSFER_TIMEOUT_MS,
+      remoteUrl: facts.remoteUrl,
+      token,
+    })
+    if (pushed.code !== 0) return done(await fromFailure(root, repo, pushed, opts?.auth, token !== null))
   }
 
   // D3: everything else is pushed; the held-back files are the one thing left to say, and saying
@@ -304,12 +383,46 @@ export type RemoteLook = 'level' | 'moved' | 'unknown'
  * say) or no upstream is `moved`, with origin already fetched; a look that failed is `unknown` —
  * the full pass does, fetches and classifies both.
  */
-export async function lookAtRemote(root: string): Promise<RemoteLook> {
+export async function lookAtRemote(root: string, opts?: { auth?: GitSyncAuthProvider }): Promise<RemoteLook> {
   const bin = await resolveGit()
   if (bin === null) return 'unknown'
-  if ((await git(bin, root, ['fetch', 'origin'], { timeoutMs: TRANSFER_TIMEOUT_MS })).code !== 0) return 'unknown'
+  const validAuth = opts?.auth !== undefined ? await opts.auth.getValidAuth().catch(() => null) : null
+  const token = validAuth?.token ?? null
+  let fetched: GitResult
+  if (token === null) {
+    // Keep the idle poll at 2 spawns (`fetch` + `rev-list`) when signed out (YAZ-2073 5H).
+    fetched = await git(bin, root, ['fetch', 'origin'], { timeoutMs: TRANSFER_TIMEOUT_MS })
+  } else {
+    const remoteRes = await git(bin, root, ['remote', 'get-url', 'origin'])
+    const remoteUrl = remoteRes.code === 0 ? remoteRes.stdout.trim() || null : null
+    fetched = await runNetworkGit(bin, root, ['fetch', 'origin'], { timeoutMs: TRANSFER_TIMEOUT_MS, remoteUrl, token })
+  }
+  if (fetched.code !== 0) return 'unknown'
   const level = await divergence(bin, root)
   return level !== null && level.behind === 0 && level.ahead === 0 ? 'level' : 'moved'
+}
+
+/**
+ * Connects a non-git or remote-less vault folder to a GitHub repo (`owner/repo`) with zero
+ * terminal or GitHub Desktop steps (YAZ-6190, Extra #1). Never deletes or overwrites files.
+ */
+export async function connectVaultToRepo(root: string, repoFullName: string, opts?: { candidates?: readonly string[] }): Promise<ConnectRepoResult> {
+  if (!VALID_REPO_FULL_NAME.test(repoFullName)) return { ok: false, error: 'Invalid repository name.' }
+  const bin = await resolveGit(opts?.candidates)
+  if (bin === null) return { ok: false, error: installGitHint() }
+
+  const facts = await detectRepo(bin, root)
+  if (!facts.isRepo) {
+    const init = await git(bin, root, ['init', '-b', 'main'])
+    if (init.code !== 0) return { ok: false, error: firstMeaningfulLine(init) }
+  } else if (facts.remoteUrl === null && facts.branch === 'master') {
+    await git(bin, root, ['branch', '-M', 'main'])
+  }
+
+  const remoteUrl = `https://github.com/${repoFullName}.git`
+  const remoteRes = facts.remoteUrl === null ? await git(bin, root, ['remote', 'add', 'origin', remoteUrl]) : await git(bin, root, ['remote', 'set-url', 'origin', remoteUrl])
+  if (remoteRes.code !== 0) return { ok: false, error: firstMeaningfulLine(remoteRes) }
+  return { ok: true }
 }
 
 /**

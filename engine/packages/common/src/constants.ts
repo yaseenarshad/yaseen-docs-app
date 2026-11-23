@@ -227,7 +227,10 @@ export const FRAME_STYLE = {
   nameLineHeight: 1.25,
 };
 
-export const MIN_FONT_SIZE = 1;
+// YAZ-4277 demo: with the zoom up to 10,000%, new text is ~0.14 board px
+// (14 px on screen); a floor of 1 aborted every multi-selection resize that
+// held such text (`measureFontSizeFromWidth` → the whole resize returns)
+export const MIN_FONT_SIZE = 0.01;
 export const DEFAULT_FONT_SIZE = 20;
 export const DEFAULT_FONT_FAMILY: FontFamilyValues = FONT_FAMILY.Excalifont;
 // Legacy/missing scene text must continue to restore as left-aligned.
@@ -321,8 +324,11 @@ export const TITLE_TIMEOUT = 10000;
 export const VERSION_TIMEOUT = 30000;
 export const SCROLL_TIMEOUT = 100;
 export const ZOOM_STEP = 0.1;
-export const MIN_ZOOM = 0.1;
-export const MAX_ZOOM = 30;
+// YAZ-4277 demo: 1% (upstream 10%), to see a whole large board at once
+export const MIN_ZOOM = 0.01;
+// YAZ-4277 demo: 10,000% (upstream 3000%) for tiny text; a big shape past the
+// browser's canvas size cap draws at a lower scale, so it may look soft there
+export const MAX_ZOOM = 100;
 export const HYPERLINK_TOOLTIP_DELAY = 300;
 
 // Report a user inactive after IDLE_THRESHOLD milliseconds

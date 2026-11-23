@@ -1,8 +1,8 @@
 /**
- * ⌘N and ⌘D (YAZ-3556) against the REAL app, on a temp vault with "Default location for new notes" set to the folder
+ * ⌘N and ⌘D (YAZ-3556) against the REAL app, on a temp vault with "Default location for new pages" set to the folder
  * Inbox and "Show in sidebar" set to that folder (Settings › Files & Links, Settings › Sidebar › Show in sidebar):
  *   1 File › Show in Sidebar shows Inbox in Files: the folder opens and its row has the keyboard (D9)
- *   2 File › New…, ⏎, a name, ⏎: the note is made in Inbox and opens in the active tab (D3, D4, D5)
+ *   2 File › New…, ⏎, a name, ⏎: the page is made in Inbox and opens in the active tab (D3, D4, D5)
  * The menu items are clicked by id with no focus step (`clickMenuItemQuietly`): a hidden run never takes the focus.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
@@ -25,7 +25,7 @@ test.beforeAll(async () => {
   await writeFile(path.join(vault, 'Inbox', 'Waiting.md'), 'waiting\n')
   await writeFile(path.join(vault, 'Top.md'), 'top\n')
   const state = seededState(vault, null)
-  state.settings = { ...state.settings, newNoteLocation: 'folder', newNoteFolder: 'Inbox', goTo: { kind: 'folder', path: 'Inbox' } }
+  state.settings = { ...state.settings, newPageLocation: 'folder', newPageFolder: 'Inbox', goTo: { kind: 'folder', path: 'Inbox' } }
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')
   await expect(fileRow(win, 'Top')).toBeVisible()
@@ -43,11 +43,11 @@ test('⌘D shows the set folder in Files: open, with the keyboard on its row', a
   await expect(fileRow(win, 'Waiting')).toBeVisible()
 })
 
-test('⌘N, ⏎, ⏎, a name, ⏎: the note is made in the default folder and opens', async () => {
+test('⌘N, ⏎, ⏎, a name, ⏎: the page is made in the default folder and opens', async () => {
   await clickMenuItemQuietly(app, 'menu.file.new-item')
   const box = win.locator('.new-item')
   await expect(box).toBeVisible()
-  await expect(box.locator('.new-item__tile[aria-checked="true"]')).toHaveText('Note')
+  await expect(box.locator('.new-item__tile[aria-checked="true"]')).toHaveText('Page')
   await expect(box.locator('.new-item__place')).toHaveText('Inbox')
   // ⏎ moves to the place row, ⏎ there makes it (YAZ-4252).
   await win.keyboard.press('Enter')

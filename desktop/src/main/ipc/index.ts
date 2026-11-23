@@ -1,23 +1,41 @@
 import { join } from 'node:path'
 import { CONTRACT } from '@shared/ipc'
+import { PIXABAY_SECRET } from '@shared/types'
+import { componentItemKey } from '@shared/mediaLibrary'
 import type { GitSyncManager } from '../git/manager'
+import { createGithubAuth, type GithubAuthManager } from '../githubAuth'
 import type { Secrets } from '../secrets'
+import { broadcastAll } from './broadcast'
 import type { SettingsFolder } from '../settingsFolder'
 import type { LspPool } from '../lsp/pool'
 import type { Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
-import { resolveLibraryFolder } from '../library/folder'
+import { copyLibrary, followLibraryMoves, type LibraryMoves } from '../library/copyLibrary'
+import { libraryFolderOf } from '../library/folder'
+import { DAILY_PAGES_MOVE } from '../dailyPagesVaultFile'
+import { PAGE_SPACING_MOVE } from '../textFormattingMove'
+import { ICON_LOOK_MOVE } from '../icons'
+import { CARD_LOOK_MOVE } from '../cardLookMove'
+import { tableLookMoves } from '../tableLookMove'
+import { FOLDER_PAGES_MOVE } from '../folderPagesMove'
+import { NEW_PLACES_MOVE } from '../newPlaces'
+import { setReadOnlyRootChecker } from '../vaultIndex/live'
+import { moveSettingsIntoVaults, type VaultMove } from '../vaultSettingsMove'
 import { registerBoardIpc } from './board'
+import { registerCardSkillIpc } from './cardSkill'
 import { registerComponentsIpc } from './components'
 import { registerDialogIpc } from './dialog'
 import { handle } from './envelope'
 import { registerFavoritesIpc } from './favorites'
 import { registerIconsIpc } from './icons'
+import { registerFilesOrderIpc } from './filesOrder'
 import { registerNewPlacesIpc } from './newPlaces'
 import { registerFocusIpc } from './focus'
+import { registerFocusFoldersIpc } from './focusFolders'
 import { registerFsIpc } from './fs'
 import { registerGithubIpc } from './github'
 import { registerHomeIpc } from './home'
+import { registerCardFormatsIpc } from './cardFormats'
 import { registerLspIpc } from './lsp'
 import { registerMediaLibraryIpc } from './mediaLibrary'
 import { registerMediaStudioIpc } from './mediaStudio'
@@ -47,13 +65,22 @@ import { registerWindowIpc } from './window'
  */
 export type IpcPlaces = ShareIpcPlaces & {
   userData: string
+  /** This Mac's ID (`vaultIndex/mint.ts`): the library's media file of this Mac is `media-<macId>.json` (YAZ-4364). */
+  macId: () => Promise<string>
   /** `app.getAppPath()`: a dev build's language helpers are in `node_modules` from there upward (YAZ-3454, YAZ-3500). */
   appPath?: string
+  /** Opens a URL in the system browser (GitHub App OAuth, deep links; YAZ-6190). */
+  openExternal?: (url: string) => Promise<void> | void
+  /** Opens a local app bundle (GitHub AutoSync fallback; YAZ-6190). */
+  openPath?: (appPath: string) => Promise<string> | string
+  /** Optional listener invoked whenever GitHub App auth status changes (e.g. Friends session refresh; YAZ-6219). */
+  onGithubAuthChange?: () => void
 }
 
-export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets; lsp: LspPool } {
+export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; githubAuth: GithubAuthManager; secrets: Secrets; lsp: LspPool; libraryMoves: LibraryMoves } {
   const { userData } = places
   registerFsIpc(store, windows)
+  registerCardSkillIpc(store, windows)
   // The folder window's pick of an outside pictures folder is what lets the app write there (YAZ-3943 demo round 3).
   // Settings' pick is approved at once; the cog's waits here until its move is confirmed (YAZ-4074 6A item 3).
   const pickedPictureFolders = new Set<string>()
@@ -64,14 +91,17 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerVaultConfigIpc(store)
   registerFavoritesIpc(store)
   registerIconsIpc(store)
+  registerFilesOrderIpc(store)
   registerNewPlacesIpc(store)
   registerFocusIpc(store)
+  registerFocusFoldersIpc(store, windows)
   registerPropertiesIpc(store)
   registerWindowIpc(store, windows)
   registerStorageIpc(store)
   registerPictureFoldersIpc(store, pickedPictureFolders)
   registerSoundIpc()
   registerHomeIpc()
+  registerCardFormatsIpc(userData)
   // The code tabs' language helpers (YAZ-3454, YAZ-3455): the quit sequence stops them (`stopAllLanguageServers`).
   // They run only while Settings › Code › "Jump across files" is on, and are a download in `<userData>/lsp`
   // (YAZ-3500). A dev build also takes the `node_modules` copies, unless YASEEN_DOCS_LSP_DOWNLOAD_ONLY=1
@@ -83,14 +113,59 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   // THE one secrets instance (YAZ-3028): `secrets.set`/`has` for the renderer, `read` for main's own callers.
   // It is threaded into the Image Studio's providers (a Pixabay request is built without the key ever leaving
   // main; YAZ-3038) and into sharing (the Cloudflare token and the upload password; YAZ-3040).
-  const secrets = registerSecretsIpc(userData)
+  // A new Pixabay key starts the favorites' backfill (YAZ-4363): the Pixabay copies waited for it.
+  const secrets = registerSecretsIpc(userData, (name) => {
+    if (name === PIXABAY_SECRET) void library.copies.backfill()
+  })
   // The canvas panel (YAZ-3038; Draw's 🔒 YAZ-1775 D4 / D5): the library folder every vault shares, its media
-  // and component stores, and the Image Studio.
-  handle(CONTRACT.drawing.libraryFolder, async () => resolveLibraryFolder(store.get().settings.libraryFolder, userData))
-  registerMediaLibraryIpc(store, userData)
-  registerComponentsIpc(store, userData)
-  registerMediaStudioIpc(userData, secrets)
+  // and component stores, the favorites' own copies (YAZ-4363), and the Image Studio, which asks the copies first.
+  // The folder is the setting, else `<settings folder>/library`, else `<userData>/library` (YAZ-4364).
+  handle(CONTRACT.drawing.libraryFolder, async () => libraryFolderOf(store.get(), userData))
+  // A deleted component's favorite and copy keep its slug (YAZ-4366): `library` is made next, and asked only on a save.
+  const components = registerComponentsIpc(store, userData, undefined, (slug) => library.copies.holds(componentItemKey(slug)))
+  const library = registerMediaLibraryIpc(store, userData, { macId: places.macId, hasPixabayKey: () => secrets.has(PIXABAY_SECRET), readComponent: (slug) => components.read({ slug }) })
+  // The store also carries the icon packs' folder setting (YAZ-4359).
+  registerMediaStudioIpc(userData, secrets, globalThis.fetch, store, library.copies)
+  // A library that moves (YAZ-4364): after the stores re-pointed, the old folder copies and merges into the new one.
+  const libraryMoves = followLibraryMoves(store, userData, {
+    copy: (from) => copyLibrary(from, { media: library.media, components, copies: library.copies }),
+    notice: (message) => windows.appNotice(message),
+  })
   registerShareIpc(userData, secrets, places)
   // The Draw import (YAZ-3044 A5) merges Draw's secrets through this same instance.
-  return { sync: registerGithubIpc(store), secrets, lsp }
+  // `libraryMoves.settled()`: the launch's copy and its marker write are done — what a caller waits on before it lets go of `userData`.
+  // YAZ-5491: the one-time move of Settings › Daily pages into the vault that holds the daily folder
+  // (`.yaseendocs/daily-pages.json`, the one source since). A vault that has none gets one only after its first pull
+  // (its pass ended `synced`), or when its sync is off. YAZ-5485: the page spacing, into each vault's text-formatting.json.
+  // YAZ-5486: where new pages and boards go, into each vault's new-places.json (a folder only where the vault has it).
+  // YAZ-5488: the icon rules and colours into each vault's icons.json. YAZ-5484: the card look into each card-look.json.
+  // YAZ-5487: the table look into each table-look.json (YAZ-5602 round 2: with the Time in slot this Mac set before).
+  const pulled = new Set<string>()
+  let moves: VaultMove | null = null
+  const githubAuth = createGithubAuth({
+    secrets,
+    openExternal: (url) => places.openExternal?.(url),
+    onChange: (status) => {
+      broadcastAll(CONTRACT.github.onAuthChanged.channel, status)
+      places.onGithubAuthChange?.()
+    },
+  })
+  const sync = registerGithubIpc(
+    store,
+    (status) => {
+      if (status.state !== 'synced' || pulled.has(status.root)) return
+      pulled.add(status.root)
+      moves?.pulled(status.root)
+    },
+    { auth: githubAuth, openExternal: places.openExternal, openPath: places.openPath },
+  )
+  const isTransientReadOnly = (root: string): boolean => windows.isTransientReadOnlyRoot?.(root) === true
+  setReadOnlyRootChecker(isTransientReadOnly)
+  moves = moveSettingsIntoVaults(store, [DAILY_PAGES_MOVE, PAGE_SPACING_MOVE, NEW_PLACES_MOVE, ICON_LOOK_MOVE, CARD_LOOK_MOVE, ...tableLookMoves(store.slotTimeToMove()), FOLDER_PAGES_MOVE], async (root) => {
+    if (isTransientReadOnly(root)) return false
+    if (pulled.has(root)) return true
+    const status = await sync.status(root)
+    return status.enabled !== true || status.state === 'off' || status.state === 'synced'
+  }, isTransientReadOnly)
+  return { sync, githubAuth, secrets, lsp, libraryMoves }
 }

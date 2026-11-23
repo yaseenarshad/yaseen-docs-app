@@ -82,9 +82,6 @@
   border-radius: 5px;
   padding: 1px 4px;
 }
-.property-def__option[data-dragging] {
-  opacity: .45;
-}
 .property-def__grip {
   display: flex;
   flex: none;
@@ -287,23 +284,14 @@
   color: var(--danger, #c94747);
 }
 
-/* Overlay the boundary so dragging never changes row height or shifts the target. */
-.property-def__option[data-insert]::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--accent);
-  pointer-events: none;
-  z-index: 1;
+/* An option drag is the tab bar's live gap, down the list (YAZ-4606 D58, lib/liveGap.css): no drop line, the gap is
+   the marker. No hover look on an option while the options part (the tab bar's 6F). */
+[data-live-parting] .property-def__option:hover {
+  background: transparent;
 }
-.property-def__option[data-insert=before]::after {
-  top: -1px;
-}
-.property-def__option[data-insert=after]::after {
-  bottom: -1px;
+[data-live-parting] .property-def__option:hover .property-def__more,
+[data-live-parting] .property-def__option:hover .property-def__remove {
+  opacity: 0;
 }
 
 .property-def__order {

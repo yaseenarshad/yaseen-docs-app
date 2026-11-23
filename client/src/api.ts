@@ -1,20 +1,10 @@
-import type { BridgeError, BridgeErrorCode } from '@shared/types'
+import type { BridgeError, FriendsSendView } from '@shared/types'
+import type { DeckFilePayload, DeckSettingsPayload, DeckTreePayload, DeckVaultConfig, FriendsBoardPayload } from '@shared/friendsApi'
 import { type Bridge, CONTRACT, isLeaf, type YaseenDocsApi } from '@shared/ipc'
 
-/** Typed failure from the main process (see docs/CONTRACTS.md "Bridge API"). */
-export class BridgeRequestError extends Error {
-  constructor(
-    readonly code: BridgeErrorCode | 'CONFLICT',
-    message: string,
-    /** Current on-disk mtime, only present on CONFLICT. */
-    readonly mtime?: number,
-    /** The offending path, when the main process attributed the failure to one. */
-    readonly path?: string,
-  ) {
-    super(message)
-    this.name = 'BridgeRequestError'
-  }
-}
+// The error class moved to its own file (YAZ-5161), so code the phone shares can test for it with no bridge.
+import { BridgeRequestError } from './bridgeError'
+export { BridgeRequestError }
 
 function isBridgeError(err: unknown): err is BridgeError {
   return typeof err === 'object' && err !== null && typeof (err as BridgeError).code === 'string' && typeof (err as BridgeError).message === 'string'
@@ -48,14 +38,118 @@ function wrap(table: object, at: string[]): Record<string, unknown> {
 
 const bridge = wrap(CONTRACT, []) as Bridge<typeof CONTRACT>
 
+export interface FriendsApi {
+  status: () => Promise<FriendsSendView>
+  board: (force?: boolean) => Promise<{ ok: true; board: FriendsBoardPayload } | { ok: false; error: string }>
+  updatePrefs: (prefs: { vaults?: string[]; zone?: string | null; nickname?: string | null }) => Promise<{ ok: true; vaults: string[]; zone: string | null; nickname: string | null } | { ok: false; error: string }>
+  uploadAvatar?: (payload: { contentType: string; dataBase64: string }) => Promise<{ ok: true; avatarUrl: string; hasCustomAvatar: true } | { ok: false; error: string }>
+  deleteAvatar?: () => Promise<{ ok: true; avatarUrl: string | null; hasCustomAvatar: false } | { ok: false; error: string }>
+  createInvite: () => Promise<{ ok: true; code: string; link: string; expiresAt: string } | { ok: false; error: string }>
+  acceptInvite: (code: string) => Promise<{ ok: true; result: unknown } | { ok: false; error: string }>
+  removeFriend: (userId: number, block?: boolean) => Promise<{ ok: true } | { ok: false; error: string }>
+  createGroup: (name: string) => Promise<{ ok: true; id: string; name: string; inviteCode: string; link: string } | { ok: false; error: string }>
+  renameGroup: (groupId: string, name: string) => Promise<{ ok: true; name: string } | { ok: false; error: string }>
+  removeMember: (groupId: string, userId?: number) => Promise<{ ok: true; deleted?: boolean } | { ok: false; error: string }>
+  banMember: (groupId: string, userId: number) => Promise<{ ok: true } | { ok: false; error: string }>
+  unbanMember: (groupId: string, userId: number) => Promise<{ ok: true } | { ok: false; error: string }>
+  rotateGroupInvite: (groupId: string) => Promise<{ ok: true; inviteCode: string; link: string } | { ok: false; error: string }>
+  shareCards: (input: { groupId?: string; toUserIds?: number[]; folderName?: string; cards: { title: string; markdown: string; note?: string | null }[] }) => Promise<{ ok: true; count: number } | { ok: false; error: string }>
+  setCardState: (cardId: string, status: 'pending' | 'accepted' | 'dismissed') => Promise<{ ok: true } | { ok: false; error: string }>
+  setFolderState: (folderId: string, status: 'pending' | 'accepted' | 'dismissed') => Promise<{ ok: true } | { ok: false; error: string }>
+  deleteSharedCard: (cardId: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  importCards: (input: { root: string; dir: string; cards: { id: string; title: string; markdown: string; senderLogin: string; upNext?: boolean; attachments?: { name: string; mime: string; dataBase64: string }[] }[]; createFolder?: string }) => Promise<{ ok: true; paths: string[] } | { ok: false; error: string }>
+  setVaultIncluded?: (vaultPath: string, included: boolean) => Promise<{ ok: true; knownVaults?: { path: string; name: string; included: boolean }[] } | { ok: false; error: string }>
+  getDeckSettings?: () => Promise<{ ok: true; settings: DeckSettingsPayload } | { ok: false; error: string }>
+  saveDeckSettings?: (input: DeckSettingsPayload) => Promise<{ ok: true; settings: DeckSettingsPayload } | { ok: false; error: string }>
+  listInstallableRepos?: () => Promise<{ ok: true; repos: DeckVaultConfig[] } | { ok: false; error: string }>
+  browseDeckTree?: (ownerId: number, repo: string) => Promise<{ ok: true; tree: DeckTreePayload } | { ok: false; error: string }>
+  browseDeckFile?: (ownerId: number, repo: string, path: string) => Promise<{ ok: true; file: DeckFilePayload } | { ok: false; error: string }>
+  browseDeckAsset?: (ownerId: number, repo: string, path: string) => Promise<{ ok: true; mime: string; dataBase64: string } | { ok: false; error: string }>
+  deleteMe: () => Promise<{ ok: true } | { ok: false; error: string }>
+  onInviteLink: (cb: (payload: { kind: 'friend' | 'group'; code: string }) => void) => () => void
+}
+
+const friendsBridge = (): FriendsApi => (window.yaseenDocs as unknown as { friends: FriendsApi }).friends
+
+const friendsApi: FriendsApi = {
+  status: () => call(() => friendsBridge().status()),
+  board: (force) => call(() => friendsBridge().board(force)),
+  updatePrefs: (prefs) => call(() => friendsBridge().updatePrefs(prefs)),
+  uploadAvatar: (payload) =>
+    call(async () => {
+      const fn = friendsBridge()?.uploadAvatar
+      return typeof fn === 'function' ? fn(payload) : { ok: false as const, error: 'unavailable' }
+    }),
+  deleteAvatar: () =>
+    call(async () => {
+      const fn = friendsBridge()?.deleteAvatar
+      return typeof fn === 'function' ? fn() : { ok: false as const, error: 'unavailable' }
+    }),
+  createInvite: () => call(() => friendsBridge().createInvite()),
+  acceptInvite: (code) => call(() => friendsBridge().acceptInvite(code)),
+  removeFriend: (userId, block) => call(() => friendsBridge().removeFriend(userId, block)),
+  createGroup: (name) => call(() => friendsBridge().createGroup(name)),
+  renameGroup: (groupId, name) => call(() => friendsBridge().renameGroup(groupId, name)),
+  removeMember: (groupId, userId) => call(() => friendsBridge().removeMember(groupId, userId)),
+  banMember: (groupId, userId) => call(() => friendsBridge().banMember(groupId, userId)),
+  unbanMember: (groupId, userId) => call(() => friendsBridge().unbanMember(groupId, userId)),
+  rotateGroupInvite: (groupId) => call(() => friendsBridge().rotateGroupInvite(groupId)),
+  shareCards: (input) => call(() => friendsBridge().shareCards(input)),
+  setCardState: (cardId, status) => call(() => friendsBridge().setCardState(cardId, status)),
+  setFolderState: (folderId, status) => call(() => friendsBridge().setFolderState(folderId, status)),
+  deleteSharedCard: (cardId) => call(() => friendsBridge().deleteSharedCard(cardId)),
+  importCards: (input) => call(() => friendsBridge().importCards(input)),
+  setVaultIncluded: (vaultPath, included) =>
+    call(async () => {
+      const fn = friendsBridge()?.setVaultIncluded
+      return typeof fn === 'function' ? fn(vaultPath, included) : { ok: false as const, error: 'unavailable' }
+    }),
+  getDeckSettings: () =>
+    call(async () => {
+      const fn = friendsBridge()?.getDeckSettings
+      return typeof fn === 'function' ? fn() : { ok: false as const, error: 'unavailable' }
+    }),
+  saveDeckSettings: (input) =>
+    call(async () => {
+      const fn = friendsBridge()?.saveDeckSettings
+      return typeof fn === 'function' ? fn(input) : { ok: false as const, error: 'unavailable' }
+    }),
+  listInstallableRepos: () =>
+    call(async () => {
+      const fn = friendsBridge()?.listInstallableRepos
+      return typeof fn === 'function' ? fn() : { ok: false as const, error: 'unavailable' }
+    }),
+  browseDeckTree: (ownerId, repo) =>
+    call(async () => {
+      const fn = friendsBridge()?.browseDeckTree
+      return typeof fn === 'function' ? fn(ownerId, repo) : { ok: false as const, error: 'unavailable' }
+    }),
+  browseDeckFile: (ownerId, repo, path) =>
+    call(async () => {
+      const fn = friendsBridge()?.browseDeckFile
+      return typeof fn === 'function' ? fn(ownerId, repo, path) : { ok: false as const, error: 'unavailable' }
+    }),
+  browseDeckAsset: (ownerId, repo, path) =>
+    call(async () => {
+      const fn = friendsBridge()?.browseDeckAsset
+      return typeof fn === 'function' ? fn(ownerId, repo, path) : { ok: false as const, error: 'unavailable' }
+    }),
+  deleteMe: () => call(() => friendsBridge().deleteMe()),
+  onInviteLink: (cb) => {
+    const fn = friendsBridge()?.onInviteLink
+    return typeof fn === 'function' ? fn(cb) : () => undefined
+  },
+}
+
 /**
  * The renderer's one door to main: every call to `window.yaseenDocs` goes through here, the specials
  * passed through as they are — except the editors' Copy as / Paste as subscriptions, which reach
  * `window.yaseenDocs` with `?.`; `menu.onCopyAs/onPasteAs` stay here because `YaseenDocsApi`
  * requires them.
  */
-export const api: YaseenDocsApi = {
+export const api: Omit<YaseenDocsApi, 'friends'> & { friends: FriendsApi } = {
   ...bridge,
+  friends: friendsApi,
   watch: (root, listener) => window.yaseenDocs.watch(root, listener),
   window: { ...bridge.window, onFlush: (listener) => window.yaseenDocs.window.onFlush(listener), onViews: (listener) => window.yaseenDocs.window.onViews(listener), onTabs: (listener) => window.yaseenDocs.window.onTabs(listener) },
   file: { ...bridge.file, pathFor: (file) => window.yaseenDocs.file.pathFor(file) },

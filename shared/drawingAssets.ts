@@ -1,4 +1,4 @@
-import { GITHUB_FILE_WARN_BYTES, type BoardMeta, type NewBoardPictures } from './types'
+import { FOLD_ARROW_MODES, GITHUB_FILE_WARN_BYTES, type BoardMeta, type FoldArrowMode, type NewBoardPictures } from './types'
 import { isFiniteNumber, isRecord } from './guards'
 
 /**
@@ -15,10 +15,10 @@ import { isFiniteNumber, isRecord } from './guards'
  * A "pictures out" `.excalidraw` carries `files: {}` — image ELEMENTS keep only their `fileId`,
  * and the bytes live at `<vault>/assets/<fileId>.<ext>`. The id is Excalidraw's own (the SHA-1 of
  * the bytes), so the store is content-addressed for free and its files are IMMUTABLE: a second
- * paste of one image writes nothing and two boards share one file. Note images stay in
+ * paste of one image writes nothing and two boards share one file. Page images stay in
  * `assets/images/` (YAZ-3028 edge cases); the drawing store is the top of `assets/` only.
  *
- * A note EMBED keeps Docs' own shape (rule 28): the modal writes the scene with its images inside
+ * A page EMBED keeps Docs' own shape (rule 28): the modal writes the scene with its images inside
  * it, through `writeAsset`. Both readers accept both shapes — a tab's `drawing:load` lifts an
  * embedded scene's pictures (and its first save moves them into the store), and the embed's
  * reader resolves a lean scene's ids out of the store — so a drawing open in both places keeps its
@@ -225,13 +225,13 @@ export function parseBoardMetaBlock(head: string): BoardMetaBlock | null {
 // ---------- A board's ID (YAZ-3943 4C) ----------
 
 /**
- * The block key of a board's ID, as a note's is `id:` in its frontmatter (`NOTE_ID_KEY`): `"id": "YAZ-12"`. The vault's
+ * The block key of a board's ID, as a page's is `id:` in its frontmatter (`PAGE_ID_KEY`): `"id": "YAZ-12"`. The vault's
  * door gives it on the board's first save in a vault that gives IDs (`fs/drawing.ts`); opening never writes it. The
  * index reads it off the head (`vaultIndex/live.ts`), so `[[YAZ-12]]` opens the board after any rename.
  */
 export const BOARD_ID_KEY = 'id'
 
-/** The ID a block holds, as written, or undefined. Whether it is an ID of THIS vault is `vaultNoteId`'s to say. */
+/** The ID a block holds, as written, or undefined. Whether it is an ID of THIS vault is `vaultPageId`'s to say. */
 export function boardIdOf(block: unknown): string | undefined {
   const id = isRecord(block) ? block[BOARD_ID_KEY] : undefined
   return typeof id === 'string' ? id : undefined
@@ -251,7 +251,7 @@ export function formerBoardIdsOf(block: unknown): string[] {
 
 /**
  * Index of the `}` that closes the `{` at `start`, or null when the text ends first. String-aware,
- * because an importer's extra value may legitimately contain a brace (`"note": "a }"`).
+ * because an importer's extra value may legitimately contain a brace (`"page": "a }"`).
  */
 function closingBrace(text: string, start: number): number | null {
   let depth = 0
@@ -377,8 +377,8 @@ export function withPicturesOut(scene: Record<string, unknown>, out: boolean, bo
  * The scene JSON of a new board (YAZ-3943 demo 2), from Settings › Files & Links › "New boards keep pictures":
  * "Inside the board" keeps `json` (D5's default); "In the assets folder" is born "pictures out" (`withPicturesOut`,
  * with its 1E switch time at `now`); "In a folder you pick" (demo round 3) names that folder too, and is "assets"
- * while no valid folder is chosen yet. One rule for the client's `createDrawing` and main's `createBoard`
- * (YAZ-4074 6A item 33).
+ * while no valid folder is chosen yet. Main's `createBoard` uses it (YAZ-4074 6A item 33); the client's
+ * "/drawing" makes its boards through that door too (YAZ-4831).
  */
 export function newBoardScene(json: string, pictures: NewBoardPictures, folder: string, now: number): string {
   if (pictures === 'inside') return json
@@ -407,6 +407,60 @@ export function withHoverLinks(scene: Record<string, unknown>, on: boolean, born
   const { [HOVER_LINKS_KEY]: _old, createdAt, updatedAt, ...extras } = isRecord(own) ? own : {}
   const dates = { createdAt: isFiniteNumber(createdAt) ? createdAt : bornAt, updatedAt: isFiniteNumber(updatedAt) ? updatedAt : bornAt }
   return { [BOARD_META_KEY]: withSwitchTime({ ...dates, ...extras, ...(on ? {} : { [HOVER_LINKS_KEY]: false }) }, HOVER_LINKS_KEY, at), ...rest }
+}
+
+// ---------- Fold arrows, per board (YAZ-4277 D5) ----------
+
+/**
+ * The `yaseendraw` block key of the board's "Fold arrows": `"foldArrows": "hover"`, `"always"` or `"off"` (YAZ-4277
+ * D18: no folding on this board; the saved folds stay in the file) overrides the app's "Fold arrows on open bullets".
+ * No key: the app setting.
+ */
+export const FOLD_ARROWS_KEY = 'foldArrows'
+
+/** The board's own fold arrow mode, or null for the app setting (also for a value the app does not know). */
+export function boardFoldArrowsOf(block: unknown): FoldArrowMode | null {
+  const value = isRecord(block) ? block[FOLD_ARROWS_KEY] : undefined
+  return typeof value === 'string' && (FOLD_ARROW_MODES as readonly string[]).includes(value) ? (value as FoldArrowMode) : null
+}
+
+/**
+ * The scene with its fold arrow mode (`null`: the app setting); the SAME object when it already is. The rule of
+ * `withHoverLinks`: the block comes back first, a block with no dates gets `bornAt`, every other key stays, and the
+ * switch records `at` as its change time (1E: the newest change wins a two-Mac merge).
+ */
+export function withBoardFoldArrows(scene: Record<string, unknown>, value: FoldArrowMode | null, bornAt: number, at = Date.now()): Record<string, unknown> {
+  const { [BOARD_META_KEY]: own, ...rest } = scene
+  if (boardFoldArrowsOf(own) === value && (value !== null || !(isRecord(own) && FOLD_ARROWS_KEY in own))) return scene
+  const { [FOLD_ARROWS_KEY]: _old, createdAt, updatedAt, ...extras } = isRecord(own) ? own : {}
+  const dates = { createdAt: isFiniteNumber(createdAt) ? createdAt : bornAt, updatedAt: isFiniteNumber(updatedAt) ? updatedAt : bornAt }
+  return { [BOARD_META_KEY]: withSwitchTime({ ...dates, ...extras, ...(value === null ? {} : { [FOLD_ARROWS_KEY]: value }) }, FOLD_ARROWS_KEY, at), ...rest }
+}
+
+// ---------- Hover outline, per board (YAZ-4469 demo) ----------
+
+/**
+ * The `yaseendraw` block key of the board's "Hover outline": `"hoverOutline": true` or `false` overrides the app's
+ * "Hover outline". No key: the app setting.
+ */
+export const HOVER_OUTLINE_KEY = 'hoverOutline'
+
+/** The board's own hover outline, or null for the app setting (also for a value the app does not know). */
+export function boardHoverOutlineOf(block: unknown): boolean | null {
+  const value = isRecord(block) ? block[HOVER_OUTLINE_KEY] : undefined
+  return typeof value === 'boolean' ? value : null
+}
+
+/**
+ * The scene with its hover outline (`null`: the app setting); the SAME object when it already is. The rule of
+ * `withBoardFoldArrows`.
+ */
+export function withBoardHoverOutline(scene: Record<string, unknown>, value: boolean | null, bornAt: number, at = Date.now()): Record<string, unknown> {
+  const { [BOARD_META_KEY]: own, ...rest } = scene
+  if (boardHoverOutlineOf(own) === value && (value !== null || !(isRecord(own) && HOVER_OUTLINE_KEY in own))) return scene
+  const { [HOVER_OUTLINE_KEY]: _old, createdAt, updatedAt, ...extras } = isRecord(own) ? own : {}
+  const dates = { createdAt: isFiniteNumber(createdAt) ? createdAt : bornAt, updatedAt: isFiniteNumber(updatedAt) ? updatedAt : bornAt }
+  return { [BOARD_META_KEY]: withSwitchTime({ ...dates, ...extras, ...(value === null ? {} : { [HOVER_OUTLINE_KEY]: value }) }, HOVER_OUTLINE_KEY, at), ...rest }
 }
 
 /** One picture inside a board: the shape the engine's `addFiles` reads (it keys on `id`). */
@@ -450,7 +504,7 @@ export function picturesSize(elements: readonly unknown[], files: Readonly<Recor
 /** "3 pictures are missing" (YAZ-3943 1F): the count first, as the size row says it. */
 export const missingPicturesText = (missing: number): string => (missing === 1 ? '1 picture is missing' : `${missing} pictures are missing`)
 
-/** What a board with missing pictures says when it opens, in a tab or the note popup (YAZ-3943 1F, YAZ-4074 6A item 12). */
+/** What a board with missing pictures says when it opens, in a tab or the page popup (YAZ-3943 1F, YAZ-4074 6A item 12). */
 export const missingPicturesNotice = (missing: number): string => (missing === 1 ? '1 picture of this board is missing' : `${missing} pictures of this board are missing`)
 
 /**

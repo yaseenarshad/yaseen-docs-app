@@ -1,14 +1,15 @@
 import { useRef, useState } from 'react'
-import type { EntryKind } from './createEntry'
+import { useUnit, type UnitText } from '../vault/unitWord'
+import type { CreateKind } from './createEntry'
 
 /**
  * Placeholder per entry kind; what is typed is its title, and the name on disk is built from it (YAZ-2420 🔒 D6, D20).
  * A board's box names its kind (YAZ-3028 D9); what is typed there is the file name.
  */
-const PLACEHOLDER: Record<EntryKind, string> = { file: 'New note', dir: 'New folder', drawing: 'New drawing', diagram: 'New diagram' }
+const placeholderOf = (kind: CreateKind, unit: UnitText): string => ({ file: unit('New page'), dir: 'New folder', card: 'New card', drawing: 'New drawing', diagram: 'New diagram' })[kind]
 
 interface CreateInlineProps {
-  kind: EntryKind
+  kind: CreateKind
   /** Left padding so the input lines up with rows at its depth. */
   indent: number
   /**
@@ -23,15 +24,16 @@ interface CreateInlineProps {
 
 /** VS Code-style inline name input rendered inside the tree (GRO-2022 D2). */
 export function CreateInline({ kind, indent, onSubmit, onCancel, seed = '' }: CreateInlineProps) {
+  const unit = useUnit()
   const [error, setError] = useState<string | null>(null)
   const submitting = useRef(false)
 
   const submit = async (value: string) => {
     const name = value.trim()
     if (submitting.current) return
-    // A note or a folder needs a name; a board's empty box is "Untitled" (YAZ-3028 D9), so it goes on as ''.
+    // A page, a card (YAZ-5101) or a folder needs a name; a board's empty box is "Untitled" (YAZ-3028 D9), so it goes on as ''.
     const empty = name === '' || name === seed.trim()
-    if (empty && (kind === 'file' || kind === 'dir')) return
+    if (empty && (kind === 'file' || kind === 'dir' || kind === 'card')) return
     submitting.current = true
     try {
       await onSubmit(empty ? '' : name)
@@ -48,7 +50,8 @@ export function CreateInline({ kind, indent, onSubmit, onCancel, seed = '' }: Cr
         defaultValue={seed}
         onFocus={(e) => e.currentTarget.setSelectionRange(seed.length, seed.length)}
         className={`create-inline__input${error !== null ? ' create-inline__input--error' : ''}`}
-        placeholder={PLACEHOLDER[kind]}
+        data-tour={kind === 'card' ? 'new-card-name' : undefined}
+        placeholder={placeholderOf(kind, unit)}
         spellCheck={false}
         onKeyDown={(e) => {
           if (e.key === 'Enter') void submit(e.currentTarget.value)

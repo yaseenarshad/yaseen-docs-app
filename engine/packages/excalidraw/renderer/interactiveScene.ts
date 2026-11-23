@@ -42,7 +42,6 @@ import {
   maxBindingDistance_simple,
   isTextElement,
   LinearElementEditor,
-  getActiveTextElement,
   getFreeTextInteractionCoords,
   getElementsInGroup,
   getSelectedGroupIds,
@@ -51,15 +50,19 @@ import {
   selectGroupsFromGivenElements,
 } from "@excalidraw/element";
 
-import { renderSelectionElement } from "@excalidraw/element";
+import {
+  getContainerElement,
+  getFoldArrowPrefs,
+  getTextLayoutMaxWidth,
+  renderSelectionElement,
+  renderTextFoldArrows,
+} from "@excalidraw/element";
 
 import { getCommonBounds, getElementAbsoluteCoords } from "@excalidraw/element";
 import {
   getGlobalFixedPointForBindableElement,
   isFocusPointVisible,
 } from "@excalidraw/element";
-
-import type { EditorInterface } from "@excalidraw/common";
 
 import type {
   TransformHandles,
@@ -81,7 +84,7 @@ import type {
   NonDeletedSceneElementsMap,
 } from "@excalidraw/element/types";
 
-import { renderSnaps } from "../renderer/renderSnaps";
+import { renderResizeSizeBadge, renderSnaps } from "../renderer/renderSnaps";
 import { roundRect } from "../renderer/roundRect";
 import {
   getScrollBars,
@@ -90,10 +93,6 @@ import {
 } from "../scene/scrollbars";
 
 import { getClientColor, renderRemoteCursors } from "../clients";
-import {
-  getTextAutoResizeHandle,
-  getTextBoxPadding,
-} from "../textAutoResizeHandle";
 
 import {
   bootstrapCanvas,
@@ -963,6 +962,63 @@ const renderBindingHighlightForBindableElement = (
   context.restore();
 };
 
+/** YAZ-4469: how strong the hover outline is, against the selection's own border. */
+const SELECTION_HOVER_ALPHA = 0.35;
+
+/**
+ * YAZ-4469: the box the hover outline draws, or null. Only for the selection
+ * tool, with nothing drawn, dragged, selected or written, and only in the view
+ * the pointer found it in: a scroll or zoom under a still pointer hides it
+ * (A4). A click picks the group around the element unless that group is open,
+ * so the outline does too (A7).
+ */
+export const getSelectionHoverBox = (
+  hover: InteractiveCanvasRenderConfig["selectionHover"],
+  elementsMap: RenderableElementsMap,
+  appState: InteractiveCanvasAppState,
+): Pick<
+  ElementSelectionBorder,
+  "angle" | "x1" | "y1" | "x2" | "y2" | "cx" | "cy"
+> | null => {
+  const hovered =
+    hover &&
+    hover.scrollX === appState.scrollX &&
+    hover.scrollY === appState.scrollY &&
+    hover.zoom === appState.zoom.value
+      ? elementsMap.get(hover.id)
+      : undefined;
+  if (
+    !hovered ||
+    appState.activeTool.type !== "selection" ||
+    appState.selectedElementIds[hovered.id] ||
+    appState.viewModeEnabled ||
+    appState.editingTextElement ||
+    appState.newElement ||
+    appState.selectionElement ||
+    appState.multiElement ||
+    appState.selectedLinearElement?.isEditing
+  ) {
+    return null;
+  }
+  const at = appState.editingGroupId
+    ? hovered.groupIds.indexOf(appState.editingGroupId)
+    : -1;
+  const groupId =
+    at === -1 ? hovered.groupIds.at(-1) : hovered.groupIds[at - 1];
+  if (groupId) {
+    const [x1, y1, x2, y2] = getCommonBounds(
+      getElementsInGroup(elementsMap, groupId),
+    );
+    return { angle: 0, x1, y1, x2, y2, cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 };
+  }
+  // YAZ-3746 13BD: a text box's outline hugs its letters, as its selection
+  // frame and its click area do, not the line box's empty room above them
+  const [x1, y1, x2, y2, cx, cy] =
+    (isTextElement(hovered) ? getFreeTextInteractionCoords(hovered) : null) ??
+    getElementAbsoluteCoords(hovered, elementsMap, true);
+  return { angle: hovered.angle, x1, y1, x2, y2, cx, cy };
+};
+
 type ElementSelectionBorder = {
   angle: number;
   x1: number;
@@ -1523,6 +1579,10 @@ const renderCropHandles = (
   context.restore();
 };
 
+/** The gap between a text being edited and its dashed box, scene px. */
+const getTextBoxPadding = (zoomValue: number) =>
+  (DEFAULT_TRANSFORM_HANDLE_SPACING * 2) / zoomValue;
+
 const renderTextBox = (
   text: ExcalidrawTextElement,
   context: CanvasRenderingContext2D,
@@ -1544,41 +1604,6 @@ const renderTextBox = (
   context.globalAlpha = 0.5;
   context.setLineDash([6 / appState.zoom.value, 4 / appState.zoom.value]);
   context.strokeRect(shiftX, shiftY, width, height);
-  context.restore();
-};
-
-const renderResetAutoResizeHandle = (
-  text: ExcalidrawTextElement,
-  context: CanvasRenderingContext2D,
-  appState: InteractiveCanvasAppState,
-  selectionColor: InteractiveCanvasRenderConfig["selectionColor"],
-  formFactor: EditorInterface["formFactor"],
-) => {
-  const autoResizeHandle = getTextAutoResizeHandle(
-    text,
-    appState.zoom.value,
-    formFactor,
-  );
-
-  if (!autoResizeHandle) {
-    return;
-  }
-
-  context.save();
-  context.globalAlpha = 0.5;
-  context.lineWidth = 1.5 / appState.zoom.value;
-  context.lineCap = "round";
-  context.strokeStyle = selectionColor;
-  context.beginPath();
-  context.moveTo(
-    autoResizeHandle.start[0] + appState.scrollX,
-    autoResizeHandle.start[1] + appState.scrollY,
-  );
-  context.lineTo(
-    autoResizeHandle.end[0] + appState.scrollX,
-    autoResizeHandle.end[1] + appState.scrollY,
-  );
-  context.stroke();
   context.restore();
 };
 
@@ -1660,18 +1685,6 @@ const _renderInteractiveScene = ({
     }
   }
 
-  const activeTextElement = getActiveTextElement(selectedElements, appState);
-
-  if (activeTextElement && !activeTextElement.autoResize) {
-    renderResetAutoResizeHandle(
-      activeTextElement,
-      context,
-      appState,
-      renderConfig.selectionColor,
-      editorInterface.formFactor,
-    );
-  }
-
   if (appState.editingTextElement) {
     const textElement = allElementsMap.get(appState.editingTextElement.id) as
       | ExcalidrawTextElement
@@ -1721,6 +1734,23 @@ const _renderInteractiveScene = ({
 
   if (appState.elementsToHighlight) {
     renderElementsBoxHighlight(context, appState, appState.elementsToHighlight);
+  }
+
+  // YAZ-4469: a faint outline on what a click would pick
+  const hoverBox = getSelectionHoverBox(
+    renderConfig.selectionHover,
+    elementsMap,
+    appState,
+  );
+  if (hoverBox) {
+    context.save();
+    context.globalAlpha = SELECTION_HOVER_ALPHA;
+    renderSelectionBorder(context, appState, {
+      ...hoverBox,
+      selectionColors: [renderConfig.selectionColor],
+      activeEmbeddable: false,
+    });
+    context.restore();
   }
 
   if (appState.activeLockedId) {
@@ -2036,6 +2066,28 @@ const _renderInteractiveScene = ({
     context.restore();
   }
 
+  // YAZ-4277 D5: the hovered open item's ▾; the static scene draws the rest
+  const foldHover = renderConfig.foldArrowHover;
+  const foldElement = foldHover && elementsMap.get(foldHover.elementId);
+  if (foldHover && foldElement && isTextElement(foldElement)) {
+    renderTextFoldArrows(
+      context,
+      foldElement,
+      getTextLayoutMaxWidth(
+        foldElement,
+        getContainerElement(foldElement, elementsMap),
+      ),
+      {
+        prefs: renderConfig.foldArrows ?? getFoldArrowPrefs(),
+        zoom: appState.zoom.value,
+        offsetX: appState.scrollX,
+        offsetY: appState.scrollY,
+        dark: appState.theme === THEME.DARK,
+        lines: [foldHover.line],
+      },
+    );
+  }
+
   appState.searchMatches?.matches.forEach(({ id, focus, matchedLines }) => {
     const element = elementsMap.get(id);
 
@@ -2080,6 +2132,7 @@ const _renderInteractiveScene = ({
   });
 
   renderSnaps(context, appState);
+  renderResizeSizeBadge(context, appState, selectedElements);
 
   context.restore();
 

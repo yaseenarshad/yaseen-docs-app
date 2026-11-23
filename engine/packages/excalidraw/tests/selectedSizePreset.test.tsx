@@ -4,6 +4,8 @@ import { CANVAS_SEARCH_TAB, DEFAULT_SIDEBAR } from "@excalidraw/common";
 import { getCommonBoundingBox } from "@excalidraw/element";
 import { pointFrom } from "@excalidraw/math";
 
+import type { ExcalidrawTextElement } from "@excalidraw/element/types";
+
 import {
   getSelectionSizePreset,
   SELECTION_SIZE_PRESETS,
@@ -540,5 +542,93 @@ describe("selected-element size presets", () => {
         h.app.scene.getElement(rectangle.id)!.height,
       ),
     ).toBeCloseTo(48);
+  });
+
+  // YAZ-4407 (4K): text made at a high zoom is ~0.25 board px; with the old
+  // 1 px font floor its resize returned early and stopped the whole preset
+  it.each(["1", "2", "3", "4", "5", "6", "7"] as const)(
+    "resizes a mixed selection that holds 0.25 px text with %s at 5000%",
+    (key) => {
+      const rectangle = API.createElement({
+        type: "rectangle",
+        x: 0,
+        y: 0,
+        width: 2,
+        height: 2,
+      });
+      // its size as the app measures it (the tests' canvas does not scale
+      // the letters with the font)
+      const text = {
+        ...API.createElement({
+          type: "text",
+          text: "test",
+          x: 0,
+          y: 2.5,
+          fontSize: 0.25,
+        }),
+        width: 0.6,
+        height: 0.3125,
+      };
+      API.setElements([rectangle, text]);
+      API.setSelectedElements([rectangle, text]);
+      API.setAppState({ zoom: { value: 50 as any } });
+      const before = getCommonBoundingBox([rectangle, text]);
+
+      Keyboard.keyPress(key);
+
+      const after = getCommonBoundingBox([
+        h.app.scene.getElement(rectangle.id)!,
+        h.app.scene.getElement(text.id)!,
+      ]);
+      const target = getSelectionSizePreset(key, "visual", 50);
+      expect(Math.max(after.width, after.height)).toBeCloseTo(target, 3);
+      const scale = target / Math.max(before.width, before.height);
+      expect(
+        (h.app.scene.getElement(text.id) as ExcalidrawTextElement).fontSize,
+      ).toBeCloseTo(0.25 * scale, 3);
+    },
+  );
+
+  it("still resizes a lone 0.25 px text by its font size", () => {
+    const text = API.createElement({
+      type: "text",
+      text: "test",
+      fontSize: 0.25,
+    });
+    API.setElements([text]);
+    API.setSelectedElements([text]);
+    API.setAppState({ zoom: { value: 50 as any } });
+    Keyboard.keyPress("1");
+    expect(
+      (h.app.scene.getElement(text.id) as ExcalidrawTextElement).fontSize,
+    ).toBeCloseTo(12 / 50, 6);
+  });
+
+  // YAZ-4408 (4L, D26): a shape made at 10,000% keeps its border in
+  // proportion; the old 0.5 px floor made a 0.02 px line 25 times thicker
+  it("keeps the border of a shape made at 10,000% in proportion, and its style scale", () => {
+    const rectangle = {
+      ...API.createElement({
+        type: "rectangle",
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        strokeWidth: 0.02,
+        roundness: null,
+      }),
+      customData: { styleScale: 100 },
+    };
+    API.setElements([rectangle]);
+    API.setSelectedElements([rectangle]);
+    API.setAppState({ zoom: { value: 100 as any } });
+
+    // "1": 48 px on screen = 0.48 board px
+    Keyboard.keyPress("1");
+
+    const resized = h.app.scene.getElement(rectangle.id)!;
+    expect(resized.width).toBeCloseTo(0.48, 6);
+    expect(resized.strokeWidth / resized.width).toBeCloseTo(0.02, 4);
+    expect(resized.customData?.styleScale).toBeCloseTo(100 / 0.48, 1);
   });
 });

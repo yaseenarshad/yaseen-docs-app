@@ -1,34 +1,36 @@
 import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/types'
 import { orderedPropertyOptions } from '@shared/propertyOptions'
-import type { FolderSettings } from './folderSettings'
+import type { FolderSettings } from './folderSettingsRead'
 import { canonicalKey } from './view/keys'
+import { CARD_FIX_STATUSES, CARD_STATUS_EDITS } from './cardRows'
 
 /**
  * Editor type inference for inline cell editors (5B, GRO-2142). Locked precedence, as amended
  * by the 5E relation contract (GRO-2120 comment 1f28abb4 §5), narrowed by YAZ-836 (the
  * type-scoped rung that used to sit above it died with the type system) and topped by YAZ-819
  * (the folder's own, view-scoped declaration): the FOLDER whose view is rendering
- * wins, then a vault-wide property declaration; otherwise the note's own YAML value decides; a
- * note without the key borrows the dominant value type across the view's records; text is the
+ * wins, then a vault-wide property declaration; otherwise the page's own YAML value decides; a
+ * page without the key borrows the dominant value type across the view's records; text is the
  * final fallback. `file.*` and `formula.*` never get an editor. The per-column halves are
- * computed once per render via `columnTyping`; `cellEditor` adds the per-note value on top.
+ * computed once per render via `columnTyping`; `cellEditor` adds the per-page value on top.
  *
  * TOMBSTONE (⚡ YAZ-815, ruled by Yasin): a rung for an explicit `.obsidian/types.json`
- * assignment sat between the vault-wide declarations and the note's own value, with a `types`
+ * assignment sat between the vault-wide declarations and the page's own value, with a `types`
  * parameter to feed it. Nothing ever fed it — the one surface that mounts these editors reads
  * the window's link snapshot rather than fetching an index (🔒 D2) — and the whole
  * `.obsidian/types.json` chain came out with it: a foreign app's file is not our schema.
  */
 
-export type EditorKind = 'text' | 'number' | 'checkbox' | 'date' | 'list' | 'link' | 'multi-link' | 'select' | 'multi-select'
+export type EditorKind = 'text' | 'number' | 'checkbox' | 'date' | 'list' | 'link' | 'multi-link' | 'select' | 'multi-select' | 'image'
 
 /** Per-column typing facts; null = the column is read-only (`file.*` / `formula.*`). `target` rides along from a declared link/multi-link property to constrain the picker. */
-export type ColumnTyping = { assigned: EditorKind | null; dominant: EditorKind | null; target?: string; options?: readonly string[] } | null
+/** `required`: a Select that always holds one of its options (Status, YAZ-5856): no Clear, and no "Existing value" row. */
+export type ColumnTyping = { assigned: EditorKind | null; dominant: EditorKind | null; target?: string; options?: readonly string[]; required?: boolean } | null
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}([T ].*)?$/
 const WIKILINK = /^\[\[[^[\]]+\]\]$/
 
-/** The editor a raw YAML value asks for; null when the note has no value for the key. */
+/** The editor a raw YAML value asks for; null when the page has no value for the key. */
 export function valueKind(raw: unknown): EditorKind | null {
   if (raw === undefined || raw === null) return null
   if (typeof raw === 'boolean') return 'checkbox'
@@ -56,8 +58,8 @@ function dominantKind(records: readonly IndexRecord[], bare: string): EditorKind
   return best
 }
 
-/** `PropertyKind` → editor, 1:1 (contract §5; `multi-link` is the chips editor with link suggestions). */
-const DECLARED_KIND: Record<PropertyKind, EditorKind> = {
+/** `PropertyKind` → editor, 1:1 (contract §5; `multi-link` is the chips editor with link suggestions). A Linked mentions column has none: it is read-only (YAZ-4738). */
+const DECLARED_KIND: Record<Exclude<PropertyKind, 'mentions'>, EditorKind> = {
   text: 'text',
   number: 'number',
   date: 'date',
@@ -67,7 +69,15 @@ const DECLARED_KIND: Record<PropertyKind, EditorKind> = {
   'multi-link': 'multi-link',
   select: 'select',
   'multi-select': 'multi-select',
+  // An Image column's cell opens the picture picker (YAZ-4802).
+  image: 'image',
 }
+
+// Status's Select offers what a cell can write (YAZ-5838): Active or Archived. A filter still offers New, from the rows' own values.
+// YAZ-5856 root cause: the generic Select footer offered Clear, which unarchived a card and showed "Empty". Solution: `required`.
+const CARD_STATUS_TYPING: ColumnTyping = { assigned: 'select', dominant: null, options: CARD_STATUS_EDITS, required: true }
+const CARD_FIX_TYPING: ColumnTyping = { assigned: 'select', dominant: null, options: CARD_FIX_STATUSES }
+const CARD_UP_NEXT_TYPING: ColumnTyping = { assigned: 'checkbox', dominant: null }
 
 /**
  * The column-wide typing facts for `key` over the view's records, the folder's own
@@ -80,6 +90,11 @@ export function columnTyping(
   settings?: FolderSettings | null,
 ): ColumnTyping {
   const c = canonicalKey(key)
+  // A card row's edited columns (YAZ-5319): Status, a Select of Active and Archived (New is never set, YAZ-5838); Card fix status (YAZ-5430), a
+  // Select of Needs fixing, blank when not marked; Card up next, a checkbox.
+  if (c === 'card.status') return CARD_STATUS_TYPING
+  if (c === 'card.fix') return CARD_FIX_TYPING
+  if (c === 'card.upNext') return CARD_UP_NEXT_TYPING
   if (!c.startsWith('note.')) return null
   const bare = c.slice(5)
   const dominant = dominantKind(records, bare)
@@ -87,10 +102,37 @@ export function columnTyping(
   // construction — two folders may type the same key differently and neither wins globally,
   // so there is no conflict to resolve here and none may be built.
   const own = settings?.columns[bare]
+  // A Linked mentions column is worked out from the index (YAZ-4738 L1): read-only, like a formula. A tied one (YAZ-4781
+  // R2) edits as a multi-link, its picker the link column's folder.
+  if (own?.kind === 'mentions') return own.pair === true ? { assigned: 'multi-link', dominant: null, target: own.from?.folder } : null
   if (own !== undefined) return { assigned: DECLARED_KIND[own.kind], dominant, target: own.target, options: orderedPropertyOptions(own) }
   const declared = properties?.properties[bare]
-  if (declared !== undefined) return { assigned: DECLARED_KIND[declared.kind], dominant, target: declared.target, options: orderedPropertyOptions(declared) }
+  if (declared !== undefined && declared.kind !== 'mentions') return { assigned: DECLARED_KIND[declared.kind], dominant, target: declared.target, options: orderedPropertyOptions(declared) }
   return { assigned: null, dominant }
+}
+
+/**
+ * A Select or Multi-select column's options in the column editor's order (YAZ-3940): the engine's `optionOrder` for
+ * one records snapshot. Each key is typed once (YAZ-4544): `columnTyping` reads every record, and a run asks once per
+ * sort and group level. The cache holds one entry per key asked, and goes with the snapshot.
+ */
+export function optionOrderFor(records: readonly IndexRecord[], properties: PropertiesResponse | null, settings: FolderSettings): (key: string) => readonly string[] | undefined {
+  const known = new Map<string, readonly string[] | undefined>()
+  return (key) => {
+    if (known.has(key)) return known.get(key)
+    const typing = columnTyping(key, records, properties, settings)
+    const options = typing?.assigned === 'select' || typing?.assigned === 'multi-select' ? typing.options : undefined
+    known.set(key, options)
+    return options
+  }
+}
+
+/**
+ * A Select or Multi-select column's option parents (YAZ-4799), by the key a view names it (`Layer` or `note.Layer`): its
+ * parent column and each option's parent option; undefined for a column with none.
+ */
+export function optionParentFor(settings: FolderSettings): (key: string) => { column: string; of: Readonly<Record<string, string>>; any?: readonly string[] } | undefined {
+  return (key) => settings.columns[key.startsWith('note.') ? key.slice(5) : key]?.parent
 }
 
 /** The editor for one cell; null = read-only. */

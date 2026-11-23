@@ -3,7 +3,7 @@
  * move to the next presented frame (the scope saw a whole-window restyle per move, ~90 ms).
  */
 import path from 'node:path'
-import { writeNote } from '../genVault.mjs'
+import { writePageFile } from '../genVault.mjs'
 import { sleep } from '../lib/app.mjs'
 import { clickUntilPainted, session, tab } from '../lib/session.mjs'
 import { quantiles } from '../lib/stats.mjs'
@@ -11,10 +11,10 @@ import { quantiles } from '../lib/stats.mjs'
 export const TABS = ['Tab A', 'Tab B', 'Tab C']
 const MOVES = 30
 
-/** A vault with three 200-line bullet notes, the tabs both this scenario and tab-switch keep open. */
+/** A vault with three 200-line bullet pages, the tabs both this scenario and tab-switch keep open. */
 export function setup(dir) {
   const vault = path.join(dir, 'vault')
-  return { profile: path.join(dir, 'profile'), vault, files: TABS.map((n) => writeNote(vault, n, 'bullets', 200)) }
+  return { profile: path.join(dir, 'profile'), vault, files: TABS.map((n) => writePageFile(vault, n, 'bullets', 200)) }
 }
 
 /** Visits the other two tabs so all three editors are mounted, and comes back to the first. */

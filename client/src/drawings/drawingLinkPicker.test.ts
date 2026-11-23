@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../api', async (original) => ({ api: { ...(await original<typeof import('../api')>()).api, mintNoteId: vi.fn() } }))
+vi.mock('../api', async (original) => ({ api: { ...(await original<typeof import('../api')>()).api, mintPageId: vi.fn() } }))
 vi.mock('../editor/wikilink/createFromLink', () => ({ createFromLink: vi.fn() }))
 import { fileLink } from '@shared/links'
 import { createWikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
@@ -58,6 +58,21 @@ describe('the [[ picker', () => {
     expect(replace).toHaveBeenCalledWith(0, 6, '[[YAS-1]]')
   })
 
+  it('YAZ-4748: says when it opens and when it closes, once each — a diagram\'s frame sends its keys up only while it is open', () => {
+    const parent = document.createElement('div')
+    document.body.appendChild(parent)
+    const shown = vi.fn()
+    const picker = createDrawingLinkPicker(() => parent, () => rows, undefined, undefined, shown)
+    const editor = (text: string): PickerEditor => ({ text, caret: text.length, typed: true, caretRect: () => ({ left: 0, top: 0, right: 0, bottom: 0 }), replace: vi.fn(), replaceLink: vi.fn(() => true) })
+    picker.change(editor('[[Gr'))
+    picker.change(editor('[[Gro'))
+    expect(shown.mock.calls).toEqual([[true]])
+    picker.keyDown(key('Escape'))
+    expect(shown.mock.calls).toEqual([[true], [false]])
+    picker.close()
+    expect(shown).toHaveBeenCalledTimes(2)
+  })
+
   it('stays shut on a caret move, and leaves keys alone while shut', () => {
     const { picker, editor, items } = setup()
     picker.change(editor('see [[Gro', false))
@@ -90,7 +105,7 @@ describe('the [[ picker', () => {
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ text: '[[Nothing like it' }), 'Nothing like it')
   })
 
-  it('YAZ-4110 5B: shows each row\'s file icon, as the note\'s picker does; a Create row has none', () => {
+  it('YAZ-4110 5B: shows each row\'s file icon, as the page\'s picker does; a Create row has none', () => {
     const icon = vi.fn((path: string, folder: boolean) => ({ class: 'file-icon', 'data-kind': folder ? 'folder' : 'file', 'data-path': path }))
     const list = [...rows, { name: 'Gro board', insert: 'YAS-3', label: 'Gro board', path: '/vault/Gro board.excalidraw' }]
     const { picker, editor, parent } = setup(vi.fn(), { icon }, list)
@@ -115,9 +130,9 @@ describe('the [[ picker', () => {
   })
 })
 
-describe("a Create row's page (YAZ-1357 D3, the note's order)", () => {
+describe("a Create row's page (YAZ-1357 D3, the page's order)", () => {
   const nav = { root: '/vault', createFolder: () => 'Inbox', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
-  const mint = vi.mocked(api.mintNoteId)
+  const mint = vi.mocked(api.mintPageId)
   const make = vi.mocked(createFromLink)
   const ids = () => {
     const links = createWikilinkResolveSource()
@@ -125,7 +140,7 @@ describe("a Create row's page (YAZ-1357 D3, the note's order)", () => {
     return links
   }
 
-  it('asks for the number, puts [[ID]] where the name stands, then makes the note with that ID', async () => {
+  it('asks for the number, puts [[ID]] where the name stands, then makes the page with that ID', async () => {
     const { editor, replaceLink } = setup()
     mint.mockResolvedValueOnce('YAS-9')
     make.mockResolvedValueOnce({ status: 'created', path: '/vault/Inbox/New page.md' })
@@ -135,7 +150,7 @@ describe("a Create row's page (YAZ-1357 D3, the note's order)", () => {
     expect(nav.onNotice).toHaveBeenLastCalledWith('Created "New page"')
   })
 
-  it('gives the link its name back when the note is not made', async () => {
+  it('gives the link its name back when the page is not made', async () => {
     const { editor, replaceLink } = setup()
     mint.mockResolvedValueOnce('YAS-9')
     make.mockResolvedValueOnce({ status: 'error', message: 'disk full' })

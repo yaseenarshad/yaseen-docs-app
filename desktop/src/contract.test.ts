@@ -4,6 +4,7 @@
  * the table is wired. A refactor that drops a `register*` call or a preload line fails here instead
  * of as a renderer that waits forever. `preload/surface.test.ts` pins what each exposure does.
  */
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -12,8 +13,14 @@ import { ipcMain, ipcRenderer } from 'electron'
 import { CONTRACT, leaves, SPECIAL } from '@shared/ipc'
 import { registerIpc } from './main/ipc'
 import { registerClipboardIpc } from './main/ipc/clipboard'
+import { registerFriendsIpc } from './main/ipc/friends'
 import { registerUpdateIpc } from './main/ipc/update'
 import { registerMemoryIpc } from './main/ipc/memory'
+import { registerSpellerIpc } from './main/ipc/speller'
+import { registerAutomationIpc } from './main/ipc/automation'
+import { registerCourseAudioIpc } from './main/ipc/courseAudio'
+import { registerSelectionColourIpc } from './main/ipc/selectionColour'
+import { LIBRARY_MARKER_FILE } from './main/library/copyLibrary'
 import { createStore } from './main/store'
 import type { WindowManagerIpc } from './main/windows'
 
@@ -23,7 +30,7 @@ vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: vi.fn() },
   // `file.pathFor` (YAZ-3253 D3) reads a path with no IPC: it reaches no channel.
   webUtils: { getPathForFile: () => '' },
-  // `spell.suggestions` (YAZ-3653) asks the renderer's own spellchecker: it reaches no channel.
+  // `spell.suggestions` asks main's macOS checker (YAZ-4464); elsewhere the renderer's own, which reaches no channel.
   webFrame: { isWordMisspelled: () => false, getWordSuggestions: () => [] },
   BrowserWindow: { getAllWindows: () => [], fromWebContents: () => null },
   dialog: {},
@@ -34,23 +41,40 @@ vi.mock('./main/storageWorker?modulePath', () => ({ default: '' }))
 
 const doors = leaves(CONTRACT).map(([, door]) => door)
 /** Renderer → main invokes: the table's, plus the two the preload's Copy as / Paste as fallback makes. */
-const INVOKES = [...doors.filter((d) => d.kind === 'invoke').map((d) => d.channel), SPECIAL.menuCopyText.channel, SPECIAL.menuPasteTextFallback.channel, SPECIAL.menuEdit.channel].sort()
+const INVOKES = [...doors.filter((d) => d.kind === 'invoke').map((d) => d.channel), SPECIAL.menuCopyText.channel, SPECIAL.menuPasteTextFallback.channel, SPECIAL.menuEdit.channel, SPECIAL.spellGuesses.channel].sort()
 /** Main → renderer pushes: the table's, plus the watch events, the flush request, Copy as / Paste as, the heap ask, the views ask and the tabs ask. */
 const PUSHES = [...doors.filter((d) => d.kind === 'push').map((d) => d.channel), SPECIAL.watchEvent, SPECIAL.appFlush, SPECIAL.menuCopyAs, SPECIAL.menuPasteAs, SPECIAL.memoryHeap, SPECIAL.windowViews, SPECIAL.windowTabs].sort()
 /** Renderer → main sends: watch (un)subscribe, the flush ack, the heap answer, the views answer and the tabs answer. */
 const SENDS = [SPECIAL.watchSubscribe, SPECIAL.watchUnsubscribe, SPECIAL.appFlushed, SPECIAL.memoryHeapReply, SPECIAL.windowViewsReply, SPECIAL.windowTabsReply].sort()
 
 const dir = await mkdtemp(path.join(tmpdir(), 'yd-contract-'))
-afterAll(() => rm(dir, { recursive: true, force: true }))
+// The library mover writes its marker into the data folder after registration (YAZ-4463): the folder goes only after it settled.
+let registered: ReturnType<typeof registerIpc> | undefined
+afterAll(async () => {
+  await registered?.libraryMoves.settled()
+  await rm(dir, { recursive: true, force: true })
+})
 
 it('main handles every invoke exactly once and listens on exactly the send channels', () => {
-  // The four registrations `main/index.ts` makes on `ready`.
+  // The registrations `main/index.ts` makes on `ready`, besides `registerIpc`. The course sound (YAZ-5159) fetches nothing here.
+  registerCourseAudioIpc({ userData: dir, isPackaged: true, fetchImpl: vi.fn() })
   registerMemoryIpc({ report: vi.fn() })
-  registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', releases: [] }) }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
+  registerSpellerIpc({ guesses: vi.fn() })
+  registerAutomationIpc(createStore(path.join(dir, 'automation.json')), { idFor: () => undefined } as never)
+  // The Mac's selection colour (YAZ-5941), registered on `ready` beside the appearance.
+  registerSelectionColourIpc(() => null)
+  registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', checks: true, releases: [] }), check: async () => ({ kind: 'idle' }), checks: true }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
   registerClipboardIpc({ idFor: () => undefined }, { target: () => undefined, writeText: vi.fn(), write: vi.fn(), readText: vi.fn(), readHTML: vi.fn(), revealImage: vi.fn(), rendererUrl: 'app://yaseen/index.html' })
-  registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc, { userData: dir, viewerAssetsDir: dir, drawioDir: dir, fontsDir: dir, isPackaged: true }, { missing: () => false, hasOtherMacs: async () => false, settled: async () => undefined })
+  // Friends backend (YAZ-6219): registered on `ready` after `registerIpc`.
+  registerFriendsIpc({ look: vi.fn(), service: {} as never })
+  registered = registerIpc(createStore(path.join(dir, 'yaseendocs.json')), {} as WindowManagerIpc, { userData: dir, viewerAssetsDir: dir, drawioDir: dir, fontsDir: dir, isPackaged: true, macId: async () => 'contracttest' }, { missing: () => false, hasOtherMacs: async () => false, settled: async () => undefined })
   expect(vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()).toEqual(INVOKES)
   expect(vi.mocked(ipcMain.on).mock.calls.map(([ch]) => ch).sort()).toEqual(SENDS)
+})
+
+it('YAZ-4463: the library mover\'s write into the data folder is done once `libraryMoves.settled()` answers — what the folder\'s removal waits on', async () => {
+  await registered?.libraryMoves.settled()
+  expect(existsSync(path.join(dir, LIBRARY_MARKER_FILE))).toBe(true)
 })
 
 it('the preload reaches every channel through exactly one exposure, of the right kind', async () => {

@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
-import { validateEntryName } from './createEntry'
+import { titleNameProblem } from '@shared/entryName'
 
 interface RenameInlineProps {
-  /** The prefill: a note's or a folder's title, any other file's full name. */
+  /** The prefill: a page's or a folder's title, any other file's full name. */
   initial: string
   /** The box edits a TITLE (YAZ-2420 🔒 D16): free text, where a file's name is held to the name rules. */
   title: boolean
@@ -17,11 +17,16 @@ interface RenameInlineProps {
  * Inline rename input replacing a file row's label (Links E1, GRO-2194). ONE door (YAZ-1553):
  * LEAVING the field commits — click-away, Enter, Cmd-Tab all reach `onBlur` — and Escape is the
  * only discard. An empty name, or the one the box opened with, cancels (nothing to commit); a
- * `validateEntryName` error keeps the input open so the typing is not lost. Bridge failures
+ * name a file cannot hold keeps the input open so the typing is not lost. Bridge failures
  * never land here: the submit handler routes them to the passive notice.
+ *
+ * THE NAME RULE (YAZ-5580): where the box edits a file's NAME (a vault without IDs, or a file that is no page), a
+ * character the name cannot hold is said under the box as it is typed (`titleNameProblem`, the one check every title
+ * field shares), and Enter or click-away keeps the box, the text and the message. A TITLE (a vault with IDs) takes any character.
  */
 export function RenameInline({ initial, title, indent, onSubmit, onCancel }: RenameInlineProps) {
   const [error, setError] = useState<string | null>(null)
+  const check = (name: string): string | null => (title ? null : titleNameProblem(name))
   // ONE door (YAZ-1553): leaving the field is the commit, so `onBlur` is `leave`'s only caller.
   // `settled` flips the moment the edit is over — Chromium fires one last blur when a focused
   // field is removed, and that blur must do nothing. Same verbs as `PageTitle`.
@@ -37,7 +42,7 @@ export function RenameInline({ initial, title, indent, onSubmit, onCancel }: Ren
     if (settled.current) return
     const name = value.trim()
     if (name === '' || name === initial) return discard()
-    const invalid = title ? null : validateEntryName(name)
+    const invalid = check(name)
     if (invalid !== null) {
       setError(invalid)
       return
@@ -65,13 +70,20 @@ export function RenameInline({ initial, title, indent, onSubmit, onCancel }: Ren
           // land on that freshly focused button and cancel the rename the keystroke just asked for.
           if (e.key === 'Enter') {
             e.preventDefault()
-            e.currentTarget.blur()
+            // A name that cannot be saved keeps the keyboard: Enter only says so (YAZ-5580).
+            const bad = check(e.currentTarget.value.trim())
+            if (bad !== null) setError(bad)
+            else e.currentTarget.blur()
           } else if (e.key === 'Escape') discard()
-          else setError(null)
         }}
+        onChange={(e) => setError(check(e.currentTarget.value))}
         onBlur={(e) => void leave(e.currentTarget.value)}
       />
-      {error !== null && <p className="create-inline__error">{error}</p>}
+      {error !== null && (
+        <p className="create-inline__error" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   )
 }

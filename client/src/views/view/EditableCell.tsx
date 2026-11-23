@@ -1,13 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
-import { type LinkCandidate, matchLinkCandidates, trailingLinkFragment } from '../../links/completion'
+import { createContext, useContext, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { type LinkCandidate, matchLinks, trailingLinkFragment } from '../../links/completion'
 import { type EditorKind } from '../editorType'
 import { LinkValue, type Resolver, type Value, fromYaml, render } from '../expr'
-import { cellContent } from './GroupHeader'
+import { ColumnDecls, cellContent } from './GroupHeader'
 import { TextField } from './TextField'
-import { createPortal } from 'react-dom'
 import { Popover } from './Popover'
 import { SelectValueEditor } from './SelectValueEditor'
-import { READ_ONLY_TIP } from '../readOnlyRows'
+import { readOnlyTip } from '../readOnlyRows'
+import { useUnit } from '../../vault/unitWord'
+import { CHANGE_CANCELLED } from '../confirmChanges'
+import { ImageCellEditor } from './imageCell'
+
+/** A text cell's editor completes `[[` (YAZ-4601 D48): on in a folder page's views (`ViewsPane`), off in the properties panel. */
+export const TextLinkPicker = createContext(false)
 
 export interface EditableCellProps {
   /** Bare key (no `note.` prefix): the cell's accessible name. */
@@ -18,26 +23,37 @@ export interface EditableCellProps {
   value: Value
   /** The inferred editor (`cellEditor`); null renders the plain read-only content. */
   options?: readonly string[]
+  /** The Select always holds one of `options` (YAZ-5856, Status): no Clear. */
+  required?: boolean
   editor: EditorKind | null
-  /** Index titles for the link editor's `[[…]]` completion, each with what picking it writes — the note's id, else the title (`titleCandidates`). */
+  /**
+   * What the link, multi-link and text editors' `[[…]]` completion offers, each with what picking it writes. A folder
+   * page's cells: the page editor's rows, pages then folders (`cellLinkCandidates`, YAZ-4601 D49), or a link column's
+   * target folder (`belongsToTitles`); the properties panel: the titles (`titleCandidates`).
+   */
   titles: readonly LinkCandidate[]
   /**
-   * The ONE write: the host's own. A folder's views write its block of the note
+   * The ONE write: the host's own. A folder's views write its block of the page
    * (`FolderHost.writeValues`, D19); the properties panel writes the row's group and moves its
    * belief of disk with it (⚡ YAZ-884). Resolves on success, rejects with the message to show.
    */
   onCommit: (next: unknown) => Promise<unknown>
   /**
    * The vault's resolver (YAZ-2293 D8): the display — and the chips editor's chips — read an id
-   * link as its note's title. Display ONLY: the editors' text and every commit stay the stored form.
+   * link as its page's title. Display ONLY: the editors' text and every commit stay the stored form.
    */
   resolve?: Resolver
   /**
-   * The note is read only (YAZ-3076 D6, S52, S56): the value shows with the tooltip "This note is read
+   * The page is read only (YAZ-3076 D6, S52, S56): the value shows with the tooltip "This page is read
    * only", with no `[data-edit]`, so a click, a double-click or a key opens nothing; a checkbox is
    * shown disabled. Nothing commits.
    */
   readOnly?: boolean
+  /**
+   * A read-only cell whose lock the folder page's "Allow edits?" opens (YAZ-5411, YAZ-5587): a click asks first
+   * (`ItemLock.ask`), and once allowed the cell opens — a checkbox toggles — as the click would have.
+   */
+  ask?: (open: () => void) => boolean
 }
 
 /**
@@ -49,7 +65,8 @@ export interface EditableCellProps {
  * until the index refetch delivers it (`raw` changes); a failed write reverts the cell and
  * shows an inline error. Checkboxes are live and commit on every toggle, no edit mode.
  */
-export function EditableCell({ propKey, raw, value, editor, titles, onCommit, options = [], resolve, readOnly = false }: EditableCellProps) {
+export function EditableCell({ propKey, raw, value, editor, titles, onCommit, options = [], required = false, resolve, readOnly = false, ask }: EditableCellProps) {
+  const unit = useUnit()
   const [editing, setEditing] = useState(false)
   /** Committed-but-not-yet-indexed value; cleared when `raw` catches up (or the write fails). */
   const [pending, setPending] = useState<{ v: unknown } | null>(null)
@@ -59,6 +76,10 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
   const writes = useRef<Promise<void> | null>(null)
   const revision = useRef(0)
   const echoes = useRef<{ revision: number; value: string }[]>([])
+  /** A folder page's text cell completes `[[` (YAZ-4601 D48); the properties panel's does not, though it shows pills too (YAZ-4544 4G). */
+  const textLinks = useContext(TextLinkPicker)
+  /** The column's declaration (YAZ-4591): a Number or Date column's format shapes the display; the editor keeps the raw value. */
+  const decl = useContext(ColumnDecls)[propKey]
 
   // The index can echo an intermediate save after the final write has already resolved.
   // Keep the latest optimistic choice until its echo arrives; unrelated later edits still win.
@@ -76,7 +97,7 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
 
   // A lock ends the edit (YAZ-3124): the draft goes with the unmounted field, and no focus moves —
   // not `close()`, whose focus hand-back is for the human's own Enter or Esc. Without it the editor
-  // would reopen, and take the focus, the moment the note stopped being read only.
+  // would reopen, and take the focus, the moment the page stopped being read only.
   useEffect(() => {
     if (readOnly) setEditing(false)
   }, [readOnly])
@@ -89,15 +110,40 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
     ;(el?.closest<HTMLElement>('[data-cell]') ?? el?.querySelector<HTMLElement>('[data-edit]'))?.focus()
   }, [editing])
 
-  if (editor === null) return <>{cellContent(value, resolve)}</>
+  // A date cell's editor opens its picker as the edit starts (YAZ-3746 13P): one click or Enter, not a second click on
+  // the field's calendar button. A typed date still commits; Esc closes the picker, then the editor. Only Chromium has
+  // `showPicker`, and it throws without a user gesture — an edit always starts from one — or when a picker is open.
+  useEffect(() => {
+    if (!editing || editor !== 'date') return
+    const input = wrapRef.current?.querySelector('input')
+    try {
+      input?.showPicker?.()
+    } catch {
+      // The field stays, and typing a date works as before.
+    }
+  }, [editing, editor])
+
+  if (editor === null) return <>{cellContent(value, resolve, decl)}</>
   if (readOnly) {
+    // An Image cell (YAZ-4802) shows its picture, read only too.
+    if (editor === 'image') return <ImageCellEditor raw={raw} decl={decl} label={`Edit ${propKey}`} readOnly onCommit={() => {}} />
+    /** The click that asks (`ask`): once allowed, the same click on the cell's editor, which the unlock has drawn. */
+    const asking = ask && ((e: ReactMouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      ask(() => wrapRef.current?.querySelector<HTMLElement>('[data-edit]')?.click())
+    })
     return editor === 'checkbox' ? (
       <span className="view-cell-edit">
-        <input type="checkbox" disabled checked={raw === true} aria-label={propKey} title={READ_ONLY_TIP} />
+        {asking ? (
+          <input type="checkbox" aria-disabled="true" checked={raw === true} readOnly aria-label={propKey} title={readOnlyTip(unit)} onClick={asking} />
+        ) : (
+          <input type="checkbox" disabled checked={raw === true} aria-label={propKey} title={readOnlyTip(unit)} />
+        )}
       </span>
     ) : (
-      <span className="view-cell-edit view-cell-edit--read-only" title={READ_ONLY_TIP}>
-        {cellContent(value, resolve)}
+      <span className="view-cell-edit view-cell-edit--read-only" title={readOnlyTip(unit)} onClick={asking}>
+        {cellContent(value, resolve, decl)}
       </span>
     )
   }
@@ -117,7 +163,8 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
       echoes.current = echoes.current.filter(echo => echo.revision !== turn)
       if (turn !== revision.current) return
       setPending(null)
-      setError(err instanceof Error ? err.message : String(err))
+      // A cancelled ask (Confirm changes, YAZ-3746 13AN): the old value shows again, and nothing is wrong.
+      if (err !== CHANGE_CANCELLED) setError(err instanceof Error ? err.message : String(err))
     })
     writes.current = settled
     void settled.then(() => { if (writes.current === settled) writes.current = null })
@@ -133,6 +180,9 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
       Save failed
     </span>
   )
+
+  // An Image cell (YAZ-4802): the picture picker, its writes this cell's own commit (optimistic, ordered, Undo).
+  if (editor === 'image') return <ImageCellEditor raw={current} decl={decl} label={`Edit ${propKey}`} readOnly={false} onCommit={commit} after={failure} />
 
   // Checkboxes toggle in place: no edit mode, every click is one typed commit.
   if (editor === 'checkbox') {
@@ -169,7 +219,7 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
               setEditing(true)
             }}
           >
-            {isEmpty ? <span className="property-empty">Empty</span> : isChoice ? <span className="property-choice-chips">{choices.map((choice, i) => <span className="property-choice-chip" key={`${choice}:${i}`}>{choice}</span>)}</span> : pending !== null ? cellContent(fromYaml(pending.v), resolve) : cellContent(value, resolve)}
+            {isEmpty ? <span className="property-empty">Empty</span> : isChoice ? <span className="property-choice-chips">{choices.map((choice, i) => <span className="property-choice-chip" key={`${choice}:${i}`}>{choice}</span>)}</span> : pending !== null ? cellContent(fromYaml(pending.v), resolve, decl) : cellContent(value, resolve, decl)}
           </button>
           {failure}
         </>
@@ -182,7 +232,7 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
           onCommit={commit}
           onDone={close}
         />
-      ) : editor === 'link' ? (
+      ) : editor === 'link' || (editor === 'text' && textLinks) ? (
         <LinkEditor initial={text} titles={titles} label={label} onCommit={commit} onDone={close} />
       ) : (
         <TextField
@@ -205,9 +255,11 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
           onDone={close}
         />
       )}
-      {editing && isChoice && createPortal(<Popover label={label} anchor={wrapRef.current} onClose={close} className="property-value-popover">
-        <SelectValueEditor raw={current} options={options} multiple={editor === 'multi-select'} label={label} onCommit={commit} onDone={close} />
-      </Popover>, document.body)}
+      {editing && isChoice && (
+        <Popover label={label} anchor={wrapRef.current} portal onClose={close} className="property-value-popover">
+          <SelectValueEditor raw={current} options={options} required={required} multiple={editor === 'multi-select'} label={label} onCommit={commit} onDone={close} />
+        </Popover>
+      )}
     </span>
   )
 }
@@ -239,7 +291,7 @@ function ChipsEditor({ initial, label, titles, resolve, onCommit, onDone }: Chip
   const dirty = useRef(false)
 
   const fragment = titles === undefined ? null : trailingLinkFragment(text)
-  const matches = fragment === null ? [] : matchLinkCandidates(titles ?? [], fragment)
+  const matches = fragment === null ? [] : matchLinks(titles ?? [], fragment)
 
   const change = (next: string[]) => {
     dirty.current = true
@@ -361,7 +413,7 @@ interface LinkEditorProps {
 /**
  * Link editor: a text input whose unclosed trailing `[[fragment` offers index titles
  * (through the shared matcher, `links/completion.ts` — GRO-2191); ArrowUp/Down pick, Enter
- * completes to `[[id]]` — `[[basename]]` for a note without one, YAZ-2293 — (then Enter again
+ * completes to `[[id]]` — `[[basename]]` for a page without one, YAZ-2293 — (then Enter again
  * commits the string).
  */
 function LinkEditor({ initial, titles, label, onCommit, onDone }: LinkEditorProps) {
@@ -370,7 +422,7 @@ function LinkEditor({ initial, titles, label, onCommit, onDone }: LinkEditorProp
   const done = useRef(false)
 
   const fragment = trailingLinkFragment(text)
-  const matches = fragment === null ? [] : matchLinkCandidates(titles, fragment)
+  const matches = fragment === null ? [] : matchLinks(titles, fragment)
 
   const finish = (commit: boolean) => {
     if (done.current) return

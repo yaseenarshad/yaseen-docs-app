@@ -3,8 +3,9 @@ import path from 'node:path'
 import { isRecord } from '@shared/guards'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { rewriteIds, type IdChange } from '@shared/linkRewrite'
-import { NOTE_ID_KEY, canonicalNoteId, isNoteId, isNumberId, isOldId, noteIdNumber, numberId, vaultNoteId } from '@shared/noteId'
-import { TITLE_KEY, noteFileName, titleOf } from '@shared/noteName'
+import { cardFileId, cardFileTitle, isCardKind } from '@shared/cardFileFormat'
+import { PAGE_ID_KEY, canonicalPageId, isPageId, isNumberId, isOldId, lettersKept, lettersOwn, pageIdNumber, numberId, vaultPageId } from '@shared/pageId'
+import { TITLE_KEY, pageFileName, titleOf } from '@shared/pageName'
 import { VAULT_CONFIG_DIR, isFolderSettingsPath, type IdsState, type IndexRecord, type RenameFileResponse } from '@shared/types'
 import { readFile, writeFile } from '../fs/file'
 import { renameFile } from '../fs/rename'
@@ -12,7 +13,7 @@ import { readConfigDetailed, writeConfig } from '../vaultConfig'
 import { namedIds } from './diary'
 import { givesIds } from './idSweep'
 import { highestNumber, mintIds } from './mint'
-import { walk } from './scan'
+import { idsOwnedBy, ownOnly, walk } from './scan'
 
 /**
  * THE TWO CHANGES OF EVERY ID IN A VAULT (YAZ-2677 🔒 D5, D6), each asked for by the user in
@@ -52,14 +53,14 @@ export interface Pass {
 const newPass = (): Pass => ({ left: [], changed: [], gone: [], stopped: false })
 
 /**
- * THE NAME FOLLOWS THE ID (R8, R26): the path of the note at `file` when its name is the one the app
- * builds from `title` and one of `from` (`noteFileName`), with `to` in its place. Undefined when it
+ * THE NAME FOLLOWS THE ID (R8, R26): the path of the page at `file` when its name is the one the app
+ * builds from `title` and one of `from` (`pageFileName`), with `to` in its place. Undefined when it
  * keeps its name: any other name is the user's, and a folder's settings file has one name.
  */
 export function pathWithId(file: string, title: string, from: readonly string[], to: string): string | undefined {
   if (isFolderSettingsPath(file)) return undefined
   const name = path.basename(file)
-  return from.some((before) => before !== to && name === noteFileName(title, before)) ? path.join(path.dirname(file), noteFileName(title, to)) : undefined
+  return from.some((before) => before !== to && name === pageFileName(title, before)) ? path.join(path.dirname(file), pageFileName(title, to)) : undefined
 }
 
 /**
@@ -85,9 +86,14 @@ type Former = (id: string) => readonly string[]
 /** The path `file` takes when its name was built from its title and an ID it had before; undefined when it keeps its name. */
 function nameAfter(file: string, content: string, former: Former): string | undefined {
   const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
-  const held = error === undefined ? properties[NOTE_ID_KEY] : undefined
-  if (!isNoteId(held)) return undefined
-  const id = canonicalNoteId(held)
+  // A card file's name is built from its CARD's ID and title (YAZ-5037), never from a page `id:` it kept (pick 6).
+  if (error === undefined && isCardKind(properties)) {
+    const card = cardFileId(content)
+    return card === null || !isPageId(card) ? undefined : pathWithId(file, cardFileTitle(content), former(canonicalPageId(card)), canonicalPageId(card))
+  }
+  const held = error === undefined ? properties[PAGE_ID_KEY] : undefined
+  if (!isPageId(held)) return undefined
+  const id = canonicalPageId(held)
   return pathWithId(file, titleOf({ [TITLE_KEY]: properties[TITLE_KEY] }, ''), former(id), id)
 }
 
@@ -101,7 +107,7 @@ async function rewriteOne(file: string, change: IdChange, former: Former, rename
   if (done === undefined) pass.left.push(file)
   if (done === undefined || done === null) return
   const newPath = nameAfter(file, done.content, former)
-  // A neighbour holds the new name, or the rename failed: the note keeps its name, and its ID is right.
+  // A neighbour holds the new name, or the rename failed: the page keeps its name, and its ID is right.
   const res = newPath === undefined ? undefined : await renameFile({ oldPath: file, newPath }).catch(() => undefined)
   if (res !== undefined) pass.gone.push(file)
   if (res !== undefined || done.changed > 0) pass.changed.push(res?.newPath ?? file)
@@ -119,38 +125,71 @@ async function rewriteFiles(root: string, files: readonly string[], change: (fil
   }
 }
 
-/** Each Markdown file of the vault as it is on disk now, in path order: the index can be a moment behind. */
+/**
+ * Each Markdown file of the vault as it is on disk now, in path order: the index can be a moment behind. A file of a
+ * vault inside this one is that vault's (YAZ-4922 🔒 D1): a change of every ID of this vault does not reach it.
+ */
 async function markdownFiles(root: string): Promise<string[]> {
   const files: string[] = []
   await walk(root, files).catch(() => undefined)
-  return files.sort()
+  return ownOnly(files.sort(), idsOwnedBy(root))
 }
 
 // ---------- change letters ----------
 
 /** `ids.json` after the vault takes `to` (S81, S85): the letters of before go to the front of `was`, and `to` leaves it. Each other key stays (R10). */
 export function configWithLetters(config: Record<string, unknown>, letters: readonly string[], to: string): Record<string, unknown> {
-  const was = letters.filter((before) => before !== to)
+  const was = lettersOwn(letters).filter((before) => before !== to)
   return { ...config, letters: to, ...(was.length > 0 ? { was } : {}) }
 }
+
+/** Are `to` letters a kept group of the vault (YAZ-4922 D2)? Then they cannot become its letters: two pages would hold one ID. */
+export const isKept = (letters: readonly string[], to: string): boolean => lettersKept(letters).includes(to)
 
 /**
  * Each number ID with letters the vault had before becomes the same number with the letters of
  * now (`letters`, the current ones first). `ids.json` already holds them: this is the second step
  * of "Change letters", and the whole of "Finish" (S83).
+ *
+ * 🔒 ONLY THE VAULT'S OWN PAGES (YAZ-4922, Yaseen: "Yes, leave them"): a link follows only when a page, a folder or a
+ * board of this vault holds that ID — read off the disk (`heldIds`) and from the index (`known`: the boards' IDs). A
+ * link to a page the vault does not hold (a page of the vault around this folder, say) keeps its ID as written. Held
+ * IDs are compared in the letters of now, so a run that stopped after a page took them still draws its links.
  */
-export async function reletter(root: string, letters: readonly string[], renamed?: Renamed): Promise<Pass> {
+export async function reletter(root: string, letters: readonly string[], renamed?: Renamed, known: Iterable<string | undefined> = []): Promise<Pass> {
   const pass = newPass()
-  if (letters.length < 2) return pass
-  const change = (id: string): string | undefined => vaultNoteId(id, letters)
-  await rewriteFiles(root, await markdownFiles(root), () => change, (id) => formerLetters(id, letters), renamed, pass)
+  if (lettersOwn(letters).length < 2) return pass
+  const files = await markdownFiles(root)
+  const held = await heldIds(files, letters, known)
+  const change = (id: string): string | undefined => {
+    const to = vaultPageId(id, letters)
+    return to !== undefined && held.has(to) ? to : undefined
+  }
+  await rewriteFiles(root, files, () => change, (id) => formerLetters(id, letters), renamed, pass)
   return pass
+}
+
+/** Each ID that a file of `files` holds on its own `id:` line, or that `known` names, as an ID of the vault in the letters of now. */
+async function heldIds(files: readonly string[], letters: readonly string[], known: Iterable<string | undefined>): Promise<Set<string>> {
+  const held = new Set<string>()
+  const add = (id: unknown): void => {
+    const own = isPageId(id) ? vaultPageId(canonicalPageId(id), letters) : undefined
+    if (own !== undefined) held.add(own)
+  }
+  for (const id of known) add(id)
+  for (const file of files) {
+    const page = await readFile(file).catch(() => null)
+    if (page === null) continue
+    const { properties, error } = parseFrontmatter(splitFrontmatter(page.content).frontmatter)
+    if (error === undefined) add(properties[PAGE_ID_KEY])
+  }
+  return held
 }
 
 /** `id` with each of the letters the vault had before. An old ID had none. */
 function formerLetters(id: string, letters: readonly string[]): string[] {
-  const number = noteIdNumber(id)
-  return number === undefined ? [] : letters.slice(1).map((before) => numberId(before, number))
+  const number = pageIdNumber(id)
+  return number === undefined ? [] : lettersOwn(letters).slice(1).map((before) => numberId(before, number))
 }
 
 /**
@@ -158,15 +197,18 @@ function formerLetters(id: string, letters: readonly string[]): string[] {
  * file when its own ID, an ID it names, or its built file name still has letters the vault had before.
  */
 export function idsStateOf(records: Iterable<IndexRecord>, letters: readonly string[], unfinished: boolean): IdsState {
-  const current = `${letters[0]}-`
-  const before = (id: string | undefined): boolean => id !== undefined && isNumberId(id) && !id.startsWith(current) && vaultNoteId(id, letters) !== undefined
-  const state: IdsState = { letters: letters[0], notes: 0, stale: 0, old: 0, unfinished }
+  // An ID with letters of before reads as another ID (the current letters); a kept one reads as itself (YAZ-4922 D2).
+  const before = (id: string | undefined): boolean => {
+    const own = id !== undefined && isNumberId(id) ? vaultPageId(id, letters) : undefined
+    return own !== undefined && own !== canonicalPageId(id as string)
+  }
+  const state: IdsState = { letters: letters[0], pages: 0, stale: 0, old: 0, unfinished }
   for (const r of records) {
-    const id = vaultNoteId(r.id, letters)
+    const id = vaultPageId(r.id, letters)
     if (id === undefined) continue
     if (!isNumberId(id)) state.old++
-    else state.notes++
-    if (letters.length < 2) continue
+    else state.pages++
+    if (lettersOwn(letters).length < 2) continue
     const title = titleOf({ [TITLE_KEY]: r.properties[TITLE_KEY] }, '')
     const named = pathWithId(r.path, title, formerLetters(id, letters), id) !== undefined
     if (before(r.id) || named || namedIds(r).some(before)) state.stale++
@@ -176,7 +218,7 @@ export function idsStateOf(records: Iterable<IndexRecord>, letters: readonly str
 
 // ---------- give old IDs numbers ----------
 
-/** The plan of a backfill (D6): each old ID to the number ID it takes, saved in the vault BEFORE any note is written. */
+/** The plan of a backfill (D6): each old ID to the number ID it takes, saved in the vault BEFORE any page is written. */
 export const BACKFILL_FILE = 'ids-backfill.json'
 
 /** Is a plan in the vault at `root`: did a backfill stop with files left (`IndexResponse.unfinished`)? */
@@ -188,33 +230,34 @@ async function readPlan(root: string, letters: readonly string[]): Promise<Map<s
   const plan = new Map<string, string>()
   if (held?.state !== 'ok' || !isRecord(held.value)) return plan
   for (const [old, to] of Object.entries(held.value)) {
-    const id = vaultNoteId(to, letters)
+    const id = vaultPageId(to, letters)
     if (isOldId(old) && id !== undefined && isNumberId(id)) plan.set(old, id)
   }
   return plan
 }
 
 /**
- * "Give old IDs numbers" (🔒 D6, S88 to S90). Each note, and each folder's settings file, that holds
+ * "Give old IDs numbers" (🔒 D6, S88 to S90). Each page, and each folder's settings file, that holds
  * an old 12-character ID takes the vault's next number: oldest file first (`ctime`, the file's
  * creation time), then the path, after the highest number in use, and all with ONE write of this
  * Mac's count file (R19).
  *
- * 🔒 THE PLAN (`BACKFILL_FILE`) is the map from each old ID to its number, on disk before any note
- * changes. A run that stopped is finished by the next with the SAME numbers: a note in the plan
- * takes the number of the plan, and only a note that is not in it is given a new one. The plan
+ * 🔒 THE PLAN (`BACKFILL_FILE`) is the map from each old ID to its number, on disk before any page
+ * changes. A run that stopped is finished by the next with the SAME numbers: a page in the plan
+ * takes the number of the plan, and only a page that is not in it is given a new one. The plan
  * goes when a run ends with no file left; while it is there, Settings shows the row "Old IDs" (`planLeft`).
  *
- * 🔒 A NOTE TAKES ITS ID FIRST, THEN ITS LINKS FOLLOW: part A writes each old note's own `id:` line
+ * 🔒 A PAGE TAKES ITS ID FIRST, THEN ITS LINKS FOLLOW: part A writes each old page's own `id:` line
  * (and its name), part B each link, `also_in` entry and folder-value key of the vault. So an old ID
- * that remains after a stop still works: its note holds it, and no link to it was changed (S90).
+ * that remains after a stop still works: its page holds it, and no link to it was changed (S90).
  */
 export async function backfill(root: string, records: Iterable<IndexRecord>, letters: readonly string[], renamed?: Renamed): Promise<Pass> {
   const pass = newPass()
   const all = [...records]
-  const olds = all.filter((r) => isOldId(r.id) && r.frontmatterError === undefined).sort((a, b) => a.ctime - b.ctime || (a.path < b.path ? -1 : 1))
+  const mine = idsOwnedBy(root)
+  const olds = (await ownOnly(all, (r) => mine(r.path))).filter((r) => isOldId(r.id) && r.frontmatterError === undefined).sort((a, b) => a.ctime - b.ctime || (a.path < b.path ? -1 : 1))
   const plan = await readPlan(root, letters)
-  // Two notes with one old ID are a copy: the sweep gives one of them its own number afterwards.
+  // Two pages with one old ID are a copy: the sweep gives one of them its own number afterwards.
   const fresh = [...new Set(olds.map((r) => r.id as string))].filter((id) => !plan.has(id))
   if (fresh.length > 0) {
     // Higher than each number in the vault AND each the plan already holds.
@@ -226,7 +269,7 @@ export async function backfill(root: string, records: Iterable<IndexRecord>, let
   }
   if (plan.size === 0) return pass
   const former: Former = (id) => [...plan].filter(([, to]) => to === id).map(([old]) => old)
-  // Part A, oldest first: the note's own ID. Its links wait for part B.
+  // Part A, oldest first: the page's own ID. Its links wait for part B.
   const idOf = new Map(olds.map((r) => [r.path, r.id as string]))
   await rewriteFiles(root, [...idOf.keys()], (file) => new Map([[idOf.get(file) as string, plan.get(idOf.get(file) as string) as string]]), former, renamed, pass)
   // Part B: each file as it is named now. A file part A could not write is tried again here.

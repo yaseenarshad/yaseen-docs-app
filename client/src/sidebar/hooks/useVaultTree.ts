@@ -9,10 +9,11 @@ import { copyFoldKey } from '@shared/foldKey'
 import { rootOfPath, stripSlash, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import type { WatchSource } from '../../hooks/useWatch'
+import { onFileRenamed } from '../../lib/indexFeed'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../../lib/leadingTrailing'
 import { storage } from '../../lib/storage'
 import { fetchTree, latestTree, onTree } from '../../lib/treeFeed'
-import { allDirs, ancestorDirs, copyDirs, favoriteRoots, otherFiles, treeHasPath, treeReducer } from '../../lib/treeState'
+import { allDirs, ancestorDirs, copyDirs, favoriteRoots, findDirNode, otherFiles, treeHasPath, treeReducer } from '../../lib/treeState'
 import { sameList, type VaultListsHere } from '../../lists/useVaultListsHere'
 import type { SidebarVault } from '../Sidebar'
 import { withMtime } from '../treeSort'
@@ -25,7 +26,7 @@ export function useSameList<T>(list: readonly T[]): readonly T[] {
 }
 
 /**
- * One landed tree's folders, outer before inner (`allDirs`), and its files that are no notes
+ * One landed tree's folders, outer before inner (`allDirs`), and its files that are no pages
  * (`otherFiles`): walked once per tree, so a tree of one vault walks no other vault again and the
  * lists of a vault that did not change keep their identity (YAZ-2602 R2).
  */
@@ -36,6 +37,21 @@ function walkOf(landed: TreeResponse | undefined): { dirs: string[]; files: stri
   let walk = walks.get(landed)
   if (walk === undefined) walks.set(landed, (walk = { dirs: allDirs(landed.tree), files: otherFiles(landed.tree) }))
   return walk
+}
+
+/**
+ * A vault's tree as a window that is "a folder of" it shows it (YAZ-4922 🔒 D3): the folder's own folders and files,
+ * once per landed tree. With no folder, the tree itself. A folder that is not in the tree (gone, or not walked yet) shows nothing.
+ */
+const cuts = new WeakMap<TreeResponse, { folder: string; cut: TreeResponse }>()
+export function folderTree(landed: TreeResponse, folder: string | undefined): TreeResponse {
+  if (folder === undefined) return landed
+  const held = cuts.get(landed)
+  if (held !== undefined && held.folder === folder) return held.cut
+  const node = findDirNode(landed.tree, folder)
+  const cut = { ...landed, tree: node?.type === 'dir' ? node.children : [] }
+  cuts.set(landed, { folder, cut })
+  return cut
 }
 
 /** Is `path` hidden inside `vault`: a "." name on its way below the vault? The tree never lists one (YAZ-3607 D6). */
@@ -50,6 +66,18 @@ function withTime(trees: ReadonlyMap<string, TreeResponse>, vault: string, file:
   return next
 }
 
+/** How the open folders of the windows are shared (YAZ-5701): `touch` marks the vaults that changed, `touched` asks one. */
+export interface FolderShare {
+  shared: boolean
+  start: () => string[]
+  touch: (vaults: readonly string[]) => void
+  touched: (vault: string) => boolean
+  /** True when the caller just restored a saved tab place, so `activeFile`'s auto-`expandTo` should not re-open collapsed folders (YAZ-6064). */
+  skipExpandTo?: (file: string) => boolean
+}
+
+const SHARED_FOLDERS: FolderShare = { shared: true, start: () => [], touch: () => undefined, touched: () => true }
+
 export function useVaultTree(
   vaults: readonly SidebarVault[],
   closedVaults: readonly string[],
@@ -61,11 +89,24 @@ export function useVaultTree(
   lists: VaultListsHere,
   /** Something reads the file times (YAZ-3227 D2, YAZ-3511 D2): a Last updated sort, a tab's dates (D10) or a time filter (D14). Each save puts its file's time into the tree. */
   liveTimes = false,
+  /**
+   * The open folders of the windows on a vault (YAZ-5701): `shared` (the default) reads and writes them in the store.
+   * Off ("A place for each tab"), this window neither writes them nor takes them: it starts from `start`, and `touch`
+   * marks the vaults that change. Back on, it writes a vault only when `touched(vault)` (YAZ-5750, YAZ-5751, YAZ-5756): the
+   * mark is the window's, so it outlives this mount.
+   */
+  share: FolderShare = SHARED_FOLDERS,
 ) {
   // The window's vaults (YAZ-2602 D1), in the window's order. `root` is the FIRST.
   const roots = useSameList(vaults.map((vault) => vault.root))
   const watches = useSameList(vaults.map((vault) => vault.watch))
   const names = useSameList(vaults.map((vault) => vault.name))
+  // A folder of a vault (YAZ-4922 D3): where this window shows one, the vault's tree is cut to it for what the panel draws.
+  const folders = useSameList(vaults.map((vault) => vault.folder))
+  // The app's own vault (the card skill, YAZ-5108): last in `vaults`, one row at the bottom, never a vault of the person.
+  // With ONE vault of the person their tree keeps its look (no vault row for it), and the skill's row follows it.
+  const appRoots = useSameList(vaults.flatMap((vault) => (vault.app === true ? [vault.root] : [])))
+  const single = roots.length - appRoots.length === 1
   const root = roots[0]
   // What the callbacks below ask at call time, so each keeps its identity under the memoised Tree (YAZ-2194).
   const live = useRef({ roots, closedVaults, onSetVaultOpen, onRootMissing, liveTimes })
@@ -73,8 +114,23 @@ export function useVaultTree(
   /** The vault that holds `path`, the most specific one; a path in no vault of the window gets the first. */
   const rootOf = useCallback((path: string): string => rootOfPath(live.current.roots, path) ?? live.current.roots[0], [])
 
-  // Each vault's tree, by its root, once it has landed.
-  const [trees, setTrees] = useState<ReadonlyMap<string, TreeResponse>>(() => new Map())
+  // Each vault's tree, by its root, once it has landed. Seed immediately from `latestTree` when cached (YAZ-6064) so
+  // reopening the sidebar on a per-tab switch draws the tree on frame 1 with no "Loading…" flash while `refresh` syncs.
+  // Track seeded vaults so the mount `validated` check waits for a fresh `land()` instead of closing newly created tabs.
+  const seededVaults = useRef<Set<string> | null>(null)
+  const [trees, setTrees] = useState<ReadonlyMap<string, TreeResponse>>(() => {
+    const initial = new Map<string, TreeResponse>()
+    const seeded = new Set<string>()
+    for (const vault of roots) {
+      const walked = latestTree(vault)
+      if (walked !== null) {
+        initial.set(vault, walked)
+        seeded.add(vault)
+      }
+    }
+    seededVaults.current = seeded
+    return initial
+  })
   // Each vault's load error, by its root: its own tree clears it, and it leaves with its vault.
   const [failures, setFailures] = useState<ReadonlyMap<string, string>>(() => new Map())
   const setFailure = useCallback((vault: string, message: string | null) => {
@@ -91,24 +147,39 @@ export function useVaultTree(
   // One list here, one list PER VAULT in the store (YAZ-2602 D3): the vaults never nest (R8), so
   // each folder is its own vault's, and the write-back below splits them again.
   // A NEW window starts with every folder closed (YAZ-3487): the vault's open folders are another window's.
-  const [expanded, dispatch] = useReducer(treeReducer, roots, (all) => (storage.isCollapsedStart() ? [] : all.flatMap(storage.getExpanded)))
+  // With a place for each tab (YAZ-5701), the start is the tab's own place, never the list of the other windows.
+  const shared = share.shared
+  const [expanded, dispatch] = useReducer(treeReducer, roots, (all) => (!shared ? share.start() : storage.isCollapsedStart() ? [] : all.flatMap(storage.getExpanded)))
   // A NEW window's closed tree is no choice of the user: it writes nothing until a folder opens or closes here, so the
   // vault keeps the list its other windows saved (bug YAZ-3513). The reducer answers a new list for each change.
   const startList = useRef(storage.isCollapsedStart() ? expanded : null)
+  // The open folders this mount began with in "A place for each tab": a change from them is the user's (YAZ-5751).
+  const tabStart = useRef<string[] | null>(null)
+  if (!shared && tabStart.current === null) tabStart.current = expanded
+  if (shared) tabStart.current = null
+  /** The mode of the last write check: `shared` that turns on again is the switch back to one place. */
+  const sharedBefore = useRef(shared)
 
   // What the Files tab draws (YAZ-2602 D3). One vault → its tree. Two or more → one
   // folder row per vault, in the window's order, named as the app names the vault, its tree below it;
   // a vault whose tree has not landed has no row yet. Null until there is a tree to draw.
+  // A folder of a vault (YAZ-4922 D3) draws its folder's tree; in a workspace its vault row holds that tree.
+  const shown = useMemo<ReadonlyMap<string, TreeResponse>>(() => (folders.every((folder) => folder === undefined) ? trees : new Map([...trees].map(([vault, landed]) => [vault, folderTree(landed, folders[roots.indexOf(vault)])]))), [trees, roots, folders])
   const forest = useMemo<TreeNode[] | null>(() => {
-    if (roots.length === 1) return trees.get(roots[0])?.tree ?? null
-    const rows = roots.flatMap((vault, i): TreeNode[] => {
-      const landed = trees.get(vault)
+    if (roots.length === 1) return shown.get(roots[0])?.tree ?? null
+    const rowOf = (vault: string, i: number): TreeNode[] => {
+      const landed = shown.get(vault)
       return landed === undefined ? [] : [{ type: 'dir', name: names[i], path: stripSlash(vault), children: landed.tree }]
-    })
+    }
+    if (single) {
+      const own = shown.get(roots[0])
+      return own === undefined ? null : [...own.tree, ...roots.flatMap((vault, i) => (i === 0 ? [] : rowOf(vault, i)))]
+    }
+    const rows = roots.flatMap(rowOf)
     return rows.length === 0 ? null : rows
-  }, [trees, roots, names])
-  /** The vault rows' paths, each with what the app calls its vault; empty with one vault, which has no row (S11). */
-  const vaultRows = useMemo<ReadonlyMap<string, string>>(() => new Map(roots.length === 1 ? [] : roots.map((vault, i) => [stripSlash(vault), names[i]])), [roots, names])
+  }, [shown, roots, names, single])
+  /** The vault rows' paths, each with what the app calls its vault; empty with one vault, which has no row (S11). The app's own vault always has its row. */
+  const vaultRows = useMemo<ReadonlyMap<string, string>>(() => new Map(roots.length === 1 ? [] : roots.flatMap((vault, i): [string, string][] => (single && i === 0 ? [] : [[stripSlash(vault), names[i]]]))), [roots, names, single])
   const vaultRowsRef = useRef(vaultRows)
   vaultRowsRef.current = vaultRows
   /** The load errors to draw, in vault order; with two or more vaults each names its vault. */
@@ -125,12 +196,12 @@ export function useVaultTree(
   // expand-all set (⚡ YAZ-862) and, since YAZ-1491, the search's folder rows (🔒 D1) — one
   // memo, no second feed. The REAL folders only: a vault row is not one, and "Collapse all" closes
   // it through App's list (YAZ-2631 D6).
-  const dirsByVault = useMemo(() => roots.map((vault) => walkOf(trees.get(vault)).dirs), [trees, roots])
+  const dirsByVault = useMemo(() => roots.map((vault) => walkOf(shown.get(vault)).dirs), [shown, roots])
   const dirs = useMemo(() => (dirsByVault.length === 1 ? dirsByVault[0] : dirsByVault.flat()), [dirsByVault])
   /** One vault's own folders: what a rule about that vault alone resolves over. */
   const dirsOf = useCallback((vault: string): string[] => dirsByVault[roots.indexOf(vault)] ?? [], [dirsByVault, roots])
-  // The files that are not notes, for the search (YAZ-2620 🔒 D3): the index holds notes only. Vault by vault, as `dirsByVault`.
-  const filesByVault = useMemo(() => roots.map((vault) => walkOf(trees.get(vault)).files), [trees, roots])
+  // The files that are not pages, for the search (YAZ-2620 🔒 D3): the index holds pages only. Vault by vault, as `dirsByVault`.
+  const filesByVault = useMemo(() => roots.map((vault) => walkOf(shown.get(vault)).files), [shown, roots])
   // The Focus tab's rows (YAZ-2619 D2), off the live trees, in the order of `focusList` (App's, YAZ-3264 D1),
   // never the tree's. An item this Mac has no file for draws no row and STAYS in the list (YAZ-2702 S13).
   const { focusList, favoritesByRoot, favoritePaths, clearFocus, toggleFavorite, reorderFocus, saveFavoriteOrder, toggleFocus: toggleListFocus } = lists
@@ -172,12 +243,14 @@ export function useVaultTree(
       feed.end()
       held.delete(vault)
       if (at !== -1) continue
+      seededVaults.current?.delete(vault)
       setTrees((prev) => new Map([...prev].filter(([key]) => key !== vault)))
       setFailure(vault, null)
     }
     roots.forEach((vault, at) => {
       if (held.has(vault)) return
       const land = (landed: TreeResponse): void => {
+        seededVaults.current?.delete(vault)
         setTrees((prev) => new Map(prev).set(vault, landed))
         setFailure(vault, null)
       }
@@ -192,11 +265,18 @@ export function useVaultTree(
         if (ev.type === 'ready') return burst.flush()
         burst.call()
       })
+      // Refresh immediately on in-app renames/moves so the sidebar does not wait for macOS FSEvents + SETTLE_MS (YAZ-6008).
+      const trimmedVault = vault.replace(/[\\/]+$/, '')
+      const inVault = (p: string): boolean => p === trimmedVault || p.startsWith(`${trimmedVault}/`) || p.startsWith(`${trimmedVault}\\`)
+      const offRename = onFileRenamed(({ oldPath, newPath }) => {
+        if (inVault(oldPath) || inVault(newPath)) burst.call()
+      })
       held.set(vault, {
         watch: watches[at],
         end: () => {
           offTree()
           offWatch()
+          offRename()
           burst.cancel()
         },
       })
@@ -223,12 +303,14 @@ export function useVaultTree(
   // leaves takes its folders with it, as the store has them. The write waits for that render.
   const merged = useRef(roots)
   useEffect(() => {
+    const back = shared && !sharedBefore.current
+    sharedBefore.current = shared
     const before = merged.current
     merged.current = roots
     const joined = roots.filter((vault) => !before.includes(vault))
     const left = before.filter((vault) => !roots.includes(vault))
     if (joined.length > 0 || left.length > 0) {
-      const dirs = [...expanded.filter((dir) => rootOfPath(left, dir) === null), ...joined.flatMap(storage.getExpanded)]
+      const dirs = [...expanded.filter((dir) => rootOfPath(left, dir) === null), ...(shared ? joined.flatMap(storage.getExpanded) : [])]
       // A new window that the user has not touched stays untouched: a vault that joins or leaves is no open or close (YAZ-3513).
       if (expanded === startList.current) startList.current = dirs
       dispatch({ type: 'setAll', dirs })
@@ -236,24 +318,38 @@ export function useVaultTree(
     }
     if (expanded === startList.current) return
     startList.current = null
+    // A folder of no vault of the window stays in the first vault's list, where one vault keeps it.
+    const ownOf = (list: string[], vault: string): string[] => (roots.length === 1 ? list : list.filter((dir) => (rootOfPath(roots, dir) ?? roots[0]) === vault))
+    // A place for each tab (YAZ-5701): the tabs' folders stay in this window; each change marks its vault (YAZ-5751, YAZ-5756).
+    if (!shared) {
+      const start = tabStart.current ?? []
+      if (expanded !== start) share.touch(roots.filter((vault) => !sameList(ownOf(expanded, vault), ownOf(start, vault))))
+      return
+    }
     for (const vault of roots) {
-      // A folder of no vault of the window stays in the first vault's list, where one vault keeps it.
-      const own = roots.length === 1 ? expanded : expanded.filter((dir) => (rootOfPath(roots, dir) ?? roots[0]) === vault)
+      // The app's own vault keeps its open folders for the session only (YAZ-5108): nothing of it goes to the store.
+      if (appRoots.includes(vault)) continue
+      // Back on one place: a vault with no folder changed since "A place for each tab" began writes nothing (YAZ-5750),
+      // across Hide and Show sidebar and a vault switch (YAZ-5751, YAZ-5756).
+      if (back && !share.touched(vault)) continue
+      const own = ownOf(expanded, vault)
       // Idempotent (⚡ YAZ-874): the first render holds exactly what was
       // just read, and re-sending it would make the main process commit, write and broadcast for nothing.
       if (sameList(storage.getExpanded(vault), own)) continue
       storage.setExpanded(vault, own)
     }
-  }, [roots, expanded])
+  }, [roots, appRoots, expanded, shared])
 
   // The file this mount woke up with is SHOWN, not revealed (YAZ-1642): a relaunch restores the
   // tab and leaves the tree collapsed. Any file opened after that still opens its folders.
   // Its FOLDERS, in the vault that holds it: a vault row the user closed stays closed (YAZ-2602 R9).
   const restoredFile = useRef(activeFile)
+  const shareRef = useRef(share)
+  shareRef.current = share
   useEffect(() => {
     if (activeFile === restoredFile.current) return
     restoredFile.current = null
-    if (activeFile !== null) dispatch({ type: 'expandTo', root: rootOf(activeFile), file: activeFile })
+    if (activeFile !== null && !shareRef.current.skipExpandTo?.(activeFile)) dispatch({ type: 'expandTo', root: rootOf(activeFile), file: activeFile })
   }, [rootOf, activeFile])
 
   // Neither list is pruned against the tree here (Favorites: D14; focus: YAZ-2702 S13, which overturns
@@ -269,16 +365,17 @@ export function useVaultTree(
   // A tab may be a FOLDER (YAZ-2290 D3), so both checks ask `treeHasPath`: a folder still in the
   // tree survives, one that left it closes like a file. The tree that can say is the one of the
   // vault that holds the file (YAZ-2602). A HIDDEN file — a "." name on its way, like a folder's `.template.md` that
-  // Settings › Daily notes › Open template opens (YAZ-3607 D6) — is never in the tree either, so neither check asks.
+  // Settings › Daily pages › Open template opens (YAZ-3607 D6) — is never in the tree either, so neither check asks.
   const validated = useRef(false)
   const home = activeFile === null ? null : rootOfPath(roots, activeFile)
-  const homeTree = trees.get(home ?? root) ?? null
+  const homeRoot = home ?? root
+  const homeTree = trees.get(homeRoot) ?? null
   useEffect(() => {
-    if (homeTree === null || validated.current) return
+    if (homeTree === null || validated.current || seededVaults.current?.has(homeRoot)) return
     validated.current = true
     if (activeFile !== null && home !== null && activeFile.startsWith(`${home.replace(/\/+$/, '')}/`) && !hiddenIn(home, activeFile) && !treeHasPath(homeTree.tree, activeFile))
       onFileMissing()
-  }, [homeTree, activeFile, home, onFileMissing])
+  }, [homeTree, trees, activeFile, home, homeRoot, onFileMissing])
 
   // A stale tab ACTIVATED after its file vanished on disk (I3, GRO-2235): when the activation
   // CHANGES to an in-root file the cached tree does not show, confirm against a FRESH tree —
@@ -344,7 +441,7 @@ export function useVaultTree(
 
   // Stable for the per-level memoised Tree (YAZ-2194). A vault row is open unless the user closed
   // it (YAZ-2602 R9): App's list, for the session, so it is neither in `expanded` nor in the store.
-  const expandedSet = useMemo(() => new Set([...expanded, ...(roots.length === 1 ? [] : roots.filter((vault) => !closedVaults.includes(vault)).map(stripSlash))]), [expanded, roots, closedVaults])
+  const expandedSet = useMemo(() => new Set([...expanded, ...(roots.length === 1 ? [] : roots.filter((vault, i) => !(single && i === 0) && !closedVaults.includes(vault)).map(stripSlash))]), [expanded, roots, closedVaults, single])
   const toggleDir = useCallback(
     (dir: string) => {
       if (!vaultRowsRef.current.has(dir)) return dispatch({ type: 'toggle', dir })
@@ -354,5 +451,5 @@ export function useVaultTree(
     [rootOf],
   )
 
-  return { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
+  return { roots, appRoots, single, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
 }

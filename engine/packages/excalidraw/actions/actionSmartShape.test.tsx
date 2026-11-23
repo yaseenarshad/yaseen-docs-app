@@ -1,6 +1,8 @@
+import { waitFor } from "@testing-library/react";
 import { pointFrom } from "@excalidraw/math";
 import {
   createSmartShapeMetadata,
+  generateSmartShapePoints,
   getSmartShapeMetadata,
   newElementWith,
 } from "@excalidraw/element";
@@ -51,5 +53,46 @@ describe("actionChangeSmartShape", () => {
     expect(
       updated.type === "line" && Math.min(...updated.points.map(([, y]) => y)),
     ).toBe(-37.5);
+  });
+  // YAZ-4356: each slider spans its parameter's own limits, as a handle drag does.
+  it("gives each slider its parameter's limits", async () => {
+    await render(<Excalidraw handleKeyboardGlobally={true} />);
+    const metadata = createSmartShapeMetadata("curved-arrow");
+    const curved = newElementWith(
+      API.createElement({
+        type: "line",
+        width: 200,
+        height: 120,
+        points: generateSmartShapePoints(
+          "curved-arrow",
+          200,
+          120,
+          metadata.parameters,
+        ),
+      }),
+      { customData: { yasinSmartShape: metadata } },
+    );
+    API.setElements([curved]);
+    API.setSelectedElements([curved]);
+
+    // The board's own properties panel shows the sliders for the selected shape.
+    const range = (parameter: string) =>
+      document.querySelector(
+        `[data-testid="smart-shape-${parameter}"]`,
+      ) as HTMLInputElement;
+    await waitFor(() => expect(range("bendRatio")).not.toBeNull());
+    expect([range("bendRatio").min, range("bendRatio").max]).toEqual([
+      "50",
+      "125",
+    ]);
+    expect(range("bendRatio").value).toBe("100");
+    expect([range("thicknessRatio").min, range("thicknessRatio").max]).toEqual([
+      "10",
+      "60",
+    ]);
+    expect([
+      range("headLengthRatio").min,
+      range("headLengthRatio").max,
+    ]).toEqual(["10", "40"]);
   });
 });

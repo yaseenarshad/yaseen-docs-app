@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_LENS,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
@@ -16,6 +17,9 @@ import {
   mergeFavoritesOrder,
   normalizeFilesZoom,
   normalizeRoots,
+  placeName,
+  placeVault,
+  placeVaults,
   rootOfPath,
   type AppState,
   type FolderState,
@@ -30,13 +34,17 @@ import {
   type TabCanvasPatch,
   type TabCanvasState,
   type TocSource,
+  type UpNextTaken,
+  type CardsAdded,
   type VaultEntry,
   type Session,
   type VaultSet,
   type WindowEntry,
   type WindowIdentity,
 } from '@shared/types'
+import { applyCoursePatch, defaultCourseState, sameCourseState, type CoursePatch, type CourseState } from '@shared/courseState'
 import { api } from '../api'
+import { setCardSkillVault } from '@shared/appVaults'
 import { basename } from './paths'
 
 /**
@@ -55,6 +63,8 @@ const listeners = new Set<() => void>()
 let others: { windows: readonly WindowEntry[]; id: string; list: readonly WindowEntry[] } = { windows: [], id: '', list: [] }
 /** The canvas of a state without one (a main of before YAZ-3343, a test's bridge): ONE object, so a `useSyncExternalStore` snapshot holds still. */
 const NO_TAB_CANVAS: TabCanvasState = defaultTabCanvas()
+/** The course of a state without one (a main of before YAZ-5120, a test's bridge): ONE object, for the same reason. */
+const NO_COURSE: CourseState = defaultCourseState()
 
 /**
  * The two orders across vaults, each with its mutator on the bridge: the Favorites order (YAZ-2631
@@ -92,6 +102,16 @@ function send(what: string, call: () => Promise<void>): void {
   }
 }
 
+/**
+ * YAZ-5053 round 4 (Yaseen: "clicking these options on or off doesnt stick… it doesnt select"): a main process older
+ * than a settings field (the app not restarted after an update) sends settings without it, and drops it from each save.
+ * Each missing field reads its default here, the value the app uses, so its row always shows the choice in use.
+ */
+function withSettingsDefaults(s: AppState): AppState {
+  const missing = (Object.keys(DEFAULT_SETTINGS) as (keyof SettingsState)[]).some((k) => s.settings[k] === undefined)
+  return missing ? { ...s, settings: { ...DEFAULT_SETTINGS, ...s.settings } } : s
+}
+
 function folderOf(root: string): FolderState {
   return state.folders[root] ?? defaultFolderState()
 }
@@ -104,15 +124,17 @@ export const storage = {
   /** Load the state + identity and start following changes; call once before the first render. */
   async init(): Promise<void> {
     const [s, id] = await Promise.all([api.state.get(), api.window.identity()])
-    state = s
+    state = withSettingsDefaults(s)
     identity = id
+    // The card skill's copy (YAZ-5108): the app's own vault, which no list of the person takes (`addRecentRoot`, `listVaults`).
+    setCardSkillVault(id.cardSkill ?? null)
     unsubscribe?.()
     unsubscribe = api.state.onChange((next) => {
       // Each broadcast is a new copy. The Favorites order and the focus order each keep their identity
       // while they hold the same paths (YAZ-2631 D1, YAZ-2702 Decision 3): each is a
       // `useSyncExternalStore` snapshot, so what reads it draws again only when the order changed.
       const held = state
-      state = next
+      state = withSettingsDefaults(next)
       for (const key of ORDER_KEYS) {
         if (held[key].length === next[key].length && held[key].every((path, at) => path === next[key][at])) state = { ...state, [key]: held[key] }
       }
@@ -121,6 +143,8 @@ export const storage = {
       if (JSON.stringify(held.sessions) === JSON.stringify(next.sessions)) state = { ...state, sessions: held.sessions }
       // And the tab board's canvas (YAZ-3343 D1): the board reads it as a snapshot, and most broadcasts are not about it.
       if (held.tabCanvas !== undefined && next.tabCanvas !== undefined && sameTabCanvas(held.tabCanvas, next.tabCanvas)) state = { ...state, tabCanvas: held.tabCanvas }
+      // And the card course (YAZ-5120): the course layer and the offers read it as a snapshot.
+      if (held.course !== undefined && next.course !== undefined && sameCourseState(held.course, next.course)) state = { ...state, course: held.course }
       listeners.forEach((l) => l())
     })
   },
@@ -133,7 +157,8 @@ export const storage = {
     }
   },
 
-  getRoot: (): string | null => identity.root,
+  /** The window's first vault (a folder of a vault reads as its vault, YAZ-4922 D3). */
+  getRoot: (): string | null => (identity.root === null ? null : placeVault(state.folders, identity.root)),
   /**
    * Changing the root clears this window's file AND tab list (Tabs rule 13, GRO-2234) and lands the
    * lens on Files (🔒 D2, YAZ-1846), in the same write; re-setting the same root keeps them. The
@@ -149,21 +174,43 @@ export const storage = {
     send('window.setIdentity', () => api.window.setIdentity(patch))
   },
 
-  /** Every vault this window shows, `root` first (YAZ-2602 D1). */
-  getRoots: (): string[] => identity.roots,
+  /**
+   * Every vault this window shows, `root` first (YAZ-2602 D1). A window that is "a folder of" a vault (YAZ-4922 🔒 D3)
+   * shows that vault here: its index, IDs, links, sync and `.yaseendocs` are the vault's. What the window IS — its
+   * places, which main stores and the recents and the vault switcher name — is `getPlaces`.
+   */
+  getRoots: (): string[] => placeVaults(state.folders, identity.roots),
+  /** The window's places (YAZ-4922 D3): each vault it shows, or the folder of a vault it shows in its place. */
+  getPlaces: (): string[] => identity.roots,
+  /** The folder of `vault` that this window shows in its place (YAZ-4922 D3); null where it shows the whole vault, or not that vault. */
+  folderIn: (vault: string): string | null => (identity.roots ?? []).find((place) => place !== vault && placeVault(state.folders, place) === vault) ?? null,
   /**
    * Add or remove a vault (YAZ-2602 D2, D7). Unlike `setRoot`, this keeps the tabs and the lens:
    * the caller closes a removed vault's tabs first. `root` follows `roots[0]`. A vault that leaves
    * takes its rows off the Focus tab and keeps its focus list, which is in the vault (YAZ-2702 S9).
+   * `roots` are vaults as `getRoots` gives them, and a new place: a vault of the window that is shown as a folder of it
+   * stays that place (YAZ-4922 D3).
    */
   setRoots(roots: readonly string[]): void {
-    const next = normalizeRoots(roots, roots[0] ?? null)
+    storage.setPlaces(roots.map((root) => identity.roots.find((place) => place === root || placeVault(state.folders, place) === root) ?? root))
+  },
+  /**
+   * The window takes exactly these places (YAZ-4922 D3), as `setRoots` with no mapping: a list main hands the window
+   * (a take, a workspace) names places already. So an empty folder-of window that takes its vault shows the whole vault.
+   */
+  setPlaces(places: readonly string[]): void {
+    const next = normalizeRoots(places, places[0] ?? null)
     identity = { ...identity, roots: next, root: next[0] ?? null }
     send('window.setIdentity', () => api.window.setIdentity({ roots: next }))
   },
-  /** Main's store already moved a renamed vault folder (`store.renamePath`): mirror it in the cache, with no identity write. */
+  /** Main's store already moved a renamed vault folder (`store.renamePath`): mirror it in the cache, with no identity write. A folder of a vault follows its vault (YAZ-4922 D3). */
   mirrorRoots(roots: readonly string[]): void {
-    identity = { ...identity, root: roots[0] ?? null, roots: [...roots] }
+    const places = roots.map((root, i) => {
+      const was = identity.roots[i]
+      const vault = was === undefined ? undefined : placeVault(state.folders, was)
+      return was !== undefined && vault !== undefined && was !== vault && was.startsWith(`${vault}/`) ? root + was.slice(vault.length) : root
+    })
+    identity = { ...identity, root: places[0] ?? null, roots: places }
   },
 
   getRecentRoots: (): RecentRoots => state.recents,
@@ -196,6 +243,10 @@ export const storage = {
   getWindowId: (): string => identity.id,
   /** This window is a Files window (YAZ-3357 D1): only the sidebar, no tabs. Fixed for the window's life, so a render may read it. */
   isFilesWindow: (): boolean => identity.kind === 'files',
+  /** Transient read-only window (YAZ-4502): opened with `--read-only`; locks vaults in memory without writing `.yaseendocs/read-only.json`. */
+  isTransientReadOnly: (): boolean => identity.readOnly === true,
+  /** The card skill's copy (YAZ-5108), the app's own vault, as main named it in this window's identity; null with no copy. */
+  getCardSkill: (): string | null => identity.cardSkill ?? null,
   /**
    * A Files window's own sidebar zoom in percent (YAZ-3389 D13), from its identity; a full window has none and reads
    * the shared `settings.sidebarZoom` instead. Only this window writes it (`setFilesZoom`), so the cache stays true.
@@ -257,6 +308,17 @@ export const storage = {
     // The board renders its own moves at once, as the two orders do (`setOrder`).
     listeners.forEach((l) => l())
   },
+  /** The card course's place, finished chapters, offers, Mute and Speed (YAZ-5120). App-wide and per machine; the same object until a change. */
+  getCourse: (): CourseState => state.course ?? NO_COURSE,
+  /** One change to the course: the cache at once (main's own rule, `applyCoursePatch`), then main. A patch that changes nothing sends nothing. */
+  setCourse(patch: CoursePatch): void {
+    const current = state.course ?? NO_COURSE
+    const next = applyCoursePatch(current, patch)
+    if (next === current) return
+    state = { ...state, course: next }
+    send('state.setCourse', () => api.state.setCourse(patch))
+    listeners.forEach((l) => l())
+  },
   pushRecentRoot(path: string, now = Date.now()): RecentRoots {
     const next = addRecentRoot(state.recents, path, now)
     state = { ...state, recents: next }
@@ -270,14 +332,41 @@ export const storage = {
     send('state.removeRecent', () => api.state.removeRecent(path))
   },
 
-  /** What the app calls a vault (YAZ-1974 D4): its display name, else its folder name. */
-  vaultName: (root: string): string => folderOf(root).name ?? basename(root),
+  /**
+   * What the app calls a vault (YAZ-1974 D4): its display name, else its folder name. A vault this window shows as a
+   * folder of it, and such a place itself, read "<folder> · in <vault>" (YAZ-4922 D3): the title, the switcher and the vault rows.
+   */
+  vaultName: (root: string): string => placeName(state.folders, storage.folderIn(root) ?? root),
+  /** Every bucket of per-folder state, by its path: what a picked folder's vault is asked of (YAZ-4922 D4). Read-only. */
+  getFolders: (): Readonly<Record<string, FolderState>> => state.folders,
+  /** A place is "a folder of" `vault` (YAZ-4922 🔒 D3), or with null its own vault again: the cache at once, then main's store. */
+  setFolderIn(place: string, vault: string | null): void {
+    if ((folderOf(place).in ?? null) === vault) return
+    patchFolder(place, { in: vault })
+    send('state.setFolder', () => api.state.setFolder(place, { in: vault }))
+  },
   /** Set (or, with null / empty / the folder's own name, clear) a vault's display name (D3, D5). */
   setVaultName(root: string, raw: string | null): void {
     const clean = cleanVaultName(raw)
     const name = clean === basename(root) ? null : clean
     patchFolder(root, { name })
     send('state.setFolder', () => api.state.setFolder(root, { name }))
+  },
+
+  /** "Up next a day" (YAZ-5028): the vault's marks an answer took off, and their day; null when none was kept. */
+  getUpNextTaken: (root: string): UpNextTaken | null => folderOf(root).upNext ?? null,
+  /** The vault's whole list for the day (YAZ-5028): the cache at once, then main's store (`state.setFolder`), as the vault's name. */
+  setUpNextTaken(root: string, upNext: UpNextTaken): void {
+    patchFolder(root, { upNext })
+    send('state.setFolder', () => api.state.setFolder(root, { upNext }))
+  },
+
+  /** "Add more for today" (YAZ-5042): the vault's added numbers, and their day; null when none was kept. */
+  getCardsAdded: (root: string): CardsAdded | null => folderOf(root).added ?? null,
+  /** The vault's added numbers for the day (YAZ-5042): the cache at once, then main's store (`state.setFolder`). */
+  setCardsAdded(root: string, added: CardsAdded): void {
+    patchFolder(root, { added })
+    send('state.setFolder', () => api.state.setFolder(root, { added }))
   },
 
   /** A vault's number, 1–9, or null (YAZ-2555 D2): ⌘<key> goes to it. */
@@ -328,13 +417,13 @@ export const storage = {
   /** A vault's open history (YAZ-2663 D1): page → how much it is used, and when it was last on show. Read-only here: main alone adds a use, and the cache follows the broadcast. */
   getOpens: (root: string): Readonly<Record<string, OpenStat>> => folderOf(root).opens,
 
-  /** A vault's closed notes (YAZ-3487 D9): file → when it closed. Read-only here: main alone adds one, and the cache follows the broadcast. */
+  /** A vault's closed pages (YAZ-3487 D9): file → when it closed. Read-only here: main alone adds one, and the cache follows the broadcast. */
   getClosed: (root: string): Readonly<Record<string, number>> => folderOf(root).closed,
-  /** Tabs closed in this window (YAZ-3487 D10): main puts their notes in "Recently closed". */
-  noteClosed(files: readonly string[]): void {
-    send('window.noteClosed', () => api.window.noteClosed([...files]))
+  /** Tabs closed in this window (YAZ-3487 D10): main puts their pages in "Recently closed". */
+  pageClosed(files: readonly string[]): void {
+    send('window.pageClosed', () => api.window.pageClosed([...files]))
   },
-  /** "Remove from Recently closed" / "Clear Recently closed" (YAZ-3487 D14): these notes, or with null all of this window's vaults. */
+  /** "Remove from Recently closed" / "Clear Recently closed" (YAZ-3487 D14): these pages, or with null all of this window's vaults. */
   forgetClosed(files: readonly string[] | null): void {
     send('window.forgetClosed', () => api.window.forgetClosed(files === null ? null : [...files]))
   },
@@ -367,7 +456,26 @@ export const storage = {
   getSettings: (): SettingsState => state.settings,
   setSettings(settings: SettingsState): void {
     state = { ...state, settings }
-    send('state.setSettings', () => api.state.setSettings(settings))
+    // YAZ-5053 round 4: a save that main refuses takes main's settings back, and the listeners wake, so no row shows a
+    // choice that was not saved. A later save or a broadcast since then is newer, and stays.
+    send('state.setSettings', () =>
+      api.state.setSettings(settings).catch(async (err: unknown) => {
+        const main = await api.state.get()
+        if (state.settings === settings) {
+          state = { ...state, settings: withSettingsDefaults(main).settings }
+          listeners.forEach((l) => l())
+        }
+        throw err
+      }),
+    )
+  },
+  /**
+   * A few fields from a place that has no settings prop (the Add panel's filters and pins, YAZ-4360 / YAZ-4361): laid
+   * over the settings of the moment, and the listeners wake at once, so App's copy is never older than this write.
+   */
+  patchSettings(patch: Partial<SettingsState>): void {
+    storage.setSettings({ ...state.settings, ...patch })
+    listeners.forEach((l) => l())
   },
 
   /** Sidebar visibility is window identity; global state broadcasts cannot change another window. */
@@ -435,9 +543,9 @@ export const storage = {
     send('state.setFolds', () => api.state.setFolds(root, file, keys))
   },
 
-  /** What this note's table of contents is built from (YAZ-2700 D14): `headings`, `bullets`, or `null` — Auto, the note's own structure decides, which is no entry at all. */
+  /** What this page's table of contents is built from (YAZ-2700 D14): `headings`, `bullets`, or `null` — Auto, the page's own structure decides, which is no entry at all. */
   getTocSource: (root: string, file: string): TocSource | null => folderOf(root).tocSources[file] ?? null,
-  /** The reader's choice for one note; `null` (Auto) removes the entry. The same choice again writes nothing. */
+  /** The reader's choice for one page; `null` (Auto) removes the entry. The same choice again writes nothing. */
   setTocSource(root: string, file: string, source: TocSource | null): void {
     if (source === (folderOf(root).tocSources[file] ?? null)) return
     const tocSources = { ...folderOf(root).tocSources }
@@ -447,9 +555,9 @@ export const storage = {
     send('state.setTocSource', () => api.state.setTocSource(root, file, source))
   },
 
-  /** The folded rows of this note's table of contents (YAZ-3939 D1): `tocFoldKeys` keys. */
+  /** The folded rows of this page's table of contents (YAZ-3939 D1): `tocFoldKeys` keys. */
   getTocFolds: (root: string, file: string): string[] => folderOf(root).tocFolds[file] ?? [],
-  /** Replace them for one note; an empty list removes the entry. */
+  /** Replace them for one page; an empty list removes the entry. */
   setTocFolds(root: string, file: string, keys: readonly string[]): void {
     const tocFolds = { ...folderOf(root).tocFolds }
     if (keys.length === 0) delete tocFolds[file]
@@ -458,7 +566,7 @@ export const storage = {
     send('state.setTocFolds', () => api.state.setTocFolds(root, file, keys))
   },
 
-  /** This code file's own "Table of contents" choice (YAZ-2950, YAZ-3506). No entry is `undefined`: Settings › "Table of contents default" decides (YAZ-3558 D1). A note's choice is in its frontmatter (YAZ-4094 G4). */
+  /** This code file's own "Table of contents" choice (YAZ-2950, YAZ-3506). No entry is `undefined`: Settings › "Table of contents default" decides (YAZ-3558 D1). A page's choice is in its frontmatter (YAZ-4094 G4). */
   getTocSwitch: (root: string, file: string): boolean | undefined => folderOf(root).tocSwitches[file],
   /** The reader's switch for one code file. On and off are both stored; the same value again writes nothing. */
   setTocSwitch(root: string, file: string, on: boolean): void {

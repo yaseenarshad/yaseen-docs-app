@@ -5,15 +5,20 @@
  * ever exercised through a live `Request` and which is the piece an infinite scroll rests on.
  */
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from '@shared/iconPacks'
 import {
+  allowedPrefixes,
+  filtersNeedPackFacts,
+  matchesStyle,
   COLOR_COLLECTION_PRIORITY,
   decodeCursor,
   encodeCursor,
   hasMorePages,
   ICONIFY_ALL_RESULT_LIMIT,
+  iconifyAnswerCapped,
   iconifyItemFromId,
-  iconifyPageExhausted,
   iconifySearchUrl,
+  iconifySetsBySize,
   pixabaySearchUrl,
   iconifySvgUrl,
   initialCursor,
@@ -39,11 +44,11 @@ const iconItem = (providerId: string, over: Partial<{ kind: 'icon' | 'logo'; tit
 })
 
 describe('the numbers 🔒 YAZ-1775 D4 locked', () => {
-  it('is 18 results, 14 icons and 4 graphics in "all", cache version 2, 20 MB imports', () => {
+  it('is 18 results, 14 icons and 4 graphics in "all", cache version 3 (YAZ-4358), 20 MB imports', () => {
     expect(SEARCH_LIMIT).toBe(18)
     expect(ICONIFY_ALL_RESULT_LIMIT).toBe(14)
     expect(PIXABAY_ALL_RESULT_LIMIT).toBe(4)
-    expect(SEARCH_CACHE_VERSION).toBe('2')
+    expect(SEARCH_CACHE_VERSION).toBe('3')
     expect(MAX_IMPORT_BYTES).toBe(20 * 1024 * 1024)
   })
 
@@ -187,6 +192,12 @@ describe('the opaque cursor', () => {
     }
     expect(bad((c) => ((c as { version: number }).version = 2))).toThrow()
     expect(bad((c) => (c.iconify.colorStart = -1))).toThrow()
+    // YAZ-4358: the pack passes' place is checked like the rest.
+    expect(bad((c) => (c.iconify.setIndex = -1))).toThrow()
+    expect(bad((c) => (c.iconify.setIndex = 1.5))).toThrow()
+    expect(bad((c) => (c.iconify.setStart = 5000))).toThrow()
+    expect(bad((c) => ((c.iconify as { setsExhausted: unknown }).setsExhausted = 'no'))).toThrow()
+    expect(bad((c) => delete (c.iconify as Partial<typeof c.iconify>).setIndex)).toThrow()
     expect(bad((c) => (c.pixabay.vectorPage = 0))).toThrow()
     expect(bad((c) => ((c.pixabay as { nextType: string }).nextType = 'photo'))).toThrow()
     expect(bad((c) => (c.pixabay.seenIds = ['abc']))).toThrow()
@@ -198,6 +209,9 @@ describe('the opaque cursor', () => {
     expect(hasMorePages(cursor, 'all')).toBe(true)
     cursor.iconify.colorExhausted = true
     cursor.iconify.generalExhausted = true
+    // YAZ-4358: the pack passes are still to come.
+    expect(hasMorePages(cursor, 'iconify')).toBe(true)
+    cursor.iconify.setsExhausted = true
     expect(hasMorePages(cursor, 'iconify')).toBe(false)
     expect(hasMorePages(cursor, 'all')).toBe(true)
     cursor.pixabay.vectorExhausted = true
@@ -215,24 +229,34 @@ describe('the opaque cursor', () => {
   })
 })
 
-describe('page exhaustion', () => {
-  it('trusts a reported total when there is one', () => {
-    expect(iconifyPageExhausted(0, 10, { fetchedCount: 10, responseLimit: 10, total: 10 })).toBe(true)
-    expect(iconifyPageExhausted(0, 10, { fetchedCount: 10, responseLimit: 10, total: 40 })).toBe(false)
+describe('a pass answer and the pack order (YAZ-4358)', () => {
+  it('is cut when Iconify filled its window of 128, and complete below it', () => {
+    const icons = (n: number) => Array.from({ length: n }, (_, i) => `mdi:a-${i}`)
+    expect(iconifyAnswerCapped({ icons: icons(128), total: 128, limit: 128 })).toBe(true)
+    expect(iconifyAnswerCapped({ icons: icons(40), total: 40, limit: 128 })).toBe(false)
+    // No `total` or `limit` named: the count against Iconify's window of 128.
+    expect(iconifyAnswerCapped({ icons: icons(128) })).toBe(true)
+    expect(iconifyAnswerCapped({ icons: icons(127) })).toBe(false)
+    expect(iconifyAnswerCapped({ icons: [], total: 0, limit: 128 })).toBe(false)
   })
 
-  it('without a total, only a SHORT page that was fully consumed is the end', () => {
-    expect(iconifyPageExhausted(0, 3, { fetchedCount: 3, responseLimit: 10 })).toBe(true)
-    expect(iconifyPageExhausted(0, 10, { fetchedCount: 10, responseLimit: 10 })).toBe(false)
-    expect(iconifyPageExhausted(0, 2, { fetchedCount: 3, responseLimit: 10 })).toBe(false)
+  it('orders the packs biggest first, leaves hidden ones out, and keeps only the allowed', () => {
+    const collections = { small: { total: 10 }, big: { total: 900 }, mid: { total: 300 }, gone: { total: 5000, hidden: true }, tie: { total: 300 } }
+    expect(iconifySetsBySize(collections)).toEqual(['big', 'mid', 'tie', 'small'])
+    expect(iconifySetsBySize(collections, new Set(['small', 'mid']))).toEqual(['mid', 'small'])
   })
 })
 
 describe('provider URLs and the import-time item', () => {
-  it('passes prefixes only for the colour pass', () => {
-    expect(iconifySearchUrl('rocket', 0, 6, ['noto']).searchParams.get('prefixes')).toBe('noto')
-    expect(iconifySearchUrl('rocket', 0, 6).searchParams.has('prefixes')).toBe(false)
-    expect(iconifySearchUrl('rocket', 12, 6).searchParams.get('start')).toBe('12')
+  it('asks for a whole pass at once: from the start, the largest limit, with prefixes or one prefix (YAZ-4358)', () => {
+    const url = iconifySearchUrl('rocket', { prefixes: ['noto', 'twemoji'] })
+    expect(url.searchParams.get('prefixes')).toBe('noto,twemoji')
+    expect(url.searchParams.get('start')).toBe('0')
+    expect(url.searchParams.get('limit')).toBe('999')
+    expect(iconifySearchUrl('rocket').searchParams.has('prefixes')).toBe(false)
+    const one = iconifySearchUrl('rocket', { prefix: 'mdi' })
+    expect(one.searchParams.get('prefix')).toBe('mdi')
+    expect(one.searchParams.has('prefixes')).toBe(false)
   })
 
   it('serves an icon SVG by name and refuses anything that is not prefix:name', () => {
@@ -249,5 +273,66 @@ describe('provider URLs and the import-time item', () => {
     expect(item?.licenseName).toBeUndefined()
     expect(iconifyItemFromId('simple-icons:github')).toMatchObject({ kind: 'logo', trademarkNotice: true })
     expect(iconifyItemFromId('nope')).toBeNull()
+  })
+})
+
+describe('the filters (YAZ-4360)', () => {
+  const facts = {
+    mdi: { palette: false, category: 'Material', license: { spdx: 'Apache-2.0', title: 'Apache 2.0' } },
+    noto: { palette: true, category: 'Emoji', license: { spdx: 'Apache-2.0' } },
+    logos: { palette: true, category: 'Logos', license: { spdx: 'CC0-1.0' } },
+    cbi: { palette: false, category: 'Thematic', license: { spdx: 'CC-BY-NC-SA-4.0' } },
+    ps: { palette: false, license: { spdx: 'CC-BY-NC-4.0' } },
+  }
+  const filters = (over: Partial<MediaFilters>): MediaFilters => ({ ...DEFAULT_MEDIA_FILTERS, ...over })
+  const allowed = (over: Partial<MediaFilters>) => {
+    const set = allowedPrefixes(facts, filters(over))
+    return set === null ? null : [...set].sort()
+  }
+
+  it('allows every pack with no filter, and asks for no pack facts', () => {
+    expect(allowedPrefixes(facts, undefined)).toBeNull()
+    expect(allowed({})).toBeNull()
+    expect(filtersNeedPackFacts(filters({}))).toBe(false)
+    expect(filtersNeedPackFacts(filters({ packs: ['mdi'] }))).toBe(false)
+  })
+
+  it('reads each option from the pack: Colors from palette, Emoji from category, Business-safe from the license', () => {
+    expect(allowed({ colors: 'one' })).toEqual(['cbi', 'mdi', 'ps'])
+    expect(allowed({ colors: 'many' })).toEqual(['logos', 'noto'])
+    expect(allowed({ style: 'emoji' })).toEqual(['noto'])
+    expect(allowed({ license: 'business' })).toEqual(['logos', 'mdi', 'noto'])
+    // Outline, Filled and Duotone are a test on each name, not on the pack.
+    expect(allowed({ style: 'outline' })).toBeNull()
+    expect(filtersNeedPackFacts(filters({ colors: 'one' }))).toBe(true)
+  })
+
+  it('names the packs, and joins every filter', () => {
+    expect(allowed({ packs: ['mdi', 'unknown'] })).toEqual(['mdi', 'unknown'])
+    // With a filter that reads facts, a pack the facts do not know is out.
+    expect(allowed({ packs: ['mdi', 'unknown'], colors: 'one' })).toEqual(['mdi'])
+    expect(allowed({ colors: 'one', license: 'business' })).toEqual(['mdi'])
+    expect(allowed({ colors: 'many', style: 'emoji', packs: ['logos'] })).toEqual([])
+  })
+
+  it('reads Style from the name ending, past a size number, and from the pack ending', () => {
+    expect(matchesStyle('mdi:arrow-left-outline', 'outline')).toBe(true)
+    expect(matchesStyle('ri:arrow-up-line', 'outline')).toBe(true)
+    expect(matchesStyle('fluent:arrow-up-24-regular', 'outline')).toBe(true)
+    expect(matchesStyle('mdi:arrow-left', 'outline')).toBe(false)
+    expect(matchesStyle('mdi:arrow-left-outline', 'filled')).toBe(false)
+    expect(matchesStyle('ri:arrow-up-fill', 'filled')).toBe(true)
+    expect(matchesStyle('heroicons:arrow-up-20-solid', 'filled')).toBe(true)
+    expect(matchesStyle('fluent:arrow-up-24-filled', 'filled')).toBe(true)
+    expect(matchesStyle('ph:arrow-up-duotone', 'duotone')).toBe(true)
+    expect(matchesStyle('solar:arrow-up-bold-duotone', 'duotone')).toBe(true)
+    expect(matchesStyle('ic:twotone-arrow', 'duotone')).toBe(false)
+    expect(matchesStyle('material-symbols:home-two-tone', 'duotone')).toBe(true)
+    expect(matchesStyle('icon-park-outline:arrow-up', 'outline')).toBe(true)
+    expect(matchesStyle('fa6-solid:arrow-up', 'filled')).toBe(true)
+    expect(matchesStyle('line-md:arrow-up', 'outline')).toBe(false)
+    // Any and Emoji are not a name rule.
+    expect(matchesStyle('mdi:arrow', 'any')).toBe(true)
+    expect(matchesStyle('mdi:arrow', 'emoji')).toBe(true)
   })
 })

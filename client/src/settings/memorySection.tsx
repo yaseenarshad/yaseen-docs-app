@@ -35,12 +35,14 @@
  */
 import { useId, useState } from 'react'
 import type { MemoryReport, MemoryTabRow } from '@shared/types'
+import { embedPictureStats } from '../editor/embed/pictureStats'
 import { formatBytes } from '../lib/format'
 import { pageLabel } from '../lib/pageLabel'
 import { AsleepIcon } from '../views/view/icons'
 import { Segmented } from './controls'
 import { ON_OFF_OPTIONS, TAB_SLEEP_AFTER_OPTIONS } from './options'
 import type { SettingsSection } from './registry'
+import { unit } from './unitLabel'
 import { useMemoryReport } from './useMemoryReport'
 
 /** The ⓘ of each kind of row (YAZ-3932, round 2), as Yasin approved them. */
@@ -65,7 +67,7 @@ const STATES_INFO = [
 const COLUMN_INFO = {
   lastSeen: 'The last time this tab was on your screen. Empty for the tab in view (you see it now) and for a tab that is not loaded.',
   changed: 'The last time the file was saved to disk: by you, by Sync or by another app.',
-  ram: 'The memory the window uses now. All tabs in a window share this memory, so a tab has no number of its own. Hover on a size to see its parts. JS heap is the memory of your notes and tabs. Other is the rest of the window: the screen, images and drawings.',
+  ram: 'The memory the window uses now. All tabs in a window share this memory, so a tab has no number of its own. Hover on a size to see its parts. JS heap is the memory of your pages and tabs. Other is the rest of the window: the screen, images and drawings.',
 } as const
 
 /** A header's text, cut with "…" when its column is narrow, and its ⓘ, which is never cut (YAZ-4022). */
@@ -103,7 +105,7 @@ function Info({ text, label = 'What this row means' }: { text: string; label?: s
 interface Row {
   key: string
   name: string
-  /** A window's "2 notes, 1 drawing": the name's hover. */
+  /** A window's "2 pages, 1 drawing": the name's hover. */
   open?: string
   bytes: number
   hint?: string
@@ -290,11 +292,21 @@ function MemoryRows() {
   )
 }
 
+/** YAZ-4825 item 27: this window's embed picture cache, read when the page draws (it draws again with each report). */
+function EmbedPictures() {
+  const { count, bytes } = embedPictureStats()
+  return (
+    <span className="storage__muted" data-embed-pictures="">
+      {count === 0 ? 'None now' : `${count} ${count === 1 ? 'picture' : 'pictures'} · about ${formatBytes(bytes)}`}
+    </span>
+  )
+}
+
 export const MEMORY_SECTION: SettingsSection = {
   id: 'memory',
   title: 'Memory',
   // The work is the core's, not this page's (YAZ-3977): it says so, and that each size is RAM (the RAM column).
-  note: 'The app frees memory by itself. A tab that you do not use goes to sleep. A window that gets too big reloads. You do not need to do anything here.',
+  page: 'The app frees memory by itself. A tab that you do not use goes to sleep. A window that gets too big reloads. You do not need to do anything here.',
   standalone: true,
   groups: [
     {
@@ -309,6 +321,13 @@ export const MEMORY_SECTION: SettingsSection = {
           hint: 'A sleeping tab frees its memory. A click wakes it.',
           keywords: ['memory', 'sleep', 'tab', 'idle', 'unload', 'minutes'],
           render: ({ settings, onChange }) => <Segmented options={TAB_SLEEP_AFTER_OPTIONS} value={settings.tabSleepAfter} onChange={(tabSleepAfter) => onChange({ ...settings, tabSleepAfter })} ariaLabel="Sleep unseen tabs after" />,
+        },
+        {
+          id: 'embedPictures',
+          label: (ctx) => unit(ctx, 'Drawing and diagram pictures in pages'),
+          hint: 'The pictures that embeds in this window show. The app keeps the last 24 that were shown, and frees the others by itself.',
+          keywords: ['memory', 'embed', 'picture', 'cache', 'drawing', 'diagram'],
+          render: () => <EmbedPictures />,
         },
         {
           id: 'memoryReload',

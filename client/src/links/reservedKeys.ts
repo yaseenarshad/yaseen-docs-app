@@ -1,31 +1,50 @@
 import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { COMMENTS_KEY } from '@shared/comments'
+import { HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, SHOW_OTHER_FILES_KEY, CONFIRM_CHANGES_KEY, INHERIT_COLUMNS_KEY, COLUMN_MARKS_KEY, SHOW_NEW_BUTTONS_KEY, SHOW_PAGE_FILE_KEY } from '@shared/folderPage'
 import { FOLDER_VALUES_KEY } from '@shared/folderValues'
-import { NOTE_ID_KEY } from '@shared/noteId'
-import { TITLE_KEY } from '@shared/noteName'
-import { PAGE_SWITCH_KEYS } from '@shared/pageSwitches'
+import { CREATED_KEY } from '@shared/pageCreated'
+import { PAGE_ID_KEY } from '@shared/pageId'
+import { TITLE_KEY } from '@shared/pageName'
+import { CODE_WIDTH_KEY, FIND_FOLDS_KEY, OUTSIDE_GLOW_KEY, PAGE_POSITION_KEY, PAGE_SWITCH_KEYS, PAGE_WIDTH_KEY, TABLE_WIDTH_KEY } from '@shared/pageSwitches'
+// YAZ-5904: `card-sides`, the cog's Card sides row.
+import { CARD_SIDES_KEY } from '@shared/pageSwitches'
 import { READ_ONLY_KEY } from '@shared/readOnly'
-import { REVIEWS_KEY } from '@shared/reviews'
+import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
 
-const PLAIN: ReadonlySet<string> = new Set([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS])
-const ID_VAULT: ReadonlySet<string> = new Set([...PLAIN, NOTE_ID_KEY, TITLE_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY])
+// `show_page_file` (YAZ-3746 D37), `hover_preview` (YAZ-4601 D51; legacy), `hover_rows` and `hover_links` (demo 13D), `show_other_files` (YAZ-4597), `confirm_changes` (13AN), `inherit_columns` (YAZ-4713 C12), `column_marks` (C11) and `show_new_buttons` (13BL): a folder page's cog sets them, as a page's cog sets its page switches.
+const PLAIN: ReadonlySet<string> = new Set([COMMENTS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, PAGE_WIDTH_KEY, PAGE_POSITION_KEY, SHOW_PAGE_FILE_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, HOVER_LINKS_KEY, SHOW_OTHER_FILES_KEY, CONFIRM_CHANGES_KEY, INHERIT_COLUMNS_KEY, COLUMN_MARKS_KEY, SHOW_NEW_BUTTONS_KEY, CARD_SIDES_KEY])
+const ID_VAULT: ReadonlySet<string> = new Set([...PLAIN, PAGE_ID_KEY, TITLE_KEY, CREATED_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY])
 
 /**
- * The frontmatter keys the app OWNS on a note (YAZ-1513/1549), spelled from the real constants —
- * never a local literal: the comments store, the note id (YAZ-2293 — editing it would orphan every
- * link to the note), the review log (YAZ-2322), the note's shortcuts (YAZ-2290 D2 — folder ids,
+ * The frontmatter keys the app OWNS on a page (YAZ-1513/1549), spelled from the real constants —
+ * never a local literal: the comments store, the page id (YAZ-2293 — editing it would orphan every
+ * link to the page), the page's shortcuts (YAZ-2290 D2 — folder ids,
  * set from the folder's own menu) and the folders' values (D19 — `in`, written by each folder's
  * views) and the read-only switch (YAZ-3076 D1 — set from the page cog and the chip, so the panel
  * cannot turn it off behind the "Allow edits?" box), and the page cog's on/off rows (YAZ-4094 G4 — `toc`, `section-indent`,
- * `guide-lines`, `folding`, set from the cog) — keys whose VALUE is the app's, not the user's — and the title (YAZ-2420 🔒 D14), which is the
+ * `guide-lines`, `folding`, `bullet-threading`, `outside-glow` (YAZ-4272), `find-folds` (YAZ-4787, set from the find bar) and
+ * `code-width` / `table-width` (YAZ-4783) and `page-width` (YAZ-5640), set from the cog) — keys whose VALUE is the app's, not the user's — and the title (YAZ-2420 🔒 D14), which is the
  * user's but is written only by a title edit, because that edit also names the file. None is a name a property can be added
  * under, and none is deleted as a column: `deleteColumn.ts` refuses them. The properties panel
  * shows them as "Reserved" with no editor — `in` as no row at all: its blocks are the panel's
  * folder rows. A folder's settings block is the app's only in the folder's own `.folder.md`, whose
- * panel hides it; on a note that key is an ordinary property.
+ * panel hides it; on a page that key is an ordinary property.
  *
  * Where the vault does not use IDs (YAZ-2523 🔒 V12) only the comments store, the review log, the
  * read-only switch and the page switches are the app's: `id`, `title`, `also_in` and `in` are ordinary properties there. A column is deleted
  * only where the vault uses IDs (🔒 V11), so `deleteColumn.ts` asks for that vault's keys.
  */
 export const reservedKeys = (ids: boolean): ReadonlySet<string> => (ids ? ID_VAULT : PLAIN)
+
+const PLAIN_COLUMNS: ReadonlySet<string> = new Set([...PLAIN, FOLDER_SETTINGS_KEY])
+const ID_VAULT_COLUMNS: ReadonlySet<string> = new Set([...ID_VAULT, FOLDER_SETTINGS_KEY])
+
+/**
+ * The names no folder page column may have (YAZ-4713 C1): the vault's app keys, and `folder_settings`. A column's
+ * value is a top-level field of each page, and of each subfolder row's `.folder.md` (D31), whose settings block that
+ * key is. "+ Add column" refuses them, the views list none of them, and the page's write door refuses them.
+ */
+export const columnReservedKeys = (ids: boolean): ReadonlySet<string> => (ids ? ID_VAULT_COLUMNS : PLAIN_COLUMNS)
+
+/** Why a reserved key has no editor, and why Add property and "+ Add column" refuse one: said once, in the same words (YAZ-4544). */
+export const reservedKeyText = (key: string): string => `${key} is the app's own property — it is set where it belongs, not here`

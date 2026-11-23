@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { GESTURE_ROWS, gestureAction, gestureClashes, gestureDisplay, gestureFor, gestureOf, gestureOfEvent, gestureRow, isDefaultGesture, isGestureEntry, parseGesture, sameGesture, withGesture } from '@shared/keys'
 
-/** YAZ-3936 (demo round 1 C4 of YAZ-3879): the clicks of "Links in a note" and "Bullet dots", stored with the keys' changes. */
+/** YAZ-3936 (demo round 1 C4 of YAZ-3879): the clicks of "Links in a page" and "Bullet dots", stored with the keys' changes. */
 const mods = (held: string) => ({ metaKey: held.includes('⌘'), ctrlKey: held.includes('⌃'), altKey: held.includes('⌥'), shiftKey: held.includes('⇧') })
 const row = (id: string) => {
   const found = gestureRow(id)
@@ -10,14 +10,17 @@ const row = (id: string) => {
 }
 
 describe('the gesture rows (C4)', () => {
-  it('has two places with three actions each, and the defaults of the decision (links browser style, YAZ-3747 demo)', () => {
+  it('has the places\' rows and the defaults of the decisions (links browser style, YAZ-3747 demo; a file\'s new window, YAZ-4444 D32)', () => {
     expect(GESTURE_ROWS.map((r) => [r.id, gestureDisplay(r.gesture)])).toEqual([
       ['links.thisTab', ''],
       ['links.newTab', '⌘⇧-click'],
       ['links.backgroundTab', '⌘-click'],
+      // A link keeps ⌘⇧-click for a new tab: its new window has no gesture until the user gives it one.
+      ['links.newWindow', ''],
       ['bullets.thisTab', 'Click'],
       ['bullets.newTab', '⇧-click'],
       ['bullets.backgroundTab', '⌘-click'],
+      ['files.newWindow', '⌘⇧-click'],
     ])
   })
 
@@ -42,6 +45,19 @@ describe('a click reads its binding (C4)', () => {
     expect(gestureAction('bullets', mods('⇧'), undefined)).toBe('newTab')
     expect(gestureAction('bullets', mods('⌘'), undefined)).toBe('backgroundTab')
     expect(gestureAction('bullets', mods('⌥'), undefined)).toBeNull()
+  })
+
+  it('a file: ⇧⌘-click opens a new window (YAZ-4444); ⇧ and ⌘ alone stay built in; a link\'s ⌘⇧ stays a new tab; a change works', () => {
+    expect(gestureAction('files', mods('⌘⇧'), {})).toBe('newWindow')
+    for (const held of ['', '⇧', '⌘', '⌥']) expect(gestureAction('files', mods(held), {}), held).toBeNull()
+    expect(gestureAction('links', mods('⌘⇧'), {})).toBe('newTab')
+    const moved = withGesture({}, row('files.newWindow'), 'Alt+CmdOrCtrl+Click')
+    expect(moved).toEqual({ 'files.newWindow': 'Alt+CmdOrCtrl+Click' })
+    expect(gestureAction('files', mods('⌥⌘'), moved)).toBe('newWindow')
+    expect(gestureAction('files', mods('⌘⇧'), moved)).toBeNull()
+    const link = withGesture({}, row('links.newWindow'), 'CmdOrCtrl+Alt+Click')
+    expect(gestureAction('links', mods('⌥⌘'), link)).toBe('newWindow')
+    expect(gestureFor('links', 'newWindow', link)).toBe('CmdOrCtrl+Alt+Click')
   })
 
   it('"the old way" (#11) is a binding: Links › Open in this tab on Click; "No gesture" opens nothing', () => {

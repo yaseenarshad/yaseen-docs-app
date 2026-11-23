@@ -68,10 +68,15 @@ const StaticCanvas = (props: StaticCanvasProps) => {
     };
     renderStaticScene(config, isRenderThrottlingEnabled());
 
+    const repaint = () =>
+      renderStaticScene(config, isRenderThrottlingEnabled());
     // YAZ-3944 D2: a GIF tick paints this layer again, without React
     if (props.renderConfig.gifPlayer) {
-      props.renderConfig.gifPlayer.repaint = () =>
-        renderStaticScene(config, isRenderThrottlingEnabled());
+      props.renderConfig.gifPlayer.repaint = repaint;
+    }
+    // YAZ-4366: so does a new Edit colors preview
+    if (props.renderConfig.colorEditPreview) {
+      props.renderConfig.colorEditPreview.repaint = repaint;
     }
   });
 

@@ -1,0 +1,175 @@
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { cspOf, headersFor, parseHeaders } from './headers'
+
+/**
+ * The headers of the site (`public/_headers`, Cloudflare static assets; YAZ-5087). The CSP is checked against the calls
+ * the code really makes: a new origin in the app's code fails here until the CSP names it, and the CSP may name nothing
+ * the code does not call (decision 8, round 12 item 13, decision 13).
+ */
+
+const here = new URL('..', import.meta.url).pathname
+const rules = parseHeaders(readFileSync(join(here, 'public/_headers'), 'utf8'))
+const page = headersFor(rules, '/')
+const csp = cspOf(page['content-security-policy'] ?? '')
+
+const appSources = (dir: string): string[] =>
+  readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name)
+    if (statSync(path).isDirectory()) return name === 'dev' ? [] : appSources(path)
+    // Tests and test helpers (`testing.ts`, `*.testing.ts`, the old friends code of the round 4 checker) are never bundled.
+    return /\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name) && name !== 'testing.ts' && !name.endsWith('.testing.ts') && !/\/friends\/check4\/old\//.test(path) ? [path] : []
+  })
+
+/** Every https origin written in the app's code (not its tests, not the dev fixtures). */
+const originsInCode = new Map<string, string[]>()
+for (const file of appSources(join(here, 'src'))) {
+  for (const m of readFileSync(file, 'utf8').matchAll(/https:\/\/([a-z0-9.-]+\.[a-z]{2,})/gi)) {
+    const origin = `https://${m[1].toLowerCase()}`
+    originsInCode.set(origin, [...(originsInCode.get(origin) ?? []), file.slice(here.length)])
+  }
+}
+
+/**
+ * Origins in the code that the page never CALLS, each with the reason. Anything else in the code must be in `connect-src`.
+ * - github.com: the "Set up your phone" guide's link (the person opens it in Safari) and the sign-in's address parse.
+ * - avatars.githubusercontent.com: the comment that names it; the address itself comes from GitHub's answer (`img-src`).
+ */
+const NOT_CALLED: Record<string, string> = {
+  'https://github.com': 'a link the person opens, text the sign-in parses, and the sign-in page the app goes to (YAZ-5645)',
+  'https://avatars.githubusercontent.com': 'pictures only (img-src), round 12 item 13',
+  'https://docs.yaseenarshad.com': "this site's own callback address, which the Worker checks (YAZ-5645); calls use location.origin ('self')",
+}
+
+describe('the Content-Security-Policy of the app', () => {
+  it('connect-src: exactly the origins the code calls (GitHub\'s API; YAZ-5645: this site, for its Worker\'s /api/github/*), nothing more', () => {
+    const called = [...originsInCode.keys()].filter((o) => !(o in NOT_CALLED)).sort()
+    expect(called).toEqual(['https://api.github.com'])
+    expect(csp.get('connect-src')).toEqual(["'self'", ...called])
+  })
+
+  it("YAZ-5645: the only call to this site is the Worker's routes (never a page or a file by fetch)", () => {
+    const worker = readFileSync(join(here, 'src/auth/githubWorker.ts'), 'utf8')
+    expect(worker).toMatch(/new URL\(path, origin \?\? location\.origin\)/)
+    expect(worker).toMatch(/new URL\(WORKER_REVOKE, origin \?\? location\.origin\)/)
+  })
+
+  it('the follow-up of YAZ-5280: no app code fetches anything but GitHub (a fetch of a blob: or of this site would break connect-src); the viewer opens only blob: pictures, sounds, videos and PDFs, which the CSP lets through', () => {
+    const fetching = appSources(join(here, 'src'))
+      .filter((f) => /(^|[^.\w])fetch\(|globalThis\.fetch\(|XMLHttpRequest/.test(readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')))
+      .map((f) => f.slice(here.length))
+    // The GitHub client and the friends guard (both send to api.github.com only); the worker, which has its own CSP;
+    // YAZ-5645: the calls to this site's Worker (`/api/github/*`, connect-src 'self').
+    expect(fetching.sort()).toEqual(['src/auth/githubWorker.ts', 'src/friends/guard.ts', 'src/github/client.ts', 'src/pwa/swCore.ts'])
+  })
+
+  it('each origin in the code is either called (connect-src) or listed here with its reason', () => {
+    for (const [origin, files] of originsInCode) {
+      expect([origin, files, origin in NOT_CALLED || csp.get('connect-src')!.includes(origin)]).toEqual([origin, files, true])
+    }
+  })
+
+  it("img-src: self, blob:, data: and GitHub's avatar host only; media-src: self and blob: (3D keeps media in IndexedDB)", () => {
+    expect(csp.get('img-src')).toEqual(["'self'", 'blob:', 'data:', 'https://avatars.githubusercontent.com'])
+    expect(csp.get('media-src')).toEqual(["'self'", 'blob:'])
+  })
+
+  it('scripts: this site only. No inline script, no eval, no third-party script, font or analytics', () => {
+    expect(csp.get('default-src')).toEqual(["'self'"])
+    expect(csp.get('script-src')).toEqual(["'self'"])
+    expect(csp.get('font-src')).toEqual(["'self'"])
+    expect(csp.get('style-src')).toEqual(["'self'", "'unsafe-inline'"])
+    const all = page['content-security-policy']
+    expect(all).not.toMatch(/unsafe-eval|wasm-unsafe-eval|\*|http:/)
+    for (const name of ['index.html', 'friend.html']) {
+      const html = readFileSync(join(here, name), 'utf8')
+      expect([name, /<script(?![^>]*\bsrc=)[^>]*>/.test(html)]).toEqual([name, false])
+      expect([name, /(src|href)="https?:/.test(html)]).toEqual([name, false])
+    }
+  })
+
+  it('no plugin, no frame of the page elsewhere, no base or form tricks; the worker comes from this site', () => {
+    expect(csp.get('object-src')).toEqual(["'none'"])
+    expect(csp.get('frame-ancestors')).toEqual(["'none'"])
+    expect(csp.get('base-uri')).toEqual(["'none'"])
+    expect(csp.get('form-action')).toEqual(["'none'"])
+    expect(csp.get('worker-src')).toEqual(["'self'"])
+    expect(csp.get('manifest-src')).toEqual(["'self'"])
+  })
+
+  it('every path gets the same policy (the single-page fallback, the friend page, the files)', () => {
+    for (const path of ['/index.html', '/some/route', '/friend', '/group', '/join', '/assets/index-abc.js', '/manifest.webmanifest']) {
+      expect([path, headersFor(rules, path)['content-security-policy']]).toEqual([path, page['content-security-policy']])
+    }
+  })
+
+  it("YAZ-5533: draw.io's frame has its own policy, stricter than the app's: this site's scripts, no call anywhere, no frame of its own; only the app may frame it", () => {
+    for (const path of ['/drawio/0123456789ab/render', '/drawio/0123456789ab/viewer-static.min.js', '/drawio/0123456789ab/stencils/aws4.js']) {
+      const policy = headersFor(rules, path)['content-security-policy'] ?? ''
+      // One policy (the app's is detached), never the app's joined to it.
+      expect([path, policy.split(', ').length, policy.includes('api.github.com')]).toEqual([path, 1, false])
+      const frame = cspOf(policy)
+      expect(frame.get('default-src')).toEqual(["'none'"])
+      expect(frame.get('script-src')).toEqual(["'self'"])
+      expect(frame.get('connect-src')).toEqual(["'none'"])
+      expect(frame.get('img-src')).toEqual(['data:', 'blob:'])
+      expect(frame.get('style-src')).toEqual(["'unsafe-inline'"])
+      for (const shut of ['frame-src', 'worker-src', 'object-src', 'base-uri', 'form-action']) expect([shut, frame.get(shut)]).toEqual([shut, ["'none'"]])
+      expect(frame.get('frame-ancestors')).toEqual(["'self'"])
+      expect(policy).not.toMatch(/unsafe-eval|wasm-unsafe-eval|\*|https?:/)
+      // The other headers stay (no referrer, no sniffing).
+      expect(headersFor(rules, path)['x-content-type-options']).toBe('nosniff')
+    }
+    // The one exception: every other path keeps frame-ancestors 'none'.
+    for (const path of ['/', '/friend', '/assets/index-abc.js', '/drawio', '/drawio.html', '/x/drawio/render']) expect([path, cspOf(headersFor(rules, path)['content-security-policy'] ?? '').get('frame-ancestors')]).toEqual([path, ["'none'"]])
+    // The app may frame its own page: its frame-src is its default-src, this site.
+    expect(csp.get('frame-src') ?? csp.get('default-src')).toEqual(["'self'"])
+  })
+
+  it("the worker file has its own policy: it may fetch this site's files and nothing else", () => {
+    const sw = cspOf(headersFor(rules, '/sw.js')['content-security-policy'] ?? '')
+    expect(sw.get('default-src')).toEqual(["'none'"])
+    expect(sw.get('connect-src')).toEqual(["'self'"])
+    expect(headersFor(rules, '/sw.js')['content-security-policy']).not.toContain('github')
+  })
+})
+
+describe('the other headers', () => {
+  it('no referrer ever (the friend link and the token never leak), no type sniffing, no camera', () => {
+    for (const path of ['/', '/friend', '/assets/index-abc.js', '/sw.js']) {
+      const h = headersFor(rules, path)
+      expect([path, h['referrer-policy'], h['x-content-type-options']]).toEqual([path, 'no-referrer', 'nosniff'])
+      expect(h['permissions-policy']).toMatch(/(^|, )camera=\(\)(,|$)/)
+      expect(h['permissions-policy']).toMatch(/microphone=\(\)/)
+      expect(h['permissions-policy']).toMatch(/geolocation=\(\)/)
+    }
+  })
+
+  it('YAZ-5283: no long cache under /assets/: a MISSING chunk gets the app page there (the single-page fallback), and the browser must not keep it', () => {
+    for (const path of ['/assets/index-abc.js', '/assets/nope-ABC.js']) {
+      const cc = headersFor(rules, path)['cache-control'] ?? ''
+      expect([path, cc]).not.toEqual([path, expect.stringMatching(/immutable|max-age=[1-9]/)])
+    }
+  })
+
+  it('YAZ-5284: HSTS on every answer, one year, no preload', () => {
+    for (const path of ['/', '/friend', '/sw.js', '/assets/index-abc.js', '/version.txt']) {
+      expect([path, headersFor(rules, path)['strict-transport-security']]).toEqual([path, 'max-age=31536000'])
+    }
+  })
+
+  it('the pages, the worker, the manifest and the version: always asked again', () => {
+    for (const path of ['/', '/index.html', '/friend', '/friend.html', '/group', '/group.html', '/join', '/join.html', '/sw.js', '/manifest.webmanifest', '/version.txt', '/appearance-boot.js']) {
+      expect([path, headersFor(rules, path)['cache-control']]).toEqual([path, 'no-cache'])
+    }
+  })
+})
+
+describe('the rules file reader (Cloudflare _headers)', () => {
+  it('splats, several rules joined, and a detach', () => {
+    const r = parseHeaders('# c\n/*\n  A: 1\n  B: x\n/a/*\n  A: 2\n  ! B\n')
+    expect(headersFor(r, '/a/b')).toEqual({ a: '1, 2' })
+    expect(headersFor(r, '/c')).toEqual({ a: '1', b: 'x' })
+  })
+})

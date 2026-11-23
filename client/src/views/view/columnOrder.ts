@@ -1,5 +1,6 @@
 import type { ViewDef, ViewSet } from '../viewSchema'
 import { frozenColumnCount } from './frozenColumns'
+import { canonicalKey } from './keys'
 
 /**
  * THE one order writer (YAZ-1549): a view with `order` replaced, its `frozenColumns` following
@@ -19,7 +20,13 @@ export function withOrder(view: ViewDef, order: string[]): ViewDef {
   return next
 }
 
-/** `withOrder` as a `Mutate` body: the def's view at `viewIndex` takes the new order. */
+/** A column the view may hide (YAZ-4544: one rule for the Properties menu and the column editor): Name only in a table or a board. */
+export const canHideColumn = (view: ViewDef, key: string): boolean => !(canonicalKey(key) === 'file.name' && view.type !== 'table' && view.type !== 'board')
+
+/**
+ * `withOrder` as a `Mutate` body: the def's view at `viewIndex` takes the new order of its SHOWN columns. A view that
+ * lists cards is seen through the card lens (`cardView.ts`), so its `order` is the cards' own there.
+ */
 export function setViewOrder(d: ViewSet, viewIndex: number, order: string[]): void {
   d.views[viewIndex] = withOrder(d.views[viewIndex], order)
 }

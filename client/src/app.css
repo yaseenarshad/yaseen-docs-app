@@ -1,4 +1,14 @@
 :root {
+  /* THE STACKING ORDER OVER EXPLORE (YAZ-4987; `stackingOrderCss.test.ts`). The Explore window is a fixed layer over the
+     whole window; what App draws while it shows (a sheet, a toast) stands beside it in `document.body`, so these three
+     decide which is on top. A sheet (every `.confirm-overlay`: Rename, Delete, the read-only ask, ⌘N, the keys) is over
+     Explore, Settings and a drawing (70), Version history and Share (80), and under the menus (90, 1000). A toast is
+     over Explore and under a sheet's scrim. A link's hover preview (`.board-preview`, YAZ-5908) is over Explore, a
+     drawing and the toasts, and under a sheet and the menus: it shows over whatever holds the link. */
+  --z-explore: 70;
+  --z-notices: 72;
+  --z-preview: 76;
+  --z-sheet: 85;
   /* A menu row's padding (YAZ-3503): the app's `.ctx-menu__item` and Monaco's right-click menu
      (`code/monacoMenuLook.ts`) both read it. Each row is this padding around one line of 13 px text at
      `line-height: normal`, so the two menus' rows are the same height on every Mac and every font. */
@@ -16,26 +26,42 @@
   --danger: #d64545;
   --warn: #c98a1a;
   --ok: #3a9d5d;
+  /* The next hidden word's colour (YAZ-5053 round 3): a calm sky blue, not a status colour nor the accent. */
+  --next-hidden: #2a8bd1;
   /* Hover washes on the sidebar chrome (header/cog) and on tree rows. */
   --bg-hover: #eeeef0;
   --bg-hover-row: #e9e9ec;
+  /* A card's title band (YAZ-5308 A3): one step darker than the card's top bar (`--bg-side`). */
+  --card-title-band: #ededf0;
   /* Directory rows in the tree: a touch softer than --fg. */
   --fg-dir: #444444;
   --reveal-bg: #ffe36e;
   --reveal-fg: #2d2500;
-  /* The sidebar tree's file icons (YAZ-3440 D4): one colour per kind; a note's only with "All colour", a PDF's is
-     the danger red. `sidebarIconColors` overrides each one on `.app`. Folders, notes and other files stay grey. */
-  --kind-note: #3d8fb8;
+  /* The sidebar tree's file icons (YAZ-3440 D4): one colour per kind; a page's only with "All colour" or a picked one, a
+     PDF's is the danger red. `sidebarIconColors` overrides each one on `.app` (YAZ-5100 round 2: a card's and a folder's
+     too). Folders, pages and other files stay grey. */
+  --kind-page: #3d8fb8;
   --kind-text: #3a7fc2;
   --kind-pdf: var(--danger);
   --kind-image: #1d9e75;
   --kind-drawing: #c08410;
   --kind-diagram: #e0682c;
+  --kind-folder: var(--fg-muted);
+  /* A card file's icon (YAZ-5037): the card icon of the `[[` picker and a card pill (`--card-link-icon`), in its own colour.
+     Two stacked cards (YAZ-5100 round 2), the one token every place draws. */
+  --kind-card: #8a63c9;
+  --card-link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.75' y='5.25' width='10' height='8' rx='1.25'/%3E%3Cpath d='M4.5 3h8.25a1.25 1.25 0 0 1 1.25 1.25v6.25'/%3E%3C/svg%3E");
   /* `==highlight==` wash (YAZ-1480): translucent, so text colour and selection show through in both themes. */
   --mark-bg: rgba(255, 213, 0, 0.4);
   --mark-bg-green: rgba(80, 200, 120, 0.35);
   --mark-bg-blue: rgba(80, 160, 255, 0.35);
   --mark-bg-pink: rgba(255, 120, 180, 0.35);
+  /* The highlight ▾ panel's colours (YAZ-4348 demo round 2): translucent too, one value for both themes; the table's
+     light fills of the same names are these tokens (`table.css`). */
+  --mark-bg-orange: rgba(255, 150, 50, 0.35);
+  --mark-bg-purple: rgba(160, 110, 255, 0.35);
+  --mark-bg-red: rgba(255, 90, 80, 0.35);
+  --mark-bg-gray: rgba(150, 150, 150, 0.35);
   /* Amber notice family: conflict bar + rename banner — the two that ask for a decision. (The
      link-notice toast left it for the context menu's surface tokens, YAZ-1674: it confirms as
      often as it warns.) */
@@ -53,7 +79,8 @@
   --code-function: #8250df;
   --code-type: #953800;
   --code-key: #0550ae;
-  --code-selection: rgba(9, 105, 218, 0.18);
+  /* A code block's selection (YAZ-5837): see-through, drawn over the text, clear in both themes. */
+  --code-selection: rgba(9, 105, 218, 0.25);
 }
 
 /* Dark palette (Desktop K, GRO-2218): the SAME tokens, near-black surfaces. App.tsx resolves the
@@ -73,16 +100,19 @@
   --danger: #e06c6c;
   --warn: #d9a13c;
   --ok: #4fb573;
+  --next-hidden: #5ab4ea;
   --bg-hover: #333336;
   --bg-hover-row: #303034;
+  --card-title-band: #2d2d30;
   --fg-dir: #b8b8bd;
   --reveal-bg: #d9b72a;
   --reveal-fg: #1e1900;
-  --kind-note: #6cb2d6;
+  --kind-page: #6cb2d6;
   --kind-text: #6aa7e0;
   --kind-image: #4cc79a;
   --kind-drawing: #e0aa3e;
   --kind-diagram: #f08d5a;
+  --kind-card: #b394e6;
   --notice-fg: #e6c878;
   --notice-bg: #3a300f;
   --notice-border: #5c4d1d;
@@ -95,7 +125,7 @@
   --code-function: #61afef;
   --code-type: #e5c07b;
   --code-key: #e06c75;
-  --code-selection: #3e4451;
+  --code-selection: rgba(97, 175, 239, 0.32);
 }
 
 *,
@@ -149,18 +179,12 @@ button {
 }
 
 .app {
-  --content-max-width: 1040px;
+  /* Content width (YAZ-5144): the text's widest, `--content-text-width` (App, `lib/contentWidth.ts`), and the column's
+     48 px sides. Full is the window. */
+  --content-max-width: calc(var(--content-text-width) + 96px);
   display: flex;
   height: 100%;
   overflow: hidden;
-}
-
-.app[data-content-width='medium'] {
-  --content-max-width: 1440px;
-}
-
-.app[data-content-width='full'] {
-  --content-max-width: none;
 }
 
 /* ---------- editor ---------- */
@@ -174,11 +198,14 @@ button {
   overflow: hidden;
 }
 
-/* The note's scroller. Stacked blocks live inside it: `.page-header` (block ZERO since YAZ-918 —
+/* The page's scroller. Stacked blocks live inside it: `.page-header` (block ZERO since YAZ-918 —
    ⚡ YAZ-888's title and ⚡ YAZ-883's properties panel sharing one row), `.editor-mount`, where
    CrepeHost appends its `.editor-instance`, and — for markdown files — the comment stream and the
    "Linked mentions" section (Links D, GRO-2193; styled by links/backlinks.css), all of which
-   therefore scroll WITH the note. A folder's tab reuses it for the folder view (YAZ-2290). */
+   therefore scroll WITH the page. A folder's tab reuses it for the folder view (YAZ-2290). */
+/* A card file's tab (YAZ-5037, `CardFileView.tsx`) is the same scroller (YAZ-5466 round 3): the same tail under its
+   last block, so its comments end where a page's do. */
+.card-file,
 .editor-host {
   flex: 1;
   min-height: 0;
@@ -187,12 +214,25 @@ button {
      zero-height runner wider than the scroller adds blank room on the right so the view can be
      dragged left when deep bullets drift right. `--zoom-slack` is MEASURED by Editor.tsx — how far
      the deepest bullet moved because of the zoom — so a full drag parks it where it sits at 100%
-     and never further; 0 at 100% and for a note with no bullets. */
+     and never further; 0 at 100% and for a page with no bullets. */
   overflow-x: auto;
-  /* The page's ONE tail (YAZ-1680): the blocks below the note stack flush, and whichever is last
+  /* The page's ONE tail (YAZ-1680): the blocks below the page stack flush, and whichever is last
      still ends 64px above the bottom — each block used to carry this itself, so every pair of
      blocks sat 64px apart. */
   padding-bottom: 64px;
+}
+
+/* The page's column, worked out on its scroller (YAZ-5640). Two reasons:
+   - A page's own width: the scroller sets `--content-text-width` from the page's `page-width` key. The value on `.app`
+     is fixed there, and a child inherits it as it is. With no key the scroller inherits `.app`'s text width.
+   - The column grows with the page zoom (Decision 3): the text width times `--document-zoom`, which the scroller
+     carries; the 48 px sides do not grow. Narrow at 200% is 1280 px of text, the same letters in a line as at 100%.
+     Full is wider than the window at every zoom (`contentTextWidth`), so it stays the window.
+   The five blocks read this one value, so they stay one aligned column at each zoom. A folder page's scroller is an
+   `.editor-host` too: its views and its Page tab grow with its zoom the same way. A card file's column has its own
+   rule (`.card-file__page`) and does not change. */
+.editor-host {
+  --content-max-width: calc(var(--content-text-width) * var(--document-zoom, 1) + 96px);
 }
 
 .editor-host::after {
@@ -204,15 +244,21 @@ button {
 
 /* Document zoom lives on the CONTENT, never on a shell (YAZ-1710 D14). The scroller carries the
    number as `--document-zoom`; every block's column shell (max-width / margin auto / 48px gutter)
-   stays in unzoomed px so the five blocks keep one aligned column, and only what is inside a shell
-   scales. The body is the special case: Crepe appends its floating chrome (toolbar, slash menu,
+   is not zoomed, and only what is inside a shell scales. The shells' max-width is the one
+   `--content-max-width` of the scroller, so the five blocks keep one aligned column; since YAZ-5640
+   (Decision 3) that width grows with the zoom (the rule above), and the 48px gutters stay. The body is the special case: Crepe appends its floating chrome (toolbar, slash menu,
    link tooltip, block handle) beside `.ProseMirror` inside `.milkdown`, so the zoom sits on the
    ProseMirror node itself and that chrome stays at 100% — floating-ui then positions it in
    unzoomed space, which is the only space it gets right. The properties panel is `display: contents`
    and is NOT listed a second time: zoom propagates through its computed style to its pieces, so a
-   second rule on those pieces zoomed the chip twice (6B1). */
+   second rule on those pieces zoomed the chip twice (6B1).
+   The Inbox's card (YAZ-5372) is zoomed by this same rule: the Inbox carries `--document-zoom` as a page's scroller does,
+   and its card's frame (`.card-inbox__panel`: text, title band, sides, pictures, spacing) scales; its bar, the row above
+   the card and the buttons stay at 100%, as a page's chrome does. The card's width grows with it (cardScreens.css). */
 .editor-host > :not(.editor-mount) > *,
-.editor-instance .milkdown > .ProseMirror {
+.card-file > * > *,
+.editor-instance .milkdown > .ProseMirror,
+.card-inbox__panel {
   zoom: var(--document-zoom, 1);
 }
 
@@ -228,14 +274,15 @@ button {
   column-gap: 24px;
   width: 100%;
   max-width: var(--content-max-width);
-  margin: 0 auto;
+  /* Page position (YAZ-5871 D2): `--column-start` is 0 for Left, auto for Centre (`lib/contentWidth.ts`). */
+  margin: 0 auto 0 var(--column-start, auto);
   padding: 8px 48px 0;
 }
 
 /* The title item (⚡ YAZ-888, at the editor's own h1 scale — GRO-2009): GROWS to fill the row
    (the chip's margin-left: auto still parks it at the right edge), so the rename field —
    width: 100% of this box — keeps the title's full breadth while editing. The 16px base, not
-   the app's 14px, lands the em scale on exactly the size the note's own `# H1` renders at. */
+   the app's 14px, lands the em scale on exactly the size the page's own `# H1` renders at. */
 .page-header .page-title {
   flex: 1 1 auto;
   min-width: 0;
@@ -277,6 +324,32 @@ button {
   background: var(--bg-hover);
 }
 
+/* The page's ID after its title (YAZ-4940 "In the title"): its own element on the title's line, small and muted,
+   never in the heading's text. The box wraps, so a title too long for the ID beside it sends the ID to the next
+   line by itself. A click copies it; it is no part of a selection of the title. */
+.page-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+}
+.page-title__id {
+  flex: none;
+  padding: 1px 4px;
+  margin-left: -4px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--fg-muted);
+  user-select: none;
+  cursor: pointer;
+}
+.page-title__id:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
 .page-title__input {
   width: 100%;
   padding: 2px 4px;
@@ -296,6 +369,19 @@ button {
   field-sizing: content;
   resize: none;
   overflow: hidden;
+}
+
+/* A title its file cannot be named (YAZ-5580): the field's edge and a short line under it, as the title is typed. */
+.page-title__input[aria-invalid] {
+  border-color: var(--danger);
+}
+.title-problem {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--danger);
 }
 
 /* The properties panel (⚡ YAZ-883, folded into the header row by YAZ-918): its box dissolved
@@ -404,15 +490,109 @@ button {
   border-radius: 3px;
 }
 
-.frontmatter-panel__new,
 .frontmatter-panel__footer {
   display: flex;
   gap: 6px;
   align-items: center;
 }
 
-.frontmatter-panel__name {
-  width: 150px;
+/* The page's Add property row (YAZ-4713 C8A, YAZ-4769): one row, as a property's — the name in the names' column, then
+   Type, Column on, Cancel and Add in the values' place, on a light wash so it reads as the row being added. A picker's
+   list opens as a full line under the row. */
+.frontmatter-add {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 2px 0;
+  padding: 3px 0;
+  font-size: 13px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+
+.frontmatter-add .frontmatter-add__name {
+  flex: none;
+  width: min(180px, 38%);
+  box-sizing: border-box;
+  margin-top: 1px;
+}
+
+.frontmatter-add__controls {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-right: 4px;
+}
+
+.frontmatter-add__gap {
+  flex: 1;
+}
+
+/* An open list goes under the whole row: the (i), Cancel and Add stay on the first line. */
+.frontmatter-add__controls .type-picker__list {
+  order: 1;
+}
+
+.type-picker__lead {
+  color: var(--fg-muted);
+}
+
+/* A choice's line under its name (YAZ-4769): a long folder name never cuts it. */
+.type-picker__option.type-picker__option--stacked {
+  grid-template-columns: 14px minmax(0, 1fr) 12px;
+  padding: 4px 8px;
+}
+
+.type-picker__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.frontmatter-panel__btn.frontmatter-add__add {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.frontmatter-panel__btn.frontmatter-add__add:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+}
+
+/* A small (i) and its sentence in a box under it (C8A). */
+.info-tip {
+  position: relative;
+  display: inline-flex;
+}
+
+.info-tip__button {
+  display: inline-flex;
+  padding: 1px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  cursor: help;
+}
+
+.info-tip__box {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  width: 240px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg);
+  white-space: normal;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
 }
 
 /* Raw YAML is code: monospace, so indentation reads as the structure it is. */
@@ -463,11 +643,15 @@ button {
   cursor: default;
 }
 
-/* Content column: centred, wide on large windows, fills the host on narrow ones (GRO-2007). */
+/* Content column: centred, wide on large windows, fills the host on narrow ones (GRO-2007). A card file's column
+   (`.card-file__page`, YAZ-5466 round 3) is this same column: the card at the page text's left edge, and the comments
+   under it as far below as under a page's text. */
+.card-file__page,
 .editor-instance {
   width: 100%;
   max-width: var(--content-max-width);
-  margin: 0 auto;
+  /* Page position (YAZ-5871 D2): `--column-start` is 0 for Left, auto for Centre (`lib/contentWidth.ts`). */
+  margin: 0 auto 0 var(--column-start, auto);
   /* No lead-in of its own (YAZ-918): the properties panel left this slot for the title row, so
      the gap under the title is ProseMirror's 16px + the first paragraph's 4px — nothing more. */
   padding: 0 48px 120px;
@@ -475,6 +659,42 @@ button {
 
 .editor-instance .milkdown {
   --crepe-color-background: transparent;
+}
+
+/* One selection colour (YAZ-5902 D1): the Mac's highlight, as a card page, the Inbox and every Mac app show it. Crepe's
+   frame themes paint a selection with `--crepe-color-selected` (#2f2f2f in dark, close to the page).
+   - Selected text: the browser's own colour (`revert`), the same as outside the editor. It follows System Settings ›
+     Appearance › Highlight colour, light and dark.
+   - The boxes the editor paints itself (the lit link pill, `wikilink.css`; a selected list item or block; selected table
+     cells) take the token, set once on the text of every Crepe surface (a page, its cards, the hover preview,
+     Explore). Light: `Highlight`, which is exactly the browser's light selection. Dark: Chromium's `Highlight` stays
+     the LIGHT blue, so light text on it could not be read. So in dark the token is what the browser paints selected
+     text with (YAZ-5941): the Mac's dark highlight colour at 0.8 alpha. Main reads that colour from macOS
+     (`selected-text-background`, desktop/src/main/selectionColour.ts) and puts it on the root as `--mac-selection`
+     (lib/macSelection.ts), again on each change of the Highlight colour or the appearance. With no colour (a test,
+     the phone, the web; or the Mac in Light while the app is dark, as macOS then gives only its light colour) the
+     token is #3f5573: the default blue at 0.8 over the dark page. `--mac-selection-tint` is invalid when
+     `--mac-selection` is unset, which is what makes the fallback apply.
+   - Three parts of the text that are not a selection keep the theme's grey (`--crepe-color-pressed`, read on
+     `.milkdown` before the text takes the new value): a quote's bar and the two pressed buttons of a table's handles.
+     The menus and toolbars sit outside `.ProseMirror`: unchanged. */
+.milkdown {
+  --crepe-color-pressed: var(--crepe-color-selected);
+}
+.milkdown .ProseMirror {
+  --crepe-color-selected: Highlight;
+}
+[data-theme='dark'] .milkdown .ProseMirror {
+  --mac-selection-tint: rgb(from var(--mac-selection) r g b / 0.8);
+  --crepe-color-selected: var(--mac-selection-tint, #3f5573);
+}
+.milkdown .ProseMirror *::selection {
+  background: revert;
+}
+.milkdown .ProseMirror blockquote::before,
+.milkdown .milkdown-table-block .cell-handle .button-group button:active,
+.milkdown .milkdown-table-block .line-handle .add-button:active {
+  background: var(--crepe-color-pressed);
 }
 
 /* Obsidian default typography (GRO-2009): system font stack, 16px / 1.5 body, Obsidian heading scale.
@@ -497,11 +717,410 @@ button {
 .milkdown .ProseMirror mark.highlight-green { background: var(--mark-bg-green); }
 .milkdown .ProseMirror mark.highlight-blue { background: var(--mark-bg-blue); }
 .milkdown .ProseMirror mark.highlight-pink { background: var(--mark-bg-pink); }
+.milkdown .ProseMirror mark.highlight-orange { background: var(--mark-bg-orange); }
+.milkdown .ProseMirror mark.highlight-purple { background: var(--mark-bg-purple); }
+.milkdown .ProseMirror mark.highlight-red { background: var(--mark-bg-red); }
+.milkdown .ProseMirror mark.highlight-gray { background: var(--mark-bg-gray); }
 
-/* A lit swatch (🔒 D5) reads as a pressed button, one step darker than hover — the dot's fill IS its colour,
-   so Crepe's "active = primary-coloured icon" cue only reached the 0.35-opacity outline and was too easy to miss. */
-.milkdown .milkdown-toolbar .toolbar-item.active[data-toolbar-item^='highlight'] {
-  background: var(--crepe-color-selected);
+/* Formatting inside a code block (YAZ-5794, `editor/code/codeMarks.ts`): CodeMirror mark decorations on the code's own
+   text, drawn as the page draws its marks. A highlight's colour is `--code-mark-bg`: a named colour's token, or a custom
+   colour's wash set on the span itself. */
+.cm-code-mark-bold { font-weight: bold; }
+.cm-code-mark-italic { font-style: italic; }
+.cm-code-mark-underline { text-decoration: underline; }
+.cm-code-mark-strike { text-decoration: line-through; }
+.cm-code-mark-highlight { background: var(--code-mark-bg, var(--mark-bg)); }
+.cm-code-mark-highlight.highlight-green { --code-mark-bg: var(--mark-bg-green); }
+.cm-code-mark-highlight.highlight-blue { --code-mark-bg: var(--mark-bg-blue); }
+.cm-code-mark-highlight.highlight-pink { --code-mark-bg: var(--mark-bg-pink); }
+.cm-code-mark-highlight.highlight-orange { --code-mark-bg: var(--mark-bg-orange); }
+.cm-code-mark-highlight.highlight-purple { --code-mark-bg: var(--mark-bg-purple); }
+.cm-code-mark-highlight.highlight-red { --code-mark-bg: var(--mark-bg-red); }
+.cm-code-mark-highlight.highlight-gray { --code-mark-bg: var(--mark-bg-gray); }
+
+/* The highlight buttons and their ▾ are the board toolbar's tiles (YAZ-4445): `editor/swatchTile.css`. */
+
+/* The page's selection toolbar, tighter (YAZ-4348 demo round 2, Yasin: "everything so spaced out … decently spaced
+   out but not so close together"): Crepe gives each 32 px button 6 px on every side (12 px between two) and each
+   divider 10 px; now 4 px between buttons, 6 px either side of a divider, the same height. */
+.milkdown .milkdown-toolbar {
+  padding: 0 4px;
+  /* Above a table's column and row handles (z-index 50), as the cell toolbar is (YAZ-4789); Crepe's own is 10. */
+  z-index: 60;
+}
+.milkdown .milkdown-toolbar .toolbar-item {
+  margin: 6px 2px;
+}
+.milkdown .milkdown-toolbar .divider {
+  margin: 10px 6px;
+}
+/* A lit button wears a ring in the accent (🔒 D5; YAZ-4348 demo round 2). It began on the highlight buttons, whose "A"
+   square's fill IS its colour, so a pressed-button background would hide behind it (and Crepe's "active =
+   primary-coloured icon" cue only reached the square's faint outline); Yasin: "i like this box … add that for the
+   other ones also": T on a plain line, B on bold text, a list button on its list. YAZ-4445: the color tiles and their
+   ▾ have the board's own lit look instead (`editor/swatchTile.css`). */
+.milkdown .milkdown-toolbar .toolbar-item.active:not(:has(.swatch-tile, .swatch-more)) {
+  box-shadow: inset 0 0 0 2px var(--crepe-color-primary);
+}
+
+/* The highlight ▾ panel (YAZ-4348 demo round 2, `editor/highlightPanel.ts`): the board's colour popup in the page's
+   own tokens, its values ported from `engine/…/ColorPicker/ColorPicker.scss`, `Island.scss` (the popup: 0.75rem
+   padding, 8 px radius, the island shadow, at most 13rem wide) and `EyeDropper.scss` (the Hex code's trailing button)
+   (YAZ-4388). On the body, fixed under the ▾, so the toolbar's `overflow: hidden` cannot cut it off. The text box's
+   text color ▾ panel (YAZ-4445, `drawings/textColorPanel.ts`) is the same popup. */
+.highlight-panel,
+.text-color-panel {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* The board's popup is as wide as its rows: 5 swatches of 30 px, 4 px gaps, 8 px round the row, 12 px padding. */
+  width: 206px;
+  box-sizing: border-box;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  box-shadow:
+    0 0 1px 0 rgba(0, 0, 0, 0.17),
+    0 0 3px 0 rgba(0, 0, 0, 0.08),
+    0 7px 14px 0 rgba(0, 0, 0, 0.05);
+  font-family: var(--font);
+  color: var(--fg);
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* A quick fade and scale in from the ▾'s side (opacity and transform only, so the compositor runs it); usable at once. */
+@media (prefers-reduced-motion: no-preference) {
+  .highlight-panel,
+  .text-color-panel {
+    transform-origin: top left;
+    animation: highlight-panel-in 100ms ease-out;
+  }
+  .highlight-panel.is-above,
+  .text-color-panel.is-above {
+    transform-origin: bottom left;
+  }
+  .colour-box {
+    animation: colour-box-in 80ms ease-out;
+  }
+}
+@keyframes highlight-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@keyframes colour-box-in {
+  from {
+    opacity: 0;
+  }
+}
+/* The text color ▾ panel (YAZ-4445): as the board's ▾ popover (`ColorPicker.scss` `.color-picker__more-popover`):
+   one row of tiles, then None (`.color-picker__custom`). As wide as its row. */
+.text-color-panel {
+  width: auto;
+  gap: 0;
+}
+.text-color-panel__tiles {
+  display: flex;
+  gap: var(--swatch-tile-gap);
+}
+.text-color-panel__none {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.3rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+.text-color-panel__none:hover {
+  background: var(--bg-hover);
+}
+/* A dark page is the panel's own colour: a hairline keeps its edge, where the board's darker canvas needs none. */
+[data-theme='dark'] .highlight-panel,
+[data-theme='dark'] .text-color-panel {
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 0 3px 0 rgba(0, 0, 0, 0.3),
+    0 7px 14px 0 rgba(0, 0, 0, 0.3);
+}
+.highlight-panel[hidden],
+.text-color-panel[hidden],
+.highlight-panel__section[hidden],
+.colour-box[hidden],
+.colour-box__eyedropper[hidden] {
+  display: none;
+}
+.highlight-panel__heading {
+  padding: 0 8px;
+  font-size: 12px;
+  text-align: left;
+}
+.highlight-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(5, 30px);
+  gap: 4px;
+  padding: 8px;
+  border-radius: 4px;
+}
+/* A swatch (`color-picker__button--large has-outline`): a rounded square of its colour (`--swatch`) with a faint
+   inset outline; hover rings it in gray, the selection's colours in the accent (the board's `active` outline), and
+   the keyboard's place gets the board's wide, soft focus ring. */
+.highlight-panel__swatch {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 8px;
+  box-sizing: border-box;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 15%, var(--bg));
+  cursor: pointer;
+}
+.highlight-panel__swatch::before,
+.highlight-panel__swatch::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 8px;
+  pointer-events: none;
+}
+.highlight-panel__swatch:hover:not(.active)::after {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 18%, var(--bg));
+}
+.highlight-panel__swatch.active::before {
+  z-index: 1;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.highlight-panel__swatch.is-current::after {
+  inset: -4px;
+  border: 3px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 9px;
+  box-shadow: none;
+}
+.highlight-panel__swatch.is-current.active::before {
+  display: none;
+}
+/* None: the board's transparent checkerboard. */
+.highlight-panel__swatch.is-none {
+  background: repeating-conic-gradient(color-mix(in srgb, var(--fg) 16%, var(--bg)) 0 25%, var(--bg) 0 50%) 0 0 / 10px 10px;
+}
+.highlight-panel__no-shades {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  font-size: 12px;
+  text-align: center;
+}
+/* Hex code (`color-picker__input-label`): `#`, the field, a divider and the pencil, in one rounded box. */
+.highlight-panel__hex {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  margin: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+.highlight-panel__hex:focus-within {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.highlight-panel__hash {
+  padding: 0 4px;
+}
+.highlight-panel__hex-input {
+  user-select: text;
+  -webkit-user-select: text;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: 0.4px;
+}
+.highlight-panel__hex-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+/* The trailing button (`excalidraw-eye-dropper-trigger`): it opens the colour box, and is lit while the box is open. */
+.highlight-panel__pencil {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  padding: 4px;
+  margin: 0 -4px 0 -2px;
+  box-sizing: content-box;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.highlight-panel__pencil svg {
+  width: 100%;
+  height: 100%;
+}
+.highlight-panel__pencil:hover {
+  background: var(--bg-hover);
+}
+.highlight-panel__pencil[aria-expanded='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+/* The keyboard's place on the field and the pencil. */
+.highlight-panel__hex.is-current,
+.highlight-panel__pencil.is-current {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The colour box (YAZ-4388, `editor/highlightColourBox.ts`), the look of Chromium's colour popup: the
+   saturation/brightness square on its hue (`--hue`), the eyedropper, the colour (`--pick`) and the hue slider, then
+   R G B. A handle rides a carrier as big as its track, moved by `transform` alone, so a drag never lays out. It sits
+   right under the highlight panel's Hex code field, and under a table palette's "Custom colour…" (YAZ-4366,
+   `table/colours.ts`, `table.css`): as wide as what holds it. */
+.colour-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.highlight-panel .colour-box {
+  margin: 0 8px 4px;
+}
+.colour-box__sv {
+  position: relative;
+  height: 120px;
+  border-radius: 6px;
+  background:
+    linear-gradient(to top, #000, transparent),
+    linear-gradient(to right, #fff, transparent),
+    var(--hue, red);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+  cursor: crosshair;
+  touch-action: none;
+}
+.colour-box__thumb {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+.colour-box__sv-handle,
+.colour-box__hue-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  box-sizing: border-box;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--pick);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+.colour-box__row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 8px;
+  align-items: center;
+}
+.colour-box__eyedropper {
+  display: flex;
+  width: 18px;
+  height: 18px;
+  padding: 4px;
+  box-sizing: content-box;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.colour-box__eyedropper svg {
+  width: 100%;
+  height: 100%;
+}
+.colour-box__eyedropper:hover {
+  background: var(--bg-hover);
+}
+.colour-box__eyedropper.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.colour-box__swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--pick);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 15%, transparent);
+}
+.colour-box__hue {
+  position: relative;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(to right, #f00, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00);
+  cursor: pointer;
+  touch-action: none;
+}
+.colour-box__hue-handle {
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+}
+.colour-box__rgb {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.colour-box__rgb label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.colour-box__rgb input {
+  user-select: text;
+  -webkit-user-select: text;
+  box-sizing: border-box;
+  width: 100%;
+  height: 26px;
+  margin: 0;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  text-align: center;
+}
+.colour-box__rgb input:focus {
+  border-color: var(--accent);
 }
 
 /* Crepe's reset gives paragraphs line-height 1.5 and 4px vertical padding; the padding is
@@ -522,7 +1141,7 @@ button {
 }
 
 /* Heading margins scale with the block-gap setting (GRO-2071). Every level gets 3 × gap above
-   and 1 × gap below (YAZ-3794): the size already marks a new section, so a dense note keeps its
+   and 1 × gap below (YAZ-3794): the size already marks a new section, so a dense page keeps its
    rhythm, and a heading stays closer to the text it starts than to the text above.
    sectionIndent.css reaches its lines across these margins — change one, change both.
    Heading styles (YAZ-3049 D2): each level reads its own `--hN-*` variables, set on each page
@@ -541,7 +1160,7 @@ button {
 /* A heading BETWEEN blocks earns its lead-in; the document's FIRST block does not (YAZ-918,
    selector fixed twice in YAZ-932 — probe-verified) — it sits on the title row's own gap,
    exactly like a first paragraph. The outline editor wraps its blocks in `.content-dom`,
-   so both the direct note block and the wrapped outline block are covered. */
+   so both the direct page block and the wrapped outline block are covered. */
 .editor-instance .milkdown .ProseMirror > :first-child,
 .editor-instance .milkdown .ProseMirror > .content-dom > :first-child {
   margin-top: 0;
@@ -601,8 +1220,11 @@ button {
    are the 4px radius plus the 3px edge of the first look. Each h1-h6 rule hands its `--hN-bg` to
    its spans as `--heading-bg`; `--hN-bg` exists only for a highlighted level, so the other spans
    paint nothing (in the other editors too: the spans are in every one, and their padding takes no
-   room). The wash starts at the words, so Section indent's indent (a border) needs no rule. */
-.milkdown .ProseMirror .heading-text {
+   room). The wash starts at the words, so Section indent's indent (a border) needs no rule.
+   A link pill's name in a heading is ONE span with the heading text (the two decorations merge): these rules skip
+   a resolved pill's pieces, so the pill keeps the fill, padding and corners it has in a paragraph (wikilink.css),
+   its name as its head and tail (YAZ-4924). A missing link and a heading part (` > Q1`) have no box: they keep the wash. */
+.milkdown .ProseMirror .heading-text:not(.wikilink:not(.wikilink--unresolved, .wikilink__sub)) {
   padding-top: 0.05em;
   padding-bottom: 0.05em;
   -webkit-box-decoration-break: clone;
@@ -610,14 +1232,14 @@ button {
   background: var(--heading-bg, none);
 }
 
-.milkdown .ProseMirror .heading-text--first:not(.heading-text--first ~ .heading-text--first) {
+.milkdown .ProseMirror .heading-text--first:not(.wikilink:not(.wikilink--unresolved, .wikilink__sub)):not(.heading-text--first ~ .heading-text--first) {
   padding-left: 3px;
   margin-left: -3px;
   border-top-left-radius: 7px;
   border-bottom-left-radius: 7px;
 }
 
-.milkdown .ProseMirror .heading-text--last:not(:has(~ .heading-text--last)) {
+.milkdown .ProseMirror .heading-text--last:not(.wikilink:not(.wikilink--unresolved, .wikilink__sub)):not(:has(~ .heading-text--last)) {
   padding-right: 3px;
   margin-right: -3px;
   border-top-right-radius: 7px;
@@ -655,6 +1277,57 @@ button {
   overflow-x: auto;
 }
 
+/* Zoom keeps the column as wide as at 100%, so a full-width code box stayed as wide on screen while its code shrank
+   (YAZ-4785). Zoomed out, the box narrows by the zoom; at 100% and above it fills the column as before. */
+.editor-instance .milkdown .milkdown-code-block {
+  width: min(100%, calc(100% * var(--document-zoom, 1)));
+}
+
+/* A code block's own width (YAZ-4783, `code/codeWidth.ts`): a node decoration gives the box `data-code-width` and
+   `--code-width` in px at 100% zoom. The box is inside the zoomed `.ProseMirror`, so the px already scale with the page
+   zoom, and it may reach past the text column into the room on the right (the drag stops at the scroller's edge). */
+.editor-instance .milkdown .milkdown-code-block[data-code-width] {
+  width: var(--code-width);
+  max-width: none;
+}
+
+/* Its grip: the right edge takes the mouse with the table column grip's cursor and bar (4px of the theme colour, half
+   in and half out of the box, as `.column-resize-handle` is). While the edge drags, the cursor stays over the code. */
+.editor-instance .milkdown .milkdown-code-block.code-width-grip {
+  cursor: col-resize;
+  box-shadow: inset -2px 0 0 var(--crepe-color-primary), 2px 0 0 var(--crepe-color-primary);
+}
+.editor-instance .milkdown .ProseMirror.code-width-dragging,
+.editor-instance .milkdown .ProseMirror.code-width-dragging * {
+  cursor: col-resize;
+}
+
+/* The width for EVERY code block and every table (YAZ-4783 layers 2 and 3): `--code-block-width` / `--table-width`, each
+   with its `data-code-block-width` / `data-table-width`, on the editor's mount (this page's `code-width` / `table-width`
+   key, the page cog) or on `.app` (Settings › Editor › Code blocks › Width, Settings › Tables › All tables › Width). The
+   nearest one wins, as a CSS variable does, and `:is([data-…] *)` finds either. A code box with its own width
+   (`data-code-width`) and a table whose every column has a width (`data-table-sized`) keep theirs, so a change in
+   Settings moves only what follows it. px at 100% zoom inside the zoomed `.ProseMirror`, so they scale with the page
+   zoom; past the text column into the room on the right, never past the editor's scroll area or under the Contents rail
+   (`--block-room`, `blockRoom.ts`). A table that takes the width shares it evenly among its columns at `auto`. */
+.editor-instance .milkdown .milkdown-code-block:not([data-code-width]):is([data-code-block-width] *) {
+  width: var(--code-block-width);
+  max-width: calc(100% + var(--block-room, 0px));
+}
+.editor-instance .milkdown .milkdown-table-block:not([data-table-sized]):is([data-table-width] *) {
+  width: var(--table-width);
+  max-width: calc(100% + var(--block-room, 0px));
+}
+/* YAZ-5487: Settings › Tables › Width is the vault's (`table-look.json`) on its surface, the app's on `.app`: a style
+   query on `--table-width-set` (an attribute on `.app` would match under every vault). A page's own width wins
+   (its `--table-width` on its editor's mount is nearer). */
+@container style(--table-width-set: on) {
+  .editor-instance .milkdown .milkdown-table-block:not([data-table-sized]) {
+    width: var(--table-width);
+    max-width: calc(100% + var(--block-room, 0px));
+  }
+}
+
 /* Column resize (YAZ-3696 D2): the grip at a header cell's edge (YAZ-3800) takes the theme colour
    (prosemirror-tables draws it light blue). The table block's drop line (it has no "+" button since
    YAZ-3800) lets the mouse through to the cells. */
@@ -671,7 +1344,7 @@ button {
   display: none;
 }
 
-/* A read-only note (YAZ-3076 D2) has no block handle: its drag and its menu would change the note. */
+/* A read-only page (YAZ-3076 D2) has no block handle: its drag and its menu would change the page. */
 .editor-host[data-read-only] .editor-instance .milkdown .milkdown-block-handle {
   display: none;
 }
@@ -745,7 +1418,7 @@ button {
   border-top: 1px solid var(--border);
 }
 
-/* Under "Folders", the empty note lines up with the label. */
+/* Under "Folders", the empty page lines up with the label. */
 .welcome__label--rule + .welcome__empty {
   align-self: stretch;
   padding: 0 14px;
@@ -846,7 +1519,11 @@ button {
   flex-shrink: 0;
   justify-content: flex-end;
   padding: 5px 16px;
-  z-index: 2;
+  /* The bar's menus (the page cog's, the zoom pill's) drop over the page (YAZ-4271): above every layer in it — a frozen
+     table row (2), the calendar's "Now" chip (3), the cell note card (5) and its grips (6). At 2, a frozen row, later
+     in the page, rose over the cog's menu. The page itself gets no stacking level of its own: the table of contents
+     (1) and the card must keep their order. */
+  z-index: 7;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -968,15 +1645,37 @@ button {
   border-bottom: 1px solid var(--notice-border);
 }
 
-.conflict-bar button {
+.conflict-bar button,
+.card-file-notice button {
   padding: 3px 10px;
   border: 1px solid var(--notice-btn-border);
   border-radius: 4px;
   background: var(--notice-btn-bg);
 }
 
-.conflict-bar button:hover {
+.conflict-bar button:hover,
+.card-file-notice button:hover {
   background: var(--notice-btn-bg-hover);
+}
+
+/* A card file's notice (YAZ-5037, `CardFileNotice.tsx`): the conflict bar's colours and buttons, one line, the fixes
+   after the words. */
+.card-file-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--notice-fg);
+  background: var(--notice-bg);
+  border-bottom: 1px solid var(--notice-border);
+}
+.card-file-notice__actions {
+  display: flex;
+  gap: 8px;
+}
+.card-file-notice__actions:empty {
+  display: none;
 }
 
 /* ---------- link notice (E1): the window's one passive toast, self-dismissing ----------
@@ -994,7 +1693,8 @@ button {
   left: 16px;
   /* Above the sidebar footer (the settings button) at any window height — its own variable, see `.sidebar__footer`. */
   bottom: calc(var(--sidebar-footer-h) + 12px);
-  z-index: 50;
+  /* Over the Explore window: its Undo can be clicked (YAZ-4987). */
+  z-index: var(--z-notices);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -1159,17 +1859,16 @@ button {
   background: var(--bg-hover);
 }
 
-.drag-out-ask__close {
+.drag-out-ask__keep {
   flex: none;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  color: var(--fg-muted);
-  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
-.drag-out-ask__close:hover {
-  color: var(--fg);
+.drag-out-ask__keep:hover {
   background: var(--bg-hover);
 }
 
@@ -1232,7 +1931,7 @@ button {
 
 /* ---------- sync attention banner (YAZ-1081 3B) ----------
    The rename-banner idiom exactly — same amber toast, same explicit buttons, never a modal.
-   It sits lowest of the three: sync is the least urgent thing on screen, and the note the
+   It sits lowest of the three: sync is the least urgent thing on screen, and the page the
    user is actually looking at is untouched by it. */
 
 .sync-banner {
@@ -1279,6 +1978,19 @@ button {
 
 /* ---------- sidebar ---------- */
 
+/* YAZ-6146: shell around .sidebar; width snaps once (zero layout reflows) while sidebarMotion.ts glides on the GPU. */
+.sidebar-shell {
+  flex: none;
+  display: flex;
+  overflow: clip;
+  opacity: 1;
+}
+
+.sidebar-shell--collapsed {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* The width is set on .sidebar itself from AppState.sidebarWidth (YAZ-738, YAZ-2194). */
 .sidebar {
   flex: none;
@@ -1291,13 +2003,26 @@ button {
 
 /* The page keeps 360 px, MAIN_WORKSPACE_MIN_W (YAZ-3511 D18): in a narrower window a wide sidebar is drawn narrower, and
    its stored width comes back when the window does. A Files window is only the sidebar. */
-.app:not(.app--files) > .sidebar {
+.app:not(.app--files) > .sidebar-shell {
   max-width: calc(100vw - 360px);
+}
+
+.app:not(.app--files) > .sidebar-shell > .sidebar {
+  max-width: calc(100vw - 360px);
+  /* In a window under 360 px that leaves no width at all: nothing of the sidebar shows beside its edge (YAZ-4643 S10).
+     `clip`, not `hidden`: no scroll container, so a focus inside it never shifts its content. Menus portal out. */
+  overflow: clip;
 }
 
 /* A Files window (YAZ-3357 D1, D8) is only the sidebar: it fills the window, with no edge to drag. While Tabs Mission
    Control shows, the window is wide and the sidebar keeps its narrow width (set on it), the board right of it. */
-.app--files:not(.app--files-board) > .sidebar {
+.app--files:not(.app--files-board) > .sidebar-shell {
+  flex: 1 1 auto;
+  width: auto !important;
+  min-width: 0;
+}
+
+.app--files:not(.app--files-board) > .sidebar-shell > .sidebar {
   flex: 1 1 auto;
   width: auto !important;
   min-width: 0;
@@ -1548,25 +2273,64 @@ body.drag-held iframe {
   color: var(--fg-muted);
 }
 
-/* The Inbox row (YAZ-2322): the search bar's row as a button, the count pushed right by
-   `.tree__count`; it wears the open file's fill while a review is open. */
+/* The Inbox row (YAZ-2322): a button above the tabs, the count pushed right by `.tree__count`; it wears the open
+   file's fill while a review is open. YAZ-5131 (as Mochi's, no chevron): a place, not a plain line — a rounded row
+   inset from the sidebar's edges, the tray icon before the name, a touch of weight. With cards left for today the
+   count is a filled accent pill, the row's one mark; with none, no count: the row stays quiet. */
 .sidebar__inbox {
   flex: none;
   display: flex;
   align-items: center;
-  padding: 6px 10px 6px 14px;
-  font-size: 12.5px;
-  border-bottom: 1px solid var(--border);
+  gap: 8px;
+  box-sizing: border-box;
+  /* The pill's height: the row does not move when the count comes or goes. */
+  min-height: 28px;
+  margin: 6px 8px 4px;
+  padding: 5px 8px 5px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
 }
 
 .sidebar__inbox:hover {
   background: var(--bg-hover);
 }
 
+.sidebar__inbox-icon {
+  flex: none;
+  color: var(--fg-muted);
+}
+
+.sidebar__inbox-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar__inbox .sidebar__inbox-count {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+}
+
 .sidebar__inbox--active,
 .sidebar__inbox--active:hover {
   color: var(--accent);
   background: var(--accent-soft);
+}
+
+.sidebar__inbox--active .sidebar__inbox-icon {
+  color: var(--accent);
 }
 
 /* Lens tabs (YAZ-847) — chrome v2 ROW 1, under the header: Files, Search (YAZ-2638 D2), Focus, Favorites.
@@ -1893,12 +2657,69 @@ body.drag-held iframe {
 .sidebar__focus-bar {
   display: flex;
   justify-content: space-between;
+  gap: 8px;
   padding: 4px 14px;
   font-size: 12px;
   color: var(--fg-muted);
 }
 
+/* The bar's buttons (YAZ-4460 F3): "+ Folder" and "Clear", side by side, never cut. */
+.sidebar__focus-actions {
+  display: flex;
+  flex: none;
+  gap: 10px;
+}
+
+/* A focus folder row (YAZ-4460 F3, F5): the stack glyph in the accent color, so it never reads as a real folder. */
+.focus-folder__icon {
+  flex: none;
+  margin-right: 6px;
+  color: var(--accent);
+}
+
+/* Where a dragged folder row lands (YAZ-4470, 13): a line at the top or the bottom of the folder row under it. */
+.focus-folder--before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.focus-folder--after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* A focus folder under a dragged item (F5): it lights as a drop folder does. */
+.focus-folder--drop {
+  border-radius: 4px;
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.focus-folder__empty {
+  padding-left: 36px;
+}
+
+/* An item of a vault this window does not show (F6): grey and italic, its vault named on the right. */
+.tree__row--ghost {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+/* Its ghost glyph (YAZ-4460 demo) stands in the file icon's slot, in the row's color: it reads in light and dark alike. */
+.tree__ghost-icon {
+  flex: none;
+  width: 14px;
+  margin: 0 6px 0 3px;
+}
+
+/* One line at any sidebar width (YAZ-4462): the words cut with an ellipsis ("2 in focus · workspace li…"), the button stays whole. */
+.sidebar__focus-bar > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .sidebar__focus-clear {
+  flex: none;
   color: var(--accent);
 }
 
@@ -1953,11 +2774,17 @@ body.drag-held iframe {
   color: var(--fg-muted);
 }
 
+/* ONE hotkey label (YAZ-5332, `KeyLabel`): "Done (Esc / Cmd+Enter)", the keys quieter than the action. Opacity, not a
+   colour: quiet on any button, the accent one too. */
+.key-label {
+  font-weight: 400;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
 /* The way out of the Search tab (YAZ-2638 D2): a keycap that names the key, and is the key on a
-   click — back to the lens the window last showed. Always in the bar. The keys that the empty
-   Search tab lists wear the same keycap (YAZ-2662 D10), in the font of the bar: a `kbd` has its own. */
-.sidebar__search-back,
-.sidebar__keys kbd {
+   click — back to the lens the window last showed. Always in the bar. */
+.sidebar__search-back {
   flex: none;
   padding: 0 5px;
   border: 1px solid var(--border);
@@ -1999,27 +2826,6 @@ body.drag-held iframe {
   color: var(--danger);
 }
 
-/* The keys of the search, below the line of the empty Search tab (YAZ-2662 D10): quiet, in two
-   columns — the keycaps of a row, and what they do. */
-.sidebar__keys {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: baseline;
-  gap: 6px 10px;
-  margin: 0 14px;
-  font-size: 11px;
-  color: var(--fg-muted);
-}
-
-.sidebar__keys dt {
-  display: flex;
-  gap: 3px;
-}
-
-.sidebar__keys dd {
-  margin: 0;
-}
-
 /* The flat result list (YAZ-803) — a ranked list whose rows borrow the tree row's metrics and
    wash; the folder rides under the label instead of an indent (🔒 flat-list ruling on YAZ-739).
    The shortcut picker's alone since YAZ-2620: the sidebar's search draws the tree itself. */
@@ -2032,7 +2838,8 @@ body.drag-held iframe {
 .search-results__row {
   display: flex;
   flex-direction: column;
-  padding: 3px 8px;
+  /* Row spacing (YAZ-5885 D2): the tree row's height, `--tree-row-h`, around the 19.5px line. */
+  padding: calc((var(--tree-row-h, 25.5px) - 19.5px) / 2) 8px;
   font-size: 13px;
   line-height: 1.5;
   border-radius: 4px;
@@ -2063,7 +2870,7 @@ body.drag-held iframe {
 }
 
 /* A folder row (🔒 D4, YAZ-1491): a small folder glyph before the label. Inline, so the label
-   stays the block that owns the overflow and a long folder name still ellipsizes like a note's. */
+   stays the block that owns the overflow and a long folder name still ellipsizes like a page's. */
 .search-results__glyph {
   width: 12px;
   height: 12px;
@@ -2114,7 +2921,7 @@ body.drag-held iframe {
   background: var(--bg-hover);
 }
 
-/* The footer's daily note button (YAZ-3607 D7): the cog's quiet look, after the zoom chip. */
+/* The footer's daily page button (YAZ-3607 D7): the cog's quiet look, after the zoom chip. */
 .sidebar__daily {
   display: flex;
   flex: none;
@@ -2268,12 +3075,18 @@ body.drag-held iframe {
 .ctx-menu {
   position: fixed;
   z-index: 40;
+  /* As wide as its longest item wherever it opens (YAZ-3746 13AW): near the window's right edge a fixed box shrank to
+     the room left of the click, its labels wrapped, and the menu ran off the bottom. */
+  width: max-content;
+  max-width: calc(100vw - 16px);
   min-width: 140px;
   padding: 4px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  /* A menu that scrolls (taller than the window, YAZ-3746 13AO) keeps its wheel: at its end the page does not move. */
+  overscroll-behavior: contain;
 }
 
 /* A panel, not a popup (YAZ-1767 D5): the vault switcher's surface hangs off the sidebar header's
@@ -2383,6 +3196,11 @@ body.drag-held iframe {
   z-index: 41;
 }
 
+/* A flyout drawn by DOM code (YAZ-4899, `menuSections.ts` `panel`): the box is no box, so its rows lay out as the menu's own. */
+.ctx-menu__panel {
+  display: contents;
+}
+
 .ctx-menu__item:hover:not(:disabled),
 .tab-row-panel__reset:hover {
   background: var(--accent-soft);
@@ -2394,6 +3212,27 @@ body.drag-held iframe {
 }
 
 /* A row with a glyph (YAZ-3273): the glyph, then the label, the hint still at the right end. */
+/* An armed two-click row (YAZ-4460 demo, as the tab board's Close): its words in red when the second click removes, in
+   the accent when it adds — colored words, not a fill, so they read over the row's hover in light and dark. */
+.ctx-menu .ctx-menu__item.ctx-menu__item--armed {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.ctx-menu .ctx-menu__item.ctx-menu__item--armed-add {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* A group's heading (YAZ-4460 demo: "Show it in"): small grey words, no hover, no button. */
+.ctx-menu__heading {
+  padding: 4px 12px 2px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  cursor: default;
+  user-select: none;
+}
+
 .ctx-menu__label {
   display: inline-flex;
   align-items: center;
@@ -2420,13 +3259,13 @@ body.drag-held iframe {
 }
 
 /* A menu with a glyph on any row (YAZ-3264 D6): a row without one starts its label after an empty
-   slot (10 px padding + 15 px glyph + 8 px gap), so every label lines up. The flyout is its own menu. */
+   slot (10 px padding + 15 px glyph + 8 px gap), so every label lines up — a parent with its own glyph too (YAZ-4460). The flyout is its own menu. */
 .ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__item:not(:has(> .ctx-menu__label)),
-.ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__parent > .ctx-menu__item,
+.ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__parent > .ctx-menu__item:not(:has(> .ctx-menu__label)),
 /* A bullet's menu (YAZ-3646 D8) draws its rows flat, a line between two groups: the same empty slot. Its
    parent rows too, the link menu's "Open in ▸" (YAZ-3747 demo). */
 .ctx-menu--editor.ctx-menu--glyphs > .ctx-menu__item:not(:has(> .ctx-menu__label)),
-.ctx-menu--editor.ctx-menu--glyphs > .ctx-menu__parent > .ctx-menu__item {
+.ctx-menu--editor.ctx-menu--glyphs > .ctx-menu__parent > .ctx-menu__item:not(:has(> .ctx-menu__label)) {
   padding-left: 33px;
 }
 
@@ -2454,7 +3293,8 @@ body.drag-held iframe {
 .confirm-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  /* Over the Explore window and every other big window (YAZ-4987, `:root`'s stacking order). */
+  z-index: var(--z-sheet);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2505,9 +3345,35 @@ body.drag-held iframe {
   background: var(--accent-soft);
 }
 
+/* The focused answer shows (YAZ-4989): ↓ ↑ and Tab move through a sheet's choices, and Enter picks that one. */
+.confirm__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* A third answer (YAZ-3818 D17's "Cells only"): on the buttons' row, at its left end; no button breaks its words. */
 .confirm__btn--other {
   margin-right: auto;
+}
+
+/* Three answers need a wider sheet (YAZ-4747: "Move the folder only" · Cancel · "Move the folder and its pages"; the
+   delete column sheet's "Keep the values in the pages"); a window too narrow for one row wraps them. */
+.confirm:has(.confirm__btn--other) {
+  width: min(500px, calc(100vw - 24px));
+}
+
+.confirm:has(.confirm__btn--other) .confirm__actions {
+  flex-wrap: wrap;
+}
+
+/* A sheet of choices (YAZ-4989; "This vault is read only": Just this once · 1 minute · 10 minutes · Cancel): the four
+   fit on one row (YAZ-4964 round 2, item 3: at 340 px "1 minute" stood 48 px out of the sheet); a narrow window wraps them. */
+.confirm.confirm--choices {
+  width: min(460px, calc(100vw - 24px));
+}
+
+.confirm--choices .confirm__actions {
+  flex-wrap: wrap;
 }
 
 .confirm__actions > .confirm__btn {
@@ -2548,7 +3414,7 @@ body.drag-held iframe {
   cursor: default;
 }
 
-/* The box in Settings that asks before a vault's notes get IDs (YAZ-2677 D2): one line, and the
+/* The box in Settings that asks before a vault's pages get IDs (YAZ-2677 D2): one line, and the
    text field for the vault's ID letters under it. */
 .confirm__letters {
   display: grid;
@@ -2589,6 +3455,19 @@ body.drag-held iframe {
   padding-right: 8px;
 }
 
+/* Row spacing (YAZ-5885): in the sidebar's lists a name box holds its row's height, so the rows below stay put while
+   you type, and the field (21px) never pokes out of a 20px row. */
+.sidebar__body .create-inline {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: var(--tree-row-h);
+}
+
+.sidebar__body .create-inline__input {
+  max-height: var(--tree-row-h);
+}
+
 .create-inline__input {
   width: 100%;
   padding: 2px 6px;
@@ -2622,7 +3501,8 @@ body.drag-held iframe {
 /* Level lines (YAZ-3309 D1): one grey line below the chevron of each open folder, down past every
    row inside it. A row's indent is 8 + depth * 14 px and its chevron is 14 px wide, so
    depth * 14 + 1 is the centre of the chevron that holds this level. The `role` keeps it to the
-   tree's own levels: Recents and Sessions nest a `.tree` too, and get no line (D4). All grey (D2),
+   tree's own levels: Sessions nests a `.tree` too, and gets no line (D4). Recents and the focus and favorite folders draw
+   the tree's levels since YAZ-4473, so they get the lines. All grey (D2),
    and no target (D5): the click goes to the row below. `data-sidebar-lines` on `.app` says when it
    shows (D3). "On hover" reads two attributes that `levelLinesHover.ts` writes on `.sidebar__body`:
    no rule here puts `:hover`, `:focus…` or `:has()` on an ancestor of the rows (bug YAZ-3329). */
@@ -2653,7 +3533,7 @@ body.drag-held iframe {
    Each li on the hover path (every ancestor li of the row under the mouse is `:hover`) draws one piece: a line
    from far above it down to the middle of its own row, then an elbow into its chevron (folder) or its name (file).
    Each nested level clips what pokes above its top, so the pieces join into one path, as in the editor. A row is
-   13px * 1.5 + 2 * 3px tall, so its middle is 12.75px down. Each level is its own stacking context, so the grey
+   `--tree-row-h` tall (25.5px by default, YAZ-5885), so its middle is half of that down (12.75px). Each level is its own stacking context, so the grey
    line (z 1) stays over the row fills and the thread (z 2) over the grey line, without leaking out of the tree. A
    nested level is z 3 in its parent's (YAZ-3440 D10): a row stuck inside it stays over the parent's
    lines and thread, which pass behind it.
@@ -2689,7 +3569,7 @@ body.drag-held iframe {
   left: calc(var(--tree-depth) * 14px + 1px - var(--thread-width) / 2);
   box-sizing: border-box;
   width: calc(18px + var(--thread-width) / 2);
-  height: calc(100000px + 12.75px + var(--thread-width) / 2);
+  height: calc(100000px + var(--tree-row-h, 25.5px) / 2 + var(--thread-width) / 2);
   border-left: var(--thread-width) solid var(--sidebar-thread);
   border-bottom: var(--thread-width) solid var(--sidebar-thread);
   border-bottom-left-radius: 6px;
@@ -2713,15 +3593,16 @@ body.drag-held iframe {
 
 /* The chevrons on the path take the thread colour (D7), as the bullets on the editor's path do. The coloured
    arrow is the folder li's own `::after`, a copy of `.tree__chevron::before` laid exactly on it, so a `:hover`
-   change restyles that li alone (bug YAZ-3329). The chevron sits (25.5px - 14px) / 2 = 5.75px down its row and
-   8 + depth * 14 px in; its arrow is 4px in and 3px down (1px open). A folder in inline rename (`data-renaming`,
+   change restyles that li alone (bug YAZ-3329). The chevron sits (`--tree-row-h` - 14px) / 2 down its row (5.75px at
+   the default 25.5px, YAZ-5885) and 8 + depth * 14 px in; its arrow is 4px in and 3px down (1px open), so its top is
+   half the row less 4px (closed) or less 6px (open). A folder in inline rename (`data-renaming`,
    Tree.tsx) has no chevron, so it has no copy either (bug YAZ-3342). */
 .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded]:not([data-renaming])::after {
   content: '';
   position: absolute;
   z-index: 2;
   left: calc(var(--tree-depth, 0) * 14px + 12px);
-  top: 8.75px;
+  top: calc(var(--tree-row-h, 25.5px) / 2 - 4px);
   width: 7px;
   height: 7px;
   border-right: 1.75px solid var(--sidebar-thread);
@@ -2732,7 +3613,7 @@ body.drag-held iframe {
 }
 
 .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming])::after {
-  top: 6.75px;
+  top: calc(var(--tree-row-h, 25.5px) / 2 - 6px);
   transform: rotate(45deg);
 }
 
@@ -2744,7 +3625,10 @@ body.drag-held iframe {
 /* An open folder's row can stick (YAZ-3440 D1), so it stands over the thread (z 4 and up): its hover fill would hide
    its own elbow and coloured arrow. While it is not stuck the row draws a copy of both over its fill, laid exactly
    on the li's (`::before` the elbow from the row's top, `::after` the open arrow), with the li's rest and fade.
-   While it is stuck the same two pseudo-elements are its block (above), and the li's own pieces pass behind it. */
+   While it is stuck the same two pseudo-elements are its block (above), and the li's own pieces pass behind it.
+   The arrow's copy shows while the row is on the hover path (YAZ-4474), as the li's own arrow does: the row stands
+   over the li's arrow even with no fill, its grey chevron on top. The path is `data-on-path` (`threadPath.ts`), never
+   `li:hover`, a state on an ancestor of the rows (bug YAZ-3329). */
 @container not scroll-state(stuck: top) {
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::before {
     content: '';
@@ -2755,7 +3639,7 @@ body.drag-held iframe {
     left: calc(var(--tree-depth) * 14px + 1px - var(--thread-width) / 2);
     box-sizing: border-box;
     width: calc(9px + var(--thread-width) / 2);
-    height: calc(12.75px + var(--thread-width) / 2);
+    height: calc(var(--tree-row-h, 25.5px) / 2 + var(--thread-width) / 2);
     border-left: var(--thread-width) solid var(--sidebar-thread);
     border-bottom: var(--thread-width) solid var(--sidebar-thread);
     border-bottom-left-radius: 6px;
@@ -2771,7 +3655,7 @@ body.drag-held iframe {
     content: '';
     position: absolute;
     left: calc(var(--tree-depth, 0) * 14px + 12px);
-    top: 6.75px;
+    top: calc(var(--tree-row-h, 25.5px) / 2 - 6px);
     width: 7px;
     height: 7px;
     border-right: 1.75px solid var(--sidebar-thread);
@@ -2782,7 +3666,7 @@ body.drag-held iframe {
     pointer-events: none;
   }
 
-  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky:hover::after {
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky[data-on-path]::after {
     opacity: 1;
     transition: opacity 140ms ease 80ms;
   }
@@ -2820,7 +3704,7 @@ body.drag-held iframe {
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::before,
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree[role='group'] > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky:hover::before,
   .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky::after,
-  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky:hover::after {
+  .app[data-sidebar-line-style='thread']:not([data-sidebar-lines='off']) .sidebar__body .tree > li[aria-expanded='true']:not([data-renaming]) > .tree__row--sticky[data-on-path]::after {
     transition: none;
   }
 
@@ -2836,7 +3720,9 @@ body.drag-held iframe {
   align-items: center;
   gap: 4px;
   width: 100%;
-  padding: 3px 8px;
+  /* Row spacing (YAZ-5885 D1): `--tree-row-h` on `.sidebar__body` (Sidebar.tsx) is the row's height, 25.5px by
+     default; the 13px * 1.5 = 19.5px line sits in the middle, with the rest as equal padding above and below. */
+  padding: calc((var(--tree-row-h, 25.5px) - 19.5px) / 2) 8px;
   font-size: 13px;
   line-height: 1.5;
   text-align: left;
@@ -2848,7 +3734,7 @@ body.drag-held iframe {
    rows that stick above it: one per level above it, up to the cap (D2). `--sticky-levels` comes from the cap. */
 .tree__row,
 .tree > li {
-  scroll-margin-top: calc(min(var(--tree-depth, 0), var(--sticky-levels, 7)) * 25.5px);
+  scroll-margin-top: calc(min(var(--tree-depth, 0), var(--sticky-levels, 7)) * var(--tree-row-h, 25.5px));
 }
 
 /* The keyboard walk (YAZ-921) needs a visible "you are here" — the hover wash, plus an inset
@@ -2868,7 +3754,7 @@ body.drag-held iframe {
 }
 
 /* Sticky folders (YAZ-3440 D1, VS Code's sticky scroll): each OPEN folder's row sticks at the top of the list while
-   its rows scroll under it, one row below the folder that holds it (a row is 13px * 1.5 + 2 * 3px = 25.5px tall),
+   its rows scroll under it, one row below the folder that holds it (a row is `--tree-row-h` tall, 25.5px by default, YAZ-5885),
    and leaves with its last row; a closed folder has nothing to scroll under it, so it stays an ordinary row. CSS
    alone: no script runs on a scroll. Chromium sticks below the list's top padding, so `top` takes that padding back
    (`--sidebar-pad-top`) and the stack starts flush at the top edge (D10). The shallower row stays on top, and
@@ -2878,7 +3764,7 @@ body.drag-held iframe {
    colour back it, with a copy of its fill, edge and corners on top and the thin line under it (D10). */
 .tree > li[aria-expanded='true'] > .tree__row--sticky {
   position: sticky;
-  top: calc(var(--tree-depth, 0) * 25.5px - var(--sidebar-pad-top, 0px));
+  top: calc(var(--tree-depth, 0) * var(--tree-row-h, 25.5px) - var(--sidebar-pad-top, 0px));
   z-index: calc(10 - var(--tree-depth, 0));
 }
 
@@ -3024,7 +3910,10 @@ body.drag-held iframe {
   z-index: 1000;
 }
 
+/* The name is the one item of a row that shrinks (YAZ-4940): a long one is cut with "…", and the ID, the date and the
+   marks after it keep their width. */
 .tree__label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3034,7 +3923,7 @@ body.drag-held iframe {
    more. Two sets (`sidebarIconSet`, `data-sidebar-icon-set` on `.app`): Material Icon Theme's (below) and the
    app's own Line glyphs (here), one per kind by the row's `data-kind` (Tree.tsx), drawn as a mask: 14px glyphs on a
    16px grid, 1.2px strokes. The file rows' look is `data-sidebar-file-icons` (`sidebarFileIcons`): "Colour"
-   (`quiet`, the default) colours each kind but notes, "All colour" (`color`) notes too, `grey` none, `off` hides
+   (`quiet`, the default) colours each kind but pages, "All colour" (`color`) pages too, `grey` none, `off` hides
    them. The folders' is `data-sidebar-folder-icons` (`sidebarFolderIcons`), on its own: grey, open while the folder
    is; `off` hides them. `plain` and `named` draw alike here: which Material folder a row has is `rowIcon`'s
    (YAZ-3554), in its `data-icon`. A vault row has none. A row in rename is an input: no icon.
@@ -3058,8 +3947,9 @@ body.drag-held iframe {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3'/%3E%3C/svg%3E");
 }
 
+/* The page (YAZ-5100 round 2): a sheet with a folded corner and two lines, in both sets (Material's below). */
 :is(.tree__row, .file-icon)[data-kind='markdown'] {
-  --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3M6 8.5h4.5M6 11h4.5'/%3E%3C/svg%3E");
+  --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 2.5a1 1 0 0 1 1-1h5l3 3v9a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1zM9.5 1.5v3h3M5.75 8h4.5M5.75 10.75h4.5'/%3E%3C/svg%3E");
 }
 
 :is(.tree__row, .file-icon)[data-kind='text'] {
@@ -3089,17 +3979,51 @@ body.drag-held iframe {
 
 :is(.tree__row, .file-icon)[data-kind='folder'] {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 4.5a1 1 0 0 1 1-1h3.4l1.6 1.6h6a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z'/%3E%3C/svg%3E");
+  --kind-color: var(--kind-folder);
+}
+
+:is(.tree__row, .file-icon)[data-kind='card'] {
+  --kind-icon: var(--card-link-icon);
+  --kind-color: var(--kind-card);
+}
+
+/* A CARD FILE (YAZ-5037, `data-kind='card'` from the index: `cardFiles.ts`): the card icon in the Material set too, where
+   a row's icon is otherwise its image. The row has no `data-icon`, so no Material rule below draws over it; an icon of
+   the user's own (`data-icon-custom`) still wins. Grey and Off apply as to any file. */
+.app[data-sidebar-icon-set='material']:not([data-sidebar-file-icons='off']) :is(.tree__row--file[data-kind='card']:not([data-icon-custom]) .tree__label, .file-icon--file[data-kind='card']:not([data-icon-custom]))::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  background: var(--kind-color);
+  mask: var(--kind-icon) center / 14px 14px no-repeat;
+}
+
+/* The card icon alone, outside `.app` (the hover preview's header, portalled to the body): no icon set to follow. */
+.card-file-icon {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  background: var(--kind-card);
+  mask: var(--card-link-icon) center / 14px 14px no-repeat;
 }
 
 .tree > li[aria-expanded='true'] > .tree__row[data-kind='folder'] {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 12.5v-8a1 1 0 0 1 1-1h3.4l1.6 1.6h5a1 1 0 0 1 1 1V7M1.5 12.5 3.5 7h11l-2 5.5z'/%3E%3C/svg%3E");
 }
 
-.app[data-sidebar-file-icons='color'] :is(.tree__row, .file-icon)[data-kind='markdown'] {
-  --kind-color: var(--kind-note);
+/* A page's colour: with "All colour", or once one is picked (YAZ-5100 round 2: `data-icon-colors`, App.tsx). */
+.app:is([data-sidebar-file-icons='color'], [data-icon-colors~='page']) :is(.tree__row, .file-icon)[data-kind='markdown'] {
+  --kind-color: var(--kind-page);
 }
 
-.app[data-sidebar-file-icons='grey'] :is(.tree__row, .file-icon)[data-kind] {
+/* Grey greys the files; a folder's colour is Folder icons' (YAZ-5100 round 2). */
+.app[data-sidebar-file-icons='grey'] :is(.tree__row, .file-icon)[data-kind]:not([data-kind='folder']) {
   --kind-color: var(--fg-muted);
 }
 
@@ -3107,7 +4031,7 @@ body.drag-held iframe {
    the row as the inline `--icon` (and `--icon-light`, its light theme twin, when it has one), with its id as
    `data-icon`: any of Material's icons shows with no rule of its own, and a row loads only its own file
    (`/material-icons/`, `materialIcons.ts`). Folders keep their colours; `grey` draws the file icons as grey
-   silhouettes (the icon as a mask), and `quiet` every note's (`data-kind='markdown'`, whatever its name icon:
+   silhouettes (the icon as a mask), and `quiet` every page's (`data-kind='markdown'`, whatever its name icon:
    README.md, SKILL.md, todo.md too, D4). A row the user gave its own icon (a pick in `.yaseendocs/icons.json`, D8,
    or a rule in settings, D9: `data-icon-custom`) shows it in the Line set too, and in its own colours in `quiet`. */
 .app[data-sidebar-icon-set='material']:not([data-sidebar-file-icons='off']) :is(.tree__row--file[data-icon] .tree__label, .file-icon--file[data-icon])::before,
@@ -3136,14 +4060,93 @@ body.drag-held iframe {
   mask: var(--icon) center / 14px 14px no-repeat;
 }
 
+/* YAZ-5100 round 2, after the rules above, which it outweighs or ties. A page with Material's default icon (its M↓ mark,
+   `markdown`) is the page above, in the page's colour: grey, or "All colour"'s, or a picked one. A name icon of its
+   own (README.md) keeps Material's. */
+.app[data-sidebar-icon-set='material']:not([data-sidebar-file-icons='off']) :is(.tree__row--file[data-kind='markdown'][data-icon='markdown']:not([data-icon-custom]) .tree__label, .file-icon--file[data-kind='markdown'][data-icon='markdown']:not([data-icon-custom]))::before {
+  background: var(--kind-color, var(--fg-muted));
+  mask: var(--kind-icon) center / 14px 14px no-repeat;
+}
+
+/* A picked colour in Material (YAZ-5100 round 2): a drawing's or a diagram's icon, and the default folder's, as a
+   silhouette in that colour. Grey and Off win; a folder with an icon of its own keeps its colours. */
+.app[data-sidebar-icon-set='material'][data-icon-colors~='drawing']:not([data-sidebar-file-icons='off'], [data-sidebar-file-icons='grey']) :is(.tree__row--file[data-kind='drawing']:not([data-icon-custom]) .tree__label, .file-icon--file[data-kind='drawing']:not([data-icon-custom]))::before,
+.app[data-sidebar-icon-set='material'][data-icon-colors~='diagram']:not([data-sidebar-file-icons='off'], [data-sidebar-file-icons='grey']) :is(.tree__row--file[data-kind='diagram']:not([data-icon-custom]) .tree__label, .file-icon--file[data-kind='diagram']:not([data-icon-custom]))::before,
+.app[data-sidebar-icon-set='material'][data-icon-colors~='folder']:not([data-sidebar-folder-icons='off']) :is(.tree__row--dir:is([data-icon='folder'], [data-icon='folder-open']):not([data-icon-custom]) .tree__label, .file-icon--dir:is([data-icon='folder'], [data-icon='folder-open']):not([data-icon-custom]))::before {
+  background: var(--kind-color);
+  mask: var(--icon) center / 14px 14px no-repeat;
+}
+
+/* A place name (YAZ-5402, `PlaceName.tsx`): the tree's icon before a folder's or a page's name, small and in the name's
+   own colour, so it reads as part of the grey name. The glyph is the row's: the Line set's (`--kind-icon`, also where
+   the part is portalled out of `.app`, a hover preview), or Material's and the user's own (`--icon`) as a silhouette.
+   It is the span's own `::before`, not the tree's rules (no `--dir`/`--file`), so its size and colour are its own.
+   The weights after the light theme's image rule, which this one ties and follows. */
+.place-name {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.place-name > .place-name__icon {
+  display: inline-flex;
+  flex: none;
+}
+.place-name > .file-icon.place-name__icon::before {
+  content: '';
+  display: block;
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  background: currentColor;
+  mask: var(--kind-icon) center / 12px 12px no-repeat;
+}
+.place-name > .file-icon.place-name__icon[data-icon]::before {
+  background: currentColor;
+}
+.app[data-sidebar-icon-set='material'] .place-name > .file-icon.place-name__icon[data-icon]:not([data-kind='markdown'][data-icon='markdown'], [data-kind='card'])::before,
+.place-name > .file-icon.place-name__icon[data-icon-custom]::before {
+  mask-image: var(--icon);
+}
+.app[data-sidebar-folder-icons='off'] .place-name > .place-name__icon[data-kind='folder'],
+.app[data-sidebar-file-icons='off'] .place-name > .place-name__icon:not([data-kind='folder']) {
+  display: none;
+}
+.place-name__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* A drawing's or a diagram's extension (YAZ-3536 D4, D5): hidden while its icon says the kind; with File icons
-   Off nothing else says it, so it shows. A note has none: no extension reads as a note. */
+   Off nothing else says it, so it shows. A page has none: no extension reads as a page. */
 .name-ending {
   display: none;
 }
 .app[data-sidebar-file-icons='off'] .name-ending,
 .name-ending--always {
   display: inline;
+}
+
+/* A card's icon in search (YAZ-5037, `CardIcon`): the `[[` picker's card icon (`--card-link-icon`, wikilink.css), the
+   size and place of a file icon, in the card colour where the theme has one; File icons Off hides it too. */
+.card-icon::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  background: var(--kind-card, var(--fg-muted));
+  mask: var(--card-link-icon) center / 14px 14px no-repeat;
+}
+.app[data-sidebar-file-icons='off'] .card-icon::before {
+  content: none;
+}
+/* A picked card colour (YAZ-5100 round 2) on the `[[` picker's card icon. A card pill's icon is in the card colour always
+   (YAZ-5843 D2, `wikilink.css`). */
+.app[data-icon-colors~='card']:not([data-sidebar-file-icons='off'], [data-sidebar-file-icons='grey']) .wikilink-picker__card-icon {
+  background-color: var(--kind-card);
 }
 
 /* Search (YAZ-2620 🔒 D5): each part of a row that matched (YAZ-3748 D3), in the tree and in the flat lists — the `==highlight==` wash
@@ -3196,6 +4199,11 @@ body.drag-held iframe {
   color: var(--fg-muted);
 }
 
+/* A vault group under a day of the Recents tab (YAZ-4450 D7): dim like its day, one step in, and not bold, so the day stays the top heading. */
+.recents__vault {
+  color: var(--fg-muted);
+}
+
 /* The vault of a top row of the Focus and Favorites tabs (YAZ-2631 D4), where the window has two or
    more: very small and light, at the right edge, and never more than 40% of the row. */
 .tree__vault {
@@ -3224,7 +4232,24 @@ body.drag-held iframe {
   margin-left: 0;
 }
 
-/* The shortcut mark (YAZ-2290 D2): this note shows here and lives elsewhere. Quiet, after the
+/* A page row's ID (YAZ-4940 "In the files list"): as quiet as the date, at the right end, so the IDs line up in a
+   column and the names stay where they are; a long name is cut (the label's ellipsis) before the ID. After a vault
+   tag it gives up its own push to the right, as the date does; a date after it does the same. */
+.tree__id {
+  flex: none;
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--fg-muted) 60%, transparent);
+}
+.tree__vault + .tree__id,
+.tree__id + .tree__date {
+  margin-left: 0;
+}
+
+/* The shortcut mark (YAZ-2290 D2): this page shows here and lives elsewhere. Quiet, after the
    name, never squeezed by a long one — one rule for the tree row and for a title in a folder's views. */
 .shortcut-mark {
   flex: none;
@@ -3402,7 +4427,12 @@ body.drag-held iframe {
   background: var(--border);
 }
 
-/* The in-note menus' line between groups (the bullet's and the link's, `renderMenu`) spaces as the app menus'
+/* A line with nothing under it (a folder page's cog off its Page tab, YAZ-3746 D35): no line. */
+.page-settings__menu > .page-settings__divider:last-child {
+  display: none;
+}
+
+/* The in-page menus' line between groups (the bullet's and the link's, `renderMenu`) spaces as the app menus'
    (`.ctx-menu__group + .ctx-menu__group`): 4px above and below (YAZ-3727 D21). */
 .ctx-menu--editor > .document-zoom__divider {
   margin: 4px 0;
@@ -3447,8 +4477,8 @@ body.drag-held iframe {
 /* The block handle menu's strip (YAZ-3727 D14): the selection toolbar's list buttons and T in one menu row, drawn
    as the toolbar draws them (Crepe's `toolbar.css`): 32px boxes, 24px glyphs in the outline colour, the toolbar's
    hover. The lit one sits in a soft accent box in the accent colour (D16): the toolbar's dark-on-grey was too faint. Scoped under `.ctx-menu--editor` so Crepe's `.milkdown button` reset does not win;
-   a note's right-click menu (D15) draws it in a `.ctx-menu__group`. */
-/* Both menus take the app's tokens (6B nit): a note's right-click menu (D15) is drawn outside the editor, where
+   a page's right-click menu (D15) draws it in a `.ctx-menu__group`. */
+/* Both menus take the app's tokens (6B nit): a page's right-click menu (D15) is drawn outside the editor, where
    Crepe's theme sets no `--crepe-color-*`, and the bullet's menu inside it must look the same. */
 :is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip {
   --crepe-color-outline: var(--fg-muted);
@@ -3496,6 +4526,39 @@ body.drag-held iframe {
    showed over the 6-dot menu (the YAZ-4163 demo). */
 .ctx-menu--editor {
   z-index: 60;
+}
+
+/* The tabs and the Off · Light · Medium · Strong switch of a table's Header row (YAZ-4794 demo: "it does not look how it
+   is for folder pages"): the folder page's `.fill-target` (views.css), restated under `.ctx-menu--editor` so Crepe's
+   `.milkdown button` reset (no padding, no height, its own font) does not squeeze them. */
+.ctx-menu--editor .fill-target {
+  margin: 2px 4px 6px;
+  padding: 2px;
+}
+.ctx-menu--editor .fill-target--sub {
+  margin-top: 0;
+}
+.ctx-menu--editor .fill-target__opt {
+  flex: 1;
+  height: 22px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 22px;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.ctx-menu--editor .fill-target__opt[aria-pressed='true'] {
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+.ctx-menu--editor .fill-target--sub .fill-target__opt {
+  font-size: 11px;
 }
 
 /* A captioned strip (a table's Look, Text and Rows, the YAZ-4163 demo, as the approved mockup): its name at the left,
@@ -3726,6 +4789,284 @@ body.drag-held iframe {
   opacity: 0.85;
 }
 
+/* The time choices (YAZ-4939): three rows, the first the dark one Enter takes; "Turn Read only off" and Cancel on the
+   row under them. The box grows for the words. */
+.read-only-chip__ask {
+  width: 212px;
+}
+
+.read-only-chip__times {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.read-only-chip__times button {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.read-only-chip__times button:hover {
+  background: var(--bg-hover);
+}
+
+.read-only-chip__times button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.read-only-chip__times .read-only-chip__allow {
+  border-color: var(--fg);
+  background: var(--fg);
+  color: var(--bg);
+}
+
+.read-only-chip__times .read-only-chip__allow:hover {
+  background: var(--fg);
+  opacity: 0.85;
+}
+
+/* "Editing · mm:ss" (YAZ-4939): the chip in amber while a timed unlock runs — the pencil and the border in `--warn`,
+   the words in the page's colour as the lock chip's are — with "Lock now" beside it, the chip's size. */
+.read-only-chip {
+  gap: 4px;
+}
+
+.read-only-chip__button--editing {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+
+.read-only-chip__button--editing svg {
+  color: var(--warn);
+}
+
+.read-only-chip__button--editing:hover,
+.read-only-chip__button--editing[aria-expanded="true"] {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 24%, transparent);
+}
+
+.read-only-chip__lock {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.read-only-chip__lock:hover {
+  background: var(--bg-hover);
+  border-color: var(--warn);
+}
+
+.read-only-chip__lock:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The vault's lock in the sidebar's header (YAZ-4985): the chip's look, smaller and quiet. Closed, it is the lock alone
+   in the muted colour, with no fill, so the header stays calm; amber with the time left while file changes are allowed.
+   The box opens under it, inside the sidebar. */
+.vault-lock {
+  align-self: center;
+  margin: 0 2px;
+}
+
+.vault-lock .vault-lock__button:not(.read-only-chip__button--editing) {
+  height: 22px;
+  padding: 0 5px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.vault-lock .vault-lock__button:not(.read-only-chip__button--editing) svg {
+  color: var(--fg-muted);
+}
+
+.vault-lock .vault-lock__button:not(.read-only-chip__button--editing):hover,
+.vault-lock .vault-lock__button:not(.read-only-chip__button--editing)[aria-expanded="true"] {
+  border-color: var(--border);
+  background: var(--bg-hover);
+}
+
+.vault-lock .vault-lock__button span {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The vault's name keeps priority (YAZ-4964 round 2, item 6). While file changes are allowed, the lock is a size
+   container whose width the header gives it: its full width while there is room ("🔒 9:52" + "Lock now"), and it
+   shrinks FIRST (flex-shrink 1000 against the name's 1) down to the short form ("🔒 10m"). Only then is the name cut
+   to "…". The name's button takes its text's width as its base (`flex-basis: auto`), so it can claim that room; it
+   still takes all the space left over. The widths are in `ch` of the lock's 12px: the long form is the button
+   (2px border + 14px padding + 12px icon + 4px gap) with "10:00", the 4px gap, and "Lock now" with its 16px frame. */
+.sidebar__header:has(.vault-lock--allowed) .sidebar__root {
+  flex: 1 1 auto;
+}
+
+.vault-lock.vault-lock--allowed {
+  container: vault-lock / inline-size;
+  flex: 0 1000 calc(52px + 14ch);
+  min-width: calc(32px + 4ch);
+  font-size: 12px;
+}
+
+.vault-lock .vault-lock__time--short {
+  display: none;
+}
+
+@container vault-lock (max-width: calc(52px + 14ch - 1px)) {
+  .vault-lock .vault-lock__time--long,
+  .vault-lock .read-only-chip__lock {
+    display: none;
+  }
+
+  .vault-lock .vault-lock__time--short {
+    display: inline;
+  }
+}
+
+.vault-lock__ask {
+  z-index: 30;
+}
+
+/* "Unlock this vault?" says what it opens (YAZ-5581), in the muted colour under the question. */
+.read-only-chip__ask .vault-lock__what {
+  margin-top: -4px;
+  color: var(--fg-muted);
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+/* The message of an edit attempt (YAZ-4446, D33): a card under the chip, a red arrow pointing up at it, and one red pulse
+   of the chip. The live region is always there and draws nothing; the card is absolute in the chip's box, so nothing
+   in the page moves, and it takes no pointer, so the page under it still answers. The toast's surface and shadow
+   (`.link-notice`); the red is `--danger`, 4.5:1 (light) and 5.6:1 (dark) against `--bg` for the arrow and the lock. */
+.read-only-message {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 11;
+  pointer-events: none;
+}
+
+.read-only-message__card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: max-content;
+  max-width: 260px;
+  margin-top: 20px;
+  padding: 9px 12px 9px 10px;
+  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  color: var(--fg);
+  font-size: 12.5px;
+  line-height: 17px;
+  text-align: left;
+  white-space: normal;
+}
+
+/* The arrow stands in the gap between the chip and the card, under the chip's middle (`--read-only-message-arrow`, from
+   the card's right edge). */
+.read-only-message__arrow {
+  position: absolute;
+  bottom: calc(100% + 3px);
+  right: calc(var(--read-only-message-arrow, 40px) - 6px);
+  display: flex;
+  color: var(--danger);
+}
+
+.read-only-message__icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+.read-only-message__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.read-only-message__text strong {
+  font-weight: 600;
+}
+
+/* The chip it points at: red while the card shows. */
+.read-only-chip .read-only-chip__button--pulse {
+  border-color: var(--danger);
+}
+
+.read-only-chip .read-only-chip__button--pulse svg {
+  color: var(--danger);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .read-only-message__card {
+    animation: read-only-message-in 160ms ease-out both;
+  }
+
+  .read-only-message__arrow {
+    animation: read-only-message-point 700ms ease-in-out 160ms 2;
+  }
+
+  .read-only-chip .read-only-chip__button--pulse {
+    animation: read-only-chip-pulse 650ms ease-out;
+  }
+}
+
+@keyframes read-only-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes read-only-message-point {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes read-only-chip-pulse {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 55%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--danger) 0%, transparent);
+  }
+}
+
 /* Page settings (YAZ-2643): the cog left of the zoom pill. Its menu shares the zoom menu's rules above. */
 .page-settings {
   position: relative;
@@ -3778,6 +5119,77 @@ body.drag-held iframe {
 .page-settings__menu .page-settings__label {
   padding: 6px 7px 3px;
   font-size: 11px;
+}
+
+/* "Outside changes glow" (YAZ-4272 D5): the same small label, then one native dropdown the menu's width. */
+.page-settings__menu label.page-settings__label {
+  display: block;
+  color: var(--fg-muted);
+}
+
+.page-settings__select {
+  display: block;
+  width: calc(100% - 14px);
+  margin: 0 7px 4px;
+  padding: 3px 4px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.page-settings__select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* "Code block width" / "Table width" (YAZ-4783 layer 2): beside Default, the page's own px as a field, pressed (the
+   accent) while the page has one. */
+.page-settings__px {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 6px 0 2px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.page-settings__px[data-own] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.page-settings__px input {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: right;
+}
+
+.page-settings__px input:focus {
+  outline: none;
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
+
+/* "Page width" and a card file's "Card width" (YAZ-5871 D1): Default and the three steps on one line, Custom's px box
+   on its own line under them, wide enough to read what is typed. */
+.page-settings__choices--width {
+  flex-wrap: wrap;
+}
+.page-settings__choices--width .page-settings__px {
+  flex: 1 0 100%;
+  padding: 2px 6px;
+}
+.page-settings__choices--width .page-settings__px input {
+  text-align: left;
 }
 
 /* The small "i" beside the label: a quiet glyph, not one more row of the menu. */
@@ -3860,6 +5272,80 @@ body.drag-held iframe {
   font-size: 11px;
 }
 
+/* A row of four choices (the folder cog's "Show where columns come from", YAZ-4713 C11): each choice on one line, and
+   the menu wide enough for them. At 172px "Icon and folder name" broke over four lines. */
+.page-settings__menu:has(.page-settings__choices > button:nth-child(4)) {
+  width: 268px;
+}
+
+.page-settings__choices:has(> button:nth-child(4)) button {
+  white-space: nowrap;
+}
+
+/* The folder ⚙ in sections (YAZ-3746 13BP): a small heading starts each; a setting is ONE line, its label in the text
+   colour and its choices quieter at the right; an (i) after the label holds the hint. Wider, so a line fits. */
+.page-settings__menu:has(.page-settings__line) {
+  min-width: 316px;
+  max-height: min(480px, calc(100vh - 64px));
+}
+
+.page-settings__menu .page-settings__heading {
+  padding-top: 4px;
+  color: var(--fg-muted);
+}
+
+.page-settings__line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.page-settings__menu .page-settings__line .page-settings__label {
+  padding: 3px 0 3px 7px;
+  color: var(--fg);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.page-settings__line .page-settings__choices {
+  flex: 0 0 auto;
+}
+
+.page-settings__menu .page-settings__line .page-settings__choices button {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  color: var(--fg-muted);
+}
+
+.page-settings__menu .page-settings__line .page-settings__choices button[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+/* The ⚙'s heading names the folder (13BP CL6): a long name ends in "…", and its hover gives it whole. */
+.page-settings__menu .page-settings__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An (i)'s sentence (13BP CL4): the "TOC made from" box, level with its row, left of the wider folder ⚙. */
+/* The menu on the page (YAZ-4776): fixed under its button and kept inside the window, so no pane or sidebar covers it. */
+.page-settings__menu.page-settings__menu--placed {
+  position: fixed;
+  right: auto;
+  z-index: 1000;
+}
+
+.page-settings__tip.page-settings__tip--hint {
+  position: fixed;
+  right: auto;
+  z-index: 1000;
+  width: 240px;
+  pointer-events: none;
+}
+
 /* Line numbers (YAZ-2643). A numbered block carries `data-line`; the number is that block's own
    pseudo-element, parked left of the column. A block's RIGHT edge is the column's right edge at
    every bullet depth, and 100cqw is the column's width, so one rule puts all numbers in one column.
@@ -3925,6 +5411,13 @@ body.drag-held iframe {
 .editor-host[data-line-numbers] .ProseMirror .line-view[data-line],
 .editor-host[data-line-numbers] .ProseMirror .milkdown-code-block[data-line] {
   overflow: visible;
+}
+
+/* A code block with its own width, or the page's or Settings' (YAZ-4783), has no right edge on the column's, so its number goes from its LEFT edge,
+   the column's at the top level. */
+.editor-host[data-line-numbers] .ProseMirror .milkdown-code-block[data-code-width][data-line]::after,
+.editor-host[data-line-numbers] .ProseMirror .milkdown-code-block[data-line]:is([data-code-block-width] *)::after {
+  right: calc(100% + 52px / var(--document-zoom, 1));
 }
 
 .editor-host[data-line-numbers] .ProseMirror .line-view[data-line]::after {
@@ -4453,11 +5946,7 @@ body.drag-held iframe {
 }
 
 
-/* Over the Settings dialog (z-index 70) too. */
-.confirm-overlay.place-picker-overlay {
-  z-index: 80;
-}
-
+/* Over the Settings dialog (z-index 70) too: every sheet is (`--z-sheet`, YAZ-4987). */
 .place-picker {
   width: min(420px, calc(100vw - 24px));
   padding: 0 0 6px;
@@ -4556,10 +6045,7 @@ body.drag-held iframe {
 }
 
 /* The keys of this tab (YAZ-3564 K11): two columns, the key then what it does; the list scrolls inside the sheet. */
-/* Above a drawing open over a note (z-index 70), whose ? opens it (YAZ-3564 K11). */
-.confirm-overlay:has(> .key-sheet) {
-  z-index: 80;
-}
+/* Above a drawing open over a page (z-index 70), whose ? opens it (YAZ-3564 K11): every sheet is (`--z-sheet`, YAZ-4987). */
 .confirm.key-sheet {
   width: min(520px, 92vw);
   max-height: min(640px, 86vh);
@@ -4575,19 +6061,70 @@ body.drag-held iframe {
 }
 .key-sheet__rows {
   margin: 0;
+  padding: 0;
+  list-style: none;
 }
+/* Each row the app's hotkey label (YAZ-5332): "Duplicate (Option+Cmd+D)". */
 .key-sheet__row {
-  display: grid;
-  grid-template-columns: 9em 1fr;
-  gap: 8px;
   padding: 2px 0;
   font-size: 13px;
 }
-.key-sheet__keys {
-  font-family: var(--font-mono, ui-monospace, monospace);
+
+/* The app's own hover box (YAZ-4772, `components/HoverTip.tsx`): fixed on the page, so a clipping cell can not cut it. */
+.hover-tip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 260px;
+  padding: 6px 9px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--fg);
+  white-space: normal;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+  pointer-events: none;
+}
+
+/* Edit property's "Column on" (YAZ-4769): the label and (i), the picker at the right; its list opens as a full line under it. */
+.frontmatter-property-menu__column {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 2px 0 6px;
+}
+
+.frontmatter-property-menu__column-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
   color: var(--fg-muted);
 }
-.key-sheet__label {
-  margin: 0;
+
+/* The (i) inside a row that is a button (YAZ-4748 demo): the label's own (i), a glyph, as quiet. */
+.page-settings__menu button .page-settings__info {
+  display: inline-flex;
+  margin-left: 4px;
+  vertical-align: -2px;
+  color: var(--fg-muted);
+  cursor: help;
+}
+
+.page-settings__menu button .page-settings__info:hover {
+  color: var(--fg);
+}
+
+/* A menu whose rows carry an (i) (a drawing's and a diagram's cog, YAZ-4748 demo): wide enough that each (i) stays on
+   its label's line. At 172px "Link preview on hover" and "Fold arrows (app: hover)" put theirs on a line of its own. */
+.page-settings__menu:has(button .page-settings__info) {
+  width: 212px;
+}
+
+.page-settings__menu button > span:has(> .page-settings__info) {
+  white-space: nowrap;
 }

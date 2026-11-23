@@ -24,6 +24,17 @@
  *    URL to the browser and denies the rest, so a link never navigates the app window.
  *  - S18: a failed read says so, and the buttons still work: a staged update does not need its notes.
  *
+ * UPDATE FROM THE LATEST ROW (YAZ-4371; Yasin: "if they are not on the latest, for them to be able to click
+ * a button when they click the latest tab to then manually upgrade from there"). On the **Latest** row, when
+ * it is newer than the running app, `idle` offers **Update to v<latest>**: a click is `update.check()`, the
+ * updater's own check (one at a time, S6; the signature check, S10; the swap, D6), and the button then
+ * follows the state: **Downloading v<latest>…** (not clickable), then **Restart to update**, or **Download**
+ * for a copy that cannot replace itself. While the check runs the button is not clickable. A failed check,
+ * or one that finds no download yet (S2: CI still builds the `.dmg`), says so in one line, and the button
+ * stays. So does a download that fails after it (S9: main answers `idle` with `failed: <version>`, YAZ-4384).
+ * Another row, up to date, or a dev run with no feed (`notes.checks`, S7): no such button. `ready` and `manual`
+ * keep their button on every row.
+ *
  * The keys are the overlay's, never `window`'s (the SettingsDialog rule, YAZ-888): Esc closes, and
  * a click on the backdrop closes (S19). The lightbox is rendered INSIDE the sheet, so Esc is layered:
  * the lightbox's own key handler stops Esc, which closes only the lightbox, and the sheet's
@@ -33,6 +44,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import type { ReleaseNote, ReleaseNotes, UpdateState } from '@shared/types'
+import { newer } from '@shared/versions'
 import { api } from '../api'
 import { commentHtml } from '../comments/markdown'
 import { ImageModal } from '../editor/image/ImageModal'
@@ -109,18 +121,22 @@ export default function WhatsNewSheet({ update, onClose }: WhatsNewSheetProps) {
   /** The row the user picked; until then the default of D11, which follows the state. */
   const [picked, setPicked] = useState<string | null>(null)
   const [viewer, setViewer] = useState<{ images: GalleryImage[]; index: number } | null>(null)
+  /** The sheet's own check (YAZ-4371): running, or the one line its end left (a failure, or no download yet). */
+  const [checking, setChecking] = useState(false)
+  const [checkLine, setCheckLine] = useState<string | null>(null)
+  const live = useRef(true)
   const firstButton = useRef<HTMLButtonElement>(null)
   const pane = useRef<HTMLDivElement>(null)
   const ids = useId()
 
   useEffect(() => {
-    let live = true
+    live.current = true
     api.update.notes().then(
-      (got) => live && setNotes(got),
-      () => live && setNotes('failed'),
+      (got) => live.current && setNotes(got),
+      () => live.current && setNotes('failed'),
     )
     return () => {
-      live = false
+      live.current = false
     }
   }, [])
 
@@ -176,6 +192,29 @@ export default function WhatsNewSheet({ update, onClose }: WhatsNewSheetProps) {
   }
 
   const action = ACTION[update.kind]
+  /** YAZ-4371: the Latest row is selected, it is newer than this app, and this run can update (S7). */
+  const latest = releases[0]?.version
+  const offer = action === undefined && index === 0 && latest !== undefined && typeof notes === 'object' && notes.checks && newer(latest, notes.current)
+  const offerIdle = offer && update.kind === 'idle'
+  const check = (): void => {
+    setChecking(true)
+    setCheckLine(null)
+    api.update.check().then(
+      (state) => {
+        if (!live.current) return
+        setChecking(false)
+        // S2: nothing to download yet. Any other answer is the state, which the button follows.
+        if (state.kind === 'idle') setCheckLine(`v${latest} is not ready to download yet. Try again in a few minutes.`)
+      },
+      () => {
+        if (!live.current) return
+        setChecking(false)
+        setCheckLine("Can't check for updates. Check your connection.")
+      },
+    )
+  }
+  /** The sheet's own check's line first; else a download of this version that failed (S9) after the button (YAZ-4384). */
+  const line = checkLine ?? (!checking && update.kind === 'idle' && update.failed === latest ? `The download of v${latest} failed. Click Update to try again.` : null)
   const act = (): void => {
     void api.update.restart().catch(() => undefined)
     // "Download" hands off to the browser, so the sheet has nothing left to do; "Restart to update" quits the app.
@@ -254,12 +293,27 @@ export default function WhatsNewSheet({ update, onClose }: WhatsNewSheetProps) {
           </div>
         )}
         <div className="whats-new__actions">
+          {offerIdle && line !== null && (
+            <p className="whats-new__check-line" role="status">
+              {line}
+            </p>
+          )}
           <button ref={firstButton} type="button" className="confirm__btn" onClick={onClose}>
-            {action === undefined ? 'Close' : 'Later'}
+            {action === undefined && !offerIdle ? 'Close' : 'Later'}
           </button>
           {action !== undefined && (
             <button type="button" className="confirm__btn btn--primary" onClick={act}>
               {action}
+            </button>
+          )}
+          {offerIdle && (
+            <button type="button" className="confirm__btn btn--primary" disabled={checking} aria-busy={checking} onClick={check}>
+              Update to v{latest}
+            </button>
+          )}
+          {offer && update.kind === 'downloading' && (
+            <button type="button" className="confirm__btn btn--primary" disabled>
+              Downloading v{update.version}…
             </button>
           )}
         </div>

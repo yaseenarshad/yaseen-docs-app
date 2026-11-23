@@ -14,7 +14,7 @@ import { TextField } from './views/view/TextField'
  * The Welcome screen (C2, GRO-2164): shown only when this window has no folder (D3) — the app
  * name, the recent folders as one-click rows, and the Open folder… button. No dialog opens by
  * itself. The rows are snapshotted at mount, so a row whose folder turned out to be gone stays
- * visible with its "Folder not found" note after App drops the MRU entry.
+ * visible with its "Folder not found" page after App drops the MRU entry.
  *
  * The saved workspaces (YAZ-3886) stand first, under "Workspaces", as in the ⌘O panel (YAZ-2602 S64):
  * every one, last used first, then a line and "Folders" above the recent folders. With none saved the
@@ -43,9 +43,9 @@ interface WelcomeProps {
   recents: RecentRoots
   /** The saved workspaces, last used first, as `AppState.vaultSets` holds them at mount (MAX_VAULT_SETS at most). */
   sets: VaultSet[]
-  /** Resolves false when the folder is gone on disk (App drops the MRU entry; the row shows the note). */
+  /** Resolves false when the folder is gone on disk (App drops the MRU entry; the row shows the page). */
   onOpenRecent: (path: string) => Promise<boolean>
-  /** Resolves false when none of the workspace's folders is left (the row shows the note). */
+  /** Resolves false when none of the workspace's folders is left (the row shows the page). */
   onOpenSet: (id: string) => Promise<boolean>
   onPickFolder: () => void
   /** True while the native folder dialog is open; the button is disabled meanwhile. */

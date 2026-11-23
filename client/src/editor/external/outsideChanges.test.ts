@@ -17,11 +17,12 @@ import { OUTLINE_FOLDED_ATTR, undoLastFold } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
 import { getZoomedItemPos } from '../outline/zoom'
 import { applyExternalMarkdown, EXTERNAL_EDIT_META, OUTSIDE_RANGES_META, type OutsideRange } from './applyExternalMarkdown'
-import { MAX_CHANGES, OUTSIDE_ACTIVE_CLASS, OUTSIDE_CHANGE_CLASS, OUTSIDE_CHECKED_CLASS, OUTSIDE_REMOVED_CLASS, OUTSIDE_TIP_ATTR, OUTSIDE_TIP_CLASS } from './outsideChanges'
+import { MAX_CHANGES, OUTSIDE_ACTIVE_CLASS, OUTSIDE_CELL_CLASS, OUTSIDE_CHANGE_CLASS, OUTSIDE_CHECKED_CLASS, OUTSIDE_REMOVED_CLASS, OUTSIDE_TIP_ATTR, OUTSIDE_TIP_CLASS } from './outsideChanges'
 import { mergeExternalMarkdown } from './mergeExternal'
 import { createOutsideChangesChannel } from './outsideChangesChannel'
 import { keepOutsideChangesOfTabs, MAX_KEPT_PAGES, readOutsideChanges, saveOutsideChanges } from './outsideChangesMemory'
 import { headingFoldHidden } from '../outline/headingFoldTestKit'
+import { cellNoteCardKey } from '../table/cellNotes'
 
 const BASE = `* Parent
   * Child
@@ -70,7 +71,7 @@ const typeBefore = (view: EditorView, before: string, text: string): void => {
   view.dispatch(view.state.tr.insertText(text, posOf(view.state.doc, before)))
 }
 
-/** The AI's save: the live note with `edit` applied, landed as a diff. */
+/** The AI's save: the live page with `edit` applied, landed as a diff. */
 const outsideEdit = (crepe: Crepe, edit: (md: string) => string, quiet = false): void => {
   expect(applyExternalMarkdown(crepe, edit(getMarkdownForSave(crepe)), quiet)).toBe('applied')
 }
@@ -94,7 +95,7 @@ describe('the change list (D3, D4)', () => {
     const { crepe, root, view, channel } = await mount('Alpha one\n\nBeta two\n\nGamma three\n')
     outsideEdit(crepe, (md) => md.replace('Alpha one', 'Alpha ONE').replace('Gamma three', 'Gamma THREE'))
     expect(glowTexts(root)).toEqual(['ONE', 'THREE'])
-    expect(channel.getState()).toEqual({ count: 2, wholeNote: false })
+    expect(channel.getState()).toEqual({ count: 2, wholePage: false, fadesAt: null })
     // Two ranges in one line ("Beta" and "two"), as one outside transaction says them.
     const beta = posOf(view.state.doc, 'Beta')
     const ranges: OutsideRange[] = [
@@ -152,7 +153,7 @@ describe('the change list (D3, D4)', () => {
     expect(glowTexts(root)).toEqual(['New one', 'New two'])
   })
 
-  it('removed text is one thin red mark with the tip "Removed: …", never part of the saved note', async () => {
+  it('removed text is one thin red mark with the tip "Removed: …", never part of the saved page', async () => {
     const { crepe, root, channel } = await mount('The cat sat on the mat.\n\nOther line.\n')
     outsideEdit(crepe, (md) => md.replace('cat ', ''))
     expect(channel.getState().count).toBe(1)
@@ -166,7 +167,7 @@ describe('the change list (D3, D4)', () => {
 
   it('a removed bullet is a line between the blocks, and a long removed text is cut at 200 chars', async () => {
     const long = 'x'.repeat(250)
-    // The kept text is longer than the removed one: one range over 80% of the note would be a rewrite.
+    // The kept text is longer than the removed one: one range over 80% of the page would be a rewrite.
     const { crepe, root } = await mount(`* Keep ${'k'.repeat(400)}\n* ${long}\n* Last\n`)
     outsideEdit(crepe, (md) => md.replace(`* ${long}\n`, ''))
     const [mark] = removedMarks(root)
@@ -405,7 +406,7 @@ describe('a tab keeps the list of a page it left (demo feedback)', () => {
     m.root.remove()
   }
 
-  it('Back to the page brings its list back, numbers and all; a closed tab, or a changed note, brings nothing', async () => {
+  it('Back to the page brings its list back, numbers and all; a closed tab, or a changed page, brings nothing', async () => {
     keepOutsideChangesOfTabs(['t1', 't2'])
     const doc = '* One\n* Two\n'
     const first = await mount(doc, { tab: 't1' })
@@ -433,7 +434,7 @@ describe('a tab keeps the list of a page it left (demo feedback)', () => {
     await Promise.resolve()
     expect(closed.channel.rows()).toEqual([])
     await leave()
-    // The note changed while the tab was away: the kept list comes back on it, and what changed meanwhile glows after it.
+    // The page changed while the tab was away: the kept list comes back on it, and what changed meanwhile glows after it.
     const other = await mount(markdown, { tab: 't2' })
     outsideEdit(other.crepe, (md) => md.replace('Two B', 'Two B C'))
     const away = getMarkdownForSave(other.crepe)
@@ -482,7 +483,7 @@ describe('a tab keeps the list of a page it left (demo feedback)', () => {
 
   it('4I3: a footnote number changed while the tab was away glows on return', async () => {
     keepOutsideChangesOfTabs(['t7'])
-    const first = await mount('Para[^1]\n\nOther\n\nEnd\n\n[^1]: note\n', { tab: 't7' })
+    const first = await mount('Para[^1]\n\nOther\n\nEnd\n\n[^1]: page\n', { tab: 't7' })
     outsideEdit(first.crepe, (md) => md.replace('End', 'End X'))
     const markdown = getMarkdownForSave(first.crepe)
     await leave()
@@ -523,24 +524,24 @@ describe('checking off (D8)', () => {
     expect(glowTexts(root)).toEqual([' grown', ' long'])
     expect(view.state.selection.from).toBe(caret)
     channel.clear()
-    expect(channel.getState()).toEqual({ count: 0, wholeNote: false })
+    expect(channel.getState()).toEqual({ count: 0, wholePage: false, fadesAt: null })
     expect(glowTexts(root)).toEqual([])
     expect(root.querySelectorAll(`.${OUTSIDE_CHECKED_CLASS}`)).toHaveLength(0)
   })
 
-  it(`more than ${MAX_CHANGES} changes: whole-note mode, with no glow; a rebuild says whole note too, and Dismiss clears it`, async () => {
+  it(`more than ${MAX_CHANGES} changes: whole-page mode, with no glow; a rebuild says whole page too, and Dismiss clears it`, async () => {
     const lines = Array.from({ length: MAX_CHANGES + 1 }, (_, i) => `line ${i}`)
     const { crepe, root, channel } = await mount(`${lines.join('\n\n')}\n`)
     outsideEdit(crepe, (md) => md.replace(/line (\d+)/g, 'line $1 edited'))
-    expect(channel.getState()).toEqual({ count: 0, wholeNote: true })
+    expect(channel.getState()).toEqual({ count: 0, wholePage: true, fadesAt: null })
     expect(root.querySelectorAll(`.${OUTSIDE_CHANGE_CLASS}`)).toHaveLength(0)
     channel.clear()
-    expect(channel.getState().wholeNote).toBe(false)
+    expect(channel.getState().wholePage).toBe(false)
     // The host's word after a rebuild (`reload` got 'rebuilt').
-    channel.markWholeNote()
-    expect(channel.getState()).toEqual({ count: 0, wholeNote: true })
+    channel.markWholePage()
+    expect(channel.getState()).toEqual({ count: 0, wholePage: true, fadesAt: null })
     channel.clear()
-    expect(channel.getState().wholeNote).toBe(false)
+    expect(channel.getState().wholePage).toBe(false)
   })
 })
 
@@ -551,53 +552,63 @@ describe('the Glow setting (D5)', () => {
     expect(getMarkdownForSave(crepe)).toContain('Child grown')
     expect(channel.getState().count).toBe(0)
     expect(root.querySelectorAll(`.${OUTSIDE_CHANGE_CLASS}, .${OUTSIDE_CHECKED_CLASS}`)).toHaveLength(0)
-    channel.markWholeNote()
-    expect(channel.getState().wholeNote).toBe(false)
+    channel.markWholePage()
+    expect(channel.getState().wholePage).toBe(false)
   })
 
-  it("'10s': each change checks itself off when its own 10 s end; turning Off live clears the rest", async () => {
-    const { crepe, root, channel } = await mount(BASE, { glow: '10s' })
+  it("'5m': each change checks itself off when its own 5 min end; the bar's fade time is the last end; turning Off live clears the rest", async () => {
+    const { crepe, root, channel } = await mount(BASE, { glow: '5m' })
     vi.useFakeTimers()
+    const start = Date.now()
     outsideEdit(crepe, (md) => md.replace('Child', 'Child grown'))
-    vi.advanceTimersByTime(4_000)
+    expect(channel.getState().fadesAt).toBe(start + 300_000)
+    vi.advanceTimersByTime(120_000)
     outsideEdit(crepe, (md) => md.replace('Leaf tail', 'Leaf tail long'))
     expect(channel.getState().count).toBe(2)
-    vi.advanceTimersByTime(5_999)
+    expect(channel.getState().fadesAt).toBe(start + 420_000)
+    vi.advanceTimersByTime(179_999)
     expect(channel.getState().count).toBe(2)
     vi.advanceTimersByTime(1)
     expect(channel.getState().count).toBe(1)
     expect(glowTexts(root)).toEqual([' long'])
     channel.setGlow('off')
     expect(channel.getState().count).toBe(0)
+    expect(channel.getState().fadesAt).toBeNull()
     expect(glowTexts(root)).toEqual([])
+  })
+
+  it("'until-checked': no fade time, so the bar shows no countdown (YAZ-4272 demo)", async () => {
+    const { crepe, channel } = await mount(BASE, { glow: 'until-checked' })
+    outsideEdit(crepe, (md) => md.replace('Child', 'Child grown'))
+    expect(channel.getState()).toMatchObject({ count: 1, fadesAt: null })
   })
 })
 
-describe('whole-note mode and the Glow time (YAZ-3844)', () => {
-  it("a timed Glow ends whole-note mode after that time; until checked keeps it until Dismiss; Off shows nothing", async () => {
-    const { channel } = await mount(BASE, { glow: '10s' })
+describe('whole-page mode and the Glow time (YAZ-3844)', () => {
+  it("a timed Glow ends whole-page mode after that time; until checked keeps it until Dismiss; Off shows nothing", async () => {
+    const { channel } = await mount(BASE, { glow: '5m' })
     vi.useFakeTimers()
-    channel.markWholeNote()
-    expect(channel.getState()).toEqual({ count: 0, wholeNote: true })
-    vi.advanceTimersByTime(9_999)
-    expect(channel.getState().wholeNote).toBe(true)
+    channel.markWholePage()
+    expect(channel.getState()).toEqual({ count: 0, wholePage: true, fadesAt: Date.now() + 300_000 })
+    vi.advanceTimersByTime(299_999)
+    expect(channel.getState().wholePage).toBe(true)
     vi.advanceTimersByTime(1)
-    expect(channel.getState().wholeNote).toBe(false)
+    expect(channel.getState().wholePage).toBe(false)
 
     channel.setGlow('until-checked')
-    channel.markWholeNote()
+    channel.markWholePage()
     vi.advanceTimersByTime(120_000)
-    expect(channel.getState().wholeNote).toBe(true)
+    expect(channel.getState()).toMatchObject({ wholePage: true, fadesAt: null })
     // A timed value picked while the line shows starts its time now.
     channel.setGlow('60s')
     vi.advanceTimersByTime(59_999)
-    expect(channel.getState().wholeNote).toBe(true)
+    expect(channel.getState().wholePage).toBe(true)
     vi.advanceTimersByTime(1)
-    expect(channel.getState().wholeNote).toBe(false)
+    expect(channel.getState().wholePage).toBe(false)
 
     channel.setGlow('off')
-    channel.markWholeNote()
-    expect(channel.getState().wholeNote).toBe(false)
+    channel.markWholePage()
+    expect(channel.getState().wholePage).toBe(false)
   })
 })
 
@@ -641,7 +652,7 @@ describe('Next change (D9)', () => {
     expect(foldedEls(root)).toHaveLength(1)
     expect(root.querySelector(`.${OUTSIDE_ACTIVE_CLASS}`)?.closest('p')?.textContent).toContain('Child grown')
     channel.clear()
-    expect(channel.getState()).toEqual({ count: 0, wholeNote: false })
+    expect(channel.getState()).toEqual({ count: 0, wholePage: false, fadesAt: null })
     // Parent (the landing) stays open; Fruit, which Next never opened, stays folded.
     const folded = foldedEls(root)
     expect(folded).toHaveLength(1)
@@ -670,7 +681,7 @@ describe('Next change (D9)', () => {
 
   it('a change outside the zoomed bullet zooms out first, and the host hears it', async () => {
     const doc = '* Alpha\n  * Inside\n* Beta\n  * Outside\n'
-    const { crepe, root, view, channel, zoomedOut } = await mount(doc, { zoom: { title: () => 'Note' } })
+    const { crepe, root, view, channel, zoomedOut } = await mount(doc, { zoom: { title: () => 'Page' } })
     outsideEdit(crepe, (md) => md.replace('Inside', 'Inside grown').replace('Outside', 'Outside grown'))
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOf(view.state.doc, 'Alpha') + 1)))
     press(view, '.', 190, true) // Mod-. zooms into the caret's bullet
@@ -684,5 +695,47 @@ describe('Next change (D9)', () => {
     expect(getZoomedItemPos(view.state)).toBeNull()
     expect(zoomedOut).toHaveBeenCalledTimes(1)
     expect(root.querySelector(`.${OUTSIDE_ACTIVE_CLASS}`)?.closest('p')?.textContent).toContain('Outside grown')
+  })
+})
+
+/**
+ * YAZ-4272 C (B11): an outside edit inside a hidden cell note. The page's block is hidden until its card opens, so the
+ * glow alone would show nowhere: the cell's page mark glows too, and Next opens the page as a card beside its cell, as
+ * find does (YAZ-3818 D19). Next closes the card it opened when it moves on.
+ */
+describe('a change inside a hidden cell note (YAZ-4319)', () => {
+  const TABLE = '| Time | Plan |\n| --- | --- |\n| 9:00 | gym[^cell-1] |\n| 9:30 | read |\n\n[^cell-1]: warm up\n\nafter the table\n'
+  const cellOf = (root: HTMLElement, text: string) => [...root.querySelectorAll<HTMLElement>('td')].find((td) => td.textContent?.includes(text))!
+  const openLabel = (view: EditorView) => cellNoteCardKey.getState(view.state)?.label ?? null
+
+  it('the cell of the page glows; a change outside any page marks no cell', async () => {
+    const { crepe, root, view } = await mount(TABLE)
+    outsideEdit(crepe, (md) => md.replace('warm up', 'warm up, then squats'))
+    expect(openLabel(view)).toBeNull()
+    expect(cellOf(root, 'gym').classList.contains(OUTSIDE_CELL_CLASS)).toBe(true)
+    expect(cellOf(root, 'read').classList.contains(OUTSIDE_CELL_CLASS)).toBe(false)
+    outsideEdit(crepe, (md) => md.replace('after the table', 'after the table, edited'))
+    expect(root.querySelectorAll(`.${OUTSIDE_CELL_CLASS}`)).toHaveLength(1)
+  })
+
+  it('Next opens the hidden page as a card on the change, the caret stays; moving on closes the card Next opened', async () => {
+    const { crepe, root, view, channel } = await mount(TABLE)
+    const caret = view.state.selection.head
+    outsideEdit(crepe, (md) => md.replace('warm up', 'warm up, then squats').replace('after the table', 'after the table, edited'))
+    channel.next()
+    expect(openLabel(view)).toBe('cell-1')
+    expect(activeTexts(root).join('')).toContain('then squats')
+    expect(view.state.selection.head).toBe(caret)
+    channel.next()
+    expect(openLabel(view)).toBeNull()
+    expect(activeTexts(root).join('')).toContain('edited')
+  })
+
+  it('checking the change in the page off (Mark all checked) leaves the card open: the landing', async () => {
+    const { crepe, view, channel } = await mount(TABLE)
+    outsideEdit(crepe, (md) => md.replace('warm up', 'warm up, then squats'))
+    channel.next()
+    channel.clear()
+    expect(openLabel(view)).toBe('cell-1')
   })
 })

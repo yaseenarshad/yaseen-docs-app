@@ -8,6 +8,8 @@ export function parseIsoDate(s: string): { ms: number; hasTime: boolean } | null
   if (!m) return null
   const [, y, mo, d, h, mi, sec, frac, zone] = m
   if (+mo < 1 || +mo > 12 || +d < 1 || +d > 31) return null
+  // A day the month does not have (2026-02-30) is no date (YAZ-4644 E3): `Date` would roll it into March.
+  if (new Date(Date.UTC(+y, +mo - 1, +d)).getUTCDate() !== +d) return null
   const hasTime = h !== undefined
   const ms = zone
     ? Date.parse(s.trim().replace(' ', 'T'))
@@ -18,6 +20,24 @@ export function parseIsoDate(s: string): { ms: number; hasTime: boolean } | null
 export function startOfDay(ms: number): number {
   const t = new Date(ms)
   return new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime()
+}
+
+export type DateSpan = 'day' | 'week' | 'month'
+
+/**
+ * The span of `now`'s day, week or month as `[start, end)` in ms (YAZ-4919): a filter's "is today" / "is this week" /
+ * "is this month". The week starts on Sunday or Monday (Settings › Folder pages › Week starts on).
+ */
+export function spanOf(span: DateSpan, now: number, weekStartsOn: 'sunday' | 'monday' = 'sunday'): { start: number; end: number } {
+  const t = new Date(startOfDay(now))
+  const y = t.getFullYear()
+  const m = t.getMonth()
+  if (span === 'day') return { start: t.getTime(), end: new Date(y, m, t.getDate() + 1).getTime() }
+  if (span === 'week') {
+    const start = t.getDate() - ((t.getDay() - (weekStartsOn === 'monday' ? 1 : 0) + 7) % 7)
+    return { start: new Date(y, m, start).getTime(), end: new Date(y, m, start + 7).getTime() }
+  }
+  return { start: new Date(y, m, 1).getTime(), end: new Date(y, m + 1, 1).getTime() }
 }
 
 const pad = (n: number, w = 2) => String(n).padStart(w, '0')

@@ -13,7 +13,10 @@ import {
 import {
   getTextLayoutMaxWidth,
   getCommonBounds,
+  getFoldedLines,
   getLineHeightInPx,
+  getLogicalLineIndexAtOffset,
+  getStyledVisualLineStart,
   getStyledVisualSelectionGeometry,
   getTextElementStyledLines,
   hasHostLinks,
@@ -619,21 +622,51 @@ const getMatchedLines = (
 ): SearchMatch["matchedLines"] => {
   // YAZ-3718 D1: a box with runs places the match on its styled layout, so
   // each letter is measured with its own font (YAZ-4039 D7: a pill its width)
-  if (textElement.textRuns || hasHostLinks(textElement.originalText)) {
+  // YAZ-4277 D3: a folded box too, as its visible lines are not its text
+  if (
+    textElement.textRuns ||
+    hasHostLinks(textElement.originalText) ||
+    getFoldedLines(textElement).length
+  ) {
     const container = app.scene.getContainerElement(textElement);
     const lines = getTextElementStyledLines(
       textElement,
       getTextLayoutMaxWidth(textElement, container),
       textElement.originalText,
     );
+    const lineHeightPx = getLineHeightInPx(
+      textElement.fontSize,
+      textElement.lineHeight,
+    );
+    const matchLine = getLogicalLineIndexAtOffset(
+      textElement.originalText,
+      index,
+    );
+    if (!lines.some((line) => line.logicalLine === matchLine)) {
+      // YAZ-4277 D3: a match inside a fold marks the folded item that holds it
+      const at = lines.findLastIndex((line) => line.logicalLine < matchLine);
+      const line = lines[at];
+      return line
+        ? [
+            {
+              offsetX: getStyledVisualLineStart(
+                line,
+                textElement.width,
+                textElement.textAlign,
+              ),
+              offsetY: at * lineHeightPx,
+              width: line.width,
+              height: lineHeightPx,
+              showOnCanvas: true,
+            },
+          ]
+        : [];
+    }
     return getStyledVisualSelectionGeometry({
       lines,
       containerWidth: textElement.width,
       textAlign: textElement.textAlign,
-      lineHeightPx: getLineHeightInPx(
-        textElement.fontSize,
-        textElement.lineHeight,
-      ),
+      lineHeightPx,
       selectionStart: index,
       selectionEnd: index + searchQuery.length,
     }).rectangles.map((rectangle) => ({

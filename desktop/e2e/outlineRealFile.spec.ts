@@ -22,20 +22,18 @@
  * left that loses a line, so the read-only path is pinned by fault injection in
  * `client/src/views/view/outlineSeedGuard.test.tsx` instead of by shipping a hole to trip on.
  */
-// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
-// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { parseFrontmatter, splitFrontmatter } from '../../shared/frontmatter'
+import { splitFrontmatter } from '../../shared/frontmatter'
 import { appWindow, bulletAfterLine, caretAtEndOfLine, contents, copyVault, launchApp, openFolder, outlineLineIndex, outlineLines, quitApp, seededState, shoot, writeOutlineLine } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'curriculum-vault')
 const FOLDER = 'AI Curriculum'
-/** Where the folder's outline lives: the settings file, which holds no note of its own (YAZ-2290 D1). */
+/** Where the folder's document lives: the body of its `.folder.md`, its Page tab (YAZ-4584 D38; the Outline view's string before). */
 const FILE = path.join(FOLDER, '.folder.md')
 /** `outlineDoc.ts`'s BULLET_LINE, verbatim — the spec counts lines with the grammar's own eyes. */
 const BULLET_LINE = /^(([ \t]*)[-*+](?:[ \t]+|(?=\r?$)))(.*?)[ \t]*\r?$/
@@ -59,11 +57,10 @@ let win: Page
 let originalOutline: string
 let originalTexts: string[]
 
-const outlineOnDisk = async (): Promise<string> => {
-  const { frontmatter } = splitFrontmatter(await readFile(path.join(vault, FILE), 'utf8'))
-  const settings = (parseFrontmatter(frontmatter).properties.folder_settings ?? {}) as { views?: { type?: string; outline?: string }[] }
-  return settings.views?.find((v) => v.type === 'outline')?.outline ?? ''
-}
+const outlineOnDisk = async (): Promise<string> => splitFrontmatter(await readFile(path.join(vault, FILE), 'utf8')).body
+/** The settings block above it, as written: an edit to the document never moves it. */
+const settingsOnDisk = async (): Promise<string> => splitFrontmatter(await readFile(path.join(vault, FILE), 'utf8')).frontmatter ?? ''
+let originalSettings: string
 
 const textsOf = (outline: string): string[] =>
   outline
@@ -76,6 +73,7 @@ test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'realfile-userdata-'))
   vault = await copyVault(FIXTURE)
   originalOutline = await outlineOnDisk()
+  originalSettings = await settingsOnDisk()
   originalTexts = textsOf(originalOutline)
   expect(originalTexts).toHaveLength(123)
 })
@@ -120,8 +118,8 @@ test('step 2 — one edit writes line 124 and every original line survives on di
   expect(outline).toContain('1. Title > Promise > Intro > Temp Check')
   expect(outline).toContain('4. Level 1) Human (Good old Meat Machines)')
   expect(outline).toContain('1) have a subscription?')
-  // The settings file is still frontmatter, and nothing after it.
-  expect((await readFile(path.join(vault, FILE), 'utf8')).trimEnd().endsWith('---')).toBe(true)
+  // The settings block above the document did not move.
+  expect(await settingsOnDisk()).toBe(originalSettings)
   await shoot(win, 'realfile-02-edit-preserves-all')
 })
 

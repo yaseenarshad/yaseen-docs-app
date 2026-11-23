@@ -1,14 +1,14 @@
 /**
- * Hover on wiki links (YAZ-3403): resting the pointer on a resolved `[[link]]` in a note says which page it opens,
+ * Hover on wiki links (YAZ-3403): resting the pointer on a resolved `[[link]]` in a page says which page it opens,
  * so the editor's host can show the sidebar's hover panel beside it, with one line on how to open it (YAZ-3935:
- * "⌘-click to open", from the bound gesture; the host reads `editable` for a read-only note's "Click to open"). Wired through `createCrepe({ wikilinkHover })`,
- * and only by the note editor: the read-only previews never pass it.
+ * "⌘-click to open", from the bound gesture; the host reads `editable` for a read-only page's "Click to open"). Wired through `createCrepe({ wikilinkHover })`,
+ * and only by the page editor: the read-only previews never pass it.
  *
  * On the view's own DOM events (`handleDOMEvents`), never a document listener: many editors are mounted at once.
  * The page is resolved as a click resolves it (`wikilinkClick.ts`): the collapsed `.wikilink` span, the match under
  * it, its page name, then the vault's resolver — or, for a link to a file that only views, the view-only catalog.
  * An unresolved link, a revealed (raw) one and `[[#heading]]` say nothing. Which pages preview is the host's to
- * decide (a note or a board).
+ * decide (a page or a board).
  */
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -20,7 +20,7 @@ import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSourc
 
 /** Where a link hover goes: the editor's host. */
 export interface WikilinkHover {
-  /** The pointer came onto a resolved link: the page it opens, the link's box on screen, and whether the note is editable (the card's open line, YAZ-3935). */
+  /** The pointer came onto a resolved link: the page it opens, the link's box on screen, and whether the page is editable (the card's open line, YAZ-3935). */
   onHover: (path: string, rect: AnchorRect, editable: boolean) => void
   /** The pointer left the link. */
   onLeave: () => void
@@ -30,28 +30,72 @@ export interface WikilinkHover {
 
 const wikilinkHoverKey = new PluginKey('mdapp-wikilink-hover')
 
+/** Measures a link span, falling back to the union of its children when wrapped in a `display: contents` `.wikilink-group`. */
+function linkRect(el: Element): AnchorRect {
+  const group = el.closest('.wikilink-group')
+  const host = group ?? el
+  const own = host.getBoundingClientRect()
+  if (own.width > 0 || own.height > 0) return { left: own.left, top: own.top, right: own.right, bottom: own.bottom }
+  let left = Infinity
+  let top = Infinity
+  let right = -Infinity
+  let bottom = -Infinity
+  for (const child of host.children) {
+    const r = child.getBoundingClientRect()
+    if (r.width === 0 && r.height === 0) continue
+    if (r.left < left) left = r.left
+    if (r.top < top) top = r.top
+    if (r.right > right) right = r.right
+    if (r.bottom > bottom) bottom = r.bottom
+  }
+  if (left <= right) return { left, top, right, bottom }
+  const fallback = el.getBoundingClientRect()
+  return { left: fallback.left, top: fallback.top, right: fallback.right, bottom: fallback.bottom }
+}
+
+function resolveInnerPath(inner: string, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource): string | null {
+  const page = linkPageName(inner, source)
+  if (page === '') return null
+  const viewTarget = viewOnlyLinkTarget(inner)
+  if (viewTarget !== null) return viewTarget.hasSubtarget ? null : (viewOnly.resolve?.(viewTarget.page) ?? null)
+  return source.resolve?.(page) ?? null
+}
+
 /** The page a collapsed, resolved link span opens, or null. */
-function linkPathOf(view: EditorView, target: EventTarget | null, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource, hover: WikilinkHover): { span: Element; path: string } | null {
+function linkPathOf(view: EditorView, target: EventTarget | null, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource, hover: WikilinkHover): { span: Element; path: string; editable: boolean } | null {
   if (!(target instanceof Element)) return null
+  // Let nested card editors handle their own hover without the outer editor double-firing.
+  const innerEditor = target.closest('.card__editor')
+  if (innerEditor !== null && view.dom.contains(innerEditor)) return null
+  // No pill card over a board embed's window (YAZ-4827 item 23): its name pill is the window's own.
+  // Embedded cards (`![[CARD-ID]]`) are `.card.card-embed`, never a drawing board, so allow links inside `.card`.
+  if (target.closest('.board-embed') !== null && target.closest('.card') === null) return null
+  // Links inside rendered inline cards and card embeds live inside `view.dom` as `[data-card-link]` / `.card__sides a[href]`.
+  const cardLink = target.closest<HTMLElement>('[data-card-link]')
+  if (cardLink !== null && view.dom.contains(cardLink)) {
+    const inner = cardLink.dataset.cardLink ?? ''
+    if (inner === '') return null
+    const path = resolveInnerPath(inner, source, viewOnly)
+    return path === null ? null : { span: target.closest(`.${WIKILINK_CLASS}`) ?? cardLink, path, editable: false }
+  }
+  const cardAnchor = target.closest<HTMLAnchorElement>('.card__sides a[href]')
+  if (cardAnchor !== null && view.dom.contains(cardAnchor)) {
+    const href = cardAnchor.getAttribute('href')
+    const path = href === null ? null : (hover.markdownPath?.(href) ?? null)
+    return path === null ? null : { span: cardAnchor, path, editable: false }
+  }
   const span = target.closest(`.${WIKILINK_CLASS}`)
   if (span === null || span.classList.contains(WIKILINK_UNRESOLVED_CLASS) || !view.dom.contains(span)) return null
   // A Markdown link pill (D19) previews the page its address opens, as a `[[link]]` does (D20).
   if (span.classList.contains('link-pill')) {
     const href = span.closest('a')?.getAttribute('href') ?? null
     const path = href === null ? null : (hover.markdownPath?.(href) ?? null)
-    return path === null ? null : { span, path }
+    return path === null ? null : { span, path, editable: view.editable }
   }
   const inner = wikilinkInnerAt(view.state.doc, linkPosAtDOM(view, span))
   if (inner === null) return null
-  const page = linkPageName(inner)
-  if (page === '') return null
-  const viewTarget = viewOnlyLinkTarget(inner)
-  if (viewTarget !== null) {
-    const path = viewTarget.hasSubtarget ? null : (viewOnly.resolve?.(viewTarget.page) ?? null)
-    return path === null ? null : { span, path }
-  }
-  const path = source.resolve?.(page) ?? null
-  return path === null ? null : { span, path }
+  const path = resolveInnerPath(inner, source, viewOnly)
+  return path === null ? null : { span, path, editable: view.editable }
 }
 
 /** Marks the editor while the pointer is on a Markdown link pill, so its CSS hides Crepe's address bar there (D20). */
@@ -66,29 +110,40 @@ export function createWikilinkHover(source: WikilinkResolveSource, hover: Wikili
     () =>
       new Plugin({
         key: wikilinkHoverKey,
-        props: {
-          handleDOMEvents: {
-            mouseover: (view, event) => {
-              const link = linkPathOf(view, event.target, source, viewOnly, hover)
-              if (link === null || link.path === current) return false
-              if (current !== null) hover.onLeave()
-              current = link.path
-              // On a pill the page preview stands in for the editor's own address bar (D20): it says where the link goes.
-              pillHover(view, link.span.classList.contains('link-pill'))
-              const box = link.span.getBoundingClientRect()
-              hover.onHover(link.path, { left: box.left, top: box.top, right: box.right, bottom: box.bottom }, view.editable)
-              return false
+        // Attach directly on `view.dom` rather than `props.handleDOMEvents`: NodeViews (`cardBlockView`) and widget
+        // decorations (`cardEmbed` via `boardEmbed`) return `stopEvent: () => true`, which causes ProseMirror to drop
+        // `mouseover`/`mouseout` before `handleDOMEvents` ever sees links inside inline or embedded cards (YAZ-6051).
+        view: (view) => {
+          const onOver = (event: MouseEvent) => {
+            const link = linkPathOf(view, event.target, source, viewOnly, hover)
+            if (link === null || link.path === current) return
+            if (current !== null) hover.onLeave()
+            current = link.path
+            // On a pill the page preview stands in for the editor's own address bar (D20): it says where the link goes.
+            pillHover(view, link.span.classList.contains('link-pill'))
+            hover.onHover(link.path, linkRect(link.span), link.editable)
+          }
+          const onOut = (event: MouseEvent) => {
+            if (current === null) return
+            // Onto another segment of the same link (or a link to the same page): the hover stays.
+            if (linkPathOf(view, event.relatedTarget, source, viewOnly, hover)?.path === current) return
+            current = null
+            pillHover(view, false)
+            hover.onLeave()
+          }
+          view.dom.addEventListener('mouseover', onOver)
+          view.dom.addEventListener('mouseout', onOut)
+          return {
+            destroy: () => {
+              view.dom.removeEventListener('mouseover', onOver)
+              view.dom.removeEventListener('mouseout', onOut)
+              if (current !== null) {
+                current = null
+                pillHover(view, false)
+                hover.onLeave()
+              }
             },
-            mouseout: (view, event) => {
-              if (current === null) return false
-              // Onto another segment of the same link (or a link to the same page): the hover stays.
-              if (linkPathOf(view, event.relatedTarget, source, viewOnly, hover)?.path === current) return false
-              current = null
-              pillHover(view, false)
-              hover.onLeave()
-              return false
-            },
-          },
+          }
         },
       }),
   )

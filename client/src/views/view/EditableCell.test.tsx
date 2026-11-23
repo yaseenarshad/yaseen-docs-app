@@ -16,7 +16,7 @@ import { TEST_RECORDS } from '../testRecords'
 import '../views.css'
 
 /** No store behind this mount: collapse state stays in the pane. */
-vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
+vi.mock('../../lib/storage', () => ({ storage: { getSettings: () => undefined, getViewGroups: () => [], setViewGroups: () => undefined } }))
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
 import { writeProperty } from '../writeProperty'
 
@@ -149,7 +149,7 @@ const open = (el: ParentNode, r: number, c: number) => doubleClick(cell(el, r, c
 // ---------- tests ----------
 
 describe('text editor', () => {
-  it('Enter commits the string through writeProperty, optimistically updates and refocuses the cell', () => {
+  it('Enter commits the string through writeProperty, optimistically updates and moves the focus down a row (YAZ-4612 S43)', () => {
     const { el } = mount(EDIT_BASE)
     open(el, 0, 1) // status: idea
     const input = byLabel<HTMLInputElement>(el, 'Edit status')
@@ -159,7 +159,8 @@ describe('text editor', () => {
     expect(write).toHaveBeenCalledExactlyOnceWith(AGENTIC, 'status', 'done')
     expect(el.querySelector('[aria-label="Edit status"]')).toBeNull()
     expect(cell(el, 0, 1).textContent).toBe('done')
-    expect(document.activeElement).toBe(cell(el, 0, 1))
+    // The cell took the focus back, and Enter moved it on, as in a spreadsheet (S43; it was the edited cell).
+    expect(document.activeElement).toBe(cell(el, 1, 1))
   })
 
   it('blur commits too; committing the unchanged value never writes', () => {
@@ -305,14 +306,14 @@ describe('link editor', () => {
   })
 })
 
-describe('completing a note that has an id (YAZ-2293)', () => {
+describe('completing a page that has an id (YAZ-2293)', () => {
   const ID = 'k3m9x2pq7abc'
-  /** The vault with ONE id'd note: Creator Economy links by id, everyone else still by name. */
+  /** The vault with ONE id'd page: Creator Economy links by id, everyone else still by name. */
   const withId = () => ({
     folder: testFolderHost({ vaultRecords: TEST_RECORDS.map((r) => (r.basename === 'Creator Economy' ? { ...r, id: ID } : r)) }),
   })
 
-  it('the link editor writes [[id]] — the row still reads as the name; a note without an id is written by name', () => {
+  it('the link editor writes [[id]] — the row still reads as the name; a page without an id is written by name', () => {
     const { el } = mount(EDIT_BASE, withId())
     open(el, 1, 6)
     setValue(byLabel<HTMLInputElement>(el, 'Edit related'), '[[Cre')
@@ -342,9 +343,9 @@ describe('completing a note that has an id (YAZ-2293)', () => {
   })
 })
 
-describe('a stored id link reads as the note title (YAZ-2293 D8)', () => {
+describe('a stored id link reads as the page title (YAZ-2293 D8)', () => {
   const ID = 'k3m9x2pq7abc'
-  /** "Creator Economy" carries the id; the first note lists it BY id beside a by-name link, the second links to it alone. */
+  /** "Creator Economy" carries the id; the first page lists it BY id beside a by-name link, the second links to it alone. */
   const linked = () => {
     const records = TEST_RECORDS.map((r) =>
       r.basename === 'Creator Economy' ? { ...r, id: ID }
@@ -614,7 +615,7 @@ describe('failed writes', () => {
 // whole chain behind it. The ladder that remains is unit-tested rung by rung in
 // `editorType.test.ts`.
 describe('type inference wiring', () => {
-  it('a note without the key borrows the dominant type across the view', () => {
+  it('a page without the key borrows the dominant type across the view', () => {
     const { el } = mount(EDIT_BASE)
     open(el, 3, 2) // The Gold In Your Archive has no priority; 2, 1, 3 elsewhere
     expect(byLabel<HTMLInputElement>(el, 'Edit priority').type).toBe('number')

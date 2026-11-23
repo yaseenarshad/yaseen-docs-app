@@ -4,8 +4,8 @@
  * (findInPage.test.ts proves the engine; this file proves the bar and the keyboard surface).
  *
  * Claim rule under test (locked in YAZ-967): CMD+F is a window capture-phase listener per bar.
- * An `outline` bar claims only while focus is inside its own host element; the `note` bar
- * claims whenever focus is NOT inside any `.view-outline-editor`. At most one of each is
+ * A `folder` bar (a folder's Page tab, YAZ-4584) claims only while focus is inside its own host element; the `page` bar
+ * claims whenever focus is NOT inside any `.folder-page-doc`. At most one of each is
  * mounted, so exactly one bar answers.
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -37,7 +37,7 @@ async function mountEditor(markdown: string, opts: Omit<CreateCrepeOptions, 'roo
   return { crepe, el, view: view as EditorView }
 }
 
-function renderBar(channel: FindChannel, scope: 'note' | 'outline', host: HTMLElement) {
+function renderBar(channel: FindChannel, scope: 'page' | 'folder', host: HTMLElement) {
   const el = document.createElement('div')
   document.body.appendChild(el)
   const root = createRoot(el)
@@ -92,17 +92,17 @@ const keyOn = (input: HTMLInputElement, key: string, shift = false) => {
 }
 
 describe('opening', () => {
-  it('CMD+F opens the note bar, focuses its input, and consumes the key', async () => {
+  it('CMD+F opens the page bar, focuses its input, and consumes the key', async () => {
     const channel = createFindChannel()
     const { el, view } = await mountEditor('apple', { find: channel })
-    const barEl = renderBar(channel, 'note', el)
-    expect(barEl.querySelector('.find-bar-dock--note')).not.toBeNull()
+    const barEl = renderBar(channel, 'page', el)
+    expect(barEl.querySelector('.find-bar-dock--page')).not.toBeNull()
     expect(barEl.querySelector('.find-bar')).toBeNull()
     view.dom.focus()
     const event = pressCmdF(view.dom)
     expect(event.defaultPrevented).toBe(true)
     expect(channel.getState().open).toBe(true)
-    expect(barEl.querySelector('.find-bar-dock--note > .find-bar')).not.toBeNull()
+    expect(barEl.querySelector('.find-bar-dock--page > .find-bar')).not.toBeNull()
     expect(barEl.querySelector('.find-bar')).not.toBeNull()
     expect(document.activeElement).toBe(barInput(barEl))
   })
@@ -110,7 +110,7 @@ describe('opening', () => {
   it('CMD+F while already open refocuses the input', async () => {
     const channel = createFindChannel()
     const { el, view } = await mountEditor('apple', { find: channel })
-    const barEl = renderBar(channel, 'note', el)
+    const barEl = renderBar(channel, 'page', el)
     pressCmdF()
     view.dom.focus()
     expect(document.activeElement).not.toBe(barInput(barEl))
@@ -120,45 +120,45 @@ describe('opening', () => {
   })
 })
 
-describe('claim rule with a note editor and an outline view mounted together', () => {
-  it('routes CMD+F to the outline bar only while focus is inside the outline host', async () => {
-    const noteChannel = createFindChannel()
-    const note = await mountEditor('note apple', { find: noteChannel })
-    // The production DOM detail the claim reads: CrepeHost mounts the note editor inside
+describe('claim rule with a page editor and the folder\'s Page tab (once the outline view) mounted together', () => {
+  it('routes CMD+F to the page bar only while focus is inside the page host', async () => {
+    const pageChannel = createFindChannel()
+    const page = await mountEditor('page apple', { find: pageChannel })
+    // The production DOM detail the claim reads: CrepeHost mounts the page editor inside
     // `.editor-mount`.
-    const noteMount = document.createElement('div')
-    noteMount.className = 'editor-mount'
-    document.body.appendChild(noteMount)
-    noteMount.appendChild(note.el)
+    const pageMount = document.createElement('div')
+    pageMount.className = 'editor-mount'
+    document.body.appendChild(pageMount)
+    pageMount.appendChild(page.el)
     const outlineChannel = createFindChannel()
     const outlineHost = document.createElement('div')
-    outlineHost.className = 'view-outline-editor'
+    outlineHost.className = 'folder-page-doc'
     document.body.appendChild(outlineHost)
     const outline = await mountEditor('* outline apple', { find: outlineChannel })
     outlineHost.appendChild(outline.el)
-    renderBar(noteChannel, 'note', note.el)
-    const outlineBarEl = renderBar(outlineChannel, 'outline', outlineHost)
+    renderBar(pageChannel, 'page', page.el)
+    const outlineBarEl = renderBar(outlineChannel, 'folder', outlineHost)
 
     outline.view.dom.focus()
     pressCmdF(outline.view.dom)
     expect(outlineChannel.getState().open).toBe(true)
-    expect(outlineBarEl.querySelector('.find-bar-dock--outline > .find-bar')).not.toBeNull()
-    expect(noteChannel.getState().open).toBe(false)
+    expect(outlineBarEl.querySelector('.find-bar-dock--folder > .find-bar')).not.toBeNull()
+    expect(pageChannel.getState().open).toBe(false)
 
     act(() => outlineChannel.close())
-    note.view.dom.focus()
-    pressCmdF(note.view.dom)
-    expect(noteChannel.getState().open).toBe(true)
+    page.view.dom.focus()
+    pressCmdF(page.view.dom)
+    expect(pageChannel.getState().open).toBe(true)
     expect(outlineChannel.getState().open).toBe(false)
     outlineHost.remove()
   })
 })
 
 describe('claim rule beside a code tab (YAZ-3451)', () => {
-  it("a note's bar leaves CMD+F alone while the focus is in a code tab, so Monaco's find box gets it", async () => {
+  it("a page's bar leaves CMD+F alone while the focus is in a code tab, so Monaco's find box gets it", async () => {
     const channel = createFindChannel()
-    const { el, view } = await mountEditor('note apple', { find: channel })
-    renderBar(channel, 'note', el)
+    const { el, view } = await mountEditor('page apple', { find: channel })
+    renderBar(channel, 'page', el)
     const codeTab = document.createElement('section')
     codeTab.className = 'editor editor--code'
     const monacoInput = document.createElement('textarea')
@@ -168,7 +168,7 @@ describe('claim rule beside a code tab (YAZ-3451)', () => {
     const event = pressCmdF(monacoInput)
     expect(event.defaultPrevented).toBe(false)
     expect(channel.getState().open).toBe(false)
-    // The note still claims it from its own body.
+    // The page still claims it from its own body.
     view.dom.focus()
     pressCmdF(view.dom)
     expect(channel.getState().open).toBe(true)
@@ -178,12 +178,12 @@ describe('claim rule beside a code tab (YAZ-3451)', () => {
   it("an outline view's bar leaves CMD+F alone while the focus is in a code tab (YAZ-3464)", () => {
     const outlineChannel = createFindChannel()
     const outlineHost = document.createElement('div')
-    outlineHost.className = 'view-outline-editor'
+    outlineHost.className = 'folder-page-doc'
     const outlineInput = document.createElement('div')
     outlineInput.tabIndex = 0
     outlineHost.appendChild(outlineInput)
     document.body.appendChild(outlineHost)
-    renderBar(outlineChannel, 'outline', outlineHost)
+    renderBar(outlineChannel, 'folder', outlineHost)
     const codeTab = document.createElement('section')
     codeTab.className = 'editor editor--code'
     const monacoInput = document.createElement('textarea')
@@ -193,7 +193,7 @@ describe('claim rule beside a code tab (YAZ-3451)', () => {
     const event = pressCmdF(monacoInput)
     expect(event.defaultPrevented).toBe(false)
     expect(outlineChannel.getState().open).toBe(false)
-    // The outline still claims it from its own view, and from outside a code tab when no note shows.
+    // The outline still claims it from its own view, and from outside a code tab when no page shows.
     outlineInput.focus()
     pressCmdF(outlineInput)
     expect(outlineChannel.getState().open).toBe(true)
@@ -212,7 +212,7 @@ describe('the counter and cycling', () => {
   it('shows N of M live, wraps with Enter, walks back with Shift+Enter', async () => {
     const channel = createFindChannel()
     const { el } = await mountEditor('apple one apple two apple three', { find: channel })
-    const barEl = renderBar(channel, 'note', el)
+    const barEl = renderBar(channel, 'page', el)
     pressCmdF()
     const input = barInput(barEl)
     type(input, 'apple')
@@ -230,7 +230,7 @@ describe('the counter and cycling', () => {
   it('shows the zero state for a query with no matches, and no counter for an empty query', async () => {
     const channel = createFindChannel()
     const { el } = await mountEditor('apple', { find: channel })
-    const barEl = renderBar(channel, 'note', el)
+    const barEl = renderBar(channel, 'page', el)
     pressCmdF()
     const input = barInput(barEl)
     expect(counterText(barEl)).toBeNull()
@@ -243,7 +243,7 @@ describe('closing', () => {
   it('Esc in the input closes the bar and clears the highlights', async () => {
     const channel = createFindChannel()
     const { el } = await mountEditor('apple', { find: channel })
-    const barEl = renderBar(channel, 'note', el)
+    const barEl = renderBar(channel, 'page', el)
     pressCmdF()
     type(barInput(barEl), 'apple')
     keyOn(barInput(barEl), 'Escape')
@@ -255,12 +255,60 @@ describe('closing', () => {
   it('the close button does the same', async () => {
     const channel = createFindChannel()
     const { el } = await mountEditor('apple', { find: channel })
-    const barEl = renderBar(channel, 'note', el)
+    const barEl = renderBar(channel, 'page', el)
     pressCmdF()
     const close = barEl.querySelector<HTMLButtonElement>('button[aria-label="Close find"]')
     if (!close) throw new Error('no close button')
     act(() => close.click())
     expect(channel.getState().open).toBe(false)
     expect(barEl.querySelector('.find-bar')).toBeNull()
+  })
+})
+
+describe('YAZ-5378 round 2: hidden words take the Underline look while find has a query', () => {
+  it('the searched view carries `data-find-query` while the bar is open with a query; a cleared query, a close or an unmount take it off', async () => {
+    const channel = createFindChannel()
+    const { el } = await mountEditor('apple', { find: channel })
+    const barEl = renderBar(channel, 'page', el)
+    expect(el.hasAttribute('data-find-query')).toBe(false)
+    pressCmdF()
+    // An open bar with nothing typed searches nothing: the hidden words keep their look.
+    expect(el.hasAttribute('data-find-query')).toBe(false)
+    type(barInput(barEl), 'apple')
+    expect(el.hasAttribute('data-find-query')).toBe(true)
+    type(barInput(barEl), '')
+    expect(el.hasAttribute('data-find-query')).toBe(false)
+    type(barInput(barEl), 'apple')
+    keyOn(barInput(barEl), 'Escape')
+    // Close keeps the query for the next ⌘F, but the page is not searched any more.
+    expect(channel.getState().query).toBe('apple')
+    expect(el.hasAttribute('data-find-query')).toBe(false)
+    pressCmdF()
+    expect(el.hasAttribute('data-find-query')).toBe(true)
+    const { root } = roots.splice(0)[0]!
+    act(() => root.unmount())
+    expect(el.hasAttribute('data-find-query')).toBe(false)
+  })
+})
+
+describe('YAZ-6341: claim rule while DrawingModal is open', () => {
+  it('ignores ⌘F when .drawing-modal-overlay is in the DOM and resumes claiming it once closed', async () => {
+    const channel = createFindChannel()
+    const { el, view } = await mountEditor('apple', { find: channel })
+    renderBar(channel, 'page', el)
+    const overlay = document.createElement('div')
+    overlay.className = 'drawing-modal-overlay'
+    document.body.appendChild(overlay)
+    try {
+      view.dom.focus()
+      const blocked = pressCmdF(view.dom)
+      expect(blocked.defaultPrevented).toBe(false)
+      expect(channel.getState().open).toBe(false)
+    } finally {
+      overlay.remove()
+    }
+    const allowed = pressCmdF(view.dom)
+    expect(allowed.defaultPrevented).toBe(true)
+    expect(channel.getState().open).toBe(true)
   })
 })

@@ -26,10 +26,21 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
   const body = (selector: string) => media.rest.filter((rule) => rule.selectors.includes(selector)).map((rule) => rule.body)
   /** A rule's number in px, for example `top: 8.75px`. */
   const px = (b: string, prop: string) => Number(new RegExp(`(?:^|[;\\s])${prop}:\\s*(-?[\\d.]+)px`).exec(b)?.[1])
-  // The row and the chevron, read from the sheet: the copy and the elbow follow them (audit item 12).
+  // The row and the chevron, read from the sheet: the copy and the elbow follow them (audit item 12). The row is
+  // `--tree-row-h` tall (Row spacing, YAZ-5885), 25.5px by default: its 13px * 1.5 line and equal padding.
   const rowBody = body('.tree__row')[0]
-  const rowHeight = px(rowBody, 'font-size') * Number(/line-height:\s*([\d.]+);/.exec(rowBody)?.[1]) + 2 * Number(/padding:\s*([\d.]+)px/.exec(rowBody)?.[1])
+  const rowPad = /padding:\s*calc\(\(var\(--tree-row-h, ([\d.]+)px\) - ([\d.]+)px\) \/ 2\) 8px;/.exec(rowBody)
+  const rowHeight = Number(rowPad?.[1])
+  const rowLine = px(rowBody, 'font-size') * Number(/line-height:\s*([\d.]+);/.exec(rowBody)?.[1])
   const chevronTop = (rowHeight - px(body('.tree__chevron')[0], 'height')) / 2
+  /** A rule's length at a row height of `h` px: a plain px, or a `calc()` of `--tree-row-h` worked out at `h`. */
+  const atRow = (b: string, prop: string, h: number): number => {
+    const value = new RegExp(`(?:^|[;\\s])${prop}:\\s*([^;]+);`).exec(b)?.[1] ?? ''
+    const sum = value.replace(/var\(--tree-row-h, [\d.]+px\)/g, String(h)).replace(/calc|px/g, '')
+    return /^[\d\s.()+\-*/]+$/.test(sum) ? (Function(`return ${sum}`)() as number) : NaN
+  }
+  /** The three named Row spacing heights and both ends of Custom (YAZ-5885 D1). */
+  const ROW_HEIGHTS = [20, 22, 25.5, 30, 40]
 
   it('one 1px grey line on each nested level of the tree, below the chevron of its folder, hidden until a gate shows it, and no target for the mouse', () => {
     const line = body(LINE).filter((b) => /content:/.test(b))
@@ -101,7 +112,7 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
       expect(piece).toMatch(/position:\s*absolute;/)
       expect(piece).toMatch(/left:\s*calc\(var\(--tree-depth\) \* 14px \+ 1px - var\(--thread-width\) \/ 2\);/)
       // The elbow is at the middle of its own row (audit item 12): the height reaches down to it.
-      expect(piece).toMatch(new RegExp(`height:\\s*calc\\(100000px \\+ ${rowHeight / 2}px \\+ var\\(--thread-width\\) / 2\\);`))
+      expect(piece).toMatch(/height:\s*calc\(100000px \+ var\(--tree-row-h, 25\.5px\) \/ 2 \+ var\(--thread-width\) \/ 2\);/)
       expect(piece).toMatch(/top:\s*-100000px;/)
       expect(piece).toMatch(/border-bottom-left-radius:\s*6px;/)
       for (const side of ['border-left', 'border-bottom']) expect(piece).toMatch(new RegExp(`${side}:\\s*var\\(--thread-width\\) solid ${THREAD.source}`))
@@ -125,7 +136,8 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
       expect(body(GREY_SMOOTH)[0]).toMatch(/transition:\s*transform 0\.12s;/)
       expect(body(CHEVRON_SMOOTH_REST)[0]).toMatch(/transition:\s*transform 0\.12s;/)
       expect(body(CHEVRON_SMOOTH)[0]).toMatch(/transition:\s*transform 0\.12s, opacity 140ms ease 80ms;/)
-      for (const { selectors } of threadRules.filter((rule) => /\b80ms\b/.test(rule.body))) for (const s of selectors) expect(s, s).toContain(':hover')
+      // The rest is on the mouse alone: `:hover`, or the hover path that `threadPath.ts` marks on an open folder row (YAZ-4474).
+      for (const { selectors } of threadRules.filter((rule) => /\b80ms\b/.test(rule.body))) for (const s of selectors) expect(s, s).toMatch(/:hover|\[data-on-path\]/)
     })
 
     it('Reduce motion (D10): the block names every selector of a rule that fades, the grey line\'s too (as toc.css does), so it wins by coming last, and it fades nothing; the arrows turn at once even with "Smooth" (YAZ-3440 D6)', () => {
@@ -154,10 +166,14 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
       expect(greyOpen).toMatch(/transform:\s*rotate\(45deg\);/)
       expect(open).toMatch(/transform:\s*rotate\(45deg\);/)
       // The chevron is centred in its row (both read from the sheet), 8 + depth * 14 px in.
-      expect([rowHeight, chevronTop]).toEqual([25.5, 5.75])
+      expect([rowHeight, rowLine, chevronTop]).toEqual([25.5, 19.5, 5.75])
       expect(rest).toMatch(new RegExp(`left:\\s*calc\\(var\\(--tree-depth, 0\\) \\* 14px \\+ ${8 + px(grey, 'left')}px\\);`))
-      expect(px(rest, 'top')).toBe(chevronTop + px(grey, 'top'))
-      expect(px(open, 'top')).toBe(chevronTop + px(greyOpen, 'top'))
+      // At every Row spacing (YAZ-5885): the flex row centres the grey chevron, and the copy's top follows the row height.
+      for (const h of ROW_HEIGHTS) {
+        const top = (h - px(body('.tree__chevron')[0], 'height')) / 2
+        expect(atRow(rest, 'top', h), `closed at ${h}px`).toBe(top + px(grey, 'top'))
+        expect(atRow(open, 'top', h), `open at ${h}px`).toBe(top + px(greyOpen, 'top'))
+      }
     })
 
     it('bug YAZ-3342: a folder in inline rename (`li[data-renaming]`, its row is the input) draws no coloured chevron, and its elbow stops 2px short of the input, as a folder\'s stops short of its chevron', () => {
@@ -202,7 +218,7 @@ describe('sidebar level lines CSS contract (YAZ-3309 D1, D3, D5, D7–D11)', () 
     ])
   })
 
-  it('Recents and Sessions nest a `.tree` with no role: no rule draws on a `.tree` inside a `.tree` (D4)', () => {
+  it('Sessions nests a `.tree` with no role: no rule draws on a `.tree` inside a `.tree` (D4); Recents has the tree\'s roles since YAZ-4473', () => {
     for (const { selectors } of rules) for (const selector of selectors) expect(selector, selector).not.toMatch(/\.tree\s+\.tree/)
   })
 })

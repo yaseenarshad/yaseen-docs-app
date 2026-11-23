@@ -1,5 +1,6 @@
 import {
   CaptureUpdateAction,
+  SMART_SHAPE_HANDLE_PARAMETERS,
   getSmartShapeDefinition,
   getSmartShapeMetadata,
   updateSmartShapeParameter,
@@ -22,14 +23,10 @@ const labels: Record<SmartShapeParameterName, string> = {
   headLengthRatio: "Arrowhead length",
   thicknessRatio: "Thickness",
   tailPositionRatio: "Tail position",
+  bendRatio: "Bend",
+  gapRatio: "Gap",
+  openingRatio: "Opening",
 };
-
-const handleParameters = {
-  shaft: "shaftRatio",
-  head: "headLengthRatio",
-  thickness: "thicknessRatio",
-  tail: "tailPositionRatio",
-} as const;
 
 export const actionChangeSmartShape = register<SmartShapeActionData>({
   name: "changeSmartShape",
@@ -70,16 +67,21 @@ export const actionChangeSmartShape = register<SmartShapeActionData>({
       <fieldset>
         <legend>Smart shape</legend>
         {definition.handles.map((handle) => {
-          const parameter = handleParameters[handle];
-          const value = metadata.parameters[parameter] ?? 0.5;
+          const parameter = SMART_SHAPE_HANDLE_PARAMETERS[handle];
+          // Each slider spans its parameter's own limits (YAZ-4356), as a handle drag does.
+          const [min, max] = definition.limits[parameter] ?? [0.1, 0.9];
+          const value =
+            metadata.parameters[parameter] ??
+            definition.defaults[parameter] ??
+            min;
           return (
             <Range
               key={parameter}
               label={labels[parameter]}
               value={Math.round(value * 100)}
-              min={10}
-              max={90}
-              step={5}
+              min={Math.round(min * 100)}
+              max={Math.round(max * 100)}
+              step={1}
               onChange={(nextValue) =>
                 updateData<SmartShapeActionData>({
                   parameter,

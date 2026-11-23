@@ -1,0 +1,74 @@
+/* A page's and a card's properties, read only: the rows and the Mac's value look. */
+.props__rows {
+  margin: 0;
+  padding: 8px 16px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.props__row {
+  display: grid;
+  grid-template-columns: minmax(80px, 38%) 1fr;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.props__key {
+  color: var(--fg-muted);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.props__value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 0;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.props__text--number {
+  font-variant-numeric: tabular-nums;
+}
+.props__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--control-border, var(--fg-muted));
+  border-radius: 4px;
+  color: var(--on-accent, #fff);
+  font-size: 13px;
+  line-height: 1;
+}
+.props__check[data-checked='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.props__chip-value {
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--bg-side);
+  font-size: 14px;
+}
+.props__pill {
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.props__pill.wikilink--unresolved {
+  background: none;
+  color: var(--fg-muted);
+  cursor: default;
+}
+.props__chip {
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}

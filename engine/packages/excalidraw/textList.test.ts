@@ -143,4 +143,16 @@ describe("text list engine", () => {
       "        ▪ One\n            • Two",
     );
   });
+
+  it("reads checklist items and keeps their box (YAZ-4277 D4)", () => {
+    expect(parseTextListLine("    ☑ Done")).toMatchObject({
+      depth: 1,
+      marker: "☑",
+      markerKind: "check",
+      content: "Done",
+    });
+    expect(indentTextList("☑ Done", 0, 0, 1).text).toBe("    ☑ Done");
+    expect(continueTextListItem("☑ Done", 6, 6)?.text).toBe("☑ Done\n☐ ");
+    expect(renumberTextLists("1. One\n    ☐ Task")).toBe("1. One\n    ☐ Task");
+  });
 });

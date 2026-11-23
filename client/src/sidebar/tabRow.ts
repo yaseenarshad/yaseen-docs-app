@@ -125,6 +125,8 @@ export interface TabRowHandlers {
   onOpen: (tab: SidebarTab) => void
   /** "Sort…": the sort menu, at the ⋯ button (S15). */
   onSort: () => void
+  /** The sort button's name on this tab: "Filter by vault" on Recents (YAZ-4450 D5). Default "Sort". */
+  sortLabel?: string
   /** "Collapse all" (or "Expand all"): what the fold button does. */
   onFold: () => void
   /** "Edit tab row…": the Tab row panel (YAZ-3279 S17). The menu always ends with it. */
@@ -150,11 +152,11 @@ export function tabRowSections(layout: RowLayout, prefs: SidebarTabsPrefs, lens:
       ? []
       : [{ id: 'tabrow-hide', label: `Hide ${TAB_LABEL[tab]}`, disabled: tab === 'files', hint: tab === 'files' ? 'Files stays' : undefined, onSelect: () => handlers.onHide(tab) }]
   const icon = handlers.iconOf
-  const tabItem = (tab: SidebarTab, note?: string): MenuAction => ({ id: `tabrow-open-${tab}`, label: TAB_LABEL[tab], icon: icon?.(tab), hint: tab === lens ? 'open' : note, onSelect: () => handlers.onOpen(tab) })
+  const tabItem = (tab: SidebarTab, page?: string): MenuAction => ({ id: `tabrow-open-${tab}`, label: TAB_LABEL[tab], icon: icon?.(tab), hint: tab === lens ? 'open' : page, onSelect: () => handlers.onOpen(tab) })
   const over = layout.over.map((tab) => tabItem(tab))
   const hidden = layout.hidden.map((tab) => tabItem(tab, 'hidden'))
   const offBar: MenuAction[] = []
-  if (buttons.sort && prefs.hiddenButtons.includes('sort')) offBar.push({ id: 'tabrow-sort', label: 'Sort…', icon: icon?.('sort'), onSelect: handlers.onSort })
+  if (buttons.sort && prefs.hiddenButtons.includes('sort')) offBar.push({ id: 'tabrow-sort', label: `${handlers.sortLabel ?? 'Sort'}…`, icon: icon?.('sort'), onSelect: handlers.onSort })
   if (buttons.fold && prefs.hiddenButtons.includes('fold')) offBar.push({ id: 'tabrow-fold', label: foldLabel, icon: icon?.('fold'), onSelect: handlers.onFold })
   return [hide, over, hidden, offBar, [{ id: 'tabrow-edit', label: 'Edit tab row…', onSelect: handlers.onEdit }]]
 }

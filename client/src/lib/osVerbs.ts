@@ -18,6 +18,11 @@ export interface OsVerbs {
   reveal: (path: string) => void
 }
 
+/** A fresh window on {root, file}, as "New window" opens it; a null root (a path in no vault) opens none. ⇧⌘-click's door too (`newWindowClick.ts`). */
+export function openWindowOn(root: string | null, path: string): void {
+  if (root !== null) api.window.open({ root, file: path }).catch((err: unknown) => console.error('[open in] window.open failed:', err))
+}
+
 /**
  * The verbs, each failure said through `notify`. `nameOf` names the file in a notice; `rootOf` is the vault that holds
  * a path, and null opens no window (absent: a caller with no "New window", the tab menu).
@@ -28,10 +33,7 @@ export function osVerbs(notify: (message: string) => void, nameOf: (path: string
       notify(err instanceof BridgeRequestError && err.code === 'NOT_FOUND' ? gone(nameOf(path)) : `${failed(nameOf(path))}: ${err instanceof Error ? err.message : String(err)}`),
     )
   return {
-    openNewWindow: (path) => {
-      const root = rootOf(path)
-      if (root !== null) api.window.open({ root, file: path }).catch((err: unknown) => console.error('[open in] window.open failed:', err))
-    },
+    openNewWindow: (path) => openWindowOn(rootOf(path), path),
     openVsCode: (path) => said(api.shell.openVsCode({ path }), path, (name) => `Can't open "${name}" in VS Code — it is no longer there`, () => "Can't open in VS Code"),
     openDefault: (path) => said(api.shell.openDefault({ path }), path, (name) => `Can't open "${name}" — it is no longer there`, (name) => `Can't open "${name}"`),
     reveal: (path) => said(api.shell.reveal({ path }), path, (name) => `Can't reveal "${name}" — it is no longer there`, () => "Can't reveal"),

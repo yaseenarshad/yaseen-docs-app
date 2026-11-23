@@ -201,32 +201,6 @@ export const updateTextRunStyle = (
   return normalizeTextRuns(pieces, textLength);
 };
 
-/** Sets (`value`) or removes one flag on the letters `start` to `end`. */
-export const setTextRunFlag = (
-  runs: readonly ExcalidrawTextRun[] | undefined,
-  textLength: number,
-  start: number,
-  end: number,
-  flag: TextRunFlag,
-  value: boolean,
-) =>
-  updateTextRunStyle(runs, textLength, start, end, (style) => {
-    const { [flag]: _, ...rest } = style;
-    return value ? { ...rest, [flag]: true } : rest;
-  });
-
-/** Sets (`color`) or removes (`undefined`) the color of the letters. */
-export const setTextRunColor = (
-  runs: readonly ExcalidrawTextRun[] | undefined,
-  textLength: number,
-  start: number,
-  end: number,
-  color: string | undefined,
-) =>
-  updateTextRunStyle(runs, textLength, start, end, ({ color: _, ...rest }) =>
-    color === undefined ? rest : { ...rest, color },
-  );
-
 /** YAZ-4102 3E: sets (`highlight`, a name) or removes the letters' highlight. */
 export const setTextRunHighlight = (
   runs: readonly ExcalidrawTextRun[] | undefined,
@@ -269,29 +243,6 @@ export const getTextRangeHighlight = (
   return covered >= end ? highlight : undefined;
 };
 
-/**
- * YAZ-4103 3F: the pasted letters `start` to `start + length` get exactly the
- * pasted runs (offsets from `start`), not the style of the letters around.
- */
-export const setPastedTextRuns = (
-  runs: readonly ExcalidrawTextRun[] | undefined,
-  textLength: number,
-  start: number,
-  length: number,
-  pasted: readonly ExcalidrawTextRun[],
-) =>
-  pasted.reduce(
-    (next, run) =>
-      updateTextRunStyle(
-        next,
-        textLength,
-        start + run.start,
-        start + run.end,
-        () => toStyle(run),
-      ),
-    updateTextRunStyle(runs, textLength, start, start + length, () => ({})),
-  );
-
 /** Removes one flag, the color or the highlight from every run (the whole box changes). */
 export const clearTextRunStyle = (
   runs: readonly ExcalidrawTextRun[] | undefined,
@@ -304,29 +255,6 @@ export const clearTextRunStyle = (
         return rest;
       })
     : runs;
-
-/** True when every letter from `start` to `end` has the flag. */
-export const isTextRangeStyled = (
-  runs: readonly ExcalidrawTextRun[] | undefined,
-  start: number,
-  end: number,
-  flag: TextRunFlag,
-) => {
-  let covered = start;
-  for (const run of runs ?? []) {
-    if (run.end <= covered || !run[flag]) {
-      continue;
-    }
-    if (run.start > covered) {
-      return false;
-    }
-    covered = run.end;
-    if (covered >= end) {
-      return true;
-    }
-  }
-  return covered >= end;
-};
 
 /**
  * YAZ-4101 3D: the color of the letters `start` to `end` as the toolbar shows
@@ -358,30 +286,6 @@ export const getTextRangeColor = (
     colors.add(undefined);
   }
   return colors.size > 1 ? null : [...colors][0];
-};
-
-/**
- * YAZ-4101 3D: what the toolbar shows for the letters `start` to `end`, as
- * one key: B, I, U and S on when every letter has it, the color and the
- * highlight. A caret gives the style of the next typed letter.
- */
-export const getTextRangeToolbarKey = (
-  runs: readonly ExcalidrawTextRun[] | undefined,
-  text: string,
-  start: number,
-  end: number,
-) => {
-  const caret = start === end ? getTextRunInsertStyle(runs, text, start) : null;
-  const color = getTextRangeColor(runs, text, start, end);
-  return JSON.stringify([
-    // JSON writes `undefined` as `null`: the box color and mixed apart
-    color === null ? "mixed" : color ?? "box",
-    (caret ? caret.highlight : getTextRangeHighlight(runs, start, end)) ??
-      "none",
-    ...TEXT_RUN_FLAGS.map((flag) =>
-      caret ? caret[flag] === true : isTextRangeStyled(runs, start, end, flag),
-    ),
-  ]);
 };
 
 /** Converts the old per-line flags (one run over each flagged line). */
@@ -443,29 +347,6 @@ const getEditWindow = (
 
   return { start, previousEnd, nextEnd };
 };
-
-/** YAZ-4071 7L: the letters that an edit put in, `start`..`end` of `nextText`. */
-export const getInsertedTextRange = (
-  previousText: string,
-  nextText: string,
-) => {
-  const edit = getEditWindow(previousText, nextText);
-  return { start: edit.start, end: edit.nextEnd };
-};
-
-/** YAZ-4071 7L: the runs of the letters `start`..`end`, from 0 (what a cut takes with it). */
-export const getTextRunsInRange = (
-  runs: readonly ExcalidrawTextRun[] | undefined,
-  start: number,
-  end: number,
-): ExcalidrawTextRun[] =>
-  (runs ?? [])
-    .filter((run) => run.end > start && run.start < end)
-    .map((run) => ({
-      ...run,
-      start: Math.max(run.start, start) - start,
-      end: Math.min(run.end, end) - start,
-    }));
 
 /**
  * The style that typed letters get at `offset`, like a note mark: the letter

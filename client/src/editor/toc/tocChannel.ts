@@ -5,15 +5,15 @@
  * `findChannel.ts`'s host-created holder idiom. The host makes ONE per editor mount and hands it
  * to `createCrepe` (the engine in `tocPlugin.ts` binds itself at view creation, unbinds on destroy)
  * and to `TableOfContents.tsx`, which subscribes and calls the commands. The channel owns only
- * what the component draws: the note's rows as (level, text) and whether a bullet zoom is
+ * what the component draws: the page's rows as (level, text) and whether a bullet zoom is
  * active. Row POSITIONS stay in the engine: they move on every edit above a row, and a
  * snapshot that carried them would re-render the list on every one of those edits.
  *
- * A ROW is a heading of the note, or — in a note with fewer than two headings — a bullet
+ * A ROW is a heading of the page, or — in a page with fewer than two headings — a bullet
  * (`tocPlugin.ts` decides). Nothing here says which: a bullet is a `TocRow` like a heading, its
  * level its depth in the list, and the component draws, jumps and spies by index alone.
  *
- * THE SOURCE (YAZ-2700 D14) is the reader's own answer to that question for this note, from the
+ * THE SOURCE (YAZ-2700 D14) is the reader's own answer to that question for this page, from the
  * page cog: `headings`, `bullets`, or `null` — Auto, the rule above. The host hands it in, the
  * engine scans by it, and it is NOT part of the snapshot: the component never learns it, and a
  * change of source reaches it only as the new list.
@@ -36,7 +36,7 @@ export type TocLevel = 1 | 2 | 3 | 4 | 5
  */
 export const DEEPEST_TOC_LEVEL = 5
 
-/** The table of contents draws nothing under this many rows, and Auto reads a note by its headings only when it has this many. */
+/** The table of contents draws nothing under this many rows, and Auto reads a page by its headings only when it has this many. */
 export const ENOUGH_ROWS = 2
 
 export interface TocRow {
@@ -47,9 +47,9 @@ export interface TocRow {
 
 export interface TocSnapshot {
   /**
-   * The note's rows in document order, by the source: on Auto every H1-H5 of a note with two or
-   * more outside lists, the ones inside its bullets too (YAZ-4094 4E), or the bullets of a note
-   * with fewer; else what the reader chose — every H1-H5 of the note, or its bullets. In a bullet
+   * The page's rows in document order, by the source: on Auto every H1-H5 of a page with two or
+   * more outside lists, the ones inside its bullets too (YAZ-4094 4E), or the bullets of a page
+   * with fewer; else what the reader chose — every H1-H5 of the page, or its bullets. In a bullet
    * zoom, the zoom's own rows when it has two or more (4D). The component decides which it shows.
    */
   rows: readonly TocRow[]
@@ -67,7 +67,7 @@ export interface TocController {
    * Reads layout and writes nothing.
    */
   current(indices: readonly number[], scroller: HTMLElement): number
-  /** Scan the note NOW and publish: the source changed, and the reader is looking at the list. */
+  /** Scan the page NOW and publish: the source changed, and the reader is looking at the list. */
   rescan(): void
 }
 
@@ -77,8 +77,8 @@ export interface TocChannel {
   getState(): TocSnapshot
   subscribe(listener: () => void): () => void
   /**
-   * Host side: what this note's rows are built from; `null` is Auto. Before an engine is bound it
-   * only waits for the first scan, so a note saved as Bullets never shows its Auto list first.
+   * Host side: what this page's rows are built from; `null` is Auto. Before an engine is bound it
+   * only waits for the first scan, so a page saved as Bullets never shows its Auto list first.
    * After, a CHANGE is scanned at once — no 150 ms wait: nothing was typed.
    */
   setSource(source: TocSource | null): void
@@ -90,6 +90,12 @@ export interface TocChannel {
   publish(rows: readonly TocRow[]): void
   /** Engine side: a bullet zoom started or ended. */
   setZoomed(zoomed: boolean): void
+  /** Host side: pause TOC scanning while the page's TOC is off (`'off'` or `toc: false`), and catch up when re-enabled (YAZ-6028). */
+  setEnabled(enabled: boolean): void
+  /** Engine side: false while TOC is explicitly disabled by the host. Defaults to true. */
+  isEnabled(): boolean
+  /** Engine side: mark rows stale while disabled so re-enabling rescans immediately. */
+  markDirty(): void
 }
 
 const sameRows = (a: readonly TocRow[], b: readonly TocRow[]): boolean =>
@@ -99,6 +105,8 @@ export function createTocChannel(): TocChannel {
   let controller: TocController | null = null
   let snapshot: TocSnapshot = { rows: [], zoomed: false }
   let source: TocSource | null = null
+  let enabled = true
+  let dirty = false
   const listeners = new Set<() => void>()
 
   const set = (next: TocSnapshot): void => {
@@ -111,6 +119,7 @@ export function createTocChannel(): TocChannel {
     jump: (index) => controller?.jump(index),
     current: (indices, scroller) => controller?.current(indices, scroller) ?? -1,
     publish(rows) {
+      dirty = false
       if (!sameRows(rows, snapshot.rows)) set({ ...snapshot, rows })
     },
     setZoomed(zoomed) {
@@ -119,7 +128,8 @@ export function createTocChannel(): TocChannel {
     setSource(next) {
       if (next === source) return
       source = next
-      controller?.rescan()
+      if (enabled) controller?.rescan()
+      else dirty = true
     },
     getSource: () => source,
     getState: () => snapshot,
@@ -128,6 +138,18 @@ export function createTocChannel(): TocChannel {
       return () => {
         listeners.delete(listener)
       }
+    },
+    setEnabled(next) {
+      if (next === enabled) return
+      enabled = next
+      if (enabled && dirty) {
+        dirty = false
+        controller?.rescan()
+      }
+    },
+    isEnabled: () => enabled,
+    markDirty() {
+      dirty = true
     },
     bind(next) {
       controller = next

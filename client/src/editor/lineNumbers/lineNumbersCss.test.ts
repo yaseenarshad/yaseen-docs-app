@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import appCss from '../../app.css?inline'
+import folderViewCss from '../../views/folderView.css?inline'
 
 /** Every `selector { body }` whose selector names a numbered block. */
 const rules = [...appCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
@@ -19,7 +20,7 @@ const bodyOf = (selector: string): string => {
 const ON = '.editor-host[data-line-numbers] .ProseMirror'
 
 describe('line numbers CSS contract', () => {
-  it('every rule applies only while the switch is on, and only inside the note body (S51, S55)', () => {
+  it('every rule applies only while the switch is on, and only inside the page body (S51, S55)', () => {
     expect(rules.length).toBeGreaterThan(0)
     for (const { selectors } of rules) for (const selector of selectors) expect(selector.startsWith(`${ON} `), selector).toBe(true)
     expect(appCss).toMatch(/\.editor-host\[data-line-numbers\] \.editor-instance \.milkdown > \.ProseMirror\s*\{\s*container-type:\s*inline-size;\s*\}/)
@@ -58,12 +59,25 @@ describe('line numbers CSS contract', () => {
     expect(Number(gap)).toBeGreaterThan(49)
   })
 
+  it('on a folder page the lane is the Page’s own: the scroller keeps its place, and the Page body takes 64px on screen (YAZ-3746 10D)', () => {
+    const css = folderViewCss.replace(/\/\*[\s\S]*?\*\//g, '')
+    // A folder page's scroller wears no `data-page="page"`: the page's 64px is undone there, at a greater weight.
+    expect(css).toMatch(/\.editor-host\[data-line-numbers\]:not\(\[data-page='page'\]\)\s*\{\s*padding-left:\s*0;\s*\}/)
+    // The views pane is zoomed, so 64px divided by the zoom is 64px on screen; the number keeps its 52px gap inside it.
+    expect(css).toMatch(/\.editor-host\[data-line-numbers\] \.folder-page-doc\s*\{\s*padding-left:\s*calc\(64px \/ var\(--document-zoom, 1\)\);\s*\}/)
+  })
+
   it('divides the number’s size and its gap by the document zoom, and nothing else: 11px and 52px on screen at every zoom (S53)', () => {
     const zoomed = rules.filter(({ body }) => body.includes('--document-zoom'))
-    expect(zoomed.map(({ selectors }) => selectors)).toEqual([[`${ON} [data-line]::after`, `${ON} .milkdown-table-block[data-line]::before`]])
+    expect(zoomed.map(({ selectors }) => selectors)).toEqual([
+      [`${ON} [data-line]::after`, `${ON} .milkdown-table-block[data-line]::before`],
+      // A code block with its own width, or the page's or Settings' (YAZ-4783 layers 2 and 3), keeps the same 52px gap, from its left edge.
+      [`${ON} .milkdown-code-block[data-code-width][data-line]::after`, `${ON} .milkdown-code-block[data-line]:is([data-code-block-width] *)::after`],
+    ])
     expect(zoomed[0].body.match(/\/ var\(--document-zoom, 1\)/g)).toHaveLength(2)
-    // The zoom the two lengths undo is the one on the note body itself.
-    expect(appCss).toMatch(/\.editor-instance \.milkdown > \.ProseMirror\s*\{\s*zoom:\s*var\(--document-zoom, 1\);\s*\}/)
+    expect(zoomed[1].body).toMatch(/right:\s*calc\(100% \+ 52px \/ var\(--document-zoom, 1\)\);/)
+    // The zoom the two lengths undo is the one on the page body itself (one rule with the Inbox card's, YAZ-5372).
+    expect(appCss).toMatch(/\.editor-instance \.milkdown > \.ProseMirror\s*(?:,[^{]*)?\{\s*zoom:\s*var\(--document-zoom, 1\);\s*\}/)
   })
 
   it('takes the number out of the flow, out of selection and out of the pointer’s way (S51, S54)', () => {

@@ -5,29 +5,63 @@
  * for it and shows what the vault holds afterwards.
  */
 import { useEffect, useRef, useState } from 'react'
-import { isIdLetters } from '@shared/noteId'
+import type { BackfillCreatedResult } from '@shared/ipc'
+import { isIdLetters } from '@shared/pageId'
 import type { IdsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
-import { idsLettersAsk, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
+import { TypedConfirmSheet } from '../components/TypedConfirmSheet'
+import { idsLettersAsk, KEEP_OTHER_ASK, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
 import type { SettingsCtx } from './registry'
+import { useUnit } from '../vault/unitWord'
 
 type Ids = NonNullable<SettingsCtx['ids']>
 
 /**
- * A confirm box with a text field (🔒 D2): the confirm button and Enter do nothing until what is
- * typed is `valid`. `onConfirm` takes it in capitals. The field holds the focus: Enter in it is
- * safe. Its keys stay inside it, so the dialog under it does not close.
+ * "Give IDs" where the pages already hold number IDs (YAZ-4922 🔒 D2): the box says the groups (`text`) and its first
+ * answer, with the focus, is "Keep <main>" — the biggest group's letters, so 0 pages change. The field takes other
+ * letters instead, and the button at the left end says them ("Use ABC"). Enter in the field: the typed letters, or
+ * Keep while it is empty; bad letters do nothing. Elsewhere Enter is Keep. Its keys stay inside it.
  */
-export function TypedConfirmSheet({ labelId, text, ask, confirmLabel, valid, onConfirm, onCancel }: { labelId: string; text: string; ask: string; confirmLabel: string; valid: (typed: string) => boolean; onConfirm: (typed: string) => void; onCancel: () => void }) {
+export function KeepIdsSheet({ text, main, onConfirm, onCancel }: { text: string; main: string; onConfirm: (letters: string) => void; onCancel: () => void }) {
   const [typed, setTyped] = useState('')
-  const field = useRef<HTMLInputElement>(null)
-  // After the sheet's own effect, which puts the focus on Cancel.
-  useEffect(() => field.current?.focus(), [])
+  const valid = isIdLetters(typed)
+  const use = (): void => {
+    if (valid) onConfirm(typed.toUpperCase())
+  }
   return (
-    <ConfirmSheet labelId={labelId} text={text} confirmLabel={confirmLabel} confirmDisabled={!valid(typed)} keys="contained" onConfirm={() => onConfirm(typed.toUpperCase())} onCancel={onCancel}>
+    <ConfirmSheet
+      labelId="confirm-ids-keep-text"
+      text={text}
+      confirmLabel={`Keep ${main}`}
+      keys="contained"
+      focusConfirm
+      onConfirm={() => onConfirm(main)}
+      onCancel={onCancel}
+      other={
+        <button type="button" className="confirm__btn confirm__btn--other" disabled={!valid} onClick={use}>
+          {valid ? `Use ${typed.toUpperCase()}` : 'Use other letters'}
+        </button>
+      }
+    >
       <label className="confirm__letters">
-        {ask}
-        <input ref={field} className="confirm__input" type="text" value={typed} onChange={(e) => setTyped(e.target.value)} autoCapitalize="characters" autoComplete="off" spellCheck={false} />
+        {KEEP_OTHER_ASK}
+        <input
+          className="confirm__input"
+          type="text"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return
+            e.preventDefault()
+            e.stopPropagation()
+            if (e.repeat) return
+            if (typed === '') onConfirm(main)
+            else use()
+          }}
+          autoCapitalize="characters"
+          autoComplete="off"
+          spellCheck={false}
+        />
       </label>
     </ConfirmSheet>
   )
@@ -61,11 +95,12 @@ export function useRun(): { busy: boolean; line: string | null; run: (working: s
 
 /**
  * "ID letters" (🔒 D5, S79, S80, S83, S85): the vault's letters, read from the main process when the
- * row appears, and "Change letters". The box counts the notes that change and takes the new
+ * row appears, and "Change letters". The box counts the pages that change and takes the new
  * letters: bad input, and the letters the vault already has, do nothing. Where a change stopped,
- * the row says how many notes still have the old letters, and "Finish" runs the same change again.
+ * the row says how many pages still have the old letters, and "Finish" runs the same change again.
  */
 export function IdLettersControl({ ids, vault }: { ids: Ids; vault?: string }) {
+  const unit = useUnit()
   const [state, setState] = useState<IdsState | null>(null)
   const [asking, setAsking] = useState(false)
   const { busy, line, run } = useRun()
@@ -84,7 +119,7 @@ export function IdLettersControl({ ids, vault }: { ids: Ids; vault?: string }) {
     run('Changing…', () =>
       ids.reletter(letters).then(
         (next) => {
-          setState(next)
+          if (next !== null) setState(next)
           return null
         },
         (err: unknown) => `Couldn't change the letters: ${said(err)}`,
@@ -103,12 +138,12 @@ export function IdLettersControl({ ids, vault }: { ids: Ids; vault?: string }) {
         )}
       </div>
       <p className="setting__hint" role="status">
-        {line ?? (state === null ? '' : lettersLine(state))}
+        {line ?? (state === null ? '' : lettersLine(state, unit))}
       </p>
       {asking && state !== null && (
         <TypedConfirmSheet
           labelId="confirm-ids-letters-text"
-          text={lettersAskMessage(state, vault)}
+          text={lettersAskMessage(state, vault, unit)}
           ask={NEW_LETTERS_ASK}
           confirmLabel="Change letters"
           valid={(typed) => isIdLetters(typed) && typed.toUpperCase() !== state.letters}
@@ -124,12 +159,13 @@ export function IdLettersControl({ ids, vault }: { ids: Ids; vault?: string }) {
 }
 
 /**
- * "Old IDs" (🔒 D6, S88 to S91): how many notes hold an old 12-character ID, and "Give them
+ * "Old IDs" (🔒 D6, S88 to S91): how many pages hold an old 12-character ID, and "Give them
  * numbers". The box says the count and to sync and close the other Mac first, and takes the vault's
  * own letters. The row goes when the vault's index holds no old ID and no run is unfinished; while
- * some notes are left, or links of a run that stopped (`unfinished`), a second run finishes.
+ * some pages are left, or links of a run that stopped (`unfinished`), a second run finishes.
  */
 export function OldIdsControl({ ids, vault }: { ids: Ids; vault?: string }) {
+  const unit = useUnit()
   const [asking, setAsking] = useState<string | null>(null)
   const { busy, line, run } = useRun()
   return (
@@ -140,12 +176,12 @@ export function OldIdsControl({ ids, vault }: { ids: Ids; vault?: string }) {
         </button>
       </div>
       <p className="setting__hint" role="status">
-        {line ?? oldIdsLine(ids.old)}
+        {line ?? oldIdsLine(ids.old, unit)}
       </p>
       {asking !== null && (
         <TypedConfirmSheet
           labelId="confirm-ids-old-text"
-          text={oldIdsAskMessage(ids.old, vault)}
+          text={oldIdsAskMessage(ids.old, vault, unit)}
           ask={idsLettersAsk(asking)}
           confirmLabel="Give them numbers"
           valid={(typed) => typed.toUpperCase() === asking}
@@ -153,13 +189,53 @@ export function OldIdsControl({ ids, vault }: { ids: Ids; vault?: string }) {
             setAsking(null)
             run('Giving numbers…', () =>
               ids.backfill().then(
-                ({ old, unfinished }) => (old === 0 && !unfinished ? 'Each note has a number now.' : `${oldIdsLine(old)} Run it again to finish.`),
+                (res) => (res === null ? null : res.old === 0 && !res.unfinished ? unit('Each page has a number now.') : `${oldIdsLine(res.old, unit)} Run it again to finish.`),
                 (err: unknown) => `Couldn't give the numbers: ${said(err)}`,
               ),
             )
           }}
           onCancel={() => setAsking(null)}
         />
+      )}
+    </>
+  )
+}
+
+/**
+ * Opt-in created-date backfill (YAZ-6168): stamps `created:` on unstamped pages and `created <iso>`
+ * on unstamped card files using each file's current OS birthtime.
+ */
+export function BackfillCreatedControl({ backfillCreated }: { backfillCreated: () => Promise<BackfillCreatedResult | null> }) {
+  const unit = useUnit()
+  const { busy, line, run } = useRun()
+  return (
+    <>
+      <div className="settings__options">
+        <button
+          type="button"
+          className="settings__option"
+          disabled={busy}
+          onClick={() =>
+            run('Stamping created dates…', () =>
+              backfillCreated().then(
+                (res) =>
+                  res === null
+                    ? null
+                    : res.written === 0
+                      ? unit('All pages already have a created date.')
+                      : unit(`Stamped ${res.written} ${res.written === 1 ? 'page' : 'pages'}.`),
+                (err: unknown) => `Couldn't stamp created dates: ${said(err)}`,
+              ),
+            )
+          }
+        >
+          Stamp created dates
+        </button>
+      </div>
+      {line !== null && (
+        <p className="setting__hint" role="status">
+          {line}
+        </p>
       )}
     </>
   )

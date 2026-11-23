@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<!--
+  The phone's diagram PICTURE page (YAZ-5533): the Mac's `yaseen-render.html` for the phone. It loads the SAME draw.io
+  read-only viewer (`viewer-static.min.js`, v31.5.2, from the Mac's verified pack) and the Mac's own `yaseen-links.js`
+  and `yaseen-render.js`, unchanged. Only the head differs: the phone's paths (`phone-config.js`), and the phone's shim
+  (`phone-shim.js`: the shape libraries and fonts the diagram uses, loaded on demand; no network; no storage).
+  It runs in ONE hidden same-origin frame of the app, under its own strict CSP (`public/_headers`, `/drawio/*`).
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Yaseen Docs diagram renderer</title>
+  <script src="phone-config.js"></script>
+  <script src="viewer-static.min.js"></script>
+  <script src="phone-index.js"></script>
+  <script src="phone-shim.js"></script>
+  <script src="yaseen-links.js"></script>
+</head>
+<body>
+  <script src="yaseen-render.js"></script>
+</body>
+</html>

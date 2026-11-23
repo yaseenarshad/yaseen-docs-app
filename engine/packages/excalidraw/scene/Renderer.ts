@@ -30,7 +30,6 @@ type GetRenderableElementsOpts = {
   scrollY: AppState["scrollY"];
   height: AppState["height"];
   width: AppState["width"];
-  editingTextElement: AppState["editingTextElement"];
   newElement: AppState["newElement"];
   selectedElements: readonly NonDeletedExcalidrawElement[];
   selectedElementsAreBeingDragged: AppState["selectedElementsAreBeingDragged"];
@@ -88,11 +87,9 @@ export class Renderer {
 
   private getRenderableElementsMap({
     elements,
-    editingTextElement,
     newElement,
   }: {
     elements: readonly NonDeletedExcalidrawElement[];
-    editingTextElement: AppState["editingTextElement"];
     newElement: AppState["newElement"];
   }) {
     const elementsMap = toBrandedType<RenderableElementsMap>(new Map());
@@ -103,15 +100,9 @@ export class Renderer {
         continue;
       }
 
-      // we don't want to render text element that's being currently edited
-      // (it's rendered on remote only)
-      if (
-        !editingTextElement ||
-        editingTextElement.type !== "text" ||
-        element.id !== editingTextElement.id
-      ) {
-        elementsMap.set(element.id, element);
-      }
+      // YAZ-4277 D1: a text box in edit is drawn too: the host's editor over
+      // it is invisible
+      elementsMap.set(element.id, element);
     }
     return { elementsMap, newElementCanvasElement };
   }
@@ -166,7 +157,6 @@ export class Renderer {
       scrollY,
       height,
       width,
-      editingTextElement,
       newElement,
     }: Omit<
       GetRenderableElementsOpts,
@@ -181,7 +171,6 @@ export class Renderer {
       const { elementsMap, newElementCanvasElement } =
         this.getRenderableElementsMap({
           elements,
-          editingTextElement,
           newElement,
         });
 
@@ -223,7 +212,6 @@ export class Renderer {
       scrollY: opts.scrollY,
       height: opts.height,
       width: opts.width,
-      editingTextElement: opts.editingTextElement,
       newElement: opts.newElement,
     });
 

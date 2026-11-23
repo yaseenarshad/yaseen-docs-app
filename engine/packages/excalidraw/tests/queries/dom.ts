@@ -6,8 +6,8 @@ import {
   trimErrorStack,
 } from "../test-utils";
 
-export const TEXT_EDITOR_SELECTOR =
-  ".excalidraw-textEditorContainer > textarea";
+// YAZ-4277 1D: the tests' text editor (`helpers/textEditor.ts`) in the engine's root
+export const TEXT_EDITOR_SELECTOR = ".excalidraw-host-text-editor textarea";
 
 export const getTextEditor = async ({
   selector = TEXT_EDITOR_SELECTOR,

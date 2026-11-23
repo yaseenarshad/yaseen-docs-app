@@ -53,7 +53,6 @@ import {
   TOUCH_CTX_MENU_TIMEOUT,
   VERTICAL_ALIGN,
   YOUTUBE_STATES,
-  ZOOM_STEP,
   MIN_ZOOM,
   POINTER_EVENTS,
   TOOL_TYPE,
@@ -142,6 +141,17 @@ import {
   newLinearElement,
   newTextElement,
   refreshTextDimensions,
+  setFoldedLines,
+  DEFAULT_FOLD_ARROW_PREFS,
+  getFoldArrowAt,
+  getFoldArrowSize,
+  hasTextList,
+  getToggledFoldedLines,
+  isLineFolded,
+  setFoldArrowPrefs,
+  getTextCheckboxAt,
+  getToggledCheckboxText,
+  getFoldedLines,
   deepCopyElement,
   duplicateElements,
   hasBoundTextElement,
@@ -170,6 +180,9 @@ import {
   isInvisiblySmallElement,
   getCornerRadius,
   getDefaultCornerRadiusForElementType,
+  getStyleScale,
+  toBoardSize,
+  withStyleScale,
   getRelativeImageCornerRadius,
   isPathALoop,
   createSrcDoc,
@@ -179,6 +192,8 @@ import {
   getInitializedImageElements,
   GifPlayer,
   normalizeSVG,
+  paintIcon,
+  readIconInfo,
   updateImageCache as _updateImageCache,
   getBoundTextElement,
   getContainerCenter,
@@ -266,7 +281,6 @@ import {
   handleFocusPointPointerUp,
   maybeHandleArrowPointlikeDrag,
   getUncroppedWidthAndHeight,
-  getActiveTextElement,
   isEligibleFrameChildType,
   getBindingStrategyForDraggingBindingElementEndpoints,
   isNonDeletedElement,
@@ -282,6 +296,7 @@ import {
   remapTextRunsForTextEdit,
 } from "@excalidraw/element";
 
+import type { FoldArrowHit } from "@excalidraw/element";
 import type { GlobalPoint, LocalPoint, Radians } from "@excalidraw/math";
 
 import type {
@@ -313,6 +328,7 @@ import type {
 } from "@excalidraw/element/types";
 
 import type { ArrowEndpoint } from "@excalidraw/element";
+import type { IconRecipe } from "@excalidraw/element";
 
 import type { Mutable, ValueOf } from "@excalidraw/common/utility-types";
 
@@ -364,7 +380,11 @@ import {
   actionToggleArrowBinding,
   actionToggleMidpointSnapping,
   actionToggleCropEditor,
+  actionToggleColorEditor,
   actionToggleGifPlayback,
+  actionTidyUp,
+  distributeHorizontally,
+  distributeVertically,
 } from "../actions";
 import { actionWrapTextInContainer } from "../actions/actionBoundText";
 import { actionPaste, actionPasteAtFullSize } from "../actions/actionClipboard";
@@ -376,7 +396,17 @@ import {
   actionWrapSelectionInFrame,
 } from "../actions/actionFrame";
 import { createRedoAction, createUndoAction } from "../actions/actionHistory";
-import { actionTextAutoResize } from "../actions/actionTextAutoResize";
+import {
+  actionTextAutoResize,
+  actionTextShrinkToLines,
+} from "../actions/actionTextAutoResize";
+// YAZ-4277 D9: registers ⌘↑ / ⌘↓ on selected text boxes
+import "../actions/actionTextFolds";
+import {
+  getDefaultNewElementStyle,
+  isSelectTool,
+  keepNewElementStyle,
+} from "../newElementStyle";
 import {
   getNewTextWrapMargin,
   getResponsiveTextFontSize,
@@ -413,6 +443,7 @@ import {
   getScrollToContentState,
   getElementsWithinSelection,
   getNormalizedZoom,
+  getWheelZoom,
   getSelectedElements,
   hasBackground,
   isSomeElementSelected,
@@ -445,6 +476,7 @@ import { Fonts } from "../fonts";
 import { editorJotaiStore, type WritableAtom } from "../editor-jotai";
 import { ImageSceneDataError } from "../errors";
 import {
+  getAltHoverMeasureLines,
   getSnapLinesAtPointer,
   snapDraggedElements,
   isActiveToolNonLinearSnappable,
@@ -462,10 +494,10 @@ import {
   getViewportForZoomWithScrollConstraints,
 } from "../viewport";
 import { ElementCanvasButtons } from "../components/ElementCanvasButtons";
+import { IconColorEditor } from "../components/IconColorEditor";
 import { LASER_STREAMLINE, LaserTrails } from "../laserTrails";
 import { withBatchedUpdates, withBatchedUpdatesThrottled } from "../reactUtils";
-import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
-import { textWysiwyg } from "../wysiwyg/textWysiwyg";
+import { hostTextWysiwyg } from "../wysiwyg/hostTextWysiwyg";
 import { getPlainPasteText, parseStyledHtml } from "../wysiwyg/styledClipboard";
 import { isOverScrollBars } from "../scene/scrollbars";
 import { isMaybeMermaidDefinition } from "../mermaid";
@@ -504,20 +536,26 @@ import { MagicIcon, copyIcon, fullscreenIcon } from "./icons";
 import { AppStateObserver, type OnStateChange } from "./AppStateObserver";
 
 import { findShapeByKey, TOGGLE_TOOLS } from "./Tools";
-import { getSemanticColorNameForHotkey } from "./ColorPicker/colorPickerUtils";
+import {
+  getSemanticColorNameForHotkey,
+  SHIFT_KEYS_KEPT_FROM_COLORS,
+} from "./ColorPicker/colorPickerUtils";
 
 import UnlockPopup from "./UnlockPopup";
 
 import type { ExcalidrawLibraryIds } from "../data/types";
 
 import type {
+  ColorEditPreview,
   RenderInteractiveSceneCallback,
   ScrollBars,
+  SelectionHover,
 } from "../scene/types";
 
 import type { ClipboardData, PastedMixedContent } from "../clipboard";
 import type { ExportedElements } from "../data";
 import type { ContextMenuItems } from "./ContextMenu";
+import type { IconColorEditorHandlers } from "./IconColorEditor";
 
 import type {
   AppClassProperties,
@@ -706,6 +744,14 @@ class App extends React.Component<AppProps, AppState> {
 
   public files: BinaryFiles = {};
   public imageCache: AppClassProperties["imageCache"] = new Map();
+  /** YAZ-4354 1D: the Edit colors mode's hooks for canvas clicks and keys */
+  public iconColorEditor: IconColorEditorHandlers = {
+    pick: null,
+    escape: null,
+    digit: null,
+  };
+  /** YAZ-4354 1D: the faded preview of the icon in Edit colors (static canvas; YAZ-4366: one stable holder) */
+  private colorEditPreview: ColorEditPreview = { current: null };
   /** YAZ-3944 D2: this board's GIF frames */
   public gifPlayer = new GifPlayer((id) => this.files[id]);
 
@@ -825,12 +871,36 @@ class App extends React.Component<AppProps, AppState> {
   });
 
   bindModeHandler: ReturnType<typeof setTimeout> | null = null;
-  private textWysiwygSubmitHandler: ReturnType<typeof textWysiwyg> | null =
+  private textWysiwygSubmitHandler: ReturnType<typeof hostTextWysiwyg> | null =
     null;
 
   hitLinkElement?: NonDeletedExcalidrawElement;
   /** YAZ-4039 D11: the link pill under the pointer, as last reported. */
   private hostLinkHover: HostLinkHit | null = null;
+  /**
+   * YAZ-4312 N4: the text boxes with list lines, in z-order, for one scene
+   * nonce; and each box's answer, for its version. A pointer move looks at
+   * these boxes only.
+   */
+  private listBoxes: {
+    sceneNonce: number | undefined;
+    boxes: readonly ExcalidrawTextElement[];
+  } | null = null;
+  private readonly listBoxMemo = new WeakMap<
+    ExcalidrawTextElement,
+    { version: number; hasList: boolean }
+  >();
+  /** YAZ-4277 D5: the open item whose ▾ shows on hover. */
+  private foldArrowHover: Readonly<{
+    elementId: ExcalidrawElement["id"];
+    line: number;
+  }> | null = null;
+  /** YAZ-4469: the element a click would pick, outlined faintly on hover, and the view it was found in. */
+  private selectionHover: SelectionHover | null = null;
+  /** YAZ-4469: what the current pointer move found; `handleCanvasPointerMove` applies it once. */
+  private selectionHoverNext: NonDeleted<ExcalidrawElement> | null = null;
+  /** YAZ-6069 D7: true while Option/Alt-hover distance measurement guides are active. */
+  private showingAltMeasureSnaps = false;
   /** The scene's fonts are loaded: a pill's box can be measured. */
   private hostLinkFontsReady = false;
   /** YAZ-4101 3D: moves when the text editor's selection shows another style. */
@@ -900,6 +970,7 @@ class App extends React.Component<AppProps, AppState> {
       isDestroyed: false,
       updateScene: this.updateScene,
       applyDeltas: this.applyDeltas,
+      setTextFolds: this.setTextFolds,
       mutateElement: this.mutateElement,
       updateLibrary: this.library.updateLibrary,
       addFiles: this.addFiles,
@@ -951,7 +1022,7 @@ class App extends React.Component<AppProps, AppState> {
       viewModeEnabled = false,
       zenModeEnabled = false,
       gridModeEnabled = false,
-      objectsSnapModeEnabled = false,
+      objectsSnapModeEnabled = defaultAppState.objectsSnapModeEnabled,
       theme = defaultAppState.theme,
       name = `${t("labels.untitled")}-${getDateTime()}`,
     } = props;
@@ -2545,6 +2616,7 @@ class App extends React.Component<AppProps, AppState> {
 
   private handlePointerLeave = (event: React.PointerEvent) => {
     this.setHostLinkHover(null);
+    this.updateSelectionHover(null);
     this.toggleOverscrollBehavior(event);
   };
 
@@ -2569,7 +2641,6 @@ class App extends React.Component<AppProps, AppState> {
       scrollY: this.state.scrollY,
       height: this.state.height,
       width: this.state.width,
-      editingTextElement: this.state.editingTextElement,
       newElement: this.state.newElement,
       selectedElements,
       selectedElementsAreBeingDragged:
@@ -2595,6 +2666,16 @@ class App extends React.Component<AppProps, AppState> {
             this.state.cursorButton === "down");
 
     const firstSelectedElement = selectedElements[0];
+    // YAZ-4354 1D: the icon in Edit colors
+    const colorEditingCandidate = this.state.colorEditingElementId
+      ? this.scene
+          .getNonDeletedElementsMap()
+          .get(this.state.colorEditingElementId)
+      : null;
+    const colorEditingElement =
+      colorEditingCandidate && isInitializedImageElement(colorEditingCandidate)
+        ? colorEditingCandidate
+        : null;
 
     const showShapeSwitchPanel =
       editorJotaiStore.get(convertElementTypePopupAtom)?.type === "panel";
@@ -2806,6 +2887,18 @@ class App extends React.Component<AppProps, AppState> {
                               </ElementCanvasButtons>
                             )}
 
+                          {this.isDefaultUIEnabled() && colorEditingElement && (
+                            <IconColorEditor
+                              key={colorEditingElement.id}
+                              app={this}
+                              actionManager={this.actionManager}
+                              appState={this.state}
+                              element={colorEditingElement}
+                              handlers={this.iconColorEditor}
+                              onPreview={this.setColorEditPreview}
+                              onDone={this.finishIconColorEditing}
+                            />
+                          )}
                           {this.isDefaultUIEnabled() && this.state.contextMenu && (
                             <ContextMenu
                               items={this.state.contextMenu.items}
@@ -2847,6 +2940,8 @@ class App extends React.Component<AppProps, AppState> {
                               pendingFlowchartNodes:
                                 this.flowchart.pendingNodes,
                               theme: this.state.theme,
+                              foldArrows: this.getFoldArrowPrefs(),
+                              colorEditPreview: this.colorEditPreview,
                             }}
                           />
                           {newElementCanvasElement && (
@@ -2889,6 +2984,9 @@ class App extends React.Component<AppProps, AppState> {
                             renderScrollbars={
                               this.props.renderScrollbars === true
                             }
+                            foldArrowHover={this.foldArrowHover}
+                            foldArrows={this.getFoldArrowPrefs()}
+                            selectionHover={this.selectionHover}
                             editorInterface={this.editorInterface}
                             interactionEnabled={this.isInteractionEnabled()}
                             navigationEnabled={this.isNavigationEnabled()}
@@ -3352,7 +3450,11 @@ class App extends React.Component<AppProps, AppState> {
       }
 
       this.setState((prevAppState) => {
-        const actionAppState = actionResult.appState || {};
+        // YAZ-4277 D14: a style changed on a selection stays on it
+        const actionAppState =
+          this.props.newElementStyle === "default"
+            ? keepNewElementStyle(prevAppState, actionResult.appState || {})
+            : actionResult.appState || {};
 
         return {
           ...prevAppState,
@@ -3382,6 +3484,14 @@ class App extends React.Component<AppProps, AppState> {
 
   private onBlur = withBatchedUpdates(() => {
     isHoldingSpace = false;
+    if (this.showingAltMeasureSnaps) {
+      this.showingAltMeasureSnaps = false;
+      this.setState((prevState) => ({
+        isBindingEnabled: prevState.bindingPreference === "enabled",
+        snapLines: prevState.snapLines.length ? [] : prevState.snapLines,
+      }));
+      return;
+    }
     this.setState({
       isBindingEnabled: this.state.bindingPreference === "enabled",
     });
@@ -3504,7 +3614,7 @@ class App extends React.Component<AppProps, AppState> {
       this.resetEditingFrame(frame && isFrameLikeElement(frame) ? frame : null);
     }
 
-    // textWysiwyg's submit path uses flushSync. Defer until after the current
+    // the text editor's submit path uses flushSync. Defer until after the current
     // componentDidUpdate lifecycle, then submit whichever text-editing session
     // is active if editing is still disabled.
     queueMicrotask(() => {
@@ -3862,6 +3972,8 @@ class App extends React.Component<AppProps, AppState> {
     // manually loading the font faces seems faster even in browsers that do fire the loadingdone event
     this.fonts.loadSceneFonts().then((fontFaces) => {
       this.fonts.onLoaded(fontFaces);
+      // YAZ-4277 D6: a folded fixed-width box, measured with the real fonts
+      this.refitFoldedTextBoxes();
       // YAZ-4039 D7: the pills' sizes, measured with the real fonts
       this.hostLinkFontsReady = true;
       if (this.props.hostLinks) {
@@ -3967,6 +4079,8 @@ class App extends React.Component<AppProps, AppState> {
     this.unmounted = false;
     // before the scene loads, so its text boxes lay out with their pills
     this.mountHostLinks();
+    // YAZ-4277 D7: exports read the board's fold arrow size and thickness
+    setFoldArrowPrefs(this.getFoldArrowPrefs());
     this.api = this.createExcalidrawAPI();
     window.addEventListener(
       ANIMATION_RUNTIME_POLICY_EVENT,
@@ -4085,6 +4199,11 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   public componentWillUnmount() {
+    // YAZ-4430: an edit open on a closing board ends with it (its text is in
+    // the scene already), and its window listeners go
+    this.unmounted = true;
+    this.textWysiwygSubmitHandler?.();
+    this.textWysiwygSubmitHandler = null;
     this.unmountHostLinks?.();
     this.unmountHostLinks = null;
     window.removeEventListener(
@@ -4138,7 +4257,6 @@ class App extends React.Component<AppProps, AppState> {
     this.retainGifs.cancel();
     this.gifViewObserver?.disconnect();
     this.resizeObserver?.disconnect();
-    this.unmounted = true;
     this.viewport.destroy();
     this.removeEventListeners();
     this.library.destroy();
@@ -4437,6 +4555,29 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   componentDidUpdate(prevProps: AppProps, prevState: AppState) {
+    // YAZ-4348 demo: the top bar's Edit colors button unmounts with the bar, and the focus falls to the page,
+    // where a board without handleKeyboardGlobally (the app's) hears no key: the mode takes the focus, so
+    // 1 to 9, Esc and Enter work at once
+    if (
+      this.state.colorEditingElementId &&
+      !prevState.colorEditingElementId &&
+      !this.excalidrawContainerRef.current?.contains(document.activeElement)
+    ) {
+      this.focusContainer();
+    }
+    // YAZ-4354 1D: Edit colors ends when its icon is deleted or not selected
+    if (this.state.colorEditingElementId) {
+      const element = this.scene.getElement(this.state.colorEditingElementId);
+      if (
+        !element ||
+        element.isDeleted ||
+        !this.state.selectedElementIds[element.id] ||
+        this.state.viewModeEnabled
+      ) {
+        this.finishIconColorEditing();
+      }
+    }
+
     // must be updated *before* state change listeners are triggered below
     if (!this._initialized && !this.state.isLoading) {
       this._initialized = true;
@@ -4450,6 +4591,25 @@ class App extends React.Component<AppProps, AppState> {
     // YAZ-4074 6A item 6: GIFs wait while a text box is in edit mode
     if (prevState.editingTextElement !== this.state.editingTextElement) {
       this.gifPlayer.setTyping(this.state.editingTextElement !== null);
+    }
+
+    if (prevProps.foldArrows !== this.props.foldArrows) {
+      setFoldArrowPrefs(this.getFoldArrowPrefs());
+      this.foldArrowHover = null;
+    }
+
+    // YAZ-4469: another tool picks nothing on a click; the renderer skips it too
+    if (prevState.activeTool.type !== this.state.activeTool.type) {
+      this.selectionHover = null;
+    }
+    // YAZ-4469 demo: the host turned the hover outline off while one shows
+    if (
+      prevProps.hoverOutline !== this.props.hoverOutline &&
+      this.props.hoverOutline === false &&
+      this.selectionHover !== null
+    ) {
+      this.selectionHover = null;
+      this.triggerRender();
     }
 
     if (prevProps.hostLinks !== this.props.hostLinks) {
@@ -5692,7 +5852,13 @@ class App extends React.Component<AppProps, AppState> {
    *   still in it) and what undo falls back to for an element the scene lacks. It keeps every
    *   element it ever saw as a deleted one, so a deleted one counts only when a step changes it.
    */
-  public pruneFiles = () => {
+  public pruneFiles = () => this.dropUnusedFiles();
+
+  /**
+   * YAZ-4366: `pruneFiles` for only the files in `only` (all when absent), so a drag's previews can go at once
+   * (`paintIcons`) while every other file waits for the host's next prune.
+   */
+  public dropUnusedFiles = (only?: ReadonlySet<string>) => {
     const used = new Set<string>();
     const keep = (element: object) => {
       if ("fileId" in element && typeof element.fileId === "string") {
@@ -5722,14 +5888,14 @@ class App extends React.Component<AppProps, AppState> {
     const nextFiles: BinaryFiles = {};
     let dropped = false;
     for (const [id, fileData] of Object.entries(this.files)) {
-      if (used.has(id)) {
+      if (used.has(id) || (only && !only.has(id))) {
         nextFiles[id] = fileData;
       } else {
         dropped = true;
       }
     }
     for (const id of this.imageCache.keys()) {
-      if (!used.has(id)) {
+      if (!used.has(id) && (!only || only.has(id))) {
         this.imageCache.delete(id);
         dropped = true;
       }
@@ -5961,6 +6127,10 @@ class App extends React.Component<AppProps, AppState> {
       event.ctrlKey ||
       event.altKey ||
       event.metaKey ||
+      // YAZ-4348 demo (Yasin: "Flip and eyedropper win"): ⇧V stays Flip vertical and ⇧G the eyedropper, so
+      // violet and green have no fill letter (YAZ-4277 D16: ⇧ is the fill); the picker still sets them
+      (event.shiftKey &&
+        SHIFT_KEYS_KEPT_FROM_COLORS.has(event.key.toLowerCase())) ||
       isInteractive(event.target) ||
       isContentEditable
     ) {
@@ -6199,6 +6369,31 @@ class App extends React.Component<AppProps, AppState> {
           return;
         }
 
+        // YAZ-4354 1D: Esc closes the palette first; Esc or Enter leave Edit colors
+        if (
+          (event.key === KEYS.ESCAPE || event.key === KEYS.ENTER) &&
+          this.state.colorEditingElementId
+        ) {
+          if (!this.iconColorEditor.escape?.()) {
+            this.finishIconColorEditing();
+          }
+          event.preventDefault();
+          return;
+        }
+
+        // YAZ-4348 demo: in Edit colors a digit opens that number's palette; no digit sizes the icon there
+        if (
+          this.state.colorEditingElementId &&
+          /^[0-9]$/.test(event.key) &&
+          !event[KEYS.CTRL_OR_CMD] &&
+          !event.altKey &&
+          !event.shiftKey
+        ) {
+          this.iconColorEditor.digit?.(Number(event.key));
+          event.preventDefault();
+          return;
+        }
+
         const selectedElements = getSelectedElements(
           this.scene.getNonDeletedElementsMap(),
           this.state,
@@ -6251,6 +6446,20 @@ class App extends React.Component<AppProps, AppState> {
               type: "panel",
             });
           }
+        }
+
+        // YAZ-4277 D9: ⌘↑ / ⌘↓ with text boxes selected fold them; the
+        // flowchart takes every other ⌘ + arrow, so they go first
+        if (
+          canMutateSelection &&
+          event[KEYS.CTRL_OR_CMD] &&
+          isArrowKey(event.key) &&
+          selectedElements.some(
+            (element) => isTextElement(element) && !element.containerId,
+          ) &&
+          this.actionManager.handleKeyDown(event)
+        ) {
+          return;
         }
 
         if (canMutateSelection && this.flowchart.handleKeyEvent(event)) {
@@ -6332,6 +6541,20 @@ class App extends React.Component<AppProps, AppState> {
           this.handleSkipBindMode();
         } else {
           maybeHandleArrowPointlikeDrag({ app: this, event });
+        }
+        if (
+          !event.repeat &&
+          !this.state.newElement &&
+          !this.state.selectedElementsAreBeingDragged &&
+          !this.state.selectionElement &&
+          this.lastPointerMoveCoords &&
+          (this.state.activeTool.type === "selection" ||
+            this.state.activeTool.type === "lasso")
+        ) {
+          this.updateAltHoverMeasureSnaps(
+            this.lastPointerMoveCoords.x,
+            this.lastPointerMoveCoords.y,
+          );
         }
       }
 
@@ -6694,6 +6917,12 @@ class App extends React.Component<AppProps, AppState> {
 
     if (event.key === KEYS.ALT) {
       maybeHandleArrowPointlikeDrag({ app: this, event });
+      if (this.showingAltMeasureSnaps) {
+        this.showingAltMeasureSnaps = false;
+        this.setState((prevState) =>
+          prevState.snapLines.length ? { snapLines: [] } : null,
+        );
+      }
     }
 
     if (
@@ -6893,6 +7122,12 @@ class App extends React.Component<AppProps, AppState> {
         // only the text tool offers arrow-endpoint binding, and the highlight
         // is refreshed on pointermove — don't leave a stale one behind
         hoveredArrowTextAnchor: null,
+        // YAZ-4277 D14: choosing the selection tool ends a style picked for
+        // a tool; the tool's own return after a shape keeps it
+        ...(this.props.newElementStyle === "default" &&
+        isSelectTool(nextActiveTool.type)
+          ? getDefaultNewElementStyle(this.props.defaultItemStyle)
+          : {}),
       } as const;
 
       if (nextActiveTool.type === "freedraw") {
@@ -7049,7 +7284,20 @@ class App extends React.Component<AppProps, AppState> {
       initialCaretSceneCoords?: { x: number; y: number } | null;
     },
   ) {
+    const { textEditor } = this.props;
+    if (!textEditor) {
+      // YAZ-4277 1D: text edits in the host's editor; a host with none shows
+      // the text and does not edit it (a new text that never got letters goes)
+      if (!element.originalText) {
+        this.scene.mutateElement(element as ExcalidrawTextElement, {
+          isDeleted: true,
+        });
+      }
+      this.setState({ editingTextElement: null });
+      return;
+    }
     const elementsMap = this.scene.getElementsMapIncludingDeleted();
+    const startedEmpty = !element.originalText;
 
     const updateElement = (
       nextOriginalText: string,
@@ -7078,8 +7326,10 @@ class App extends React.Component<AppProps, AppState> {
             );
             // YAZ-4247: a click-started text that grows past the right edge of
             // the visible canvas takes the room left as its width and wraps.
+            // YAZ-4277: only a text that started empty in this edit, so a wide
+            // box keeps its lines when its edit starts and ends.
             const wrapAt =
-              !container && next.autoResize && dimensions
+              startedEmpty && !container && next.autoResize && dimensions
                 ? wrapWidthAtEdge(
                     dimensions.x,
                     dimensions.width,
@@ -7088,7 +7338,12 @@ class App extends React.Component<AppProps, AppState> {
                   )
                 : null;
             if (wrapAt !== null) {
-              next = { ...next, x: dimensions!.x, autoResize: false, width: wrapAt };
+              next = {
+                ...next,
+                x: dimensions!.x,
+                autoResize: false,
+                width: wrapAt,
+              };
               dimensions = refreshTextDimensions(
                 next,
                 container,
@@ -7097,6 +7352,8 @@ class App extends React.Component<AppProps, AppState> {
               );
             }
             return newElementWith(_element, {
+              // YAZ-4434 (D31): each fold's anchor follows its line's text
+              // (`newElementWith` asks `withFoldAnchors`, YAZ-4439)
               originalText: nextOriginalText,
               ...nextStyles,
               ...(wrapAt === null ? {} : { autoResize: false }),
@@ -7109,7 +7366,8 @@ class App extends React.Component<AppProps, AppState> {
       ]);
     };
 
-    this.textWysiwygSubmitHandler = textWysiwyg({
+    this.textWysiwygSubmitHandler = hostTextWysiwyg({
+      textEditor,
       canvas: this.canvas,
       getViewportCoords: (x, y) => {
         const { x: viewportX, y: viewportY } = sceneCoordsToViewportCoords(
@@ -7336,58 +7594,6 @@ class App extends React.Component<AppProps, AppState> {
     return null;
   }
 
-  private isHittingTextAutoResizeHandle = (
-    selectedElements: NonDeleted<ExcalidrawElement>[],
-    point: Readonly<{ x: number; y: number }>,
-  ): boolean => {
-    const activeTextElement = getActiveTextElement(
-      selectedElements,
-      this.state,
-    );
-
-    if (
-      activeTextElement &&
-      !activeTextElement.isDeleted &&
-      !activeTextElement.autoResize &&
-      isPointHittingTextAutoResizeHandle(
-        point,
-        activeTextElement,
-        this.state.zoom.value,
-        this.editorInterface.formFactor,
-      )
-    ) {
-      return true;
-    }
-
-    return false;
-  };
-
-  private handleTextAutoResizeHandlePointerDown = (
-    selectedElements: NonDeleted<ExcalidrawElement>[],
-    point: Readonly<{ x: number; y: number }>,
-  ) => {
-    const activeTextElement = getActiveTextElement(
-      selectedElements,
-      this.state,
-    );
-    if (
-      !activeTextElement ||
-      !this.isHittingTextAutoResizeHandle(selectedElements, point)
-    ) {
-      return false;
-    }
-
-    this.actionManager.executeAction(
-      actionTextAutoResize,
-      "ui",
-      // we need to pass down the element since it may already be deselected
-      // due to the pointerdown
-      activeTextElement,
-    );
-    this.cursor.reset();
-    return true;
-  };
-
   // NOTE: Hot path for hit testing, so avoid unnecessary computations
   getElementAtPosition(
     x: number,
@@ -7427,30 +7633,75 @@ class App extends React.Component<AppProps, AppState> {
           }
         }
       }
-      const elementWithHighestZIndex =
-        allHitElements[allHitElements.length - 1];
-
-      // If we're hitting element with highest z-index only on its bounding box
-      // while also hitting other element figure, the latter should be considered.
-      return hitElementItself({
-        point: pointFrom(x, y),
-        element: elementWithHighestZIndex,
-        // when overlapping, we would like to be more precise
-        // this also avoids the need to update past tests
-        threshold: this.getElementHitThreshold(elementWithHighestZIndex) / 2,
-        elementsMap: this.scene.getNonDeletedElementsMap(),
-        frameNameBound: isFrameLikeElement(elementWithHighestZIndex)
-          ? this.frameNameBoundsCache.get(elementWithHighestZIndex)
-          : null,
-        insideHitPolicy:
-          opts?.insideHitPolicy === "outline" ? undefined : "selection",
-        useFreeTextInteractionBounds:
-          opts && "useFreeTextInteractionBounds" in opts
-            ? opts.useFreeTextInteractionBounds
-            : true,
-      })
-        ? elementWithHighestZIndex
-        : allHitElements[allHitElements.length - 2];
+      const point = pointFrom<GlobalPoint>(x, y);
+      const elementsMap = this.scene.getNonDeletedElementsMap();
+      const hits = (
+        element: NonDeleted<ExcalidrawElement>,
+        insideHitPolicy: "selection" | "drawn",
+      ) =>
+        hitElementItself({
+          point,
+          element,
+          // when overlapping, we would like to be more precise
+          threshold: this.getElementHitThreshold(element) / 2,
+          elementsMap,
+          frameNameBound: isFrameLikeElement(element)
+            ? this.frameNameBoundsCache.get(element)
+            : null,
+          insideHitPolicy,
+          useFreeTextInteractionBounds:
+            opts && "useFreeTextInteractionBounds" in opts
+              ? opts.useFreeTextInteractionBounds
+              : true,
+        });
+      // The smallest unlocked shape whose empty inside holds the point (D2):
+      // a click in a box that sits inside a bigger one picks the inner box.
+      const smallestInside = (elements: NonDeleted<ExcalidrawElement>[]) =>
+        opts?.insideHitPolicy === "outline"
+          ? null
+          : elements
+              .filter(
+                (element) =>
+                  !element.locked &&
+                  element.opacity > 0 &&
+                  hits(element, "selection"),
+              )
+              .reduce<NonDeleted<ExcalidrawElement> | null>(
+                (smallest, element) =>
+                  !smallest ||
+                  element.width * element.height <=
+                    smallest.width * smallest.height
+                    ? element
+                    : smallest,
+                null,
+              );
+      // YAZ-4469 D1: what is drawn under the pointer (a stroke, a fill, a
+      // label, text, a picture) wins over the empty inside of a transparent
+      // shape, at any depth. An invisible element draws nothing, and has no
+      // inside to click either (A9).
+      const drawnIndex = allHitElements.findLastIndex(
+        (element) =>
+          element.opacity > 0 &&
+          (hitElementBoundText(point, element, elementsMap) ||
+            hits(element, "drawn")),
+      );
+      if (drawnIndex >= 0) {
+        const drawn = allHitElements[drawnIndex];
+        // A2: a locked drawn element is a background; an unlocked empty
+        // inside above it still takes the click, as before YAZ-4469
+        return (
+          (drawn.locked &&
+            smallestInside(allHitElements.slice(drawnIndex + 1))) ||
+          drawn
+        );
+      }
+      // Only empty insides are under the point (D2). With none, the top
+      // element wins (A10): only a selected element's frame or the outer
+      // half of a hit band is under the point, or the caller wants outlines.
+      return (
+        smallestInside(allHitElements) ??
+        allHitElements[allHitElements.length - 1]
+      );
     }
     if (allHitElements.length === 1) {
       return allHitElements[0];
@@ -7917,6 +8168,24 @@ class App extends React.Component<AppProps, AppState> {
     });
   };
 
+  /** YAZ-4366: a hover on a number paints only the static canvas; the App does not render again (the design bar). */
+  private setColorEditPreview = (image: HTMLImageElement | null) => {
+    const id = this.state.colorEditingElementId;
+    const next = image && id ? { elementId: id, image } : null;
+    if (next?.image !== this.colorEditPreview.current?.image) {
+      this.colorEditPreview.current = next;
+      this.colorEditPreview.repaint?.();
+    }
+  };
+
+  /** YAZ-4354 1D: Done, Esc, Enter or a click outside. Each pick is already applied. */
+  public finishIconColorEditing = () => {
+    if (this.state.colorEditingElementId) {
+      this.colorEditPreview.current = null;
+      this.setState({ colorEditingElementId: null });
+    }
+  };
+
   private finishImageCropping = () => {
     if (this.state.croppingElementId) {
       this.store.scheduleCapture();
@@ -7993,6 +8262,55 @@ class App extends React.Component<AppProps, AppState> {
     });
   };
 
+  /**
+   * YAZ-5771: a double click on the left or right edge of a selected free
+   * text snaps its width, like a column edge in a spreadsheet. The edge is
+   * the one a drag resizes from (the same hit test, at the current zoom).
+   * The host's `textEdgeDoubleClick` picks "shrink" (the default: keep the
+   * line breaks, as wide as the widest line) or "fit" (auto-resize). It never
+   * opens the text for typing.
+   */
+  private handleTextEdgeDoubleClick = (
+    selectedElements: readonly NonDeleted<ExcalidrawElement>[],
+    sceneX: number,
+    sceneY: number,
+  ): boolean => {
+    const text = selectedElements.length === 1 ? selectedElements[0] : null;
+    if (
+      !text ||
+      !isTextElement(text) ||
+      text.containerId ||
+      text.locked ||
+      this.state.viewModeEnabled ||
+      this.state.activeTool.type !== this.state.preferredSelectionTool.type
+    ) {
+      return false;
+    }
+    const hit = getElementWithTransformHandleType(
+      [text],
+      this.state,
+      sceneX,
+      sceneY,
+      this.state.zoom,
+      this.state.lastPointerDownWith,
+      this.scene.getNonDeletedElementsMap(),
+      this.editorInterface,
+    );
+    if (hit?.transformHandleType !== "e" && hit?.transformHandleType !== "w") {
+      return false;
+    }
+    const fit = this.props.textEdgeDoubleClick === "fit";
+    // a box that already fits its text has nothing to snap
+    if (!(fit && text.autoResize)) {
+      this.actionManager.executeAction(
+        fit ? actionTextAutoResize : actionTextShrinkToLines,
+        "ui",
+        text,
+      );
+    }
+    return true;
+  };
+
   private handleCanvasDoubleClick = (
     event: Pick<
       React.MouseEvent<HTMLCanvasElement>,
@@ -8034,6 +8352,22 @@ class App extends React.Component<AppProps, AppState> {
       event,
       this.state,
     );
+
+    // YAZ-4277 D4, D5: two quick clicks on a fold arrow or a checklist box
+    // act twice; they start no edit
+    if (
+      this.getFoldArrowTargetAt({ x: sceneX, y: sceneY })?.onArrow ||
+      this.getTextCheckboxTargetAt(
+        { x: sceneX, y: sceneY },
+        this.getElementAtPosition(sceneX, sceneY),
+      )
+    ) {
+      return;
+    }
+
+    if (this.handleTextEdgeDoubleClick(selectedElements, sceneX, sceneY)) {
+      return;
+    }
 
     if (selectedElements.length === 1 && isLinearElement(selectedElements[0])) {
       const selectedLinearElement: ExcalidrawLinearElement =
@@ -8145,7 +8479,11 @@ class App extends React.Component<AppProps, AppState> {
       }
     }
 
-    if (selectedElements.length === 1 && isImageElement(selectedElements[0])) {
+    if (
+      selectedElements.length === 1 &&
+      isImageElement(selectedElements[0]) &&
+      !this.state.colorEditingElementId
+    ) {
       this.startImageCropping(selectedElements[0]);
       return;
     }
@@ -8436,6 +8774,302 @@ class App extends React.Component<AppProps, AppState> {
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     });
     return true;
+  };
+
+  /**
+   * YAZ-4277 D3: writes a box's folds through the switch point
+   * (`textFolds.ts`). The box resizes and its arrows follow. A fold is no
+   * undo step, but the board still changes and saves.
+   */
+  public setTextFolds = (
+    elementId: ExcalidrawElement["id"],
+    foldedLines: readonly number[],
+  ) => {
+    const element = this.scene.getNonDeletedElement(elementId);
+    if (
+      !element ||
+      !isTextElement(element) ||
+      // folding off: a box can only open
+      (this.isFoldingOff() && foldedLines.length)
+    ) {
+      return false;
+    }
+    const changed = setFoldedLines(element, foldedLines, this.scene);
+    if (changed) {
+      this.store.scheduleAction(CaptureUpdateAction.NEVER);
+    }
+    return changed;
+  };
+
+  /** YAZ-4277 D5, D7: the board's fold arrows (the host's `foldArrows`). */
+  public getFoldArrowPrefs = () =>
+    this.props.foldArrows ?? DEFAULT_FOLD_ARROW_PREFS;
+
+  /** YAZ-4277 demo: folding is off on this board: no arrow, no fold. */
+  public isFoldingOff = () => this.getFoldArrowPrefs().openArrows === "off";
+
+  /** YAZ-4312 N4: the text boxes with list lines, made again after a scene change. */
+  private getListBoxes = () => {
+    const sceneNonce = this.scene.getSceneNonce();
+    const cached = this.listBoxes;
+    if (cached && cached.sceneNonce === sceneNonce) {
+      return cached.boxes;
+    }
+    const boxes: ExcalidrawTextElement[] = [];
+    for (const element of this.scene.getNonDeletedElements()) {
+      if (!isTextElement(element)) {
+        continue;
+      }
+      let memo = this.listBoxMemo.get(element);
+      if (memo?.version !== element.version) {
+        memo = {
+          version: element.version,
+          hasList: hasTextList(element.originalText),
+        };
+        this.listBoxMemo.set(element, memo);
+      }
+      if (memo.hasList) {
+        boxes.push(element);
+      }
+    }
+    this.listBoxes = { sceneNonce, boxes };
+    return boxes;
+  };
+
+  /**
+   * YAZ-4277 D5: the fold arrow, or the rest of an item's line, under a
+   * scene point. The topmost text box wins. Only a box with list lines is
+   * looked at (YAZ-4312 N4), and only when the point is near it.
+   */
+  public getFoldArrowTargetAt = (
+    scenePointer: Readonly<{ x: number; y: number }>,
+  ): FoldArrowHit | null => {
+    const prefs = this.getFoldArrowPrefs();
+    if (prefs.openArrows === "off") {
+      return null;
+    }
+    const zoom = this.state.zoom.value;
+    const elementsMap = this.scene.getNonDeletedElementsMap();
+    const elements = this.getListBoxes();
+    for (let index = elements.length - 1; index >= 0; index--) {
+      const element = elements[index];
+      // YAZ-4306: a box in edit too: the canvas draws it, and a click on its
+      // arrow folds and keeps the edit (`hostTextWysiwyg.ts`)
+      if (element.locked) {
+        continue;
+      }
+      const reach =
+        getFoldArrowSize(element, prefs, zoom) + element.fontSize * 0.2;
+      const near =
+        element.angle !== 0 ||
+        (scenePointer.y >= element.y - reach &&
+          scenePointer.y <= element.y + element.height + reach &&
+          scenePointer.x >= element.x - reach &&
+          scenePointer.x <= element.x + element.width);
+      if (!near) {
+        continue;
+      }
+      const hit = getFoldArrowAt(
+        element,
+        getTextLayoutMaxWidth(
+          element,
+          getContainerElement(element, elementsMap),
+        ),
+        prefs,
+        zoom,
+        scenePointer,
+      );
+      if (hit) {
+        return hit;
+      }
+    }
+    return null;
+  };
+
+  /** YAZ-4277 D5: folds or unfolds the item whose arrow is under the point. */
+  private toggleFoldArrowAt = (
+    scenePointer: Readonly<{ x: number; y: number }>,
+  ) => {
+    const hit = this.getFoldArrowTargetAt(scenePointer);
+    const element = hit?.onArrow
+      ? this.scene.getNonDeletedElement(hit.elementId)
+      : null;
+    if (!hit || !element || !isTextElement(element)) {
+      return false;
+    }
+    this.setTextFolds(element.id, getToggledFoldedLines(element, hit.line));
+    this.updateFoldArrowHover(scenePointer);
+    return true;
+  };
+
+  /**
+   * YAZ-4277 D5: the hovered item's ▾ (in "hover" mode) draws on the
+   * interactive canvas; a change of item renders once, a move inside it
+   * renders nothing. Returns the hit, for the cursor.
+   */
+  private updateFoldArrowHover = (
+    scenePointer: Readonly<{ x: number; y: number }> | null,
+  ) => {
+    const hit =
+      scenePointer &&
+      (this.state.activeTool.type === "selection" ||
+        this.state.activeTool.type === "lasso")
+        ? this.getFoldArrowTargetAt(scenePointer)
+        : null;
+    const element = hit && this.scene.getNonDeletedElement(hit.elementId);
+    const next =
+      hit &&
+      element &&
+      isTextElement(element) &&
+      this.getFoldArrowPrefs().openArrows === "hover" &&
+      !isLineFolded(element, hit.line)
+        ? hit
+        : null;
+    const last = this.foldArrowHover;
+    if (
+      last !== next &&
+      (last?.elementId !== next?.elementId || last?.line !== next?.line)
+    ) {
+      this.foldArrowHover = next && {
+        elementId: next.elementId,
+        line: next.line,
+      };
+      this.triggerRender();
+    }
+    return hit;
+  };
+
+  public getFoldArrowHover = () => this.foldArrowHover;
+
+  /**
+   * YAZ-4469: outlines the element a click would pick. Renders again only when
+   * that element changes, never on a move over the same one. None while a
+   * button is down (a drag, a resize, a marquee), in view mode, or on a
+   * selected element (A5): nothing would draw, so nothing renders. The view
+   * it was found in goes with it: a scroll or zoom under a still pointer
+   * hides it (A4). None when the host turned the outline off (`hoverOutline`).
+   */
+  private updateSelectionHover = (
+    element: NonDeleted<ExcalidrawElement> | null,
+  ) => {
+    const id =
+      element &&
+      this.props.hoverOutline !== false &&
+      this.state.activeTool.type === "selection" &&
+      this.state.cursorButton !== "down" &&
+      !this.state.viewModeEnabled &&
+      !this.state.selectedElementIds[element.id]
+        ? element.id
+        : null;
+    if (id === (this.selectionHover?.id ?? null)) {
+      return;
+    }
+    this.selectionHover =
+      id === null
+        ? null
+        : {
+            id,
+            scrollX: this.state.scrollX,
+            scrollY: this.state.scrollY,
+            zoom: this.state.zoom.value,
+          };
+    this.triggerRender();
+  };
+
+  public getSelectionHover = () => this.selectionHover?.id ?? null;
+
+  /** YAZ-4277 D4: the checklist box of the text box under a point, if any. */
+  private getTextCheckboxTargetAt = (
+    scenePointer: Readonly<{ x: number; y: number }>,
+    hitElement: NonDeletedExcalidrawElement | null,
+  ) => {
+    if (!hitElement || hitElement.locked) {
+      return null;
+    }
+    const elementsMap = this.scene.getNonDeletedElementsMap();
+    const textElement = isTextElement(hitElement)
+      ? hitElement
+      : getBoundTextElement(hitElement, elementsMap);
+    if (!textElement || this.state.editingTextElement?.id === textElement.id) {
+      return null;
+    }
+    const hit = getTextCheckboxAt(
+      textElement,
+      getTextLayoutMaxWidth(
+        textElement,
+        getContainerElement(textElement, elementsMap),
+      ),
+      scenePointer,
+    );
+    return hit && { element: textElement, offset: hit.offset };
+  };
+
+  /** YAZ-4277 D4: ticks or unticks a checklist item, as one undo step. */
+  private toggleTextCheckbox = (
+    element: NonDeleted<ExcalidrawTextElement>,
+    offset: number,
+  ) => {
+    const originalText = getToggledCheckboxText(element.originalText, offset);
+    if (originalText === element.originalText) {
+      return;
+    }
+    const next = newElementWith(element, { originalText });
+    redrawTextBoundingBox(
+      next,
+      this.scene.getContainerElement(element),
+      this.scene,
+    );
+    this.updateScene({
+      elements: this.scene
+        .getElementsIncludingDeleted()
+        .map((candidate) => (candidate.id === element.id ? next : candidate)),
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+  };
+
+  /**
+   * YAZ-4277 D6: an outside edit (an AI agent) can change the lines inside a
+   * fold and leave the saved size. Restore sets an auto-size box's height
+   * again; a box with a fixed width wraps by its font, so it is measured here,
+   * once the fonts are in. Only a free box with a fold is looked at, and only
+   * a box whose size moved changes: no undo step, the board saves it.
+   */
+  private refitFoldedTextBoxes = () => {
+    const elementsMap = this.scene.getNonDeletedElementsMap();
+    const fitted = new Map<string, ExcalidrawTextElement>();
+    for (const element of this.scene.getNonDeletedElements()) {
+      if (
+        !isTextElement(element) ||
+        element.containerId ||
+        !getFoldedLines(element).length
+      ) {
+        continue;
+      }
+      const size = refreshTextDimensions(element, null, elementsMap);
+      if (
+        size &&
+        (Math.abs(size.width - element.width) > 0.5 ||
+          Math.abs(size.height - element.height) > 0.5)
+      ) {
+        const next = newElementWith(element, {});
+        redrawTextBoundingBox(next, null, this.scene);
+        fitted.set(element.id, next);
+      }
+    }
+    if (!fitted.size) {
+      return;
+    }
+    this.updateScene({
+      elements: this.scene
+        .getElementsIncludingDeleted()
+        .map((element) => fitted.get(element.id) ?? element),
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    for (const next of fitted.values()) {
+      if (isNonDeletedElement(next)) {
+        updateBoundElements(next, this.scene);
+      }
+    }
   };
 
   /** Reports the hovered pill to the host, only when it changed. */
@@ -8836,7 +9470,58 @@ class App extends React.Component<AppProps, AppState> {
     );
   };
 
+  /**
+   * YAZ-4469: each move first clears what a click would pick; the hover path
+   * names it only when a click there selects it, so every early return (a
+   * handle, a tool, a fold arrow, a link icon) leaves no outline.
+   */
+  private updateAltHoverMeasureSnaps = (
+    scenePointerX: number,
+    scenePointerY: number,
+  ) => {
+    const selectedElements = this.scene.getSelectedElements(this.state);
+    if (selectedElements.length === 0) {
+      if (this.showingAltMeasureSnaps) {
+        this.showingAltMeasureSnaps = false;
+        this.setState((prevState) =>
+          prevState.snapLines.length ? { snapLines: [] } : null,
+        );
+      }
+      return;
+    }
+
+    const hoveredElement = this.getElementAtPosition(
+      scenePointerX,
+      scenePointerY,
+      { includeLockedElements: true },
+    );
+    const measureLines = getAltHoverMeasureLines(
+      selectedElements,
+      hoveredElement,
+      this.scene.getNonDeletedElements(),
+      this.scene.getNonDeletedElementsMap(),
+    );
+    this.showingAltMeasureSnaps = measureLines.length > 0;
+    this.setState((prevState) => {
+      const nextSnapLines = updateStable(prevState.snapLines, measureLines);
+      if (prevState.snapLines === nextSnapLines) {
+        return null;
+      }
+      return {
+        snapLines: nextSnapLines,
+      };
+    });
+  };
+
   private handleCanvasPointerMove = (
+    event: React.PointerEvent<HTMLCanvasElement>,
+  ) => {
+    this.selectionHoverNext = null;
+    this.handleCanvasPointerMoveInner(event);
+    this.updateSelectionHover(this.selectionHoverNext);
+  };
+
+  private handleCanvasPointerMoveInner = (
     event: React.PointerEvent<HTMLCanvasElement>,
   ) => {
     if (!this.isInteractionEnabled()) {
@@ -8940,14 +9625,24 @@ class App extends React.Component<AppProps, AppState> {
       !this.state.selectedElementsAreBeingDragged &&
       !this.state.selectionElement
     ) {
-      this.setState((prevState) => {
-        if (prevState.snapLines.length) {
-          return {
-            snapLines: [],
-          };
-        }
-        return null;
-      });
+      if (
+        event.altKey &&
+        !event.buttons &&
+        (this.state.activeTool.type === "selection" ||
+          this.state.activeTool.type === "lasso")
+      ) {
+        this.updateAltHoverMeasureSnaps(scenePointerX, scenePointerY);
+      } else if (this.showingAltMeasureSnaps || this.state.snapLines.length) {
+        this.showingAltMeasureSnaps = false;
+        this.setState((prevState) => {
+          if (prevState.snapLines.length) {
+            return {
+              snapLines: [],
+            };
+          }
+          return null;
+        });
+      }
     }
 
     if (
@@ -9186,11 +9881,6 @@ class App extends React.Component<AppProps, AppState> {
 
     const selectedElements = this.scene.getSelectedElements(this.state);
 
-    if (this.isHittingTextAutoResizeHandle(selectedElements, scenePointer)) {
-      this.cursor.set(CURSOR_TYPE.POINTER);
-      return;
-    }
-
     if (
       selectedElements.length === 1 &&
       !isOverScrollBar &&
@@ -9281,13 +9971,22 @@ class App extends React.Component<AppProps, AppState> {
       return;
     }
 
+    // One hit list for two picks (YAZ-4469 A3): the cursor prefers the
+    // selection, the outline shows what a click selects
+    const allHitElements = this.getElementsAtPosition(
+      scenePointerX,
+      scenePointerY,
+      { includeLockedElements: true },
+    );
     const hitElementMightBeLocked = this.getElementAtPosition(
       scenePointerX,
       scenePointerY,
-      {
-        preferSelected: true,
-        includeLockedElements: true,
-      },
+      { allHitElements, preferSelected: true },
+    );
+    const clickTarget = this.getElementAtPosition(
+      scenePointerX,
+      scenePointerY,
+      { allHitElements },
     );
 
     let hitElement: NonDeleted<ExcalidrawElement> | null = null;
@@ -9302,6 +10001,17 @@ class App extends React.Component<AppProps, AppState> {
       this.setHostLinkHover(
         this.getHostLinkAt(scenePointer, hitElementMightBeLocked),
       );
+    }
+
+    // YAZ-4277 D4, D5: an open item's ▾ on hover; a fold arrow and a
+    // checklist box take a click
+    if (
+      this.updateFoldArrowHover(scenePointer)?.onArrow ||
+      (!this.state.viewModeEnabled &&
+        this.getTextCheckboxTargetAt(scenePointer, hitElementMightBeLocked))
+    ) {
+      this.cursor.set(CURSOR_TYPE.POINTER);
+      return;
     }
 
     const hoveredArrowTextAnchor =
@@ -9324,6 +10034,8 @@ class App extends React.Component<AppProps, AppState> {
       if (isLaserTool) {
         return;
       }
+      // YAZ-4469: no fold arrow, checkbox or link icon took the click
+      this.selectionHoverNext = clickTarget?.locked ? null : clickTarget;
       if (
         hitElement &&
         (hitElement.link || isEmbeddableElement(hitElement)) &&
@@ -9662,7 +10374,8 @@ class App extends React.Component<AppProps, AppState> {
       this.setState({ contextMenu: null });
     }
 
-    if (this.state.snapLines) {
+    if (this.showingAltMeasureSnaps || this.state.snapLines.length) {
+      this.showingAltMeasureSnaps = false;
       this.setAppState({ snapLines: [] });
     }
 
@@ -9749,11 +10462,60 @@ class App extends React.Component<AppProps, AppState> {
 
     this.lastPointerDownEvent = event;
 
+    // YAZ-4277: in view mode (Read only, the share viewer) a press pans, so
+    // a fold arrow takes its click first. The fold shows on this screen only:
+    // a read-only host never saves it
+    if (
+      event.button === POINTER_BUTTON.MAIN &&
+      this.state.viewModeEnabled &&
+      this.toggleFoldArrowAt(scenePointer)
+    ) {
+      return;
+    }
+
     // we must exit before we set `cursorButton` state and `savePointer`
     // else it will send pointer state & laser pointer events in collab when
     // panning
     if (this.handleCanvasPanUsingWheelOrSpaceDrag(event)) {
       return;
+    }
+
+    // YAZ-4354 1D: in Edit colors a click on the picture finds its part; a click
+    // outside leaves the mode and goes on as normal (as crop)
+    if (this.state.colorEditingElementId) {
+      if (
+        event.button === POINTER_BUTTON.MAIN &&
+        this.iconColorEditor.pick?.(
+          scenePointer,
+          { x: event.clientX, y: event.clientY },
+          event.altKey,
+        )
+      ) {
+        return;
+      }
+      this.finishIconColorEditing();
+    }
+
+    // YAZ-4277 D5: a click on a fold arrow folds or unfolds its item. It
+    // starts no edit and leaves the selection as it is
+    if (
+      event.button === POINTER_BUTTON.MAIN &&
+      !this.state.viewModeEnabled &&
+      (this.state.activeTool.type === "selection" ||
+        this.state.activeTool.type === "lasso")
+    ) {
+      if (this.toggleFoldArrowAt(scenePointer)) {
+        return;
+      }
+      // YAZ-4277 D4: a click on a checklist box ticks it, also not in edit
+      const checkbox = this.getTextCheckboxTargetAt(
+        scenePointer,
+        this.getElementAtPosition(scenePointerX, scenePointerY),
+      );
+      if (checkbox) {
+        this.toggleTextCheckbox(checkbox.element, checkbox.offset);
+        return;
+      }
     }
 
     // YAZ-4039 D11: an open gesture on a link pill is the host's; a plain
@@ -9858,15 +10620,6 @@ class App extends React.Component<AppProps, AppState> {
     this.setState({
       selectedElementsAreBeingDragged: false,
     });
-
-    if (
-      this.handleTextAutoResizeHandlePointerDown(
-        selectedElements,
-        pointerDownState.origin,
-      )
-    ) {
-      return;
-    }
 
     if (this.handleDraggingScrollBar(event, pointerDownState)) {
       return;
@@ -10762,13 +11515,18 @@ class App extends React.Component<AppProps, AppState> {
         ) {
           pointerDownState.hit.element = null;
         } else {
-          // hitElement may already be set above, so check first
+          // hitElement may already be set above, so check first. YAZ-4469
+          // 4A1: an unlocked pick on the full list stands (the hover shows
+          // it); a pick without the locked elements would look through a
+          // locked panel at a shape it hides
           pointerDownState.hit.element =
             pointerDownState.hit.element ??
-            this.getElementAtPosition(
-              pointerDownState.origin.x,
-              pointerDownState.origin.y,
-            );
+            (hitElementMightBeLocked && !hitElementMightBeLocked.locked
+              ? hitElementMightBeLocked
+              : this.getElementAtPosition(
+                  pointerDownState.origin.x,
+                  pointerDownState.origin.y,
+                ));
         }
 
         this.hitLinkElement = this.getElementLinkAtPosition(
@@ -11151,6 +11909,7 @@ class App extends React.Component<AppProps, AppState> {
       strokeWidth: this.getCurrentItemStrokeWidth("freedraw"),
       strokeStyle: this.state.currentItemStrokeStyle,
       roughness: this.state.currentItemRoughness,
+      customData: this.getNewElementCustomData(),
       opacity: this.state.currentItemOpacity,
       roundness: null,
       simulatePressure,
@@ -11219,6 +11978,7 @@ class App extends React.Component<AppProps, AppState> {
       strokeWidth: this.getCurrentItemStrokeWidth("iframe"),
       strokeStyle: this.state.currentItemStrokeStyle,
       roughness: this.state.currentItemRoughness,
+      customData: this.getNewElementCustomData(),
       roundness: this.getCurrentItemRoundness("iframe"),
       opacity: this.state.currentItemOpacity,
       locked: false,
@@ -11272,6 +12032,7 @@ class App extends React.Component<AppProps, AppState> {
       strokeWidth: this.getCurrentItemStrokeWidth("embeddable"),
       strokeStyle: this.state.currentItemStrokeStyle,
       roughness: this.state.currentItemRoughness,
+      customData: this.getNewElementCustomData(),
       roundness: this.getCurrentItemRoundness("embeddable"),
       opacity: this.state.currentItemOpacity,
       locked: false,
@@ -11319,6 +12080,7 @@ class App extends React.Component<AppProps, AppState> {
       strokeWidth: this.getCurrentItemStrokeWidth("image"),
       strokeStyle: this.state.currentItemStrokeStyle,
       roughness: this.state.currentItemRoughness,
+      customData: this.getNewElementCustomData(),
       roundness: this.getCurrentItemRoundness("image"),
       opacity: this.state.currentItemOpacity,
       locked: false,
@@ -11409,7 +12171,6 @@ class App extends React.Component<AppProps, AppState> {
               this.state,
               {
                 newArrow: Boolean(this.state.newElement),
-                zoom: this.state.zoom,
               },
             )
           : { end: { mode: undefined } };
@@ -11497,6 +12258,7 @@ class App extends React.Component<AppProps, AppState> {
               strokeWidth: this.getCurrentItemStrokeWidth(elementType),
               strokeStyle: this.state.currentItemStrokeStyle,
               roughness: this.state.currentItemRoughness,
+              customData: this.getNewElementCustomData(),
               opacity: this.state.currentItemOpacity,
               roundness:
                 this.state.currentItemArrowType === ARROW_TYPE.round
@@ -11524,6 +12286,7 @@ class App extends React.Component<AppProps, AppState> {
               strokeWidth: this.getCurrentItemStrokeWidth(elementType),
               strokeStyle: this.state.currentItemStrokeStyle,
               roughness: this.state.currentItemRoughness,
+              customData: this.getNewElementCustomData(),
               opacity: this.state.currentItemOpacity,
               roundness:
                 this.state.currentItemRoundness === "round"
@@ -11658,7 +12421,10 @@ class App extends React.Component<AppProps, AppState> {
             type: isUsingAdaptiveRadius(elementType)
               ? ROUNDNESS.ADAPTIVE_RADIUS
               : ROUNDNESS.PROPORTIONAL_RADIUS,
-            value: this.state.currentItemCornerRadius,
+            value: toBoardSize(
+              this.state.currentItemCornerRadius,
+              this.getNewElementStyleScale(),
+            ),
           }
         : null;
     }
@@ -11669,7 +12435,10 @@ class App extends React.Component<AppProps, AppState> {
     ) {
       return {
         type: ROUNDNESS.ADAPTIVE_RADIUS,
-        value: getDefaultCornerRadiusForElementType(elementType),
+        value: toBoardSize(
+          getDefaultCornerRadiusForElementType(elementType),
+          this.getNewElementStyleScale(),
+        ),
       };
     }
 
@@ -11682,17 +12451,30 @@ class App extends React.Component<AppProps, AppState> {
       : null;
   }
 
+  /**
+   * YAZ-4277 demo: the scale a new element's styles are made at, the zoom
+   * while "New shapes match the zoom" is on (`screenScale.ts`).
+   */
+  private getNewElementStyleScale = () =>
+    getStyleScale(this.state.zoom.value, this.props.newShapesMatchZoom);
+
+  /** A new shape's `customData`: its style scale, when not 1. */
+  private getNewElementCustomData = () =>
+    withStyleScale(undefined, this.getNewElementStyleScale());
+
   private getCurrentItemStrokeWidth(elementType: ExcalidrawElement["type"]) {
+    // the pickers speak screen px; a text's width is not drawn
+    const scale = elementType === "text" ? 1 : this.getNewElementStyleScale();
     if (this.state.writingMode && elementType === "freedraw") {
-      return this.state.currentItemWritingStrokeWidth;
+      return toBoardSize(this.state.currentItemWritingStrokeWidth, scale);
     }
     if (hasVectorStrokeWidth(elementType)) {
-      return this.state.currentItemVectorStrokeWidth;
+      return toBoardSize(this.state.currentItemVectorStrokeWidth, scale);
     }
 
-    return getStrokeWidthByKey(
-      elementType,
-      this.state.currentItemStrokeWidthKey,
+    return toBoardSize(
+      getStrokeWidthByKey(elementType, this.state.currentItemStrokeWidthKey),
+      scale,
     );
   }
 
@@ -11722,6 +12504,7 @@ class App extends React.Component<AppProps, AppState> {
       strokeWidth: this.getCurrentItemStrokeWidth(elementType),
       strokeStyle: this.state.currentItemStrokeStyle,
       roughness: this.state.currentItemRoughness,
+      customData: this.getNewElementCustomData(),
       opacity: this.state.currentItemOpacity,
       roundness: this.getCurrentItemRoundness(elementType),
       locked: false,
@@ -12348,6 +13131,7 @@ class App extends React.Component<AppProps, AppState> {
           this.maybeCacheVisibleGaps(event, selectedElements);
           this.maybeCacheReferenceSnapPoints(event, selectedElements);
 
+          this.showingAltMeasureSnaps = false;
           const { snapOffset, snapLines } = snapDraggedElements(
             originalElements,
             dragOffset,
@@ -13918,12 +14702,27 @@ class App extends React.Component<AppProps, AppState> {
 
     this.cursor.set("wait");
 
+    // YAZ-4352 (extra 5): a new one-color icon arrives in the current stroke
+    // color, as a shape does, unless that color is the default black
+    let iconRecipe: IconRecipe | null = null;
     if (mimeType === MIME_TYPES.svg) {
       try {
-        imageFile = SVGStringToFile(
-          normalizeSVG(await imageFile.text()),
-          imageFile.name,
-        );
+        let svg = normalizeSVG(await imageFile.text());
+        const strokeColor = this.state.currentItemStrokeColor;
+        if (
+          strokeColor !== COLOR_PALETTE.black &&
+          !isTransparent(strokeColor)
+        ) {
+          const info = readIconInfo(svg);
+          if (info.kind === "one") {
+            iconRecipe = {
+              colors: { [info.colors[0]]: strokeColor },
+              outline: null,
+            };
+            svg = normalizeSVG(paintIcon(svg, iconRecipe));
+          }
+        }
+        imageFile = SVGStringToFile(svg, imageFile.name);
       } catch (error: any) {
         console.warn(error);
         throw new Error(t("errors.svgImageInsertError"));
@@ -14065,6 +14864,14 @@ class App extends React.Component<AppProps, AppState> {
             });
           }
 
+          if (iconRecipe) {
+            Object.assign(initializedImageElement, {
+              customData: {
+                ...initializedImageElement.customData,
+                yaseenIcon: iconRecipe,
+              },
+            });
+          }
           resolve(initializedImageElement);
         } catch (error: any) {
           console.error(error);
@@ -15245,6 +16052,7 @@ class App extends React.Component<AppProps, AppState> {
       actionWrapSelectionInFrame,
       CONTEXT_MENU_SEPARATOR,
       actionToggleCropEditor,
+      actionToggleColorEditor, // YAZ-4354 1D
       actionToggleGifPlayback, // YAZ-3944 D4
       CONTEXT_MENU_SEPARATOR,
       ...options,
@@ -15258,6 +16066,10 @@ class App extends React.Component<AppProps, AppState> {
       actionBindText,
       actionWrapTextInContainer,
       actionUngroup,
+      CONTEXT_MENU_SEPARATOR,
+      actionTidyUp,
+      distributeHorizontally,
+      distributeVertically,
       CONTEXT_MENU_SEPARATOR,
       actionAddToLibrary,
       ...zIndexActions,
@@ -15362,21 +16174,8 @@ class App extends React.Component<AppProps, AppState> {
       const { deltaX, deltaY } = event;
       // note that event.ctrlKey is necessary to handle pinch zooming
       if (event.metaKey || event.ctrlKey) {
-        const sign = Math.sign(deltaY);
-        const MAX_STEP = ZOOM_STEP * 100;
-        const absDelta = Math.abs(deltaY);
-        let delta = deltaY;
-        if (absDelta > MAX_STEP) {
-          delta = MAX_STEP * sign;
-        }
-
-        let newZoom = this.state.zoom.value - delta / 100;
-        // increase zoom steps the more zoomed-in we are (applies to >100% only)
-        newZoom +=
-          Math.log10(Math.max(1, this.state.zoom.value)) *
-          -sign *
-          // reduced amplification for small deltas (small movements on a trackpad)
-          Math.min(1, absDelta / 20);
+        // YAZ-4277 demo: an even step: the same move on screen at any zoom
+        let newZoom = getWheelZoom(this.state.zoom.value, deltaY);
 
         const minZoom = this.state.scrollConstraints?.lockZoom
           ? this.state.scrollConstraints.zoom

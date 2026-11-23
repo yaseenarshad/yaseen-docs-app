@@ -1,0 +1,330 @@
+/**
+ * A search layer of the explore stack (YAZ-2571): the input, its ranked rows (`exploreRows`) and a footer of keys.
+ * With no text it lists two sections (YAZ-4945, `recentSections.ts`): the files you Opened and the files you Edited. The layer owns its query, highlight and
+ * list scroll, so it reads the same when a child closes over it; the rows come from the stack's ONE candidate feed.
+ * Each row: its file icon, its title with the matched part marked, its folder, and a text row's snippet. A card inside a
+ * page (YAZ-5164): the card icon, its title, and its page where the folder stands.
+ */
+import { useVaultUnit } from '../vault/unitWord'
+import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { basename, rootOfPath } from '@shared/types'
+import { readNeedle } from '../links/completion'
+import { relTo, dirname } from '../lib/paths'
+import { idNeedle, marked } from '../search/marked'
+import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
+import { filterOn, filterTest, NO_FILTER, type SearchFilter, type SearchType } from '../search/searchType'
+import { storage } from '../lib/storage'
+import { FileIcon, NameEnding } from '../sidebar/FileIcon'
+import { PlaceName } from '../sidebar/PlaceName'
+import { useResultKeys } from '../sidebar/hooks/useSidebarSearch'
+import { FilterIcon, FolderIcon } from '../views/view/icons'
+import { dedupeByPath, exploreRows } from './exploreRows'
+import { shownId, type IdsInSearch } from '../search/showIds'
+import { movedOpens, onExploreMove } from './exploreRecents'
+import { ago, type RecentSections } from './recentSections'
+import { KeyLabel } from '../keys/KeyLabel'
+
+/**
+ * The stack's side of a search layer (round 3): the layer writes its rows here at each render, so the page layer
+ * over it steps through them (‹ ›) without a render of the search. One object per search layer, held by the stack.
+ */
+export interface SearchLink {
+  rows: readonly SearchCandidate[]
+  /** The rows changed while a page from this search is open (YAZ-2571 bug): the stack draws that page's ‹ n/m › again. */
+  changed?: () => void
+}
+
+interface ExploreSearchProps {
+  candidates: readonly SearchCandidate[]
+  link: SearchLink
+  /** The page over this layer that came from it (round 3): its path and its place in the rows. The row is marked and scrolled into view, so Esc returns to it. */
+  markedRow: { path: string; at: number } | null
+  /**
+   * The pages opened most recently, newest first: the list with no text. The layer keeps the list it showed when it
+   * opened (YAZ-2571 bug: an open and a step put their page first, so the list moved under ‹ ›); a rename or a delete
+   * still changes its row, and clearing the text reads the list again.
+   */
+  recent: RecentSections
+  /** A file's own search row (its title and ID), when the index has it: a recent row reads as a result row does. */
+  rowOf?: (path: string) => SearchCandidate | undefined
+  /** The window's vault roots: a recent row's folder is read against its vault. */
+  roots: readonly string[]
+  nameOf: (path: string) => string
+  /** Enter or a click on a row: a page opens over this layer, with the row's place for ‹ ›; a folder or another file opens in a tab. */
+  onOpen: (row: SearchCandidate, at: number) => void
+  /** ⌘↵ on the highlighted row (YAZ-4984): that row in a tab, and the stack closes. */
+  onOpenInTab: (row: SearchCandidate) => void
+  /** A right-click on a row (round 1, item 6): the page menu for it, at the pointer. */
+  onRowMenu: (row: SearchCandidate, x: number, y: number) => void
+  /** The vault's "Show IDs in search" for a row's path (YAZ-4940): Always, or only on a row found by its ID. */
+  idsInSearch: (path: string) => IdsInSearch
+  /** This layer is the top one: the input takes the caret. */
+  active: boolean
+}
+
+/** A row's identity: its file, and its name (a text row of the same file is its own row). */
+const rowKey = (row: SearchCandidate): string => `${row.path}␟${row.name}`
+
+const EXPLORE_TYPES: ReadonlyArray<SearchType> = ['all', 'pages', 'cards', 'drawings', 'diagrams']
+
+export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, roots, nameOf, onOpen, onOpenInTab, onRowMenu, idsInSearch, active }: ExploreSearchProps) {
+  const unit = useVaultUnit(roots[0] ?? null)
+  const typeLabel = (t: SearchType): string =>
+    t === 'all' ? 'All' : t === 'pages' ? unit('Pages') : t === 'cards' ? 'Cards' : t === 'drawings' ? 'Drawings' : 'Diagrams'
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<SearchFilter>(() => ({
+    ...NO_FILTER,
+    includeInline: storage.getSettings()?.searchIncludeInline !== false,
+  }))
+  const [filterOpen, setFilterOpen] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const filterRef = useRef<HTMLDivElement>(null)
+  const typed = query.trim() !== ''
+  const isFiltered = filterOn(filter)
+  useEffect(() => {
+    if (!filterOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (filterRef.current !== null && !filterRef.current.contains(e.target as Node)) setFilterOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [filterOpen])
+  const recentNow = useRef(recent)
+  recentNow.current = recent
+  const [shownRecent, setShownRecent] = useState(recent)
+  useEffect(
+    () =>
+      onExploreMove((from, to) =>
+        setShownRecent((prev) => {
+          const opened = movedOpens(prev.opened, from, to)
+          const edited = movedOpens(prev.edited, from, to)
+          return opened === prev.opened && edited === prev.edited ? prev : { opened, edited }
+        }),
+      ),
+    [],
+  )
+  /** Both sections as one list (↑ ↓ go through both), the Opened rows first; each row's time beside it. */
+  const recentList = useMemo(() => [...shownRecent.opened, ...shownRecent.edited], [shownRecent])
+  const recentRows = useMemo(
+    () =>
+      recentList.map(({ path }): SearchCandidate => {
+        const own = rowOf?.(path)
+        if (own !== undefined) return own
+        const name = nameOf(path)
+        const root = rootOfPath(roots, path)
+        return { kind: 'file', name, lower: name.toLowerCase(), label: name, path, folder: root === null ? '' : relTo(root, dirname(path)) }
+      }),
+    [recentList, rowOf, roots, nameOf],
+  )
+  const now = Date.now()
+  const rows = useMemo(() => {
+    const test = filterTest(filter, () => 0, undefined)
+    if (typed) return exploreRows(test === undefined ? candidates : candidates.filter(test), query)
+    if (filter.type !== 'all') return dedupeByPath(test === undefined ? candidates : candidates.filter(test)).slice(0, SEARCH_CAP)
+    return test === undefined ? recentRows : recentRows.filter(test)
+  }, [candidates, query, typed, recentRows, filter])
+  const needle = useMemo(() => (typed ? readNeedle(query) : undefined), [query, typed])
+  link.rows = rows
+  // The stack read these rows in its render, before this one wrote them: a page over this search counts again (YAZ-2571 bug).
+  const pageOver = useRef(false)
+  pageOver.current = markedRow !== null
+  const firstRows = useRef(true)
+  useEffect(() => {
+    if (firstRows.current) {
+      firstRows.current = false
+      return
+    }
+    if (pageOver.current) link.changed?.()
+  }, [rows, link])
+  // The highlight follows its row's page (YAZ-4990): a page added or deleted above it does not move it to another page.
+  const { sel, setSelected, onKeys } = useResultKeys(rows, (row) => onOpen(row, rows.indexOf(row)), rowKey)
+  const selectedRow = useRef<HTMLLIElement | null>(null)
+  useEffect(() => {
+    selectedRow.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [sel])
+  // The page over this layer stepped (round 3): its row is the selected one, so Esc comes back to it.
+  const markedPath = markedRow?.path ?? null
+  const markedAt = markedRow?.at ?? -1
+  useEffect(() => {
+    if (markedPath === null) return
+    const at = rows[markedAt]?.path === markedPath ? markedAt : rows.findIndex((r) => r.path === markedPath)
+    if (at !== -1) setSelected(at)
+  }, [markedPath, markedAt, rows, setSelected])
+  // The caret, on show and again when a child closes: the Escape that closed it left the focus nowhere.
+  useEffect(() => {
+    if (active) inputRef.current?.focus()
+  }, [active])
+
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
+    // ⌘↵ (YAZ-4984): the highlighted row in a tab, as the footer says (the same as ↵, then ⌘↵). With no row it goes up:
+    // the stack opens the page under this search.
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      const row = rows[sel]
+      if (row === undefined || e.altKey) return
+      e.preventDefault()
+      e.stopPropagation()
+      onOpenInTab(row)
+      return
+    }
+    onKeys(e)
+  }
+
+  return (
+    <>
+      <div className="explore__input-row" ref={filterRef}>
+        <input
+          ref={inputRef}
+          className="explore__input"
+          type="text"
+          placeholder="Search the vault…"
+          aria-label="Explore the vault"
+          autoComplete="off"
+          spellCheck={false}
+          value={query}
+          onChange={(e) => {
+            // Back to no text: the pages opened most recently, as they are now.
+            if (e.target.value.trim() === '' && typed) setShownRecent(recentNow.current)
+            setQuery(e.target.value)
+            setSelected(0)
+          }}
+          onKeyDown={onKeyDown}
+        />
+        <button
+          type="button"
+          className={`explore__filter-btn${isFiltered ? ' explore__filter-btn--on' : ''}`}
+          aria-label="Filter"
+          title="Filter"
+          aria-expanded={filterOpen}
+          aria-haspopup="true"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setFilterOpen((open) => !open)}
+        >
+          <FilterIcon />
+        </button>
+        {filterOpen && (
+          <div
+            className="explore__filter-pop"
+            role="dialog"
+            aria-label="Search filter"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                e.stopPropagation()
+                setFilterOpen(false)
+                inputRef.current?.focus()
+              }
+            }}
+          >
+            <div className="explore__filter-types" role="radiogroup" aria-label="Type">
+              {EXPLORE_TYPES.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="radio"
+                  aria-checked={filter.type === t}
+                  className={`explore__filter-type${filter.type === t ? ' explore__filter-type--active' : ''}`}
+                  onClick={() => {
+                    setFilter((prev) => ({ ...prev, type: t }))
+                    setSelected(0)
+                  }}
+                >
+                  {typeLabel(t)}
+                </button>
+              ))}
+            </div>
+            <label className="explore__filter-toggle">
+              <input
+                type="checkbox"
+                checked={filter.includeInline !== false}
+                onChange={(e) => {
+                  setFilter((prev) => ({ ...prev, includeInline: e.target.checked }))
+                  setSelected(0)
+                }}
+              />
+              <span>{unit('Include inside pages')}</span>
+            </label>
+          </div>
+        )}
+      </div>
+      <div className="explore__results">
+        {rows.length === 0 ? (
+          <p className="explore__empty">{typed || filter.type !== 'all' ? 'No matches found' : unit('Type to search the vault. The pages you open show here.')}</p>
+        ) : (
+          <ul className="search-results" role="listbox" aria-label="Explore results">
+            {rows.map((r, i) => {
+              /** With no text and All type: the section heading before its first row (Opened, Edited) and the row's time. */
+              const showRecents = !typed && filter.type === 'all'
+              const opened = shownRecent.opened.length
+              const heading = !showRecents ? null : i === 0 && opened > 0 ? 'Opened' : i === opened ? 'Edited' : null
+              const at = !showRecents ? undefined : recentList[i]?.at
+              // The ID as a chip after the title (round 1, item 1), by the vault's rule (YAZ-4940); a row found by its ID loses the `ID — ` of its label, so the ID shows once.
+              const id = shownId(r, idsInSearch(r.path))
+              const label = id !== null && r.label.startsWith(`${id} — `) ? r.label.slice(id.length + 3) : r.label
+              return (
+              <Fragment key={`${r.path}␟${r.name}`}>
+              {heading !== null && (
+                <li role="presentation" className="explore__group">
+                  {heading}
+                </li>
+              )}
+              <li
+                ref={i === sel ? selectedRow : null}
+                role="option"
+                aria-selected={i === sel}
+                aria-label={`Explore result ${r.label}${r.kind === 'dir' ? ', folder' : ''}`}
+                className={`search-results__row${i === sel ? ' search-results__row--active' : ''}${r.kind === 'dir' ? ' search-results__row--dir' : ''}${at !== undefined ? ' explore__row--timed' : ''}`}
+                title={r.page ?? r.path}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setSelected(i)
+                  onOpen(r, i)
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setSelected(i)
+                  onRowMenu(r, e.clientX, e.clientY)
+                }}
+              >
+                <span className="search-results__label">
+                  {/* The name is cut with "…" on its own, so a long one never hides the ID after it (round 5). */}
+                  <span className="explore__name">
+                    <FileIcon path={r.inlineDrawing === true ? 'drawing.excalidraw' : r.path} folder={r.kind === 'dir'} card={r.card === true} />
+                    {r.kind === 'dir' && <FolderIcon size={12} className="search-results__glyph" />}
+                    {marked(label, needle)}
+                    {r.kind === 'file' && r.page === undefined && <NameEnding path={r.path} />}
+                  </span>
+                  {r.page !== undefined && <span className="explore__inline-pill">{unit('In page')}</span>}
+                  {/* The page's or folder's id, in an ID vault (YAZ-2571 round 1): small and muted after the title; a vault without IDs has none. Found by its ID, the matched digits are marked (round 5). */}
+                  {id !== null && <span className="explore__id">{marked(id, idNeedle(r, query))}</span>}
+                </span>
+                {r.snippet !== undefined && <span className="explore__snippet">{marked(r.snippet, needle)}</span>}
+                {/* A card inside a page (YAZ-5164): its page, quietly, where a page's folder stands. YAZ-5402: the icon says
+                    which the slot holds, the page's or the folder's (the vault's top too). */}
+                {r.page !== undefined && <PlaceName className="search-results__folder" path={r.page} kind="page" label={rowOf?.(r.page)?.label ?? nameOf(r.page)} />}
+                {r.page === undefined && r.folder !== '' && <PlaceName className="search-results__folder" path={dirname(r.path)} kind="folder" label={r.folder} />}
+                {r.page === undefined && r.folder === '' && r.kind === 'file' && basename(r.path) !== r.label && <PlaceName className="search-results__folder" path={dirname(r.path)} kind="folder" label="Vault root" />}
+                {at !== undefined && <span className="explore__time">{ago(at, now)}</span>}
+              </li>
+              </Fragment>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+      <div className="explore__foot">
+        <span>
+          <KeyLabel action="Select" keys="↑ / ↓" />
+        </span>
+        <span>
+          <KeyLabel action="Open" keys="↵" />
+        </span>
+        <span>
+          <KeyLabel action="Open in a tab" keys="⌘↵" />
+        </span>
+        <span>
+          <KeyLabel action="Back" keys="esc" />
+        </span>
+      </div>
+    </>
+  )
+}

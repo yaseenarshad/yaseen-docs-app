@@ -1,4 +1,7 @@
+import { useEffect } from 'react'
 import { titleWithKey, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { CogIcon } from '../components/CogIcon'
+import { prefetchSettingsDialog } from './prefetchSettings'
 
 /**
  * The cog in the sidebar footer (GRO-2024; since YAZ-1679 it only OPENS the settings dialog —
@@ -12,19 +15,26 @@ interface SettingsButtonProps {
   hotkeys: HotkeyOverrides
 }
 
-/** The gear, shared with the page's own cog (YAZ-2643). */
-export function CogIcon({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <circle cx="12" cy="12" r="3.2" />
-      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.09a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.03Z" />
-    </svg>
-  )
-}
-
 export function SettingsButton({ onClick, hotkeys }: SettingsButtonProps) {
+  useEffect(() => {
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(() => prefetchSettingsDialog(), { timeout: 1500 })
+      return () => window.cancelIdleCallback(id)
+    }
+    const id = window.setTimeout(prefetchSettingsDialog, 1500)
+    return () => window.clearTimeout(id)
+  }, [])
+
   return (
-    <button type="button" className="settings-button" onClick={onClick} title={titleWithKey('Settings', 'settings', hotkeys)} aria-label="Settings">
+    <button
+      type="button"
+      className="settings-button"
+      onClick={onClick}
+      onMouseEnter={prefetchSettingsDialog}
+      onFocus={prefetchSettingsDialog}
+      title={titleWithKey('Settings', 'settings', hotkeys)}
+      aria-label="Settings"
+    >
       <CogIcon size={15} />
     </button>
   )

@@ -1,4 +1,6 @@
-import { type CSSProperties, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { cssZoom } from '../../lib/cssZoom'
 
 interface PopoverProps {
   label: string
@@ -8,6 +10,15 @@ interface PopoverProps {
   constrainToViewport?: boolean
   /** Trigger to hang off with `position: fixed` (YAZ-743), for triggers inside a scrolling ancestor. */
   anchor?: HTMLElement | null
+  /** What takes the keyboard on open: the first control (default), or only a text field, else the popover itself. */
+  focusOn?: 'control' | 'field'
+  /**
+   * On the body, not in the trigger's tree (YAZ-4878 demo, a dropdown inside the View tab): a popover that fits itself
+   * with a `translate` (`constrainToViewport`) is a containing block for a `position: fixed` child, which was placed
+   * off the window and cut by the tab's scroll. Needs `anchor`. A mousedown in it never reaches the outer popover's
+   * click-away, and its Escape closes it alone.
+   */
+  portal?: boolean
   children: ReactNode
 }
 
@@ -19,14 +30,20 @@ interface PopoverProps {
  * to the viewport like `ContextMenu`, so a clipping ancestor cannot cut it off — and
  * outside scrolling or window resizing closes it. Content resizing refits it in place.
  */
-export function Popover({ label, onClose, className, anchor, children, constrainToViewport = false }: PopoverProps) {
+/** The least room an anchored popover keeps from the window's edges. */
+const EDGE = 8
+
+export function Popover({ label, onClose, className, anchor, children, constrainToViewport = false, focusOn = 'control', portal = false }: PopoverProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<CSSProperties>()
 
   useEffect(() => {
     const el = ref.current
     if (el === null) return
-    ;(el.querySelector<HTMLElement>('input, select, button:not(:disabled)') ?? el).focus()
+    // `field`: a text field takes the keyboard (the Columns tab's search), else the popover itself, so no button opens
+    // with a focus ring (the toolbar's menus, YAZ-3746 demo). Otherwise the first control, as before.
+    const first = focusOn === 'field' ? 'input[type="text"], input[type="search"]' : 'input, select, button:not(:disabled)'
+    ;(el.querySelector<HTMLElement>(first) ?? el).focus()
   }, [])
 
   useLayoutEffect(() => {
@@ -35,8 +52,12 @@ export function Popover({ label, onClose, className, anchor, children, constrain
     const fit = () => {
       const a = anchor.getBoundingClientRect()
       const r = el.getBoundingClientRect()
-      const top = Math.max(0, Math.min(a.bottom + 6, window.innerHeight - r.height))
-      const left = Math.max(0, Math.min(a.left, window.innerWidth - r.width))
+      // Measured on screen; written in the popover's own px (YAZ-3746 13AM): inside a zoomed folder page a fixed box's
+      // `top` and `left` are scaled by the zoom, so the menu drifted right and down as the page zoomed in.
+      const z = cssZoom(el)
+      // Never against the window's edge: an 8 px margin on every side (the checker of YAZ-4820: the Style panel touched it).
+      const top = Math.max(EDGE, Math.min(a.bottom + 6, window.innerHeight - r.height - EDGE)) / z
+      const left = Math.max(EDGE, Math.min(a.left, window.innerWidth - r.width - EDGE)) / z
       setPos(previous => previous?.top === top && previous.left === left ? previous : { position: 'fixed', top, left })
     }
     fit()
@@ -65,13 +86,17 @@ export function Popover({ label, onClose, className, anchor, children, constrain
           bottom = Math.min(bottom, bounds.bottom)
         }
       }
-      el.style.maxWidth = `${Math.min(cssMaxWidth, Math.max(0, right - left - 24))}px`
-      el.style.minWidth = `${Math.min(260, Math.max(0, right - left - 24))}px`
-      el.style.maxHeight = `${Math.max(0, Math.min(window.innerHeight * .6, bottom - top - 24))}px`
+      // The room is measured on screen; sizes and the shift are written in the popover's own px, so in a zoomed folder
+      // page they are divided by its zoom (YAZ-3746 13AP: at 200% the popover was twice too tall and moved twice too
+      // far, which grew the page, and each scroll fitted it again: the page slid down).
+      const z = cssZoom(el)
+      el.style.maxWidth = `${Math.min(cssMaxWidth, Math.max(0, right - left - 24) / z)}px`
+      el.style.minWidth = `${Math.min(260, Math.max(0, right - left - 24) / z)}px`
+      el.style.maxHeight = `${Math.max(0, Math.min(window.innerHeight * .6, bottom - top - 24)) / z}px`
       const rect = el.getBoundingClientRect()
       const x = Math.max(left + 12 - rect.left, Math.min(0, right - 12 - rect.right))
       const y = Math.max(top + 12 - rect.top, Math.min(0, bottom - 12 - rect.bottom))
-      el.style.translate = `${x}px ${y}px`
+      el.style.translate = `${x / z}px ${y / z}px`
     }
     fit()
     const observer = new ResizeObserver(fit)
@@ -116,7 +141,19 @@ export function Popover({ label, onClose, className, anchor, children, constrain
     }
   }, [anchor, onClose])
 
-  return (
+  // The outer popover's click-away and Escape listen on the window: a portal's events stop before them (React stops the
+  // native event at its root), so the outer stays while this one closes.
+  const keep = portal
+    ? {
+        onMouseDown: (e: ReactMouseEvent) => e.stopPropagation(),
+        onKeyDown: (e: ReactKeyboardEvent) => {
+          if (e.key !== 'Escape') return
+          e.stopPropagation()
+          onClose()
+        },
+      }
+    : {}
+  const node = (
     <div
       ref={ref}
       className={`view-popover${className ? ` ${className}` : ''}${anchor ? ' view-popover--fixed' : ''}`}
@@ -124,8 +161,10 @@ export function Popover({ label, onClose, className, anchor, children, constrain
       role="dialog"
       aria-label={label}
       tabIndex={-1}
+      {...keep}
     >
       {children}
     </div>
   )
+  return portal ? createPortal(node, document.body) : node
 }

@@ -1,0 +1,70 @@
+/* Settings › Vault health (YAZ-5559): one line with a tap, then the list of the vault's settings files. */
+.vault-health {
+  margin-top: 10px;
+}
+
+.vault-health__toggle {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  justify-content: space-between;
+}
+
+.vault-health__words {
+  flex: 1;
+  min-width: 0;
+}
+
+.vault-health__line {
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.vault-health__chevron {
+  display: inline-block;
+  padding: 0 4px;
+  color: var(--fg-muted);
+  font-size: 20px;
+  transition: transform 0.15s;
+}
+
+.vault-health__toggle[aria-expanded='true'] .vault-health__chevron {
+  transform: rotate(90deg);
+}
+
+.vault-health__note {
+  margin: 8px 0 4px;
+}
+
+.vault-health__file {
+  display: block;
+  color: var(--fg-muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vault-health .row__main {
+  min-width: 45%;
+}
+
+.vault-health .row__side {
+  max-width: 50%;
+  text-align: right;
+}
+
+.vault-health .row[data-state='here'] .row__side {
+  color: var(--fg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vault-health__chevron {
+    transition: none;
+  }
+}
+
+/* YAZ-5596 (15): the wake log's lines are small and wrap. */
+.vault-health__wake {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}

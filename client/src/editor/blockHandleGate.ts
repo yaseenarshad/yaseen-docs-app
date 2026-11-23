@@ -53,10 +53,16 @@ export const blockHandleGate = $prose(
       key: new PluginKey('mdapp-block-handle-gate'),
       view: (view) => {
         let frame = 0
+        let lastX = 0
+        let lastY = 0
         const onMove = (event: MouseEvent) => {
+          lastX = event.clientX
+          lastY = event.clientY
           if (frame !== 0) return
           frame = requestAnimationFrame(() => {
             frame = 0
+            // Skip hidden background tabs so only the visible editor runs `elementsFromPoint` (YAZ-6028).
+            if (!view.dom.isConnected || view.dom.closest('.tabstack__layer--hidden, [hidden]') !== null) return
             // Own editor only (YAZ-747): tabs keep hidden editors mounted, each with its own
             // handle appended into its view.dom.parentElement — a document-wide query muted
             // whichever handle came first in the DOM, possibly another tab's.
@@ -66,8 +72,8 @@ export const blockHandleGate = $prose(
               handle.classList.remove(HANDLE_MUTED_CLASS)
               return
             }
-            const stack = document.elementsFromPoint(event.clientX, event.clientY)
-            handle.classList.toggle(HANDLE_MUTED_CLASS, overAffordance(view, event.clientX, stack))
+            const stack = document.elementsFromPoint(lastX, lastY)
+            handle.classList.toggle(HANDLE_MUTED_CLASS, overAffordance(view, lastX, stack))
           })
         }
         document.addEventListener('mousemove', onMove)

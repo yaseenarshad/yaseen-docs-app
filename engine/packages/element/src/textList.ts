@@ -2,7 +2,10 @@ export const TEXT_LIST_INDENT = "    ";
 
 export const TEXT_LIST_BULLET_MARKERS = ["•", "○", "▪"] as const;
 
-export type TextListMarkerKind = "none" | "bullet" | "number";
+/** YAZ-4277 D4: a checklist item's marker: `☐` open, `☑` done. */
+export const TEXT_LIST_CHECK_MARKERS = ["☐", "☑"] as const;
+
+export type TextListMarkerKind = "none" | "bullet" | "number" | "check";
 
 export type ParsedTextListLine = {
   raw: string;
@@ -25,7 +28,7 @@ export const getBulletMarkerForDepth = (depth: number) =>
   ];
 
 export const parseTextListLine = (line: string): ParsedTextListLine => {
-  const match = line.match(/^([ \t]*)(?:(•|○|▪)|(\d+\.))[ \t]+(.*)$/u);
+  const match = line.match(/^([ \t]*)(?:(•|○|▪)|(☐|☑)|(\d+\.))[ \t]+(.*)$/u);
   const indentation = line.match(/^[ \t]*/)?.[0] ?? "";
 
   if (!match) {
@@ -39,13 +42,13 @@ export const parseTextListLine = (line: string): ParsedTextListLine => {
     };
   }
 
-  const [, matchedIndentation, bullet, number, content] = match;
+  const [, matchedIndentation, bullet, check, number, content] = match;
   return {
     raw: line,
     indentation: matchedIndentation,
     depth: Math.floor(getIndentationWidth(matchedIndentation) / 4),
-    marker: bullet ?? number,
-    markerKind: bullet ? "bullet" : "number",
+    marker: bullet ?? check ?? number,
+    markerKind: bullet ? "bullet" : check ? "check" : "number",
     content,
   };
 };

@@ -89,7 +89,10 @@ export const isWritableElement = (
       target.type === "number" ||
       target.type === "password" ||
       target.type === "search")) ||
-  (target instanceof HTMLElement && target.closest(".cm-editor") !== null);
+  (target instanceof HTMLElement && target.closest(".cm-editor") !== null) ||
+  // Yaseen Docs (YAZ-4277 D1): the host's editor of a text box
+  (target instanceof HTMLElement &&
+    target.closest(".excalidraw-host-text-editor") !== null);
 
 export const getFontFamilyString = ({
   fontFamily,

@@ -23,8 +23,15 @@ vi.mock('./engine', () => {
     restoreAppState: () => ({}),
     getSceneVersion: () => 0,
     serializeAsJSON: vi.fn((elements: unknown) => JSON.stringify({ elements, appState: { viewBackgroundColor: '#ffffff' } })),
+    // YAZ-4277 D18: the fold switch point's save step; with folding on nothing is aside (`foldsOff.test.tsx` runs the real one)
+    withFoldsPutBack: (elements: unknown) => elements,
   }
-  return { loadExcalidraw: async () => mod, applyToolbarMode: () => undefined }
+  const textEditor = { mount: () => ({ setSelection: () => undefined, focus: () => undefined, destroy: () => undefined }) }
+  return {
+    loadExcalidraw: async () => mod,
+    loadTextBoxEditor: async () => ({ createTextBoxEditor: () => textEditor }),
+    applyToolbarMode: () => undefined,
+  }
 })
 vi.mock('katex/dist/katex.min.css', () => ({}))
 
@@ -57,6 +64,14 @@ async function render(readOnly: boolean | undefined): Promise<void> {
 }
 
 const last = (): Record<string, unknown> => engine.props.at(-1) ?? {}
+
+describe('the text box editor (YAZ-4277 D1)', () => {
+  it('passes the text box editor, made with the engine, to the canvas', async () => {
+    await render(undefined)
+    expect((last().textEditor as { mount?: unknown } | undefined)?.mount).toBeTypeOf('function')
+    expect(engine.props.every((props) => props.textEditor === last().textEditor)).toBe(true)
+  })
+})
 
 describe('the board`s right-click menu: Save to library… (YAZ-4157 demo 6L)', () => {
   async function renderWithPanel(readOnly: boolean): Promise<void> {
@@ -101,6 +116,52 @@ describe('the board`s right-click menu: Save to library… (YAZ-4157 demo 6L)', 
     const press = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
     await act(async () => void document.body.dispatchEvent(press))
     expect(press.defaultPrevented).toBe(false)
+  })
+
+  it('YAZ-6330: a hidden tab (visibility: hidden) and a background tab under .drawing-modal-overlay leave ⌘F alone', async () => {
+    await renderWithPanel(false)
+    const surface = container!.querySelector<HTMLElement>('.drawing-surface')!
+    surface.getClientRects = () => [{}] as unknown as DOMRectList
+    const sidebar = () => (last().children as { props: { searchFocusPending: boolean } }).props
+
+    // Hidden tab (visibility: hidden on an ancestor or the surface itself).
+    container!.style.visibility = 'hidden'
+    const hiddenPress = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void document.body.dispatchEvent(hiddenPress))
+    expect(hiddenPress.defaultPrevented).toBe(false)
+    expect(sidebar().searchFocusPending).toBe(false)
+    container!.style.visibility = ''
+
+    // Background tab while a .drawing-modal-overlay is open elsewhere in the DOM.
+    const modal = document.createElement('div')
+    modal.className = 'drawing-modal-overlay'
+    document.body.appendChild(modal)
+    try {
+      const underModalPress = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+      await act(async () => void document.body.dispatchEvent(underModalPress))
+      expect(underModalPress.defaultPrevented).toBe(false)
+      expect(sidebar().searchFocusPending).toBe(false)
+    } finally {
+      modal.remove()
+    }
+  })
+
+  it('YAZ-6330: DrawingSurfaceApi.openAddSearch() opens the Add tab and requests search focus', async () => {
+    let handle: import('./ExcalidrawSurface').DrawingSurfaceApi | null = null
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onCanvasPanelChange={() => undefined} onApi={(a) => (handle = a)} />)
+    })
+    const toggleSidebar = vi.fn()
+    const raw = { getAppState: () => ({ defaultSidebarDockedPreference: false }), toggleSidebar, updateFrameRendering: vi.fn(), updateScene: vi.fn() }
+    await act(async () => (last().onExcalidrawAPI as (a: unknown) => void)(raw))
+    const sidebar = () => (last().children as { props: { searchFocusPending: boolean } }).props
+    expect(sidebar().searchFocusPending).toBe(false)
+    await act(async () => handle!.openAddSearch())
+    expect(sidebar().searchFocusPending).toBe(true)
+    expect(toggleSidebar).toHaveBeenCalledWith({ name: CANVAS_SIDEBAR, tab: 'image-studio', force: true })
   })
 
   it('the panel`s edge: the arrow keys step 16 px, a drag stops at 260 and 720 px, and each stores the width (demo 6C)', async () => {
@@ -339,7 +400,7 @@ describe('the exported copy and the board itself (YAZ-3943)', () => {
     const api = { getSceneElements: () => ELEMENTS, getAppState: () => ({}), getFiles: () => ({}), refresh: () => undefined, updateScene: () => undefined, updateFrameRendering: () => undefined }
     act(() => (last().onExcalidrawAPI as (a: unknown) => void)(api))
     expect(fontsOf(await handle!.exportScene())).toEqual([6, 8])
-    // The mount's baseline snapshot: what a save writes, in a tab and in the note's popup.
+    // The mount's baseline snapshot: what a save writes, in a tab and in the page's popup.
     expect(fontsOf(snapshot!.serialize().json)).toEqual([10, 14])
   })
 
@@ -357,5 +418,54 @@ describe('the exported copy and the board itself (YAZ-3943)', () => {
     })
     void (last().onExportPdf as (svg: string, size: unknown) => void)('<svg/>', { width: 1, height: 2 })
     expect(onExportPdf).toHaveBeenCalledWith('<svg/>', { width: 1, height: 2 })
+  })
+})
+
+/** YAZ-4404 4H and YAZ-4406 4J: the two Settings › Drawings switches reach the engine as props, never as appState. */
+describe('the engine props of the round 1 switches', () => {
+  const mountWith = async (canvasPrefs?: import('@shared/types').CanvasPrefs): Promise<void> => {
+    container ??= document.createElement('div')
+    document.body.appendChild(container)
+    root ??= createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" canvasPrefs={canvasPrefs} onSnapshot={() => undefined} onFailed={() => undefined} />)
+    })
+  }
+
+  it('both are on by default; each Off reaches the engine at once, and neither goes into the initial appState', async () => {
+    const { DEFAULT_CANVAS_PREFS } = await import('@shared/types')
+    await mountWith(undefined)
+    expect(last()).toMatchObject({ fillSetsTextColor: true, newShapesMatchZoom: true })
+    const appState = (last().initialData as { appState: Record<string, unknown> }).appState
+    expect(appState).not.toHaveProperty('fillSetsTextColor')
+    expect(appState).not.toHaveProperty('newShapesMatchZoom')
+    await mountWith({ ...DEFAULT_CANVAS_PREFS, fillSetsTextColor: false })
+    expect(last()).toMatchObject({ fillSetsTextColor: false, newShapesMatchZoom: true })
+    await mountWith({ ...DEFAULT_CANVAS_PREFS, fillSetsTextColor: false, newShapesMatchZoom: false })
+    expect(last()).toMatchObject({ fillSetsTextColor: false, newShapesMatchZoom: false })
+  })
+
+  it('YAZ-4469 4B: "Hover outline" is the board value over the app value; no board value follows the app; never appState', async () => {
+    const { DEFAULT_CANVAS_PREFS } = await import('@shared/types')
+    await mountWith(undefined)
+    expect(last().hoverOutline).toBe(true)
+    expect((last().initialData as { appState: Record<string, unknown> }).appState).not.toHaveProperty('hoverOutline')
+    await mountWith({ ...DEFAULT_CANVAS_PREFS, hoverOutline: false })
+    expect(last().hoverOutline).toBe(false)
+    for (const [app, board, expected] of [[true, false, false], [false, true, true], [false, undefined, false], [true, undefined, true]] as const) {
+      await act(async () => {
+        root?.render(<ExcalidrawSurface scene={SCENE} theme="light" canvasPrefs={{ ...DEFAULT_CANVAS_PREFS, hoverOutline: app }} hoverOutline={board} onSnapshot={() => undefined} onFailed={() => undefined} />)
+      })
+      expect(last().hoverOutline, `app ${app}, board ${board}`).toBe(expected)
+    }
+  })
+
+  it('YAZ-5771: "Double-click a text box edge" reaches the engine as its prop: Only shrink by default, Fit the text when picked; never appState', async () => {
+    const { DEFAULT_CANVAS_PREFS } = await import('@shared/types')
+    await mountWith(undefined)
+    expect(last().textEdgeDoubleClick).toBe('shrink')
+    expect((last().initialData as { appState: Record<string, unknown> }).appState).not.toHaveProperty('textEdgeDoubleClick')
+    await mountWith({ ...DEFAULT_CANVAS_PREFS, textEdgeDoubleClick: 'fit' })
+    expect(last().textEdgeDoubleClick).toBe('fit')
   })
 })

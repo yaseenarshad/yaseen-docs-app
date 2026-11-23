@@ -803,21 +803,28 @@ describe("exportToCanvas", () => {
       .__getEvents()
       .filter((event: any) => event.type === "fillText");
 
-    expect(textEvents.map((event: any) => event.props.text)).toEqual(
-      layout.lines.map((line) => line.text),
+    // YAZ-4449: the marker "• " draws apart from its letters, with no
+    // underline; each continuation line starts at its shared layout position
+    const starts = layout.lines.map((line) =>
+      getStyledVisualLineStart(line, listText.width, listText.textAlign),
     );
-    expect(textEvents.map((event: any) => event.props.x)).toEqual(
-      layout.lines.map((line) =>
-        getStyledVisualLineStart(line, listText.width, listText.textAlign),
-      ),
+    expect(textEvents.map((event: any) => event.props.text)).toEqual([
+      "• ",
+      layout.lines[0].text.slice(2),
+      ...layout.lines.slice(1).map((line) => line.text),
+    ]);
+    expect(textEvents[0].props.x).toBe(starts[0]);
+    expect(textEvents.slice(2).map((event: any) => event.props.x)).toEqual(
+      starts.slice(1),
     );
     const underlineEvents = (canvas.getContext("2d") as any)
       .__getEvents()
       .filter((event: any) => event.type === "fillRect");
-    expect(underlineEvents.map((event: any) => event.props.x)).toEqual(
-      layout.lines.map((line) =>
-        getStyledVisualLineStart(line, listText.width, listText.textAlign),
-      ),
+    // the first line's underline starts after the marker, at its letters
+    expect(underlineEvents[0].props.x).toBe(textEvents[1].props.x);
+    expect(underlineEvents[0].props.x).toBeGreaterThan(starts[0]);
+    expect(underlineEvents.slice(1).map((event: any) => event.props.x)).toEqual(
+      starts.slice(1),
     );
   });
 

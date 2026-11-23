@@ -1,5 +1,5 @@
 /**
- * A drawing pill's file icon (YAZ-4039 demo round 1): the same icon as a note's pill and the sidebar's `FileIcon`
+ * A drawing pill's file icon (YAZ-4039 demo round 1): the same icon as a page's pill and the sidebar's `FileIcon`
  * (`fileIconDecoration`: the Line set, Material's icons, a pick or a rule, the icon style). The CSS draws that icon on a
  * span's `::before`, which a canvas cannot use, so the icon is read off that same CSS once: a hidden probe span in the
  * app's element, its `::before`'s image or mask and colour, drawn into a small canvas. The canvas is the image the
@@ -7,7 +7,7 @@
  *
  * One image for each icon (its attributes, the theme and the app's icon settings), at most `MAX_ICONS`, the oldest
  * dropped first. An icon that is not ready yet answers undefined (the engine draws its outline), and `onReady` is
- * called once when it is, so the boards draw again. Icons Off answers null: no icon, as in a note.
+ * called once when it is, so the boards draw again. Icons Off answers null: no icon, as in a page.
  */
 import { fileIconDecoration, type IconsHere } from '../sidebar/FileIcon'
 
@@ -80,8 +80,10 @@ export function drawingLinkIcon(path: string, folder: boolean, onReady: () => vo
   if (app === null) return undefined
   const attrs = fileIconDecoration(here, path, folder)
   const theme = document.documentElement.dataset.theme ?? ''
-  const { sidebarIconSet = '', sidebarFileIcons = '', sidebarFolderIcons = '' } = (app as HTMLElement).dataset
-  const key = JSON.stringify([attrs['data-kind'], attrs['data-icon'], attrs['data-icon-custom'], attrs.style, folder, theme, sidebarIconSet, sidebarFileIcons, sidebarFolderIcons])
+  const { sidebarIconSet = '', sidebarFileIcons = '', sidebarFolderIcons = '', iconColors = '' } = (app as HTMLElement).dataset
+  // A picked icon colour (YAZ-5100 round 2) is a new look: the kinds that have one, and their colours on the app's style.
+  const colours = iconColors === '' ? '' : iconColors.split(' ').map((kind) => (app as HTMLElement).style.getPropertyValue(`--kind-${kind}`)).join(' ')
+  const key = JSON.stringify([attrs['data-kind'], attrs['data-icon'], attrs['data-icon-custom'], attrs.style, folder, theme, sidebarIconSet, sidebarFileIcons, sidebarFolderIcons, iconColors, colours])
   const held = icons.get(key)
   if (held !== undefined) return held === 'loading' || held === 'failed' ? undefined : held
   const icon = readIcon(attrs, app)

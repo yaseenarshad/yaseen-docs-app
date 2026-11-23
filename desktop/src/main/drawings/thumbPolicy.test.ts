@@ -89,7 +89,7 @@ describe('planThumbSweep', () => {
   })
 
   it('never touches a name that is not one of ours', () => {
-    expect(planThumbSweep([entry('notes.txt', 500, 0), entry('x-128.png.tmp-0123456789ab', 500, 0), entry('a-64.png', 10, 5)], 0)).toEqual(['a-64.png'])
+    expect(planThumbSweep([entry('pages.txt', 500, 0), entry('x-128.png.tmp-0123456789ab', 500, 0), entry('a-64.png', 10, 5)], 0)).toEqual(['a-64.png'])
   })
 
   it('keeps a quarter gigabyte by default', () => {

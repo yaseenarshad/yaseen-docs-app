@@ -1,12 +1,12 @@
 /**
- * The numbered list of outside changes (YAZ-3998): a column LEFT of the note (the table of
+ * The numbered list of outside changes (YAZ-3998): a column LEFT of the page (the table of
  * contents has the right), one row for each change, numbered in the order the changes happened, each with the change
  * word by word as the mouse-over box says it. A click on a row goes to that change as Next change does (`channel.go`).
  *
  * The React surface of `outsideChanges.ts`, through the ONE channel the bar also reads: it reads the rows again only
  * when the channel's version moves (the list, a change's text or the ring changed), never on a keystroke. It renders
- * nothing with no change and in whole-note mode (no rows). It shows only while pinned (Settings › Pin default, which
- * its Unpin writes, as the table of contents' does), and the note's text then makes room for it (outsideChanges.css,
+ * nothing with no change and in whole-page mode (no rows). It shows only while pinned (Settings › Pin default, which
+ * its Unpin writes, as the table of contents' does), and the page's text then makes room for it (outsideChanges.css,
  * `--outside-list-width`, as the table of contents' column does on the right); unpinned, the bar's count opens the same
  * rows as a dropdown (`OutsideChangesBar.tsx`). Memory only, as the list is.
  */
@@ -15,7 +15,7 @@ import type { OutsideChangeRow, OutsideChangesChannel } from './outsideChangesCh
 import { PinIcon } from '../toc/tocFrame'
 import './outsideChanges.css'
 
-/** A row acts on the list; the caret stays where the reader left it, in the note. */
+/** A row acts on the list; the caret stays where the reader left it, in the page. */
 const hold = (event: MouseEvent): void => event.preventDefault()
 
 /**

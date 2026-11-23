@@ -7,25 +7,31 @@
  * light and dark follow).
  *
  * Left to right, with dividers: Fill and Text; Bold, Italic, Strikethrough; Align left, center,
- * right; Clear cells. Each button acts on EVERY selected cell in one transaction with the history
- * closed, so each click is one undo step (R4), and the cells stay selected.
+ * right; Merge cells (YAZ-4792); Clear cells. Each button acts on EVERY selected cell in one transaction with the
+ * history closed, so each click is one undo step (R4), and the cells stay selected.
  * - Fill and Text set the cells' `fill` / `color` (`tableStyle.ts`; the save writes the comment).
  *   Each is a label, three fixed quick swatches (Fill: yellow, green, blue; Text: red, blue, green)
  *   and a ▾ that opens a palette (YAZ-3817, demo round 2): the labeled clear item ("No fill" /
  *   "Default colour") first, then the ten named colours in a 5 × 2 grid, then "Custom colour…",
- *   which opens the system colour picker (`colours.ts`) for the cells selected then. A custom
- *   colour saves as `#rrggbb`, on the input's `change` only (its live `input` events do nothing), so
- *   one pick is one undo step. One palette is open at a time; it closes on a pick, on Escape, on a second ▾ click,
- *   on a mousedown in the editor and when the toolbar hides.
+ *   which opens the note's colour box (`highlightColourBox.ts`, YAZ-4366) in the palette, right under
+ *   the item, on the cells' one custom colour (else black). A custom colour saves as `#rrggbb`; a drag
+ *   previews in the box only, and one finished pick (the release, Enter in an R G B field, the
+ *   eyedropper) is one undo step on the cells selected, which stay selected; the box stays open for
+ *   the next. One palette is open at a time; it closes on a named pick, on Escape (the box's first,
+ *   when it is open), on a second ▾ click, on a mousedown in the editor and when the toolbar hides.
  * - A mark turns ON in every cell when any selected cell with text lacks it on some of its text,
  *   and OFF in all of them when every one has it (as Sheets does).
  * - Align sets the selected cells' own `align` (YAZ-3819), saved in the table comment; it wins over
  *   the column's GFM alignment (the `:-` row), which stays. A pick equal to a cell's column alignment
  *   clears the cell's own, so the cell follows its column again.
+ * - Merge cells is `mergeCells` (`tableMerge.ts`): the selected cells become one, with every cell's text, top-left
+ *   first. The button is disabled while the selection cannot merge (`mergeRect`: it cuts through a merged cell, runs
+ *   from the header row into the body, or holds a folded row); the merged cell stays selected, as one cell, so the
+ *   toolbar hides; its right-click has "Unmerge cells".
  * - Clear cells is prosemirror-tables' `deleteCellSelection` (Delete's own): the text goes, the
  *   cells keep their attributes.
  *
- * Hidden on a single caret or one cell, in a read-only note (R3), when the editor has no focus,
+ * Hidden on a single caret or one cell, in a read-only page (R3), when the editor has no focus,
  * and while a mouse drag is selecting: a mousedown in the editor hides it, the mouseup shows it.
  * Also while the table menu is open (a right-click, or a handle's `TABLE_HANDLE_MENU`), so the two
  * never overlap; the next click in the editor shows it again.
@@ -39,8 +45,10 @@ import { clearCells as clearSelected, deleteText, deleteWithNotes } from './cell
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { setCellsAlign, setCellsAttr } from './cells'
-import { capital, fillSwatch, pickCustomColour, textSwatch } from './colours'
+import { ColourBox } from '../highlightColourBox'
+import { capital, customStart, fillSwatch, setCustomColour, textSwatch } from './colours'
 import { TABLE_HANDLE_MENU } from './tableMenu'
+import { mergeCells, mergeRect } from './tableMerge'
 import { CELL_ALIGNS, TABLE_COLORS, type CellAlign, type TableColor } from './tableStyle'
 
 const SVG = (body: string) => `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${body}</svg>`
@@ -55,6 +63,8 @@ const alignIcon = (align: CellAlign) => {
   return SVG(`<path d="M5 7h14M${x} 12h8M5 17h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`)
 }
 const CLEAR = SVG('<path d="M8 8l8 8M16 8l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
+/** A grid of four cells whose top two are one (YAZ-4792). */
+const MERGE = SVG('<path d="M4 6h16v12H4zM4 12h16M12 12v6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>')
 
 /** One cell attribute on every selected cell, in one transaction. */
 function setCells(view: EditorView, attr: 'fill' | 'color', value: string | null): void {
@@ -104,7 +114,13 @@ function clearCells(view: EditorView): void {
   deleteWithNotes(view, clearSelected, (gone) => deleteText('cells', count, gone))
 }
 
-type Part = { name: string; icon: string; run: (view: EditorView) => void } | 'divider' | 'colours'
+/** Merge the selected cells (YAZ-4792, `tableMerge.ts`): one undo step; the merged cell stays selected. */
+function merge(view: EditorView): void {
+  mergeCells(view.state, view.dispatch)
+}
+
+/** A button's `enabled` says when it can run; the toolbar sets `disabled` on each update. One without it always can. */
+type Part = { name: string; icon: string; run: (view: EditorView) => void; enabled?: (state: EditorState) => boolean } | 'divider' | 'colours'
 
 const PARTS: Part[] = [
   'colours',
@@ -114,6 +130,8 @@ const PARTS: Part[] = [
   { name: 'Strikethrough', icon: letter('S', 'text-decoration="line-through"'), run: (v) => toggleMark(v, 'strike_through') },
   'divider',
   ...CELL_ALIGNS.map((a) => ({ name: `Align ${a}`, icon: alignIcon(a), run: (v: EditorView) => alignCells(v, a) })),
+  'divider',
+  { name: 'Merge cells', icon: MERGE, run: merge, enabled: (state) => mergeRect(state.selection) !== null },
   'divider',
   { name: 'Clear cells', icon: CLEAR, run: clearCells },
 ]
@@ -146,10 +164,26 @@ interface ColourGroup {
 
 let paletteIds = 0
 
+/** A palette's colour box under its "Custom colour…" item: made on the first open. */
+interface CustomBox {
+  /** The box, or null before the first open. */
+  box: ColourBox | null
+  item: HTMLElement
+}
+
 /** The toolbar's one open palette: `toggle` opens a palette (closing the other) or closes it. */
 interface Palettes {
-  toggle: (palette: HTMLElement, arrow: HTMLElement) => void
+  toggle: (palette: HTMLElement, arrow: HTMLElement, custom: CustomBox) => void
   close: () => void
+}
+
+/** Just the box; a focus in it goes back to the note. */
+function hideBox(view: EditorView, custom: CustomBox): void {
+  if (custom.box === null || !custom.box.open) return
+  const focused = custom.box.el.contains(view.dom.ownerDocument.activeElement)
+  custom.box.hide()
+  custom.item.setAttribute('aria-expanded', 'false')
+  if (focused && !view.isDestroyed) view.focus()
 }
 
 /** A colour group: the label, the quick swatches, and the ▾ with its palette. */
@@ -175,7 +209,9 @@ function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes)
   arrow.setAttribute('aria-haspopup', 'menu')
   arrow.setAttribute('aria-expanded', 'false')
   arrow.setAttribute('aria-controls', palette.id)
-  arrow.addEventListener('click', () => palettes.toggle(palette, arrow))
+  // Set below, once the item is made.
+  let custom: CustomBox
+  arrow.addEventListener('click', () => palettes.toggle(palette, arrow, custom))
   const item = (name: string, run: () => void, className: string) => {
     const button = toolButton(name, '', className)
     button.setAttribute('role', 'menuitem')
@@ -197,11 +233,32 @@ function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes)
     button.appendChild(swatch)
     swatches.appendChild(button)
   }
-  const custom = item('Custom colour…', () => {
-    if (view.state.selection instanceof CellSelection) pickCustomColour(view, view.state.selection, group.attr)
-  }, 'cell-toolbar__custom')
-  custom.textContent = 'Custom colour…'
-  palette.append(clear, swatches, custom)
+  const customItem = toolButton('Custom colour…', '', 'cell-toolbar__custom')
+  customItem.setAttribute('role', 'menuitem')
+  customItem.setAttribute('aria-expanded', 'false')
+  customItem.textContent = 'Custom colour…'
+  custom = { box: null, item: customItem }
+  // The palette stays open: the box opens under the item, and the item again closes it.
+  customItem.addEventListener('click', () => {
+    const { selection } = view.state
+    if (custom.box?.open === true) return hideBox(view, custom)
+    if (!(selection instanceof CellSelection)) return
+    if (custom.box === null) {
+      const box = new ColourBox(document, {
+        preview: () => {},
+        pick: (color) => {
+          const cells = view.state.selection
+          if (cells instanceof CellSelection) setCustomColour(view, box.el, cells, group.attr, color)
+        },
+        close: () => hideBox(view, custom),
+      })
+      custom.box = box
+      palette.append(box.el)
+    }
+    custom.box.show(customStart(selection, group.attr))
+    customItem.setAttribute('aria-expanded', 'true')
+  })
+  palette.append(clear, swatches, customItem)
   box.append(arrow, palette)
   return box
 }
@@ -215,12 +272,13 @@ const TEXT: ColourGroup = {
   name: (c) => `${capital(c)} text`, menu: 'Text colours', clear: 'Default colour', swatch: textSwatch,
 }
 
-/** The strip's DOM: Crepe's toolbar shape (`.divider`, `.toolbar-item`) on our own class. */
-function renderStrip(view: EditorView, palettes: Palettes): HTMLElement {
+/** The strip's DOM: Crepe's toolbar shape (`.divider`, `.toolbar-item`) on our own class, and the buttons with an `enabled` test. */
+function renderStrip(view: EditorView, palettes: Palettes): { strip: HTMLElement; gated: Array<{ button: HTMLButtonElement; enabled: (state: EditorState) => boolean }> } {
   const strip = document.createElement('div')
   strip.className = 'cell-toolbar'
   strip.setAttribute('role', 'toolbar')
   strip.setAttribute('aria-label', 'Cells')
+  const gated: Array<{ button: HTMLButtonElement; enabled: (state: EditorState) => boolean }> = []
   for (const part of PARTS) {
     if (part === 'divider') {
       const line = document.createElement('div')
@@ -231,10 +289,11 @@ function renderStrip(view: EditorView, palettes: Palettes): HTMLElement {
     } else {
       const button = toolButton(part.name, part.icon)
       button.addEventListener('click', () => part.run(view))
+      if (part.enabled !== undefined) gated.push({ button, enabled: part.enabled })
       strip.appendChild(button)
     }
   }
-  return strip
+  return { strip, gated }
 }
 
 /** Two or more cells selected. */
@@ -243,12 +302,15 @@ const manyCells = (state: EditorState): boolean => state.selection instanceof Ce
 class CellToolbarView {
   #provider: TooltipProvider
   #strip: HTMLElement
+  /** The buttons that are disabled while their test fails (Merge cells, YAZ-4792). */
+  #gated: Array<{ button: HTMLButtonElement; enabled: (state: EditorState) => boolean }>
   #dragging = false
   #menu = false
 
   constructor(readonly view: EditorView) {
-    const strip = renderStrip(view, { toggle: this.#togglePalette, close: this.#closePalettes })
+    const { strip, gated } = renderStrip(view, { toggle: this.#togglePalette, close: this.#closePalettes })
     this.#strip = strip
+    this.#gated = gated
     this.#provider = new TooltipProvider({
       content: strip,
       debounce: 20,
@@ -266,33 +328,35 @@ class CellToolbarView {
     this.update(view)
   }
 
-  /** The open palette and its ▾, or null. Escape listens only while one is open. */
-  #open: { palette: HTMLElement; arrow: HTMLElement } | null = null
+  /** The open palette, its ▾ and its colour box, or null. Escape listens only while one is open. */
+  #open: { palette: HTMLElement; arrow: HTMLElement; custom: CustomBox } | null = null
 
-  #togglePalette = (palette: HTMLElement, arrow: HTMLElement) => {
+  #togglePalette = (palette: HTMLElement, arrow: HTMLElement, custom: CustomBox) => {
     const same = this.#open?.palette === palette
     this.#closePalettes()
     if (same) return
     palette.hidden = false
     arrow.setAttribute('aria-expanded', 'true')
-    this.#open = { palette, arrow }
+    this.#open = { palette, arrow, custom }
     this.view.dom.ownerDocument.addEventListener('keydown', this.#escape, true)
   }
 
   #closePalettes = () => {
     if (this.#open === null) return
+    hideBox(this.view, this.#open.custom)
     this.#open.palette.hidden = true
     this.#open.arrow.setAttribute('aria-expanded', 'false')
     this.#open = null
     this.view.dom.ownerDocument.removeEventListener('keydown', this.#escape, true)
   }
 
-  /** Escape closes the open palette and goes no further: the cells stay selected. */
+  /** Escape closes the open palette's colour box, else the palette, and goes no further: the cells stay selected. */
   #escape = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape') return
+    if (e.key !== 'Escape' || this.#open === null) return
     e.preventDefault()
     e.stopPropagation()
-    this.#closePalettes()
+    if (this.#open.custom.box?.open === true) hideBox(this.view, this.#open.custom)
+    else this.#closePalettes()
   }
 
   #menuOpens = () => {
@@ -318,6 +382,8 @@ class CellToolbarView {
 
   update(view: EditorView, prevState?: EditorState) {
     if (this.#open !== null && !manyCells(view.state)) this.#closePalettes()
+    // Only while the strip can show: a key press elsewhere reads no table map.
+    if (manyCells(view.state)) for (const { button, enabled } of this.#gated) button.disabled = !enabled(view.state)
     this.#provider.update(view, prevState)
   }
 

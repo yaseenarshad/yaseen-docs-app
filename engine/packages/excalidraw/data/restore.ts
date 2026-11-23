@@ -64,7 +64,11 @@ import {
 
 import { syncInvalidIndices } from "@excalidraw/element";
 
-import { refreshTextDimensions } from "@excalidraw/element";
+import {
+  getTextElementStyledLayout,
+  restoreFolds,
+  refreshTextDimensions,
+} from "@excalidraw/element";
 
 import { getNormalizedDimensions } from "@excalidraw/element";
 
@@ -463,7 +467,7 @@ const restoreElementWithProperties = <
     frameId: element.frameId ?? null,
     roundness: element.roundness
       ? materializeElementRoundnessValue(
-          normalizeElementRoundness(element.roundness),
+          normalizeElementRoundness(element.roundness, element),
           element,
         )
       : element.strokeSharpness === "round"
@@ -564,6 +568,23 @@ export const restoreElement = (
         (element as { strikethrough?: unknown }).strikethrough === true
           ? true
           : undefined;
+      // YAZ-4277 D3: the stale-fold guard. An outside edit can shift the
+      // lines, so a fold that no longer points to a list item with children
+      // goes. YAZ-4434 (D31): a fold with an anchor moves to the item with
+      // its text, or goes; a wrong item never folds. When the folded lines
+      // changed, the box measures its lines again below
+      const savedFolds = (element as { foldedLines?: unknown }).foldedLines;
+      const folds = restoreFolds(
+        originalText,
+        savedFolds,
+        (element as { foldedLineTexts?: unknown }).foldedLineTexts,
+      );
+      const foldedLines = folds?.foldedLines;
+      const foldedLineTexts = folds?.foldedLineTexts;
+      const foldsChanged =
+        Array.isArray(savedFolds) &&
+        (savedFolds.length !== (foldedLines?.length ?? 0) ||
+          !!foldedLines?.some((line) => !savedFolds.includes(line)));
       const backgroundPaddingScale = normalizeTextBackgroundPaddingScale(
         (element as { backgroundPaddingScale?: unknown })
           .backgroundPaddingScale,
@@ -596,7 +617,40 @@ export const restoreElement = (
         fontStyle,
         strikethrough,
         backgroundPaddingScale,
+        foldedLines,
+        foldedLineTexts,
       });
+      if (!foldedLines) {
+        delete (element as { foldedLines?: unknown }).foldedLines;
+      }
+      if (!foldedLineTexts) {
+        delete (element as { foldedLineTexts?: unknown }).foldedLineTexts;
+      }
+      if (foldsChanged && !element.isDeleted) {
+        Object.assign(
+          element,
+          refreshTextDimensions(
+            element,
+            getContainerElement(element, targetElementsMap),
+            targetElementsMap,
+          ),
+        );
+      } else if (
+        foldedLines &&
+        element.autoResize &&
+        !element.containerId &&
+        !element.isDeleted
+      ) {
+        // YAZ-4277 D6: an outside edit (an AI agent) can change the lines
+        // inside a fold and leave the saved height. An auto-size box's height
+        // is its visible lines, which needs no font, so it is set again here.
+        // Only a box with a fold pays. A fixed-width box wraps by its font:
+        // the editor sets it once the fonts load (`refitFoldedTextBoxes`).
+        const { height } = getTextElementStyledLayout(element, Infinity);
+        if (Math.abs(height - element.height) > 0.01) {
+          element = { ...element, height };
+        }
+      }
       if (!textRuns) {
         delete (element as { textRuns?: unknown }).textRuns;
       }

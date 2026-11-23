@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { isOldId } from '@shared/noteId'
+import type { BackfillCreatedResult } from '@shared/ipc'
+import { isOldId } from '@shared/pageId'
 import type { IdsState, IndexRecord, IndexResponse, PropertiesResponse } from '@shared/types'
 import { api } from '../api'
 import { createViewOnlyLinkSource, type MutableViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
@@ -7,17 +8,28 @@ import { createWikilinkCandidateSource, type MutableWikilinkCandidateSource } fr
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { useGithubSync, type GithubSyncState } from '../hooks/useGithubSync'
 import { useWatch, type WatchSource } from '../hooks/useWatch'
-import type { NoticeKind } from '../lib/notice'
+import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { attentionCopy, type AttentionCopy } from '../lib/syncAttention'
 import { useVaultName } from '../lib/useVaultName'
 import { useExternalRenames, type ExternalRenames } from '../links/useExternalRenames'
-import { useReview, type ReviewApi } from '../review/useReview'
+import { useCardReview, type CardReviewApi } from '../review/useCardReview'
+import { desktopReviewHost } from '../review/desktopReviewHost'
 import { useReviewSettings, type ReviewSettingsState } from '../review/useReviewSettings'
+import { useLinkClick, type LinkClickState } from '../explore/linkClick'
+import { useShowIds, type ShowIdsState } from '../search/showIds'
+import { useLinkPills, type LinkPillsState } from '../settings/useLinkPills'
+import { useVaultUnitWord, type UnitWordState } from './unitWord'
+import { useReadOnlyVault, type ReadOnlyVaultState } from './readOnlyVault'
 import { useTextFormatting, type TextFormattingState } from '../settings/useTextFormatting'
+import { useCardLook, type CardLookState } from '../review/useCardLook'
+import { useTableLook, type TableLookState } from '../settings/useTableLook'
+import { useFolderPagesFile, type FolderPagesFileState } from '../settings/useFolderPagesFile'
+import { useDailyPages, type DailyPagesState } from '../settings/useDailyPages'
+import { useVaultNewPlaces, type VaultNewPlacesState } from '../settings/useVaultNewPlaces'
 import { useProperties } from '../views/useProperties'
 
 /**
- * Everything the window holds ONCE PER VAULT (YAZ-2602 D1): a note's links, properties, sync,
+ * Everything the window holds ONCE PER VAULT (YAZ-2602 D1): a page's links, properties, sync,
  * review and IDs come from the vault that holds it, whichever tab is in front. `App` owns one per
  * slot (`vault/slots.ts`) and every one stays loaded, so a tab switch between two vaults costs
  * what a switch inside one vault costs.
@@ -39,9 +51,29 @@ export interface VaultScope {
   /** What the app calls the vault (YAZ-1974 D4); null for a slot with none. */
   name: string | null
   reviewSettings: ReviewSettingsState
-  /** How text looks in every note of this vault (YAZ-3066 D10): `.yaseendocs/text-formatting.json`. Each page layer of the vault reads it (D12). */
+  /** This vault's "Clicking a link" (YAZ-4936): `.yaseendocs/link-click.json`. */
+  linkClick: LinkClickState
+  /** This vault's "Show IDs in search" (YAZ-4940): `.yaseendocs/show-ids.json`. */
+  showIds: ShowIdsState
+  /** What this vault calls a page (YAZ-4938): `.yaseendocs/unit-word.json`, and the helper that gives each label its word. */
+  unit: UnitWordState
+  /** This vault's Read only (YAZ-4939): `.yaseendocs/read-only.json`, and its file-actions allowance. */
+  readOnlyVault: ReadOnlyVaultState
+  /** How text looks in every page of this vault (YAZ-3066 D10): `.yaseendocs/text-formatting.json`. Each page layer of the vault reads it (D12). */
   textFormatting: TextFormattingState
-  review: ReviewApi
+  /** How this vault's cards look (YAZ-5484): `.yaseendocs/card-look.json`; no file draws the app's look. Every surface that shows one of its cards reads it. */
+  cardLook: CardLookState
+  /** How this vault's tables look and how its new tables start (YAZ-5487): `.yaseendocs/table-look.json`; no file draws the app's look. */
+  tableLook: TableLookState
+  /** This vault's folder page view and page defaults (YAZ-5489): `.yaseendocs/folder-pages.json`; no file reads the app's Settings › Folder pages. */
+  folderPages: FolderPagesFileState
+  /** How every link pill of this vault looks (YAZ-4924): `.yaseendocs/link-pills.json`. Each page layer reads its CSS variables; `wikilinks` carries the pieces a pill gains. */
+  linkPills: LinkPillsState
+  /** This vault's daily pages (YAZ-5491): `.yaseendocs/daily-pages.json`, the one source; App picks the window's (`windowDailyPages`). */
+  dailyPages: DailyPagesState
+  /** Where new pages and boards go in this vault (YAZ-5486): `.yaseendocs/new-places.json`'s `newPage` and `newBoard`. */
+  newPlaces: VaultNewPlacesState
+  review: CardReviewApi
   renames: ExternalRenames
   /**
    * The vault's IDs as its last snapshot said them (YAZ-2523 🔒 V5),
@@ -53,15 +85,17 @@ export interface VaultScope {
         enabled: boolean
         held: boolean
         ask: IndexResponse['ask']
-        set: (enabled: boolean, letters?: string) => void
+        /** Resolves true once main saved the answer, false when it refused (a notice says why). */
+        set: (enabled: boolean, letters?: string) => Promise<boolean> | void
         check: () => Promise<string>
-        /** How many notes and folders of the snapshot hold an old 12-character ID (S88). */
+        /** How many pages and folders of the snapshot hold an old 12-character ID (S88). */
         old: number
         /** A run of "Give old IDs numbers" stopped with links left to change (S90). */
         unfinished: boolean
         state: () => Promise<IdsState>
-        reletter: (letters: string) => Promise<IdsState>
-        backfill: () => Promise<IdsState>
+        reletter: (letters: string) => Promise<IdsState | null>
+        backfill: () => Promise<IdsState | null>
+        backfillCreated: () => Promise<BackfillCreatedResult | null>
       }
     | undefined
   /** Every READY index snapshot of this vault, from its `WikilinkIndexBridge`. */
@@ -69,7 +103,7 @@ export interface VaultScope {
 }
 
 /** `root` is nullable because `App` calls this for every slot: with no vault there is no bridge call. */
-export function useVaultScope(root: string | null, notify: (text: string, icon?: NoticeKind) => void): VaultScope {
+export function useVaultScope(root: string | null, notify: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, allowFileAction?: (root: string) => Promise<boolean>, transientReadOnly = false): VaultScope {
   const watch = useWatch(root)
   // Wikilinks (Links A, GRO-2190): ONE resolve source per vault — a stable object every editor's
   // wikilink plugin subscribes to; the vault's WikilinkIndexBridge keeps it fed from the vault
@@ -96,7 +130,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const sync = useGithubSync(root)
   // The attention banner (3B): passive, exactly like the external-rename one — `role="status"`,
   // explicit buttons, never a modal. Sync failing is not worth stealing focus over; the vault
-  // still works, and the note in front of the user is untouched.
+  // still works, and the page in front of the user is untouched.
   //
   // Dismissal is per-PROBLEM, not per-session: it resets on ANY transition of state or reason,
   // so a retry that fails again — or a different failure — says so rather than staying silent
@@ -110,11 +144,28 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const syncCopy = sync.status === null ? null : attentionCopy(sync.status)
   const dismissSync = useCallback(() => setSyncDismissed(true), [])
   const name = useVaultName(root)
-  const reviewSettings = useReviewSettings(root, notify)
+  // The vault's answer on IDs as the last snapshot said it (below, with `onSnapshot`): here, so Cards follow it (YAZ-5154).
+  const [idsSnapshot, setIdsSnapshot] = useState<{ root: string | null; enabled: boolean; held: boolean; old: number; unfinished: boolean; ask: IndexResponse['ask'] } | null>(null)
+  const vaultIds = idsSnapshot?.root === root ? idsSnapshot : null
+  // Cards need IDs (YAZ-5154): a vault the index says gives none publishes Cards off. No answer yet hides nothing.
+  const reviewSettings = useReviewSettings(root, notify, vaultIds?.enabled === false)
+  const linkClick = useLinkClick(root)
+  const showIds = useShowIds(root)
+  const unit = useVaultUnitWord(root)
+  const readOnlyVault = useReadOnlyVault(root, transientReadOnly)
   const textFormatting = useTextFormatting(root, notify)
-  // Upkeep review (YAZ-2322): the Inbox count and the vault's review session, read off the SAME
+  const cardLook = useCardLook(root, notify)
+  const tableLook = useTableLook(root, notify)
+  const folderPages = useFolderPagesFile(root, notify)
+  const linkPills = useLinkPills(root, notify)
+  const dailyPages = useDailyPages(root, notify)
+  const newPlaces = useVaultNewPlaces(root, notify)
+  // The look's text pieces and the vault's name reach every editor of the vault through its resolve source (YAZ-4924):
+  // one object the editors already subscribe to, so a change draws the pills again without a prop on each editor.
+  useEffect(() => wikilinks.setLook(linkPills.pills, name), [wikilinks, linkPills.pills, name])
+  // Card review (YAZ-4967): the Inbox count and the vault's review session, read off the SAME
   // index source the wikilinks use. The window shows one session at a time; `App` sees to that.
-  const review = useReview(root, wikilinks, reviewSettings.settings, notify)
+  const review = useCardReview(root, wikilinks, reviewSettings.settings, notify, name, desktopReviewHost, reviewSettings.save)
 
   // External rename/move resilience (Links E1c, GRO-2242 — locked: confirm-first, NEVER
   // automatic, never a dialog): ONE detector per vault, fed by the cold-start reconcile diff and
@@ -126,14 +177,12 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   // one of another vault says nothing here, so the Settings switch never shows an answer this vault
   // did not give. `enabled` is the snapshot's `ids`: no answer reads as no, and nothing asks when a
   // vault opens (YAZ-2677 🔒 D1). `ask` is what a yes would write, while the answer is not yes: the
-  // counts of the box in Settings, and the letters the vault already has (🔒 D2). `held` says a note
+  // counts of the box in Settings, and the letters the vault already has (🔒 D2). `held` says a page
   // holds an ID, which is true only while the vault uses IDs (a plain vault's records carry none).
-  const [idsSnapshot, setIdsSnapshot] = useState<{ root: string | null; enabled: boolean; held: boolean; old: number; unfinished: boolean; ask: IndexResponse['ask'] } | null>(null)
-  const vaultIds = idsSnapshot?.root === root ? idsSnapshot : null
   const onSnapshot = useCallback(
     (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask'], unfinished: boolean) => {
       onIndexSnapshot(records, folders, ids)
-      // The row "Old IDs" shows while a note or a folder holds an old ID (YAZ-2677 R3, S88), or a run that stopped left links to change (S90).
+      // The row "Old IDs" shows while a page or a folder holds an old ID (YAZ-2677 R3, S88), or a run that stopped left links to change (S90).
       const old = [...records, ...folders].filter((record) => isOldId(record.id)).length
       setIdsSnapshot({ root, enabled: ids, held: records.some((record) => record.id !== undefined), old, unfinished, ask })
     },
@@ -147,16 +196,38 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
    * keep the other's change; and a yes gives the numbers now, on this Mac (R32, S64). The index
    * refetches off the write. A file that cannot be read is not written over.
    */
-  const saveIds = (enabled: boolean, letters?: string): void => {
-    if (root === null) return
-    api.ids.set(root, enabled, letters).catch((err: unknown) => notify(`Couldn't save this vault's answer: ${said(err)}`, 'error'))
+  const saveIds = async (enabled: boolean, letters?: string): Promise<boolean> => {
+    if (root === null) return false
+    // YAZ-5989: turning IDs on or setting letters rewrites pages across the vault, so a read-only vault asks first.
+    if ((enabled || letters !== undefined) && allowFileAction !== undefined && !(await allowFileAction(root))) return false
+    // YAZ-5154: true once saved, so Cards change only with IDs.
+    return api.ids.set(root, enabled, letters).then(
+      () => true,
+      (err: unknown) => {
+        notify(`Couldn't save this vault's answer: ${said(err)}`, 'error')
+        return false
+      },
+    )
   }
   /** "Check for duplicates" (YAZ-2677 🔒 D7): the result in one line, for the row in Settings. */
   const checkIds = (): Promise<string> => (root === null ? Promise.resolve('') : api.ids.check(root))
   // The rows "ID letters" and "Old IDs" (YAZ-2677 🔒 D5, D6): the main process counts and changes. Stable, so a row reads the state one time.
   const idsState = useCallback((): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.state(root)), [root])
-  const reletter = (letters: string): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.reletter(root, letters))
-  const backfill = (): Promise<IdsState> => (root === null ? Promise.reject(new Error('no vault')) : api.ids.backfill(root))
+  const reletter = async (letters: string): Promise<IdsState | null> => {
+    if (root === null) throw new Error('no vault')
+    if (allowFileAction !== undefined && !(await allowFileAction(root))) return null
+    return api.ids.reletter(root, letters)
+  }
+  const backfill = async (): Promise<IdsState | null> => {
+    if (root === null) throw new Error('no vault')
+    if (allowFileAction !== undefined && !(await allowFileAction(root))) return null
+    return api.ids.backfill(root)
+  }
+  const backfillCreated = async (): Promise<BackfillCreatedResult | null> => {
+    if (root === null) throw new Error('no vault')
+    if (allowFileAction !== undefined && !(await allowFileAction(root))) return null
+    return api.backfillCreated(root)
+  }
 
   return {
     root,
@@ -170,10 +241,20 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     dismissSync,
     name,
     reviewSettings,
+    linkClick,
+    showIds,
+    unit,
+    readOnlyVault,
     textFormatting,
+    cardLook,
+    tableLook,
+    folderPages,
+    linkPills,
+    dailyPages,
+    newPlaces,
     review,
     renames,
-    ids: vaultIds === null ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, set: saveIds, check: checkIds, old: vaultIds.old, unfinished: vaultIds.unfinished, state: idsState, reletter, backfill },
+    ids: vaultIds === null ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, set: saveIds, check: checkIds, old: vaultIds.old, unfinished: vaultIds.unfinished, state: idsState, reletter, backfill, backfillCreated },
     onSnapshot,
   }
 }

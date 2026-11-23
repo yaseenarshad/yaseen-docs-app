@@ -1,0 +1,72 @@
+import { readFileSync } from 'node:fs'
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, expect, it } from 'vitest'
+import { FRIENDS_ENABLED } from '@shared/features'
+import { CardSpacingPreview, PageSpacingPreview } from './SpacingPreview'
+import { SETTINGS_SECTIONS } from './registry'
+
+let root: Root
+let el: HTMLElement
+beforeEach(() => {
+  el = document.createElement('div')
+  document.body.append(el)
+  root = createRoot(el)
+})
+afterEach(() => {
+  act(() => root.unmount())
+  el.remove()
+})
+
+it('YAZ-5050 round 2: the card preview is the card`s own render in the card`s classes — one word shown, one still hidden, a list with a child', () => {
+  act(() => root.render(<CardSpacingPreview />))
+  const card = el.querySelector('.spacing-preview .card > .card__body > .card__sides > .card__side')!
+  expect(card).not.toBeNull()
+  expect(card.querySelectorAll(':scope > p')).toHaveLength(3)
+  expect(card.querySelector('.card__hidden')?.textContent).toBe('Seine')
+  expect(card.querySelector('.card__blank')).not.toBeNull()
+  expect(card.querySelector('li li')).not.toBeNull()
+  expect(el.querySelector('.spacing-preview')?.getAttribute('aria-hidden')).toBe('true')
+})
+
+it('YAZ-5050 round 2: the page preview is a heading and paragraphs in the page editor`s classes', () => {
+  act(() => root.render(<PageSpacingPreview />))
+  expect(el.querySelectorAll('.spacing-preview .editor-instance .milkdown .ProseMirror > p')).toHaveLength(2)
+  expect(el.querySelector('.spacing-preview .editor-instance .milkdown .ProseMirror > h3')).not.toBeNull()
+})
+
+it('YAZ-5050 round 2: the previews copy no text style — SpacingPreview.css styles only their box, so the page`s and the card`s own rules and variables draw the text', () => {
+  const css = readFileSync(`${__dirname}/SpacingPreview.css`, 'utf8')
+  const preview = css.slice(css.indexOf('.spacing-preview {'))
+  expect(preview).not.toMatch(/line-height|--edit-|--card-/)
+  expect(preview).not.toMatch(/\b(p|li|h3|\.card__side)\s*[{,]/)
+})
+
+it('YAZ-5050 round 2: Settings › Review is split into groups by purpose, every row kept; each spacing has its preview right after its rows', () => {
+  const review = SETTINGS_SECTIONS.find((s) => s.id === 'cards')!
+  expect(review.groups.map((g) => g.title ?? null)).toEqual([
+    null,
+    null,
+    null,
+    'Daily limits',
+    'Answers',
+    'Scheduling',
+    'Card look',
+    null,
+    ...(FRIENDS_ENABLED ? ['GitHub'] : []),
+  ])
+  expect(review.groups.map((g) => g.items.map((i) => i.id))).toEqual([
+    ['enabled', 'whatThisAdds', 'cardSkillInSidebar'],
+    ['cardCourse'],
+    ['cardTips'],
+    ['newPerDay', 'upNextPerDay', 'newOrder'],
+    ['buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'loopArrows'],
+    ['retention', 'maxDays', 'fuzz', 'weights'],
+    ['cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview'],
+    ['howCardsComeBack'],
+    ...(FRIENDS_ENABLED ? [['friendsSend']] : []),
+  ])
+  const spacing = SETTINGS_SECTIONS.find((s) => s.id === 'appearance')!.groups.find((g) => g.title === 'Spacing')!
+  expect(spacing.items.map((i) => i.id)).toEqual(['spacingVault', 'lineSpacing', 'blockGap', 'pageSpacingPreview'])
+  for (const preview of [spacing.items[3], review.groups[6].items.at(-1)!]) expect(preview.bare).toBe(true)
+})

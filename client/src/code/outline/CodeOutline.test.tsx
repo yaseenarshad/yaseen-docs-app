@@ -493,7 +493,8 @@ describe('S9: ⌘J, type, ⏎', () => {
 })
 
 describe('S12: a big file', () => {
-  it('260 000 symbols: the list draws only the rows on screen, and a cursor move renders in time', () => {
+  // timing test: up to 3 tries so a busy CI machine doesn't fail it (YAZ-4965); still fails if slow every time
+  it('260 000 symbols: the list draws only the rows on screen, and a cursor move renders in time', { retry: 2 }, () => {
     const big: CodeSymbol[] = Array.from({ length: 52_000 }, (_, i) => ({
       name: `value${i}`,
       kind: 13,

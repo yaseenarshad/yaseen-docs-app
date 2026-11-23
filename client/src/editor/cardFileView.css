@@ -1,0 +1,39 @@
+/*
+ * A card file's tab (YAZ-5037, `CardFileView.tsx`): the card in a page-wide column, as a page's text sits — the
+ * folder path small and muted, then the card as a page shows it (YAZ-5392: its top bar, its title band, its sides;
+ * `card.css`), its Reviews, "Linked mentions" and "Embedded in". Light and dark from the app's tokens.
+ */
+/* The scroller is a page's (`.editor-host` in app.css: its tail too); the column is a page's (`.editor-instance`),
+   with the folder path's room on top. Card width caps what is in the column (`card.css`, YAZ-5144 round 3). The
+   comments block (YAZ-5466 round 3) is the column's sibling, in its own page column (`comments.css`), as in a page. */
+.card-file {
+  outline: none;
+}
+.card-file > .card-file__page {
+  padding-top: 8px;
+}
+/* As wide as the card and at its place (`card.css`'s Card width rule sets the max-width and the sides' margins, YAZ-5871
+   D3), so the path stays over the card's left edge at Centre and at Left. */
+.card-file__path {
+  display: flex;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.card-file__state {
+  font-variant-numeric: tabular-nums;
+}
+/* The text outside the card of a file that is not valid: shown, never deleted, muted under the notice. */
+.card-file__outside {
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--border);
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+}
+.card-file__outside p {
+  margin: 0;
+}
+.card-file__outside p + p {
+  margin-top: 8px;
+}

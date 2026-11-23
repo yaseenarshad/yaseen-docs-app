@@ -62,3 +62,33 @@ describe('ContextMenuSurface closes', () => {
     expect(document.activeElement).not.toBe(frame)
   })
 })
+
+describe('ContextMenuSurface stays in the window (YAZ-4544)', () => {
+  it('moves back inside when its content grows after it opens, as "Edit column…" does in the header menu', () => {
+    const observers: { cb: ResizeObserverCallback; el: Element }[] = []
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(private cb: ResizeObserverCallback) {}
+      observe(el: Element) { observers.push({ cb: this.cb, el }) }
+      unobserve() {}
+      disconnect() { observers.length = 0 }
+    })
+    let width = 200
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, 0, width, 100))
+    try {
+      root = createRoot(document.body.appendChild(document.createElement('div')))
+      act(() => root?.render(<ContextMenuSurface x={window.innerWidth - 300} y={10} onClose={() => {}}><button type="button">Row</button></ContextMenuSurface>))
+      const menu = document.querySelector<HTMLElement>('.ctx-menu')!
+      expect(menu.style.left).toBe(`${window.innerWidth - 300}px`)
+      expect(observers.map((o) => o.el)).toEqual([menu])
+      width = 360
+      act(() => observers[0].cb([], {} as ResizeObserver))
+      expect(menu.style.left).toBe(`${window.innerWidth - 360}px`)
+      act(() => root?.unmount())
+      root = null
+      expect(observers).toHaveLength(0)
+    } finally {
+      rect.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  })
+})

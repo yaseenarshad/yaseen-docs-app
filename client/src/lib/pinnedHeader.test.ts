@@ -1,4 +1,4 @@
-/** The shared header-pin helpers (YAZ-3769 S3): the folder page's `<thead>` and a note table's frozen rows. */
+/** The shared header-pin helpers (YAZ-3769 S3): the folder page's `<thead>` and a page table's frozen rows. */
 import { afterEach, describe, expect, it } from 'vitest'
 import { pinnedHeaderOffset, verticalScrollParent } from './pinnedHeader'
 

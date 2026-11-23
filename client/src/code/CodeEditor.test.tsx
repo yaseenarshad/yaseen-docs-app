@@ -20,9 +20,19 @@ import { _resetRenameContinuity } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
 import { ExpandAllIcon } from '../views/view/icons'
 import { BROKEN_CODE_DOCUMENT, CodeEditor, appCommandOf, findersFor, stickyModelFor } from './CodeEditor'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 import { LARGE_CODE_CHARS } from './outline/symbolSource'
 import { keepBackView, MAX_BACK_VIEWS, openCodeAt, takeBackView } from './codeOpener'
 import { applyAppTheme, created, resetFakeMonaco } from './monacoTestKit'
+
+/**
+ * The cog's open menu (YAZ-4776): a portal on the page, under its cog, so a test finds it by the open cog's
+ * `aria-controls`, not inside the cog's pane. `null` while it is closed.
+ */
+function menuIn(scope: ParentNode): HTMLElement | null {
+  const id = scope.querySelector('.page-settings > button[aria-expanded="true"]')?.getAttribute('aria-controls')
+  return id == null ? null : document.getElementById(id)
+}
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -369,14 +379,14 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
   const chipIn = (id: string) => tab(id).querySelector('.read-only-chip')
   const cogRows = (id: string): string[] => {
     act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    const rows = [...tab(id).querySelectorAll('.page-settings__menu button')].map((b) => b.textContent ?? '')
+    const rows = [...(menuIn(tab(id))?.querySelectorAll('button') ?? [])].map((b) => b.textContent ?? '')
     act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
     return rows
   }
   const clickRow = (id: string, label: string): void => {
-    // The menu stays open after a row (as a note's does): open it only when it is closed.
-    if (tab(id).querySelector('.page-settings__menu') === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    act(() => [...tab(id).querySelectorAll<HTMLButtonElement>('.page-settings__menu button')].find((b) => b.textContent?.startsWith(label))!.click())
+    // The menu stays open after a row (as a page's does): open it only when it is closed.
+    if (menuIn(tab(id)) === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    act(() => [...(menuIn(tab(id))?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent?.startsWith(label))!.click())
   }
 
   afterEach(() => readFile.mockReset())
@@ -387,8 +397,8 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
     expect(cogRows('a')).toEqual(['Read only', 'Wrap long lines✓', 'Minimap', 'Table of contents✓'])
     clickRow('a', 'Read only')
     // One line each, under one heading that says they change every code file (the checker's nit on YAZ-3458).
-    expect(tab('a').querySelector('.page-settings__menu [role="group"]')?.getAttribute('aria-label')).toBe('All code files')
-    expect(tab('a').querySelector('.page-settings__menu .page-settings__label')?.textContent).toBe('All code files')
+    expect(menuIn(tab('a'))?.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('All code files')
+    expect(menuIn(tab('a'))?.querySelector('.page-settings__label')?.textContent).toBe('All code files')
     expect(changeCode).toHaveBeenLastCalledWith({ codeReadOnly: true })
     clickRow('a', 'Wrap long lines')
     expect(changeCode).toHaveBeenLastCalledWith({ codeWrap: false })
@@ -416,13 +426,15 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
     expect(created.editors.map((e) => e.options.readOnly)).toEqual([true, true])
   })
 
-  it('S2: "Allow edits" unlocks only that tab, the setting stays; a closed and reopened tab is locked again', async () => {
+  it('S2: "Allow edits for 1 minute" unlocks only that tab, the setting stays; a closed and reopened tab is locked again', async () => {
     await openTwo({ codeReadOnly: true })
     const [a, b] = created.editors
     act(() => chipIn('a')!.querySelector<HTMLButtonElement>('.read-only-chip__button')!.click())
     act(() => chipIn('a')!.querySelector<HTMLButtonElement>('.read-only-chip__allow')!.click())
     expect(a.options.readOnly).toBe(false)
-    expect(chipIn('a')).toBeNull()
+    // The chip stays, as "Editing · mm:ss" (YAZ-4939), with "Lock now".
+    expect(chipIn('a')?.querySelector('.read-only-chip__button')?.textContent).toBe('Editing · 1:00')
+    expect(chipIn('a')?.querySelector('.read-only-chip__lock')?.textContent).toBe('Lock now')
     expect(b.options.readOnly).toBe(true)
     expect(chipIn('b')).not.toBeNull()
     expect(changeCode).not.toHaveBeenCalled()
@@ -442,6 +454,33 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
     await settle()
     expect(created.editors.map((e) => e.options.readOnly)).toEqual([true, true])
     expect(chipIn('a')).not.toBeNull()
+  })
+
+  it('YAZ-4939: the vault On locks every code tab as the setting does; a time choice unlocks that tab for that long, and the setting stays Off', async () => {
+    readFile.mockImplementation(async (path) => disk('a\n', 100, path))
+    act(() =>
+      root?.render(
+        <VaultReadOnly.Provider value={{ on: true, allowFileAction: () => Promise.resolve(true) }}>
+          <div data-tab="a"><CodeEditor root={ROOT} path={PATH} watch={watch} onChangeCodeSettings={changeCode} /></div>
+          <div data-tab="b"><CodeEditor root={ROOT} path={OTHER} watch={watch} onChangeCodeSettings={changeCode} /></div>
+        </VaultReadOnly.Provider>,
+      ),
+    )
+    await settle()
+    const [a, b] = created.editors
+    expect([a, b].map((e) => e.options.readOnly)).toEqual([true, true])
+    expect(chipIn('a')).not.toBeNull()
+    act(() => chipIn('a')!.querySelector<HTMLButtonElement>('.read-only-chip__button')!.click())
+    expect([...chipIn('a')!.querySelectorAll('.read-only-chip__ask button')].map((x) => x.textContent)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
+    act(() => chipIn('a')!.querySelector<HTMLButtonElement>('.read-only-chip__allow')!.click())
+    expect(a.options.readOnly).toBe(false)
+    expect(b.options.readOnly).toBe(true)
+    expect(chipIn('a')?.querySelector('.read-only-chip__button')?.textContent).toBe('Editing · 1:00')
+    await after(60_000)
+    await settle()
+    expect(a.options.readOnly).toBe(true)
+    expect(chipIn('a')?.querySelector('.read-only-chip__button')?.textContent).toBe('Read only')
+    expect(changeCode).not.toHaveBeenCalled()
   })
 
   it('S4: ⌥Z flips one tab and saves nothing; a change of Wrap then sets every tab, the flipped one too', async () => {
@@ -496,8 +535,8 @@ describe('the cog\'s "Table of contents" row: this file only (YAZ-3506)', () => 
   const tab = (id: string): HTMLElement => container.querySelector<HTMLElement>(`[data-tab="${id}"]`)!
   const toc = (id: string): Element | null => tab(id).querySelector('nav.outline')
   const openCog = (id: string): HTMLButtonElement[] => {
-    if (tab(id).querySelector('.page-settings__menu') === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    return [...tab(id).querySelectorAll<HTMLButtonElement>('.page-settings__menu button')]
+    if (menuIn(tab(id)) === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    return [...(menuIn(tab(id))?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
   }
   const clickToc = (id: string): void => {
     const row = openCog(id).find((b) => b.textContent?.startsWith('Table of contents'))!
@@ -659,7 +698,7 @@ describe('text size, scroll and Duplicate tab (YAZ-3451)', () => {
     return event
   }
 
-  it("⌘+ / ⌘− / ⌘0 reach the code tab as the note's ZOOM_EVENT: the tab claims them and Monaco's text size follows the note's steps", async () => {
+  it("⌘+ / ⌘− / ⌘0 reach the code tab as the page's ZOOM_EVENT: the tab claims them and Monaco's text size follows the page's steps", async () => {
     await opened(FILE)
     expect(editor().options.fontSize).toBe(13)
     expect(zoomStep(1).defaultPrevented).toBe(true)
@@ -988,16 +1027,16 @@ describe('collapse all and expand all (YAZ-3478)', () => {
     await focused()
     const button = container.querySelector<HTMLButtonElement>('.status-chips > .fold-all__trigger')!
     await act(async () => button.focus())
-    expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
+    expect(button.getAttribute('aria-label')).toBe('Collapse all (Cmd+Shift+U)')
     await act(async () => button.click())
     expect(editor().triggered).toEqual(['editor.foldAll'])
     expect([...editor().folded].sort((a, b) => a - b)).toEqual([1, 2, 5])
     expect(document.activeElement).toBe(editor().input)
-    expect(button.getAttribute('aria-label')).toBe('Expand all (⌘⇧I)')
+    expect(button.getAttribute('aria-label')).toBe('Expand all (Cmd+Shift+I)')
     await act(async () => button.click())
     expect(editor().triggered).toEqual(['editor.foldAll', 'editor.unfoldAll'])
     expect([...editor().folded]).toEqual([])
-    expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
+    expect(button.getAttribute('aria-label')).toBe('Collapse all (Cmd+Shift+U)')
   })
 
   it('YAZ-3938 D9: the chevrons point up for "Collapse all" and down for "Expand all", and follow a fold arrow or key with no look at the button', async () => {
@@ -1007,10 +1046,10 @@ describe('collapse all and expand all (YAZ-3478)', () => {
     expect(pointsDown()).toBe(false)
     await act(async () => editor().trigger('keyboard', 'editor.foldAll'))
     expect(pointsDown()).toBe(true)
-    expect(button.getAttribute('aria-label')).toBe('Expand all (⌘⇧I)')
+    expect(button.getAttribute('aria-label')).toBe('Expand all (Cmd+Shift+I)')
     await act(async () => editor().toggleFold(2))
     expect(pointsDown()).toBe(false)
-    expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
+    expect(button.getAttribute('aria-label')).toBe('Collapse all (Cmd+Shift+U)')
   })
 })
 

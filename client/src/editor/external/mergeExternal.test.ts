@@ -76,7 +76,7 @@ describe('mergeExternalMarkdown (YAZ-3704 D1)', () => {
     expect(getMarkdownForSave(crepe)).toContain('New para')
   })
 
-  it('lands nothing when the new file equals the live note, also when the note has a heading (checker 4A)', async () => {
+  it('lands nothing when the new file equals the live page, also when the page has a heading (checker 4A)', async () => {
     const base = '# Title\n\nAlpha\n'
     const { crepe } = await mount(base)
     typeBefore(crepe, 'Alpha', 'USER-')
@@ -144,7 +144,7 @@ describe('mergeExternalMarkdown (YAZ-3704 D1)', () => {
     expect(getMarkdownForSave(crepe)).toContain('The cat sat on the mat.')
   })
 
-  it('refuses a whole-note rewrite while there is typing', async () => {
+  it('refuses a whole-page rewrite while there is typing', async () => {
     const { crepe } = await mount()
     typeBefore(crepe, 'Child', 'USER-')
     expect(mergeExternalMarkdown(crepe, BASE, '# Entirely different\n\nNothing in common.\n')).toBe('conflict')
@@ -181,7 +181,7 @@ describe('mergeExternalMarkdown (YAZ-3704 D1)', () => {
     expect(ranges.every((r) => r.removed === '')).toBe(true)
   })
 
-  it('lands nothing when the new file already equals the live note', async () => {
+  it('lands nothing when the new file already equals the live page', async () => {
     const { crepe } = await mount()
     typeBefore(crepe, 'Child', 'USER-')
     const seen = spyDispatch(crepe)
@@ -238,5 +238,22 @@ describe('applyExternalMarkdown tells the change list too (YAZ-3704 D3)', () => 
     expect(ranges.map((r) => seen[0].doc.textBetween(r.from, r.to)).join('')).toContain('grown')
     expect(applyExternalMarkdown(crepe, BASE, true)).toBe('applied')
     expect(seen[1].getMeta(OUTSIDE_RANGES_META)).toBeUndefined()
+  })
+})
+
+describe('the save after a merge (YAZ-4964: an Inbox answer in an open page with typing)', () => {
+  it('the update the listener sends 200 ms after the typing carries the merged doc, not the doc of the typing alone', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const updates: string[] = []
+    const crepe = createCrepe({ root, defaultValue: BASE, onMarkdownUpdated: (md) => updates.push(md) })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    typeBefore(crepe, 'Second', 'typed ')
+    // Within the listener's 200 ms: an outside write lands as a merge (out of the history).
+    expect(mergeExternalMarkdown(crepe, BASE, BASE.replace('Leaf tail', 'Leaf tail, from outside'), true)).toBe('merged')
+    await vi.waitFor(() => expect(updates.length).toBeGreaterThan(0))
+    expect(updates.at(-1)).toContain('typed Second')
+    expect(updates.at(-1)).toContain('Leaf tail, from outside')
   })
 })

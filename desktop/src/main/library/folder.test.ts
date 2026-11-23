@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { defaultAppState, type AppState } from '@shared/types'
-import { DEFAULT_LIBRARY_DIR, ensureLibraryFolder, followLibraryFolder, resolveLibraryFolder } from './folder'
+import { DEFAULT_LIBRARY_DIR, ensureLibraryFolder, followLibraryFolder, libraryFolderOf, makeLibraryDir, resolveLibraryFolder } from './folder'
 
 let dir: string
 beforeEach(async () => {
@@ -19,6 +19,35 @@ describe('resolveLibraryFolder (🔒 YAZ-1775 D5)', () => {
   it('a chosen path is used as it stands — pointing it inside a synced vault IS the backup story', () => {
     expect(resolveLibraryFolder('/Users/x/Vault/Library', '/anything')).toBe('/Users/x/Vault/Library')
   })
+
+  it('with a settings folder and no chosen path, the default is `<settings folder>/library`; a chosen path still wins (YAZ-4364)', () => {
+    const there = () => true
+    expect(resolveLibraryFolder(null, '/data', '/Sync/settings', there)).toBe(path.join('/Sync/settings', DEFAULT_LIBRARY_DIR))
+    expect(resolveLibraryFolder(null, '/data', null, there)).toBe(path.join('/data', DEFAULT_LIBRARY_DIR))
+    expect(resolveLibraryFolder('/Vault/Library', '/data', '/Sync/settings', there)).toBe('/Vault/Library')
+  })
+
+  it('a settings folder that is gone (renamed, drive out) gives `<userData>/library`, the library the move kept (YAZ-4383)', async () => {
+    const settings = path.join(dir, 'Sync', 'settings')
+    expect(resolveLibraryFolder(null, '/data', settings)).toBe(path.join('/data', DEFAULT_LIBRARY_DIR))
+    await mkdir(settings, { recursive: true })
+    expect(resolveLibraryFolder(null, '/data', settings)).toBe(path.join(settings, DEFAULT_LIBRARY_DIR))
+  })
+})
+
+describe('libraryFolderOf (YAZ-4366)', () => {
+  it('one look at the settings folder for each store change, however many followers ask', () => {
+    const looks: string[] = []
+    const exists = (d: string) => (looks.push(d), true)
+    const state = { ...defaultAppState(), settingsFolder: '/Sync/settings' }
+    for (let i = 0; i < 3; i++) expect(libraryFolderOf(state, '/data', exists)).toBe(path.join('/Sync/settings', DEFAULT_LIBRARY_DIR))
+    expect(looks).toEqual(['/Sync/settings'])
+    // The next change (a new state) looks again: a drive that went is seen.
+    expect(libraryFolderOf({ ...state }, '/data', () => false)).toBe(path.join('/data', DEFAULT_LIBRARY_DIR))
+    // Another userData is another answer.
+    expect(libraryFolderOf(state, '/other', exists)).toBe(path.join('/Sync/settings', DEFAULT_LIBRARY_DIR))
+    expect(looks).toHaveLength(2)
+  })
 })
 
 describe('followLibraryFolder', () => {
@@ -28,12 +57,17 @@ describe('followLibraryFolder', () => {
     const change = (next: AppState) => listeners.forEach((l) => l((state = next)))
     const moves: string[] = []
     const store = { get: () => state, onChange: (l: (s: AppState) => void) => (listeners.push(l), () => undefined) }
+    const settings = dir // a settings folder that is there
     expect(followLibraryFolder(store, '/data', (f) => moves.push(f))).toBe(path.join('/data', DEFAULT_LIBRARY_DIR))
     change({ ...state, recents: [] })
     change({ ...state, settings: { ...state.settings, libraryFolder: '/Vault/Library' } })
     change({ ...state, settings: { ...state.settings, libraryFolder: '/Vault/Library' } })
     change({ ...state, settings: { ...state.settings, libraryFolder: null } })
-    expect(moves).toEqual(['/Vault/Library', path.join('/data', DEFAULT_LIBRARY_DIR)])
+    // A settings folder moves the default (YAZ-4364); with a chosen path it changes nothing.
+    change({ ...state, settingsFolder: settings })
+    change({ ...state, settings: { ...state.settings, libraryFolder: '/Vault/Library' } })
+    change({ ...state, settingsFolder: null })
+    expect(moves).toEqual(['/Vault/Library', path.join('/data', DEFAULT_LIBRARY_DIR), path.join(settings, DEFAULT_LIBRARY_DIR), '/Vault/Library'])
   })
 })
 
@@ -56,5 +90,20 @@ describe('ensureLibraryFolder', () => {
     const blocked = path.join(dir, 'blocked')
     await writeFile(blocked, 'not a folder')
     await expect(ensureLibraryFolder(blocked, dir)).resolves.toBe(blocked)
+  })
+})
+
+describe('makeLibraryDir (YAZ-4383)', () => {
+  it('makes the library folder and a folder in it, and is safe to run again', async () => {
+    const library = path.join(dir, DEFAULT_LIBRARY_DIR)
+    await makeLibraryDir(library, 'favorites')
+    await makeLibraryDir(library, 'favorites')
+    expect((await stat(path.join(library, 'favorites'))).isDirectory()).toBe(true)
+  })
+
+  it('never makes a missing parent: a settings folder that is gone does not come back', async () => {
+    const gone = path.join(dir, 'Sync', 'settings')
+    await expect(makeLibraryDir(path.join(gone, DEFAULT_LIBRARY_DIR), 'favorites')).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readdir(dir)).toEqual([])
   })
 })

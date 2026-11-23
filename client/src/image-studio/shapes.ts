@@ -1,8 +1,9 @@
 /**
  * THE SHAPES CATALOG (YAZ-1818): `excalidraw-app/image-studio/shapes.ts` from the web app, ported.
- * Seven basic shapes drawn by hand, plus the engine's own twelve Smart Shapes — arrows, chevrons,
- * braces, brackets, parentheses and callouts — each inserted as a NATIVE element with the
- * `yasinSmartShape` metadata that makes its handles work, not as a picture of one.
+ * Seven basic shapes drawn by hand, plus every one of the engine's Smart Shapes — arrows (filled,
+ * curved, U-turn, double and circle, YAZ-4356), chevrons, braces, brackets, parentheses and
+ * callouts — each inserted as a NATIVE element with the `yasinSmartShape` metadata that makes its
+ * handles work, not as a picture of one.
  *
  * TWO HALVES, BECAUSE ONE OF THEM COSTS 300 kB. The basics need nothing but arithmetic, so they
  * are a module constant. The Smart Shapes need `SMART_SHAPE_DEFINITIONS` and the point generator
@@ -153,6 +154,14 @@ export function smartShapeAliases(kind: SmartShapeDefinition['kind']): readonly 
   switch (kind) {
     case 'filled-arrow':
       return ['arrow', 'pointer', 'filled']
+    case 'curved-arrow':
+      return ['arrow', 'curve', 'bend', 'turn']
+    case 'u-turn-arrow':
+      return ['arrow', 'u turn', 'uturn', 'return', 'back']
+    case 'double-arrow':
+      return ['arrow', 'two way', 'both ways', 'bidirectional']
+    case 'circle-arrow':
+      return ['arrow', 'circular', 'refresh', 'rotate', 'cycle', 'loop']
     case 'chevron':
       return ['arrowhead', 'direction']
     case 'brace':
@@ -211,7 +220,7 @@ function smartShapeSkeleton(smart: SmartShapeApi, definition: SmartShapeDefiniti
   ]
 }
 
-/** The twelve, from whatever the engine defines — the app never lists them by name. */
+/** The Smart Shapes, from whatever the engine defines — the app never lists them by name. */
 export function smartShapeCatalog(smart: SmartShapeApi): ShapeCatalogItem[] {
   return smart.SMART_SHAPE_DEFINITIONS.map((definition) => ({
     id: `smart:${definition.id}`,

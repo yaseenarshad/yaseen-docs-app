@@ -23,8 +23,28 @@ describe('fileKind', () => {
     }
     // They follow `.tex`, in that order, and no extension is in the list twice.
     const list = TEXT_VIEW_EXTENSIONS as readonly string[]
-    expect(list.slice(list.indexOf('.tex') + 1)).toEqual(added)
+    expect(list.slice(list.indexOf('.tex') + 1, list.indexOf('.tex') + 1 + added.length)).toEqual(added)
     expect(new Set(list).size).toBe(list.length)
+  })
+
+  it('YAZ-4502: the 20 added code/config extensions and 3 well-known names are text, each once', () => {
+    const added = ['.tf', '.tfvars', '.hcl', '.bicep', '.bat', '.cmd', '.ex', '.exs', '.sol', '.wgsl', '.dockerfile', '.nix', '.prisma', '.zig', '.cue', '.rego', '.kdl', '.awk', '.glsl', '.just']
+    for (const ext of added) {
+      expect(fileKind(`/repo/src/main${ext}`), ext).toBe('text')
+      expect(isViewOnly(`main${ext}`), ext).toBe(true)
+    }
+    const list = TEXT_VIEW_EXTENSIONS as readonly string[]
+    expect(list.slice(list.indexOf('.elm') + 1)).toEqual(added)
+    expect(new Set(list).size).toBe(list.length)
+
+    for (const name of ['Justfile', 'Brewfile', 'Rakefile']) {
+      expect(fileKind(name), name).toBe('text')
+      expect(fileKind(`/repo/${name}`), name).toBe('text')
+      expect(isViewOnly(name), name).toBe(true)
+    }
+    for (const miss of ['justfile', 'brewfile', 'rakefile']) {
+      expect(fileKind(miss), miss).toBeNull()
+    }
   })
 
   it('YAZ-3505: the well-known names with no extension are text, exactly as on disk, wherever they are', () => {
@@ -44,7 +64,7 @@ describe('fileKind', () => {
 
   it('YAZ-3505: near misses are not: another case, another name, a suffix; an extension that is a kind wins; dot-files stay skipped', () => {
     for (const name of ['makefile.bak', 'makefile', 'dockerfile', 'MAKEFILE', 'License', 'LICENSE.bak', 'Makefile.old', 'Dockerfile.', 'CMakeLists', 'Gemfile2', '/vault/.r', '/vault/.lua']) expect(fileKind(name), name).toBeNull()
-    // `CMakeLists.txt` and `LICENSE.txt` are text by their `.txt`, as before; `Dockerfile.md` is a note.
+    // `CMakeLists.txt` and `LICENSE.txt` are text by their `.txt`, as before; `Dockerfile.md` is a page.
     expect(fileKind('CMakeLists.txt')).toBe('text')
     expect(fileKind('LICENSE.txt')).toBe('text')
     expect(fileKind('Dockerfile.md')).toBe('markdown')
@@ -56,7 +76,7 @@ describe('fileKind', () => {
   it('YAZ-3505: renames keep working: the names are text, so text to text needs no conversion', () => {
     expect(canRenameWithoutConversion('Dockerfile', 'Dockerfile.dev')).toBe(true)
     expect(canRenameWithoutConversion('Makefile', 'build.mk.txt')).toBe(true)
-    expect(canRenameWithoutConversion('notes.txt', 'LICENSE')).toBe(true)
+    expect(canRenameWithoutConversion('pages.txt', 'LICENSE')).toBe(true)
     expect(canRenameWithoutConversion('Makefile', 'makefile')).toBe(false)
     expect(canRenameWithoutConversion('LICENSE', 'photo.png')).toBe(false)
   })
@@ -84,7 +104,7 @@ describe('fileKind', () => {
     expect(isDiagram('a.excalidraw')).toBe(false)
     expect(isBoard('a.drawio') && isBoard('a.excalidraw')).toBe(true)
     expect(isBoard('a.md')).toBe(false)
-    // Never semantic: a wikilink to a board is navigation-only, and it is no note.
+    // Never semantic: a wikilink to a board is navigation-only, and it is no page.
     expect(isMarkdown('a.excalidraw')).toBe(false)
     expect(isViewOnly('a.excalidraw') && isViewOnly('a.drawio')).toBe(true)
     // `.drawio.svg` / `.drawio.png` stay unsupported, the same as Draw; the final suffix decides.
@@ -92,7 +112,7 @@ describe('fileKind', () => {
     expect(fileKind('Flow.drawio.png')).toBe('image')
     expect(fileKind('.excalidraw')).toBeNull()
     expect(boardBaseName('Flow.DRAWIO')).toBe('Flow')
-    expect(boardBaseName('Note.md')).toBe('Note.md')
+    expect(boardBaseName('Page.md')).toBe('Page.md')
   })
 
   it('returns null for leading-dot-only names, extensionless files, compound unknown suffixes, and binaries', () => {
@@ -122,7 +142,7 @@ describe('canRenameWithoutConversion', () => {
     expect(canRenameWithoutConversion('a.pdf', 'a.png')).toBe(false)
   })
 
-  it('a board keeps its kind: .excalidraw ↔ .drawio and board ↔ note fail before the disk changes (YAZ-3028 D2)', () => {
+  it('a board keeps its kind: .excalidraw ↔ .drawio and board ↔ page fail before the disk changes (YAZ-3028 D2)', () => {
     expect(canRenameWithoutConversion('a.excalidraw', 'b.EXCALIDRAW')).toBe(true)
     expect(canRenameWithoutConversion('a.drawio', 'b.drawio')).toBe(true)
     expect(canRenameWithoutConversion('a.excalidraw', 'a.drawio')).toBe(false)
@@ -151,7 +171,7 @@ describe('isAtomicTmp (YAZ-2179)', () => {
   it('matches only the `<name>.tmp-<12 lowercase hex>` shape an atomic write leaves', () => {
     expect(isAtomicTmp('a.md.tmp-0123456789ab')).toBe(true)
     expect(isAtomicTmp('/vault/assets/images/p.png.tmp-abcdef012345')).toBe(true)
-    for (const name of ['notes.tmp', 'draft.tmp.md', 'report.tmp-draft.md', 'x.tmp-0123456789ab.md', 'a.md.tmp-0123456789AB', 'a.md.tmp-0123456789a', 'a.md.tmp-0123456789abc', 'a.md.tmp-']) {
+    for (const name of ['pages.tmp', 'draft.tmp.md', 'report.tmp-draft.md', 'x.tmp-0123456789ab.md', 'a.md.tmp-0123456789AB', 'a.md.tmp-0123456789a', 'a.md.tmp-0123456789abc', 'a.md.tmp-']) {
       expect(isAtomicTmp(name), name).toBe(false)
     }
   })

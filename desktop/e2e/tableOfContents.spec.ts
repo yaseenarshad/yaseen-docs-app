@@ -1,12 +1,12 @@
 /**
- * The table of contents of a note, in the REAL app (YAZ-2700, decisions D1–D15 on YAZ-2701):
- *  - NAMES OR LINES (D3, D4): a note shows the names of its rows at its right edge when the text
+ * The table of contents of a page, in the REAL app (YAZ-2700, decisions D1–D15 on YAZ-2701):
+ *  - NAMES OR LINES (D3, D4): a page shows the names of its rows at its right edge when the text
  *    column keeps its full width beside them, and small lines when it does not. The mouse on the
  *    lines opens a card with the same names.
- *  - A CLICK GOES THERE (D7): the row lands 24px below the top of the note's scroller, the caret is
+ *  - A CLICK GOES THERE (D7): the row lands 24px below the top of the page's scroller, the caret is
  *    in it, and the file on disk is not written.
  *  - THE KEYBOARD (D8): ⌘J puts the keyboard on the current name; ↑ ↓ Home End move, ⏎ goes, Esc
- *    and a second ⌘J give the caret back to the note.
+ *    and a second ⌘J give the caret back to the page.
  *  - "Pin" AND "Unpin" (D2, D10) write the ONE app-wide setting, `settings.tableOfContents`.
  *  - THE EDGE OF THE NAMES (YAZ-2752, decisions D1–D5 on YAZ-2754): a drag of the column's left
  *    edge changes its width, stops at the limits, and writes `settings.tableOfContentsWidth`,
@@ -15,22 +15,22 @@
  *    tone. Thin grey lines show the levels, and the lines from the current row up to its parents
  *    are the accent colour (the path). "Level lines" in Settings says when the lines show, and
  *    writes `settings.tocLines`. With "On hover", the path also shows while the wheel turns over
- *    the note.
- *  - HEADINGS OR BULLETS (D6, D14): a note of bullets lists its bullets, three levels deep. The
- *    cog's "TOC made from:" selects the source for one note, and the app saves that choice in
- *    `folders[root].tocSources`: it is there after the note is closed and after a restart.
+ *    the page.
+ *  - HEADINGS OR BULLETS (D6, D14): a page of bullets lists its bullets, three levels deep. The
+ *    cog's "TOC made from:" selects the source for one page, and the app saves that choice in
+ *    `folders[root].tocSources`: it is there after the page is closed and after a restart.
  *  - THE PAGE SWITCHES (D12, D15): "Table of contents" hides it on this page, and "Heading
  *    levels" shows each heading's level tag. "Heading levels" is not stored. "Table of contents"
- *    is, since YAZ-2950 (decisions D1–D3 on YAZ-2953), and IN the note since YAZ-4094 G4 (`toc: false`
+ *    is, since YAZ-2950 (decisions D1–D3 on YAZ-2953), and IN the page since YAZ-4094 G4 (`toc: false`
  *    in its frontmatter), so a page that is off stays off after a reopen, in a new window (⌘⇧N) and
  *    after a restart.
  *  - THE DEFAULT (YAZ-3558, decisions D1–D3 and S1–S26 on YAZ-3559): Settings › "Table of contents
  *    default" Off hides it on each page with no choice, and the cog's row still turns one page on.
  *    "Pin" in the card writes "Pin default" and leaves the default Off.
  *
- * The widths: the names need a note area of 1240px at content width "Narrow" (1040 + 200). The
- * window starts 1480px wide with the sidebar at its minimum, 180px, so the note area is 1300px.
- * Then the window goes to 1100px (a note area of 920px): lines, and still wide enough for "Pin"
+ * The widths: the names need a page area of 1240px at content width "Narrow" (1040 + 200). The
+ * window starts 1480px wide with the sidebar at its minimum, 180px, so the page area is 1300px.
+ * Then the window goes to 1100px (a page area of 920px): lines, and still wide enough for "Pin"
  * (700px).
  *
  * Serial (the suite's idiom): each step continues the last.
@@ -43,7 +43,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { notePageSwitches, setNotePageSwitch } from '../../shared/pageSwitches'
+import { readPageSwitches, writePageSwitch } from '../../shared/pageSwitches'
 import { SIDEBAR_MIN_W, TOC_DEFAULT_W, TOC_MAX_W, TOC_MIN_W } from '../../shared/types'
 import { activeTab, appWindow, clickMenuItem, closeWindow, editorOf, extraWindow, fileRow, launchApp, layer, openFromBlankTab, quitApp, readState, seededState, shoot, winParam } from './helpers'
 
@@ -53,7 +53,7 @@ test.setTimeout(60_000)
 /** Enough paragraphs under a row that the row can reach the top of the scroller. */
 const filler = (tag: string, count: number): string => Array.from({ length: count }, (_, i) => `${tag} filler line ${i + 1}.`).join('\n\n')
 
-/** A note of headings: six H1–H3 outside lists, and one small list that "Bullets" reads. */
+/** A page of headings: six H1–H3 outside lists, and one small list that "Bullets" reads. */
 const CHAPTERS = `# Guide
 
 Intro paragraph.
@@ -84,10 +84,10 @@ ${filler('Appendix', 40)}
 `
 const HEADING_ROWS = ['Guide', 'Setup', 'Install', 'Usage', 'Reference', 'Appendix']
 const HEADING_LEVELS = ['1', '2', '3', '2', '2', '2']
-/** What "Bullets" gives for the same note: its one list, two levels deep. */
+/** What "Bullets" gives for the same page: its one list, two levels deep. */
 const CHAPTER_BULLETS = ['Step one', 'Detail', 'Step two']
 
-/** A note of bullets with no heading. "Too deep to list" is a fourth level, so it is no row. */
+/** A page of bullets with no heading. "Too deep to list" is a fourth level, so it is no row. */
 const BULLETS = `* Plan
   * Scope
     * Goals
@@ -124,7 +124,9 @@ const lines = (w: Page) => toc(w).locator('.toc__line')
 const rail = (w: Page) => toc(w).locator('.toc__rail')
 const card = (w: Page) => toc(w).locator('.toc__card')
 const cog = (w: Page) => layer(w).locator('.page-settings__trigger')
-const menu = (w: Page) => layer(w).locator('.page-settings__menu')
+/** The Pin button: a `.toc__pin` that is neither the fold-all button (YAZ-3938 D8) nor the zoom button, which share its look. */
+const PIN = '.toc__pin:not(.toc__pin--all):not(.toc__pin--zoom)'
+const menu = (w: Page) => w.locator('.page-settings__menu')
 /** A switch of the cog's menu by its label: "Table of contents", "Heading levels". */
 const pageSwitch = (w: Page, label: string) => menu(w).locator('button[aria-pressed]', { hasText: label })
 /** A choice of "TOC made from:": Auto, Headings, Bullets. */
@@ -133,8 +135,8 @@ const sourceChoice = (w: Page, label: 'Auto' | 'Headings' | 'Bullets') => menu(w
 const levelsOf = (rows: Locator): Promise<(string | null)[]> => rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-level')))
 
 /**
- * Where the block that reads `text` stands: its top below the top of the note's scroller, and
- * whether the caret is in it with the keyboard in the note. `kind` is `h` for a heading, and `li`
+ * Where the block that reads `text` stands: its top below the top of the page's scroller, and
+ * whether the caret is in it with the keyboard in the page. `kind` is `h` for a heading, and `li`
  * for a bullet (the element that Crepe's node view makes for a list item).
  */
 const blockOf = (w: Page, kind: 'h' | 'li', text: string): Promise<{ top: number; caret: boolean } | null> =>
@@ -235,10 +237,10 @@ const tonesOf = (w: Page): Promise<{ one: boolean; weight: string; two: boolean;
       }
     })
 
-/** The mouse on the text of the note: not on the list, not on the lines. */
-async function mouseOnNote(w: Page): Promise<void> {
+/** The mouse on the text of the page: not on the list, not on the lines. */
+async function mouseOnPage(w: Page): Promise<void> {
   const box = await host(w).boundingBox()
-  if (box === null) throw new Error('the note has no scroller')
+  if (box === null) throw new Error('the page has no scroller')
   await w.mouse.move(box.x + box.width / 3, box.y + box.height / 2)
 }
 
@@ -271,14 +273,14 @@ test('step 1 — a wide window shows the names of the headings beside the text',
   await expect(editorOf(win).locator('h2', { hasText: 'Appendix' })).toBeAttached()
 
   // The rule needs room: a display narrower than the seeded window gives lines, and this step cannot pass.
-  const noteWidth = await layer(win).locator('section.editor').evaluate((section) => section.clientWidth)
-  expect(noteWidth, `the note area is ${noteWidth}px; the names need 1240px (is the display narrower than ${WIDE}px?)`).toBeGreaterThanOrEqual(1240)
+  const pageWidth = await layer(win).locator('section.editor').evaluate((section) => section.clientWidth)
+  expect(pageWidth, `the page area is ${pageWidth}px; the names need 1240px (is the display narrower than ${WIDE}px?)`).toBeGreaterThanOrEqual(1240)
 
   await expect(toc(win)).toHaveAttribute('aria-label', 'Table of contents')
   await expect(toc(win)).toHaveAttribute('data-names', '')
   await expect(names(win)).toHaveText(HEADING_ROWS)
   expect(await levelsOf(names(win))).toEqual(HEADING_LEVELS)
-  // The note is at its top: the first name is the current one, and the list has one tab stop.
+  // The page is at its top: the first name is the current one, and the list has one tab stop.
   await expect(names(win).first()).toHaveAttribute('aria-current', 'true')
   await expect(toc(win).locator('.toc__name[tabindex="0"]')).toHaveCount(1)
   // The scroller makes the room, so the names cover no text; and there are no lines and no card.
@@ -286,7 +288,7 @@ test('step 1 — a wide window shows the names of the headings beside the text',
   await expect(rail(win)).toHaveCount(0)
   await expect(card(win)).toHaveCount(0)
   // "Pin default" Off on a wide window: no button, the names would show in each case.
-  await expect(toc(win).locator('.toc__pin')).toHaveCount(0)
+  await expect(toc(win).locator(PIN)).toHaveCount(0)
   await shoot(win, 'toc-01-names')
 })
 
@@ -303,8 +305,8 @@ test('step 2 — a narrow window shows the lines; the mouse on them opens the ca
   await expect(card(win)).toHaveCount(0)
   await shoot(win, 'toc-02-lines')
 
-  // A scroll of the note opens nothing (YAZ-2886): the current line moves, the card stays shut.
-  await mouseOnNote(win)
+  // A scroll of the page opens nothing (YAZ-2886): the current line moves, the card stays shut.
+  await mouseOnPage(win)
   await win.mouse.wheel(0, 400)
   await win.waitForTimeout(300)
   await expect(card(win)).toHaveCount(0)
@@ -315,8 +317,8 @@ test('step 2 — a narrow window shows the lines; the mouse on them opens the ca
   await expect(rail(win)).toHaveAttribute('aria-expanded', 'true')
   await expect(card(win).locator('.toc__title')).toHaveText('Table of contents')
   await expect(card(win).locator('.toc__name')).toHaveText(HEADING_ROWS)
-  // The note area is 700px wide or more, and the setting is "Pin default" Off: "Pin" is offered.
-  await expect(card(win).locator('.toc__pin')).toHaveText('Pin')
+  // The page area is 700px wide or more, and the setting is "Pin default" Off: "Pin" is offered.
+  await expect(card(win).locator(PIN)).toHaveText('Pin')
   await shoot(win, 'toc-03-card')
 })
 
@@ -334,7 +336,7 @@ test('step 3 — a click on a row lands its heading 24px below the top, with the
 })
 
 test('step 4 — ⌘J puts the keyboard on the current name; the arrows move, ⏎ goes, Esc gives the caret back', async () => {
-  // The caret is in the note, after the jump of step 3.
+  // The caret is in the page, after the jump of step 3.
   await win.keyboard.press('Meta+j')
   await expect(card(win)).toBeVisible()
   await expect(names(win).nth(HEADING_ROWS.indexOf('Reference'))).toBeFocused()
@@ -346,7 +348,7 @@ test('step 4 — ⌘J puts the keyboard on the current name; the arrows move, �
   await expectLanded(win, 'h', 'Usage')
   await expect(card(win)).toHaveCount(0)
 
-  // Home and End, then Esc: the card closes and the keyboard is in the note again.
+  // Home and End, then Esc: the card closes and the keyboard is in the page again.
   await win.keyboard.press('Meta+j')
   await expect(names(win).nth(HEADING_ROWS.indexOf('Usage'))).toBeFocused()
   await win.keyboard.press('Home')
@@ -368,7 +370,7 @@ test('step 4 — ⌘J puts the keyboard on the current name; the arrows move, �
 
 test('step 5 — "Pin" and "Unpin" write the one app-wide setting', async () => {
   await openCardByMouse(win)
-  await card(win).locator('.toc__pin').click()
+  await card(win).locator(PIN).click()
 
   // Pinned: the names show in this narrow window too, and "Unpin" is offered because it changes what shows here.
   await expect(toc(win)).toHaveAttribute('data-names', '')
@@ -386,12 +388,12 @@ test('step 5 — "Pin" and "Unpin" write the one app-wide setting', async () => 
 test('step 5b — the edge of the names: a drag changes the width, stops at the limits, and the app saves it (YAZ-2752)', async () => {
   // Pinned in the 1100px window, the names may take what leaves the text 500px (`TEXT_FLOOR`).
   await openCardByMouse(win)
-  await card(win).locator('.toc__pin').click()
+  await card(win).locator(PIN).click()
   await expect(toc(win)).toHaveAttribute('data-names', '')
   await expect(host(win)).toHaveCSS('padding-right', `${TOC_DEFAULT_W}px`)
-  const noteWidth = await layer(win).locator('section.editor').evaluate((section) => section.clientWidth)
-  const room = Math.min(TOC_MAX_W, noteWidth - 500)
-  expect(room, `the note area is ${noteWidth}px; this step needs room for more than 300px of names`).toBeGreaterThan(300)
+  const pageWidth = await layer(win).locator('section.editor').evaluate((section) => section.clientWidth)
+  const room = Math.min(TOC_MAX_W, pageWidth - 500)
+  expect(room, `the page area is ${pageWidth}px; this step needs room for more than 300px of names`).toBeGreaterThan(300)
 
   /** Press the edge, move it `dx` px (to the left is wider), and let go. */
   const dragEdge = async (dx: number): Promise<void> => {
@@ -448,7 +450,7 @@ test('step 5c — the hierarchy of the names: a tone for each level, the level l
   await shoot(win, 'toc-05c-card-lines')
 
   // The names column, for the other parts of this step.
-  await card(win).locator('.toc__pin').click()
+  await card(win).locator(PIN).click()
   await expect(toc(win)).toHaveAttribute('data-names', '')
 
   // A click makes "Install" the current row: Guide › Setup › Install. The mouse is on the list, so
@@ -469,7 +471,7 @@ test('step 5c — the hierarchy of the names: a tone for each level, the level l
   await expect.poll(() => pathsOf(win)).toEqual([null, '1', '1', '1', '1t', null])
 
   // The mouse leaves the list: no lines. The tones are always there.
-  await mouseOnNote(win)
+  await mouseOnPage(win)
   await expect.poll(() => linesOf(win)).toEqual(NONE)
   await expect.poll(() => tonesOf(win)).toEqual(TONES)
   await shoot(win, 'toc-05c-tones-at-rest')
@@ -482,12 +484,12 @@ test('step 5c — the hierarchy of the names: a tone for each level, the level l
   await expect(editorOf(win)).toBeFocused()
   await expect.poll(() => linesOf(win)).toEqual(NONE)
 
-  // A turn of the wheel over the note: the path shows, the grey lines do not, and the current row is still "Reference".
+  // A turn of the wheel over the page: the path shows, the grey lines do not, and the current row is still "Reference".
   await win.mouse.wheel(0, 60)
   await expect(reading(win)).toHaveCount(1)
   await expect.poll(() => linesOf(win)).toEqual({ grey: 'clear', path: 'shown' })
   await expect.poll(() => pathsOf(win)).toEqual([null, '1', '1', '1', '1t', null])
-  // To the end of the note: the path follows the reader down the list, to "Appendix".
+  // To the end of the page: the path follows the reader down the list, to "Appendix".
   await win.mouse.wheel(0, 100_000)
   await expect(name('Appendix')).toHaveAttribute('aria-current', 'true')
   await expect.poll(() => pathsOf(win)).toEqual([null, '1', '1', '1', '1', '1t'])
@@ -509,16 +511,16 @@ test('step 5c — the hierarchy of the names: a tone for each level, the level l
     await row.getByRole('button', { name: label, exact: true }).click()
     await expect(row.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true')
     await expect(row.locator('button[aria-pressed="true"]')).toHaveCount(1)
-    // The app saves the choice, and the open note follows at once: the attribute changes, the list is the same list.
+    // The app saves the choice, and the open page follows at once: the attribute changes, the list is the same list.
     await expect.poll(async () => (await readState(userData)).settings.tocLines).toBe(value)
     await expect(win.locator('.app')).toHaveAttribute('data-toc-lines', value)
     await win.keyboard.press('Escape')
     await expect(dialog).toHaveCount(0)
     await expect(names(win)).toHaveText(HEADING_ROWS)
-    await mouseOnNote(win)
+    await mouseOnPage(win)
   }
 
-  // "Always show": the grey lines and the path at rest, with the mouse on the note.
+  // "Always show": the grey lines and the path at rest, with the mouse on the page.
   await chooseLevelLines('Always show', 'always')
   await expect.poll(() => linesOf(win)).toEqual(BOTH)
   await shoot(win, 'toc-05c-always-show')
@@ -531,7 +533,7 @@ test('step 5c — the hierarchy of the names: a tone for each level, the level l
   await name('Guide').hover()
   await win.waitForTimeout(PAST_FADE_MS)
   expect(await linesOf(win)).toEqual(NONE)
-  await mouseOnNote(win)
+  await mouseOnPage(win)
   // "Install", the one H3 row, is the current row again here: it has the accent, so no H3 row shows its tone.
   await expect.poll(() => tonesOf(win)).toEqual({ ...TONES, three: null })
   await shoot(win, 'toc-05c-never')
@@ -554,7 +556,7 @@ test('step 5c — the hierarchy of the names: a tone for each level, the level l
     .toEqual(['hover', 'auto', TOC_MIN_W])
 })
 
-test('step 6 — a note of bullets lists its bullets, three levels deep, and a click lands on the bullet', async () => {
+test('step 6 — a page of bullets lists its bullets, three levels deep, and a click lands on the bullet', async () => {
   await fileRow(win, 'Bullets').click()
   await expect(activeTab(win)).toContainText('Bullets')
   await expect(editorOf(win).getByText('Tail filler line 60.')).toBeAttached()
@@ -568,20 +570,21 @@ test('step 6 — a note of bullets lists its bullets, three levels deep, and a c
   await card(win).locator('.toc__name', { hasText: 'Build' }).click()
   await expectLanded(win, 'li', 'Build')
   await expect(card(win)).toHaveCount(0)
-  // No step before this one uses the cog of this note: the file is as it was written.
+  // No step before this one uses the cog of this page: the file is as it was written.
   expect(await readFile(bulletsPath, 'utf8')).toBe(BULLETS)
 })
 
-test('step 7 — "TOC made from:" selects the source of one note, and the choice is there after a reopen and a restart', async () => {
+test('step 7 — "TOC made from:" selects the source of one page, and the choice is there after a reopen and a restart', async () => {
   await fileRow(win, 'Chapters').click()
   await expect(activeTab(win)).toContainText('Chapters')
   await expect(lines(win)).toHaveCount(HEADING_ROWS.length)
 
   await cog(win).click()
-  await expect(menu(win).locator('.page-settings__label')).toContainText('TOC made from:')
+  // The cog's labelled rows (TOC made from, Outside changes glow, the block widths): this one is there.
+  await expect(menu(win).locator('.page-settings__label', { hasText: 'TOC made from:' })).toBeVisible()
   await expect(sourceChoice(win, 'Auto')).toHaveAttribute('aria-pressed', 'true')
   await sourceChoice(win, 'Bullets').click()
-  // A change of the source scans at once: the rows are the bullets of the note now.
+  // A change of the source scans at once: the rows are the bullets of the page now.
   await expect(sourceChoice(win, 'Bullets')).toHaveAttribute('aria-pressed', 'true')
   await expect(sourceChoice(win, 'Auto')).toHaveAttribute('aria-pressed', 'false')
   await expect(lines(win)).toHaveCount(CHAPTER_BULLETS.length)
@@ -589,12 +592,12 @@ test('step 7 — "TOC made from:" selects the source of one note, and the choice
   await win.keyboard.press('Escape')
   await expect(menu(win)).toHaveCount(0)
 
-  // Saved for this note in the state file of the app, and never in the note.
+  // Saved for this page in the state file of the app, and never in the page.
   await expect.poll(async () => (await readState(userData)).folders[vault]?.tocSources[chaptersPath], { timeout: 10_000 }).toBe('bullets')
   expect((await readState(userData)).folders[vault]?.tocSources[bulletsPath]).toBeUndefined()
   expect(await readFile(chaptersPath, 'utf8')).toBe(CHAPTERS)
 
-  // The note closed and opened again: its rows are its bullets, and the cog says so.
+  // The page closed and opened again: its rows are its bullets, and the cog says so.
   await clickMenuItem(app, 'menu.file.close-tab', 'w1')
   await expect(activeTab(win)).toContainText('Bullets')
   await fileRow(win, 'Chapters').click()
@@ -633,11 +636,11 @@ test('step 8 — the page switches: "Table of contents" hides it on this page an
   await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
   // Off for this page: no lines, no names, and no "TOC made from:" (there is nothing to build).
   await expect(toc(win)).toHaveCount(0)
-  await expect(menu(win).locator('.page-settings__label')).toHaveCount(0)
+  await expect(menu(win).locator('.page-settings__label', { hasText: 'TOC made from:' })).toHaveCount(0)
   await win.keyboard.press('Escape')
   await shoot(win, 'toc-08-off-for-this-page')
-  // Saved IN the note (YAZ-4094 G4): `toc: false` in its frontmatter.
-  await expect.poll(async () => notePageSwitches(await readFile(chaptersPath, 'utf8')).toc, { timeout: 10_000 }).toBe(false)
+  // Saved IN the page (YAZ-4094 G4): `toc: false` in its frontmatter.
+  await expect.poll(async () => readPageSwitches(await readFile(chaptersPath, 'utf8')).toc, { timeout: 10_000 }).toBe(false)
   // ⌘J does nothing on this page.
   await editorOf(win).locator('h1').click()
   await win.keyboard.press('Meta+j')
@@ -649,7 +652,7 @@ test('step 8 — the page switches: "Table of contents" hides it on this page an
   await expect(lines(win)).toHaveCount(CHAPTER_BULLETS.length)
   await expect(sourceChoice(win, 'Bullets')).toHaveAttribute('aria-pressed', 'true')
   // On is stored too: `true`, not the removal of the entry.
-  await expect.poll(async () => notePageSwitches(await readFile(chaptersPath, 'utf8')).toc, { timeout: 10_000 }).toBe(true)
+  await expect.poll(async () => readPageSwitches(await readFile(chaptersPath, 'utf8')).toc, { timeout: 10_000 }).toBe(true)
 
   // "Heading levels": a heading that has neither the caret nor the mouse shows its tag only with the switch on.
   await expect(pageSwitch(win, 'Heading levels')).toHaveAttribute('aria-pressed', 'false')
@@ -665,8 +668,8 @@ test('step 8 — the page switches: "Table of contents" hides it on this page an
   const state = await readState(userData)
   expect(state.settings.tableOfContents).toBe('auto')
   expect(JSON.stringify(state).replaceAll(vault, '')).not.toMatch(/heading.?levels|page.?settings/i)
-  // The note holds the TOC switch and nothing else of the cog.
-  expect(await readFile(chaptersPath, 'utf8')).toBe(setNotePageSwitch(CHAPTERS, 'toc', true))
+  // The page holds the TOC switch and nothing else of the cog.
+  expect(await readFile(chaptersPath, 'utf8')).toBe(writePageSwitch(CHAPTERS, 'toc', true))
 })
 
 test('step 8b — a page turned off stays off: after a reopen, in a new window (⌘⇧N) and after a restart (YAZ-2950)', async () => {
@@ -675,9 +678,9 @@ test('step 8b — a page turned off stays off: after a reopen, in a new window (
   await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
   await win.keyboard.press('Escape')
   await expect(toc(win)).toHaveCount(0)
-  await expect.poll(async () => notePageSwitches(await readFile(chaptersPath, 'utf8')).toc, { timeout: 10_000 }).toBe(false)
+  await expect.poll(async () => readPageSwitches(await readFile(chaptersPath, 'utf8')).toc, { timeout: 10_000 }).toBe(false)
 
-  // The note closed and opened again: still off. Another note, with no entry, is on. Chapters is
+  // The page closed and opened again: still off. Another page, with no entry, is on. Chapters is
   // the one tab since step 7 opened it in the preview tab (YAZ-2648 D1), so Bullets opens by its row.
   await clickMenuItem(app, 'menu.file.close-tab', 'w1')
   await fileRow(win, 'Bullets').click()
@@ -690,11 +693,11 @@ test('step 8b — a page turned off stays off: after a reopen, in a new window (
   await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
   await win.keyboard.press('Escape')
 
-  // ⌘⇧N opens a new window on the blank tab (YAZ-3343 D35); its search opens the same note: a new editor, which reads the saved switch.
+  // ⌘⇧N opens a new window on the blank tab (YAZ-3343 D35); its search opens the same page: a new editor, which reads the saved switch.
   await clickMenuItem(app, 'menu.file.new-window', 'w1')
   const dup = await extraWindow(app, ['w1'])
   await openFromBlankTab(dup, 'Chapters')
-  // Wait for the note itself: a check for "no table of contents" passes before the editor exists.
+  // Wait for the page itself: a check for "no table of contents" passes before the editor exists.
   await expect(editorOf(dup).locator('h1')).toBeVisible()
   await cog(dup).click()
   await expect(pageSwitch(dup, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
@@ -702,7 +705,7 @@ test('step 8b — a page turned off stays off: after a reopen, in a new window (
   await expect(toc(dup)).toHaveCount(0)
   await closeWindow(app, winParam(dup)!)
 
-  // The app quit and started again: still off, from the note.
+  // The app quit and started again: still off, from the page.
   await quitApp(app)
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')
@@ -712,7 +715,7 @@ test('step 8b — a page turned off stays off: after a reopen, in a new window (
   await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
   await win.keyboard.press('Escape')
   await expect(toc(win)).toHaveCount(0)
-  expect(await readFile(chaptersPath, 'utf8')).toBe(setNotePageSwitch(CHAPTERS, 'toc', false))
+  expect(await readFile(chaptersPath, 'utf8')).toBe(writePageSwitch(CHAPTERS, 'toc', false))
 
   // On again, so that the suite ends with the page as it started.
   await cog(win).click()
@@ -759,21 +762,21 @@ test('step 8c — "Table of contents default" Off: a page with no choice shows n
   await expect(toc(win)).toHaveCount(0)
   await cog(win).click()
   await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
-  await expect(menu(win).locator('.page-settings__choices')).toHaveCount(0)
+  await expect(sourceChoice(win, 'Auto')).toHaveCount(0) // no "TOC made from:" (the block widths keep their own choices)
   await shoot(win, 'toc-08c-default-off-cog')
 
   // S3: the row turns THIS page on, with "TOC made from:", and the page stores `true`.
   await pageSwitch(win, 'Table of contents').click()
   await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'true')
-  await expect(menu(win).locator('.page-settings__choices')).toHaveCount(1)
+  await expect(sourceChoice(win, 'Auto')).toHaveCount(1)
   await win.keyboard.press('Escape')
   await expect(toc(win)).toHaveCount(1)
-  await expect.poll(async () => notePageSwitches(await readFile(bulletsPath, 'utf8')).toc, { timeout: 10_000 }).toBe(true)
+  await expect.poll(async () => readPageSwitches(await readFile(bulletsPath, 'utf8')).toc, { timeout: 10_000 }).toBe(true)
   await shoot(win, 'toc-08c-default-off-page-on')
 
   // S11: "Pin" in the card writes "Pin default" for all pages, and the default stays Off.
   await openCardByMouse(win)
-  await card(win).locator('.toc__pin').click()
+  await card(win).locator(PIN).click()
   await expect(toc(win)).toHaveAttribute('data-names', '')
   await expect.poll(async () => (await readState(userData)).settings.tableOfContents).toBe('pinned')
   expect((await readState(userData)).settings.tocOnByDefault).toBe(false)
@@ -787,7 +790,7 @@ test('step 8c — "Table of contents default" Off: a page with no choice shows n
   await expect(toc(win)).toHaveAttribute('data-names', '')
   const state = await readState(userData)
   expect(state.settings).toMatchObject({ tocOnByDefault: false, tableOfContents: 'pinned' })
-  expect(await readFile(bulletsPath, 'utf8')).toBe(setNotePageSwitch(BULLETS, 'toc', true))
+  expect(await readFile(bulletsPath, 'utf8')).toBe(writePageSwitch(BULLETS, 'toc', true))
   // And a page with no choice is still off (S2 after a restart).
   await fileRow(win, 'Recipes').click()
   await expect(activeTab(win)).toContainText('Recipes')
@@ -796,7 +799,7 @@ test('step 8c — "Table of contents default" Off: a page with no choice shows n
   await cog(win).click()
   await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
   await win.keyboard.press('Escape')
-  expect(notePageSwitches(await readFile(recipesPath, 'utf8')).toc).toBeUndefined()
+  expect(readPageSwitches(await readFile(recipesPath, 'utf8')).toc).toBeUndefined()
 
   // The suite ends as it started: the default On, "Pin default" Off.
   await choose('tableOfContents', 'Off')

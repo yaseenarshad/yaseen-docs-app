@@ -1,6 +1,6 @@
 /**
  * Paste a path, get a link (YAZ-3609). A pasted absolute path or `yaseendocs://` link to a file or
- * folder of THIS vault becomes the link the `[[` picker writes for it: a note's or folder's id, else
+ * folder of THIS vault becomes the link the `[[` picker writes for it: a page's or folder's id, else
  * its vault spelling (`[[report.pdf]]`). Both are vault-relative, so they work on every Mac. A file
  * no tab can show gets a relative Markdown link, which opens in its default app (YAZ-1311). A path
  * in ANOTHER vault of the window gets a relative Markdown link too (D15), which opens in a tab (D14).
@@ -17,114 +17,20 @@ import { AddMarkStep, ReplaceStep } from '@milkdown/kit/prose/transform'
 import { EXTERNAL_EDIT_META } from './external/applyExternalMarkdown'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
+import { isBoardTarget, newEmbed, newEmbedAlt } from '@shared/embedOptions'
+import { inCellOrPage } from './table/cellBlocks'
+import { cardCheckOf } from './drawing/boardEmbedScan'
 import { fileKind } from '@shared/fileKind'
-import { parseFileLink } from '@shared/links'
-import { fileLabel } from '../lib/pageLabel'
-import type { LinkCandidate } from '../links/completion'
-import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
+import { inVault, linkFor, nameOf, pastedPath, relativeHref, vaultHref, type PathPasteOptions } from './pathLinks'
 
-export interface PathPasteOptions {
-  /** Vault root (absolute). A path in another vault of the window is a relative Markdown link (D15); one outside every vault of the window stays text. */
-  root: string
-  /** ABSOLUTE path of this note: the `from` of a relative Markdown link. */
-  notePath: string
-  /** This vault's `[[` picker rows: the spelling of every link the app writes. */
-  candidates: WikilinkCandidateSource
-  /** The `[[` picker rows of the window's vault that holds `path`, or null outside them (D14): links across the workspace. */
-  candidatesOf?: (path: string) => WikilinkCandidateSource | null
-  /** The passive in-window notice: why a pasted path stayed text (D6). */
-  onNotice?: (message: string) => void
-}
+// The pure half moved to its own file (YAZ-5153), so the card screens load without the editor; its names stay here too.
+export { hrefPath, hrefTarget, linkFor, pastedPath, vaultHref, type PathPasteOptions } from './pathLinks'
 
 export const pathPasteCtx = createSlice<PathPasteOptions | null>(null, 'mdapp-path-paste')
 
-/** One pasted line as an absolute path: quotes, `\ ` escapes and `yaseendocs://` undone; a folder's `.folder.md` is its folder. */
-export function pastedPath(line: string): string | null {
-  let text = line.trim().replace(/^(['"])(.*)\1$/, '$2')
-  if (/^yaseen(docs|draw):\/\//.test(text)) text = parseFileLink(text)?.path ?? ''
-  if (text.startsWith('/')) text = text.replace(/\\ /g, ' ')
-  text = text.replace(/[\\/]\.folder\.md$/, '').replace(/[\\/]+$/, '')
-  // A Mac path, or a Windows one (`C:\Users\…`): the app keeps each in its own form.
-  return text.startsWith('/') || /^[A-Za-z]:[\\/]/.test(text) ? text : null
-}
-
-/** One key for a path in either form: `\` and `/` are one separator, case does not count, and accents compare in one Unicode form (YAZ-3635). */
-const keyOf = (path: string): string => path.normalize('NFC').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
-const nameOf = (path: string): string => path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
-const inVault = (path: string, options: PathPasteOptions): boolean => keyOf(path).startsWith(`${keyOf(options.root)}/`)
-
-const byPath = new WeakMap<readonly LinkCandidate[], Map<string, LinkCandidate>>()
-
-/** The picker's row for `path`: one map per candidate list, built at the first paste or click after an index change. */
-function rowOf(path: string, rows: readonly LinkCandidate[]): LinkCandidate | undefined {
-  let map = byPath.get(rows)
-  if (map === undefined) {
-    map = new Map()
-    for (const row of rows) if (row.path !== undefined && !map.has(keyOf(row.path))) map.set(keyOf(row.path), row)
-    byPath.set(rows, map)
-  }
-  return map.get(keyOf(path))
-}
-
-/** The Markdown of the link to `path`, or null when it is no link of this vault (then the paste stays text). */
-export function linkFor(path: string, options: PathPasteOptions): string | null {
-  if (!inVault(path, options)) {
-    // Another vault of this window (D15): a relative Markdown link, which a click opens in a tab (D14).
-    const other = options.candidatesOf?.(path)
-    const row = other == null ? undefined : rowOf(path, other.candidates)
-    // The link's text is the page's name, as the sidebar shows it (YAZ-3778 D2): no `.excalidraw`.
-    return row === undefined ? null : markdownLink(fileLabel(row.name), options.notePath, path)
-  }
-  const insert = rowOf(path, options.candidates.candidates)?.insert
-  if (insert !== undefined) return `[[${insert}]]`
-  // A file no tab can show (D5): a relative Markdown link. A click opens its default app (YAZ-1311).
-  const name = nameOf(path)
-  if (!name.includes('.') || fileKind(name) !== null) return null
-  return markdownLink(name, options.notePath, path)
-}
-
-/** `[label](relative href)`: the label's brackets escaped. */
-const markdownLink = (label: string, from: string, to: string): string => `[${label.replace(/[[\]]/g, '\\$&')}](${relativeHref(from, to)})`
-
-/** A Markdown link's target as a page, folder or file of a vault of the window (D8, D14), or null: the web, another folder, a missing file. */
-export function hrefTarget(href: string, options: PathPasteOptions): string | null {
-  const target = hrefPath(href, options.notePath)
-  return target === null ? null : rowOf(target, (options.candidatesOf?.(target) ?? options.candidates).candidates)?.path ?? null
-}
-
-/** A Markdown link's target as an absolute path in a vault of this window, found or not (D19); null for the web or anywhere else. */
-export function vaultHref(href: string, options: PathPasteOptions): string | null {
-  const target = hrefPath(href, options.notePath)
-  return target !== null && (inVault(target, options) || options.candidatesOf?.(target) != null) ? target : null
-}
-
-/** A local `href` as an absolute path: decoded, `#` and `?` dropped, resolved from `notePath`'s folder; null for the web. */
-export function hrefPath(href: string, notePath: string): string | null {
-  if (/^[a-z][a-z\d+.-]+:/i.test(href) && !/^file:/i.test(href)) return null
-  let path: string
-  try {
-    path = decodeURIComponent(href.replace(/^file:\/\/(localhost)?(\/(?=[A-Za-z]:))?/i, '').replace(/[?#].*$/, ''))
-  } catch {
-    return null
-  }
-  const absolute = path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) ? path : `${notePath.replace(/[\\/][^\\/]*$/, '')}/${path}`
-  // A folder's page names its folder, as a pasted path does.
-  return collapse(absolute).replace(/\/\.folder\.md$/, '')
-}
-
-/** `.` and `..` folded away: `/v/a/../b.md` is `/v/b.md`. */
-function collapse(path: string): string {
-  const parts: string[] = []
-  for (const part of path.split(/[\\/]/)) {
-    if (part === '..') parts.pop()
-    else if (part !== '.') parts.push(part)
-  }
-  return parts.join('/')
-}
-
 /**
  * A link set in the link box (or "Add link…") or pasted with the absolute path of a file or folder of a
- * vault in this window (D16) is stored relative to this note, as a paste of a path writes it: it keeps
+ * vault in this window (D16) is stored relative to this page, as a paste of a path writes it: it keeps
  * working on another Mac where the vaults keep their layout. Only the links that this change SETS are
  * read (YAZ-3649): never a link that an outside edit (an agent, another app) wrote, and never an older
  * link that the caret types inside. Milkdown's paste carries no meta, so a link that text brings counts
@@ -142,17 +48,23 @@ export const relativeLinks = $prose((ctx) => new Plugin({
     for (const tr of trs) {
       tr.steps.forEach((step, i) => {
         if (step instanceof AddMarkStep && step.mark.type === type) set.add(step.mark.attrs.href as string)
-        if (!(step instanceof ReplaceStep)) return
+        if (!(step instanceof ReplaceStep) || step.slice.content.size === 0) return
+        // Fast path: check inserted slice for link marks before resolving and scanning the parent line (YAZ-6028).
+        const added: string[] = []
+        step.slice.content.descendants((node) => {
+          const href = type.isInSet(node.marks)?.attrs.href as string | undefined
+          if (href !== undefined) added.push(href)
+        })
+        if (added.length === 0) return
         const doc = tr.docs[i]!
         const line = new Set<string>()
         doc.resolve(Math.min(step.from, doc.content.size)).parent.descendants((node) => {
           const mark = type.isInSet(node.marks)
           if (mark !== undefined) line.add(mark.attrs.href as string)
         })
-        step.slice.content.descendants((node) => {
-          const href = type.isInSet(node.marks)?.attrs.href as string | undefined
-          if (href !== undefined && !line.has(href)) set.add(href)
-        })
+        for (const href of added) {
+          if (!line.has(href)) set.add(href)
+        }
       })
     }
     const absolute = [...set].filter((href) => typeof href === 'string' && /^(file:|\/|[A-Za-z]:[\\/])/i.test(href))
@@ -166,7 +78,7 @@ export const relativeLinks = $prose((ctx) => new Plugin({
       const href = mark?.attrs.href
       const path = typeof href === 'string' && absolute.includes(href) ? vaultHref(href, options) : null
       if (mark === undefined || path === null) return
-      tr.addMark(pos, pos + node.nodeSize, type.create({ ...mark.attrs, href: relativeHref(options.notePath, path) }))
+      tr.addMark(pos, pos + node.nodeSize, type.create({ ...mark.attrs, href: relativeHref(options.pagePath, path) }))
     })
     return tr.docChanged ? tr : null
   },
@@ -187,18 +99,6 @@ function noticeWhy(path: string, options: PathPasteOptions): void {
   if (options.onNotice === undefined || fileKind(name) === null) return
   const known = inVault(path, options) || options.candidatesOf?.(path) != null
   options.onNotice(known ? `Can't find ${name} yet, so it stays a path` : `${name} is not in a vault open in this window, so it stays a path`)
-}
-
-/** `to` from the folder of `from`, each name URL-encoded: `../finance/budget%20v2.zip`. */
-function relativeHref(from: string, to: string): string {
-  const source = from.split(/[\\/]/).slice(0, -1)
-  const target = to.split(/[\\/]/)
-  let same = 0
-  // The shared folders are found as the rest of the paths are: case does not count (YAZ-3634).
-  while (same < source.length && same < target.length - 1 && keyOf(source[same]!) === keyOf(target[same]!)) same += 1
-  // Parentheses too: an unmatched one would end the Markdown link early.
-  const encode = (name: string) => encodeURIComponent(name).replace(/[()]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
-  return [...source.slice(same).map(() => '..'), ...target.slice(same).map(encode)].join('/')
 }
 
 /** The most lines a paste may have to be read as paths. */
@@ -224,7 +124,7 @@ export function pastePathLinks(view: EditorView, ctx: Ctx, options: PathPasteOpt
   if (links.length > 1) {
     const tr = closeHistory(view.state.tr).deleteSelection()
     // A header cell or a heading holds no list (YAZ-3631, YAZ-3818 D7): there the links go on the line, one space
-    // apart. A body cell holds lists (YAZ-3818 D1), so there they are bullets, as in the note (D11).
+    // apart. A body cell holds lists (YAZ-3818 D1), so there they are bullets, as in the page (D11).
     const $at = tr.selection.$from
     const noList = $at.parent.type.name === 'heading' || Array.from({ length: $at.depth }, (_, d) => $at.node(d).type.name).includes('table_header')
     if (noList) {
@@ -255,9 +155,48 @@ export function pastePathLinks(view: EditorView, ctx: Ctx, options: PathPasteOpt
   const to = view.state.selection.from
   const slice = Slice.maxOpen(ctx.get(parserCtx)(link).content)
   view.dispatch(closeHistory(view.state.tr).replace(to - raw.length, to, slice).scrollIntoView())
+  // A drawing or a diagram can be an embed too (YAZ-4829 D8): `!` before the link as it is written. A `[[link]]` stays
+  // text under the host's decorations; a Markdown link parses as the image node (another vault, 2B). So can a card
+  // (YAZ-5037): a link that names one (a card file's) becomes the card's embed by its ID, `![[GEO-140]]`.
+  // Not in a table cell: embeds there are out of scope (the checker's round 1).
+  const path = pastedPath(raw)
+  const card = link.startsWith('[[') ? (cardCheckOf(view.state)?.cardOf(link.slice(2, -2)) ?? null) : null
+  // A new embed's view starts locked (YAZ-2571 round 7): `![[x|locked]]`, or `![name|locked](href)` into another vault.
+  const embedText = () => (card !== null ? `![[${card.id}]]` : link.startsWith('[[') ? newEmbed(link.slice(2, -2)) : `!${link.replace(/^\[((?:\\.|[^\]])*)\]/, (_, name: string) => `[${newEmbedAlt(name)}]`)}`)
+  const embed = (card !== null || (path !== null && isBoardTarget(path))) && !inCellOrPage(view.state.doc.resolve(to - raw.length)) ? Slice.maxOpen(ctx.get(parserCtx)(embedText()).content) : undefined
   // No chip after a paste over words (K5): ⌘Z gives the words back.
-  if (empty) offerKeepAsPath(view, to - raw.length, to - raw.length + slice.size, raw)
+  if (empty) offerKeepAsPath(view, to - raw.length, to - raw.length + slice.size, raw, embed)
   return true
+}
+
+/**
+ * Where the pasted pill ends on screen (YAZ-4904): the last drawn piece of the link between `from` and `to`. The
+ * link's syntax (`[[`, `]]`, a hidden folder or ending) is `display: none`, so `coordsAtPos(to)` measured a hidden
+ * node, got a zero rect, and put the chip at the window's top left corner. A DOM range over the link reads the boxes
+ * of its drawn pieces only: the text, a title widget. `coordsAtPos` stays the fallback when nothing is drawn.
+ */
+function pillEnd(view: EditorView, from: number, to: number): { left: number; bottom: number } {
+  const start = view.domAtPos(from, 1)
+  const end = view.domAtPos(to, 1)
+  const range = document.createRange()
+  range.setStart(start.node, start.offset)
+  range.setEnd(end.node, end.offset)
+  const rects = Array.from(range.getClientRects()).filter((rect) => rect.height > 0)
+  const last = rects[rects.length - 1]
+  if (last === undefined) {
+    const at = view.coordsAtPos(to)
+    return { left: at.left, bottom: at.bottom }
+  }
+  // A piece's box comes before its text in the list, and the text sits inside the box's padding: the chip goes
+  // after the furthest right box on the pill's last line.
+  let left = last.right
+  let bottom = last.bottom
+  for (const rect of rects) {
+    if (rect.bottom <= last.top || rect.top >= last.bottom) continue
+    left = Math.max(left, rect.right)
+    bottom = Math.max(bottom, rect.bottom)
+  }
+  return { left, bottom }
 }
 
 /** The one open chip's close, or null. A new chip or a closing editor closes it (`closePathChip`). */
@@ -266,8 +205,12 @@ let openChip: (() => void) | null = null
 /** Closes the "Keep as path" chip, if one is open: its editor is going away. */
 export const closePathChip = (): void => openChip?.()
 
-/** The small "Keep as path" chip under a pasted link (D2). The next key, click outside or scroll closes it. */
-function offerKeepAsPath(view: EditorView, from: number, to: number, raw: string): void {
+/**
+ * The small "Keep as path" chip under a pasted link (D2), with "Embed" beside it for a drawing or a diagram (YAZ-4829
+ * D8): `embed` is the link with its `!`. Each button is one undo step of its own, so ⌘Z gives the pill back. The next
+ * key, click outside or scroll closes it.
+ */
+function offerKeepAsPath(view: EditorView, from: number, to: number, raw: string, embed?: Slice): void {
   closePathChip()
   const pasted = view.state.doc
   const chip = document.createElement('div')
@@ -277,6 +220,18 @@ function offerKeepAsPath(view: EditorView, from: number, to: number, raw: string
   keep.className = 'ctx-menu__item'
   keep.textContent = 'Keep as path'
   chip.appendChild(keep)
+  if (embed !== undefined) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'ctx-menu__item'
+    button.textContent = 'Embed'
+    button.addEventListener('mousedown', (event) => event.preventDefault())
+    button.addEventListener('click', () => {
+      if (view.state.doc === pasted) view.dispatch(closeHistory(view.state.tr).replace(from, to, embed).scrollIntoView())
+      close()
+    })
+    chip.appendChild(button)
+  }
   const close = () => {
     openChip = null
     chip.remove()
@@ -295,7 +250,7 @@ function offerKeepAsPath(view: EditorView, from: number, to: number, raw: string
   })
   view.dom.parentElement?.appendChild(chip)
   // Kept inside the window, as the link menu is (`linkMenu.ts` `openMenuAt`).
-  const at = view.coordsAtPos(to)
+  const at = pillEnd(view, from, to)
   chip.style.left = `${Math.max(0, Math.min(at.left, window.innerWidth - chip.offsetWidth))}px`
   chip.style.top = `${Math.max(0, Math.min(at.bottom + 4, window.innerHeight - chip.offsetHeight))}px`
   openChip = close

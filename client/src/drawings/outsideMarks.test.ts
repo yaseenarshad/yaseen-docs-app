@@ -36,13 +36,13 @@ describe('OutsideMarks (YAZ-4279 D5, items 7 and 8)', () => {
     expect(outlined()).toEqual({})
   })
 
-  it('10 s and 1 min go by themselves; Off outlines nothing; a newer save replaces the older outlines', () => {
+  it('1 min and 5 min go by themselves; Off outlines nothing; a newer save replaces the older outlines', () => {
     vi.useFakeTimers()
     const { marks, outlined } = setup()
-    marks.mark([], ['c'], [{ id: 'c' }], '10s')
+    marks.mark([], ['c'], [{ id: 'c' }], '60s')
     // A timed glow ends by time only: a select does not end it (4A-14).
     marks.seen({ c: true }, canvas({ id: 'c', version: 9 }))
-    vi.advanceTimersByTime(9_999)
+    vi.advanceTimersByTime(59_999)
     expect(outlined()).toEqual({ [MARK_COLLABORATORS.changed]: ['c'] })
     vi.advanceTimersByTime(1)
     expect(outlined()).toEqual({})

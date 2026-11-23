@@ -231,13 +231,18 @@ describe('Current time (D22, edge cases 70–72, 77, 78)', () => {
       expect(JSON.stringify(checkedBefore)).toContain('"checked":false')
     }
   })
-  it('"/text" + Enter in a bullet: a plain line, out of the list — the Text row is T (YAZ-3806 T4)', async () => {
-    const { root, view } = await mount('* a\n* x\n')
+  it.each([
+    ['a bullet', '* a\n* x\n  * kid\n* b\n'],
+    ['an H3 bullet', '* a\n* ### x\n  * kid\n* b\n'],
+  ])('"/text" + Enter in %s: a plain line in the same bullet — the Text row is T, which never changes the list (YAZ-4369)', async (_, markdown) => {
+    const { root, view } = await mount(markdown)
     await openMenu(view, root, 'x', '/text')
     press('Enter')
     await vi.waitFor(() => expect(isShown(root)).toBe(false))
-    // The empty line where "x" was, then Crepe's trailing line.
-    expect(view.state.doc.toString()).toBe('doc(bullet_list(list_item(paragraph("a"))), paragraph, paragraph)')
+    // The empty line where "x" was, still the second bullet with its child; then Crepe's trailing line.
+    expect(view.state.doc.toString()).toBe(
+      'doc(bullet_list(list_item(paragraph("a")), list_item(paragraph, bullet_list(list_item(paragraph("kid")))), list_item(paragraph("b"))), paragraph)',
+    )
   })
 })
 

@@ -8,8 +8,11 @@ import {
 } from "@excalidraw/common";
 
 import {
+  getElementStyleScale,
   getTextBackgroundPaddingScale,
   newElementWith,
+  toBoardSize,
+  toScreenSize,
 } from "@excalidraw/element";
 
 import {
@@ -29,7 +32,10 @@ import {
 
 import { CaptureUpdateAction } from "@excalidraw/element";
 
-import type { ExcalidrawTextElement } from "@excalidraw/element/types";
+import type {
+  ExcalidrawElement,
+  ExcalidrawTextElement,
+} from "@excalidraw/element/types";
 
 import { paintIcon } from "../components/icons";
 
@@ -37,6 +43,22 @@ import { t } from "../i18n";
 import { getSelectedElements } from "../scene";
 
 import { register } from "./register";
+
+/**
+ * YAZ-4312 S8: a board size of `from` as the same screen size on `to`, through
+ * each shape's style scale (`screenScale.ts`). The same scale: the same number.
+ */
+const toStyleScaleOf = (
+  value: number,
+  from: ExcalidrawElement,
+  to: ExcalidrawElement,
+) => {
+  const fromScale = getElementStyleScale(from);
+  const toScale = getElementStyleScale(to);
+  return fromScale === toScale
+    ? value
+    : toBoardSize(toScreenSize(value, fromScale), toScale);
+};
 
 // `copiedStyles` is exported only for tests.
 export let copiedStyles: string = "{}";
@@ -101,7 +123,11 @@ export const actionPasteStyles = register({
           }
           let newElement = newElementWith(element, {
             backgroundColor: elementStylesToCopyFrom?.backgroundColor,
-            strokeWidth: elementStylesToCopyFrom?.strokeWidth,
+            strokeWidth: toStyleScaleOf(
+              elementStylesToCopyFrom.strokeWidth,
+              elementStylesToCopyFrom,
+              element,
+            ),
             strokeColor: elementStylesToCopyFrom?.strokeColor,
             strokeStyle: elementStylesToCopyFrom?.strokeStyle,
             fillStyle: elementStylesToCopyFrom?.fillStyle,
@@ -112,7 +138,16 @@ export const actionPasteStyles = register({
                   elementStylesToCopyFrom.roundness.type,
                   element,
                 )
-                ? elementStylesToCopyFrom.roundness
+                ? elementStylesToCopyFrom.roundness.value === undefined
+                  ? elementStylesToCopyFrom.roundness
+                  : {
+                      ...elementStylesToCopyFrom.roundness,
+                      value: toStyleScaleOf(
+                        elementStylesToCopyFrom.roundness.value,
+                        elementStylesToCopyFrom,
+                        element,
+                      ),
+                    }
                 : getDefaultRoundnessTypeForElement(element)
               : null,
           });

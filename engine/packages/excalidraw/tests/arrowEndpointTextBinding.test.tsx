@@ -11,7 +11,10 @@ import type {
 } from "@excalidraw/element/types";
 
 import { Excalidraw } from "../index";
-import { actionTextAutoResize } from "../actions/actionTextAutoResize";
+import {
+  actionTextAutoResize,
+  actionTextShrinkToLines,
+} from "../actions/actionTextAutoResize";
 
 import { API } from "./helpers/api";
 import { Keyboard, Pointer, UI } from "./helpers/ui";
@@ -523,7 +526,7 @@ describe("binding text to an arrow endpoint", () => {
       expect(text.x).toBeCloseTo(306, 0);
     });
 
-    // the autoResize handle unwraps the text back to one line; anchoring that
+    // "fit the text" unwraps the text back to one line; anchoring that
     // resize by alignment is what keeps the arrow still
     it("does not move the arrow when the text is un-wrapped", async () => {
       API.setElements([createArrow("arrow", [500, 100], [300, 100])]);
@@ -542,6 +545,28 @@ describe("binding text to an arrow endpoint", () => {
 
       const resized = getText();
       expect(resized.autoResize).toBe(true);
+      expect(resized.x + resized.width).toBeCloseTo(rightEdge, 4);
+      expectPointsClose(endpointOf(getArrow("arrow"), "end"), tipBefore);
+    });
+
+    // YAZ-5771 "only shrink" narrows the box with the same anchor rule
+    it("does not move the arrow when the text only shrinks", async () => {
+      API.setElements([createArrow("arrow", [500, 100], [300, 100])]);
+      const tipBefore = endpointOf(getArrow("arrow"), "end");
+
+      await dragTextAt([300, 100], 240, "a label\nin two lines");
+      Keyboard.exitTextEditor(await getTextEditor());
+
+      const text = getText();
+      expect(text.autoResize).toBe(false);
+      const rightEdge = text.x + text.width;
+
+      API.setAppState({ selectedElementIds: { [text.id]: true } });
+      API.executeAction(actionTextShrinkToLines);
+
+      const resized = getText();
+      expect(resized.autoResize).toBe(false);
+      expect(resized.width).toBeLessThan(text.width);
       expect(resized.x + resized.width).toBeCloseTo(rightEdge, 4);
       expectPointsClose(endpointOf(getArrow("arrow"), "end"), tipBefore);
     });
@@ -671,7 +696,7 @@ describe("binding text to an arrow endpoint", () => {
   });
 
   describe("history", () => {
-    // generic text-creation history behaviour lives in textWysiwyg.test.tsx;
+    // generic text-creation history behaviour lives in textEditing.test.tsx;
     // these cover what the endpoint binding adds on top
     it("removes the text and its binding in a single undo", async () => {
       UI.createElement("arrow", { x: 100, y: 300, width: 0, height: -200 });

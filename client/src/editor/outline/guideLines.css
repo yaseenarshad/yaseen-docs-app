@@ -39,9 +39,9 @@
 }
 
 /* Off (YAZ-4094 D2, D3): no strip, so no line, no hover and no click on the line; the chevrons and the
-   fold keys still fold. The page's own choice wins: `data-guide-lines` on a note's host (Editor.tsx), or
-   on a preview's own `.editor-instance` (useReadOnlyNote.ts). With none, the app default on `:root`
-   (App.tsx) reaches every editor of the page — a note, the right panel, a folder view's outline, and a
+   fold keys still fold. The page's own choice wins: `data-guide-lines` on a page's host (Editor.tsx), or
+   on a preview's own `.editor-instance` (useReadOnlyPage.ts). With none, the app default on `:root`
+   (App.tsx) reaches every editor of the page — a page, the right panel, a folder view's outline, and a
    hover preview, which is portalled to <body> outside `.app`. With no pseudo, the list's hit box ends at
    its border again: `stripHit` and the block-handle gate find nothing, with no JS change. */
 .editor-host[data-guide-lines='off'] .editor-instance .milkdown .milkdown-list-item-block li.list-item > .children > .content-dom > :is(ul, ol)::before,
@@ -51,7 +51,7 @@
 }
 
 /* "Only near the mouse" (YAZ-4094 G2): Section indent's rule (sectionIndent.css) — the lines show while
-   the mouse is over the note. The strip stays, so a shown line still takes its click. */
+   the mouse is over the page. The strip stays, so a shown line still takes its click. */
 :root[data-guide-lines-show='near'] .editor-instance .milkdown > .ProseMirror:not(:hover) .milkdown-list-item-block li.list-item > .children > .content-dom > :is(ul, ol)::before {
   background-image: none;
 }

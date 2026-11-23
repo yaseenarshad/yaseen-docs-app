@@ -18,7 +18,7 @@ import { appWindow, buildFixtureVault, clickMenuItem, copyVault, launchApp, quit
 test.describe.configure({ mode: 'serial' })
 
 /** The nav as the registry orders it (registry.tsx): the settings pages (General first, YAZ-3276 D7), a divider, the reference pages. */
-const NAV_ORDER = ['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings', 'Images', 'Files & Links', 'Review', 'Sync', '—', 'Storage', 'Sharing', 'Hotkeys'] as const
+const NAV_ORDER = ['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Cards', 'Sync', '—', 'Memory', 'Storage', 'Sharing', 'Hotkeys'] as const
 
 // ---------- the dialog's parts, by role and stable class only (never position) ----------
 
@@ -68,7 +68,7 @@ test.afterAll(async () => {
 test('step 1 — the sidebar cog opens the dialog on the General page: nav in registry order, divider before Hotkeys, General current', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, SEED_FILE)) })
   win = await appWindow(app, 'w1')
-  await expect(win.locator('.ProseMirror')).toBeVisible() // the seeded note is open; the app is up
+  await expect(win.locator('.ProseMirror')).toBeVisible() // the seeded page is open; the app is up
 
   await cog(win).click()
   await expect(dialog(win)).toBeVisible()
@@ -125,11 +125,12 @@ test('step 3 — search narrows the page to hits under breadcrumbs, and a hit st
   await cog(win).click()
   await expect(dialog(win)).toBeVisible()
 
-  // "dark" is a Theme keyword and the draw.io diagrams' "In dark mode" row (YAZ-3028 D10): two rows,
-  // both on the Appearance page, Theme first under the untitled group's breadcrumb (just the section).
-  // Every key is searchable since YAZ-3564: a drawing's and a diagram's dark-mode keys follow on Hotkeys.
+  // "dark" is a Theme keyword and the draw.io diagrams' "In dark mode" row (YAZ-3028 D10), Theme first under the
+  // untitled group's breadcrumb (just the section). Every key is searchable since YAZ-3564: a drawing's and a
+  // diagram's dark-mode keys follow on Hotkeys. The words of three more rows say it too: the guide lines' and the
+  // shades' "darkness", and a table fill's text rule ("A dark fill turns dark text white"). Seven rows.
   await search(win).fill('dark')
-  await expect(rows(win)).toHaveCount(4)
+  await expect(rows(win)).toHaveCount(7)
   await expect(row(win, 'theme')).toBeVisible()
   await expect(row(win, 'diagramDarkColors')).toBeVisible()
   await expect(row(win, 'hotkey-drawing-toggleTheme')).toBeVisible()
@@ -144,10 +145,11 @@ test('step 3 — search narrows the page to hits under breadcrumbs, and a hit st
 
   // "threading" matches on the GROUP title: its three rows, under "section › group". It matches
   // the next group's hint too, which names Bullet threading (YAZ-2709): that group's two rows
-  // follow under their own breadcrumb. The sidebar's line style row names it too (YAZ-3309 D7).
+  // follow under their own breadcrumb. The sidebar's line style row names it too (YAZ-3309 D7), and so does a folder
+  // page's group line style (YAZ-4798).
   await search(win).fill('threading')
-  await expect(headings(win)).toHaveText(['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent'])
-  await expect(rows(win)).toHaveCount(6)
+  await expect(headings(win)).toHaveText(['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Folder pages › View defaults'])
+  await expect(rows(win)).toHaveCount(7)
   await expect(row(win, 'sidebarLineStyle')).toBeVisible()
   await expect(row(win, 'bulletThreading')).toBeVisible()
   await expect(row(win, 'threadWidth')).toBeVisible()
@@ -276,7 +278,7 @@ test('step 6 — Sidebar › "Level lines" (YAZ-3309 D3, D6–D10; the page sinc
     const before = getComputedStyle(li, '::before')
     return { content: before.content, opacity: before.opacity, zIndex: before.zIndex, pointerEvents: before.pointerEvents, radius: before.borderBottomLeftRadius }
   })
-  const mouseOnNote = () => win.locator('.ProseMirror').filter({ visible: true }).first().hover()
+  const mouseOnPage = () => win.locator('.ProseMirror').filter({ visible: true }).first().hover()
   const mouseOnTree = () => win.locator('.sidebar__body').hover()
   const choose = async (id: 'sidebarLines' | 'sidebarLineStyle', label: string, value: string) => {
     await cog(win).click()
@@ -303,10 +305,10 @@ test('step 6 — Sidebar › "Level lines" (YAZ-3309 D3, D6–D10; the page sinc
   // "On hover": the line shows while the mouse is over the list, and goes when it leaves. 1px at depth 1 * 14 + 1, no target.
   await mouseOnTree()
   await expect.poll(line).toEqual({ opacity: '1', left: '15px', width: '1px', pointerEvents: 'none' })
-  await mouseOnNote()
+  await mouseOnPage()
   await expect.poll(async () => (await line()).opacity).toBe('0')
   await shoot(win, 'settings-12-sidebar-lines-hover-out')
-  // S2: the keyboard in the tree, the mouse on the note: an arrow key moves the focus to a row, and the lines show.
+  // S2: the keyboard in the tree, the mouse on the page: an arrow key moves the focus to a row, and the lines show.
   const projects = folder.locator('> .tree__row--dir')
   await projects.focus()
   await win.keyboard.press('ArrowDown')
@@ -314,13 +316,13 @@ test('step 6 — Sidebar › "Level lines" (YAZ-3309 D3, D6–D10; the page sinc
   await expect.poll(async () => (await line()).opacity).toBe('1')
   // S3: a mouse click on a row is no keyboard focus: the mouse leaves, and the lines go.
   await roadmap.locator('> .tree__row--file').click()
-  await mouseOnNote()
+  await mouseOnPage()
   await expect(win.locator('.sidebar__body')).not.toHaveAttribute('data-key-focus', '')
   await expect(win.locator('.sidebar__body')).not.toHaveAttribute('data-mouse-in', '')
   await expect.poll(async () => (await line()).opacity).toBe('0')
-  // "Always show": with the mouse on the note.
+  // "Always show": with the mouse on the page.
   await choose('sidebarLines', 'Always show', 'always')
-  await mouseOnNote()
+  await mouseOnPage()
   await expect.poll(async () => (await line()).opacity).toBe('1')
   await shoot(win, 'settings-13-sidebar-lines-always')
 
@@ -329,7 +331,7 @@ test('step 6 — Sidebar › "Level lines" (YAZ-3309 D3, D6–D10; the page sinc
   await roadmap.locator('> .tree__row--file').hover()
   await expect.poll(thread).toEqual({ content: '""', opacity: '1', zIndex: '2', pointerEvents: 'none', radius: '6px' })
   await shoot(win, 'settings-14-sidebar-thread')
-  await mouseOnNote()
+  await mouseOnPage()
   await expect.poll(async () => (await thread()).opacity).toBe('0')
   // "Never": no line and no thread, not even with the mouse on the row.
   await choose('sidebarLines', 'Never', 'off')

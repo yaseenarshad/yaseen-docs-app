@@ -108,14 +108,32 @@ describe('rootsOf', () => {
 describe('registerGithubIpc', () => {
   it('registers exactly the github channels the preload invokes', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.github.status.channel, CONTRACT.github.syncNow.channel, CONTRACT.github.setEnabled.channel, CONTRACT.github.history.channel, CONTRACT.github.version.channel, CONTRACT.github.restore.channel].sort())
+    expect(channels).toEqual(
+      [
+        CONTRACT.github.status.channel,
+        CONTRACT.github.syncNow.channel,
+        CONTRACT.github.setEnabled.channel,
+        CONTRACT.github.authStatus.channel,
+        CONTRACT.github.signIn.channel,
+        CONTRACT.github.signOut.channel,
+        CONTRACT.github.manageRepos.channel,
+        CONTRACT.github.listRepos.channel,
+        CONTRACT.github.connectRepo.channel,
+        CONTRACT.github.autoSyncStatus.channel,
+        CONTRACT.github.addToAutoSync.channel,
+        CONTRACT.github.openAutoSync.channel,
+        CONTRACT.github.history.channel,
+        CONTRACT.github.version.channel,
+        CONTRACT.github.restore.channel,
+      ].sort(),
+    )
   })
 
   it('refuses a Version history request that is not a board inside the vault (YAZ-1897 D4, YAZ-3039)', async () => {
     expect(await registered(CONTRACT.github.history.channel)({ sender }, 'rel', 'b.excalidraw')).toEqual(bad('NOT_ABSOLUTE'))
     expect(await registered(CONTRACT.github.version.channel)({ sender }, vault, '../b.excalidraw', 'x')).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.github.restore.channel)({ sender }, vault, 'b.excalidraw', 'HEAD:b.excalidraw')).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CONTRACT.github.history.channel)({ sender }, vault, 'note.md')).toEqual(bad('UNSUPPORTED_EXTENSION'))
+    expect(await registered(CONTRACT.github.history.channel)({ sender }, vault, 'page.md')).toEqual(bad('UNSUPPORTED_EXTENSION'))
   })
 
   it('rejects a root that is not an absolute path, and a non-boolean flag, before any git work happens', async () => {

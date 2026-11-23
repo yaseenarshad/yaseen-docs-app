@@ -44,6 +44,7 @@ import type {
 
 import { getElementAbsoluteCoords, getElementBounds } from "./bounds";
 import { getUncroppedImageElement } from "./cropElement";
+import { isDarkInvertedImage } from "./iconColors";
 import { LinearElementEditor } from "./linearElementEditor";
 import {
   getBoundTextElement,
@@ -93,6 +94,12 @@ import type {
   ElementsMap,
 } from "./types";
 import { getTextHighlightFill } from "./textRuns";
+import { getElementStyleScale } from "./screenScale";
+import {
+  CHECKLIST_DONE_ALPHA,
+  getCheckboxGeometry,
+  getListMarkerMiddle,
+} from "./textCheckbox";
 
 import type { StyledTextSegment } from "./textLineUnderlines";
 
@@ -105,14 +112,29 @@ const isPendingImageElement = (
   isInitializedImageElement(element) &&
   !renderConfig.imageCache.has(element.fileId);
 
+/**
+ * YAZ-5739: a shape made below 100% has a line 1 / scale thicker in board px,
+ * so its bitmap gets 1 / scale more room. A pen stroke's and a text's padding
+ * already follow their line width and font size.
+ */
 const getCanvasPadding = (element: ExcalidrawElement) => {
+  const padding = getCanvasPaddingAtScale1(element);
+  if (element.type === "freedraw" || element.type === "text") {
+    return padding;
+  }
+  return padding / Math.min(1, getElementStyleScale(element));
+};
+
+const getCanvasPaddingAtScale1 = (element: ExcalidrawElement) => {
   switch (element.type) {
     case "freedraw":
       return element.strokeWidth * 12;
     case "text":
       return element.fontSize / 2;
     case "arrow":
-      if (element.endArrowhead || element.endArrowhead) {
+      // YAZ-5739: a head at either end needs the room (upstream read
+      // `endArrowhead` twice, so a start head alone could be cut off)
+      if (element.startArrowhead || element.endArrowhead) {
         return 40;
       }
       return 20;
@@ -153,12 +175,20 @@ export interface ExcalidrawElementWithCanvas {
   theme: AppState["theme"];
   scale: number;
   zoomValue: AppState["zoom"]["value"];
+  /**
+   * YAZ-4902: the `window.devicePixelRatio` the bitmap was made at. The App
+   * size (a page zoom) changes it; a bitmap drawn back at another ratio comes
+   * out scaled by old / new, so the letters ran past the box and its highlight.
+   */
+  pixelRatio: number;
   canvasOffsetX: number;
   canvasOffsetY: number;
   imageCrop: ExcalidrawImageElement["crop"] | null;
   containingFrameOpacity: number;
   /** YAZ-3944 D2: the GIF frame drawn on `canvas` (`GifPlayer.frameToken`) */
   gifFrame?: number;
+  /** YAZ-4354 1D: the Edit colors preview drawn on `canvas` */
+  iconPreview?: HTMLImageElement | null;
 }
 
 const cappedElementCanvasSize = (
@@ -210,8 +240,12 @@ const cappedElementCanvasSize = (
     scale = Math.sqrt(AREA_LIMIT / (width * height));
   }
 
-  width = Math.floor(width * scale);
-  height = Math.floor(height * scale);
+  // YAZ-5739: at least 1 px, so a flat line far out keeps a bitmap (floor
+  // made it 0 px, and it drew nothing). Round down otherwise: rounding up
+  // took a capped bitmap past AREA_LIMIT, which iOS 17 Safari draws as
+  // nothing (YAZ-5755)
+  width = Math.min(WIDTH_HEIGHT_LIMIT, Math.max(1, Math.floor(width * scale)));
+  height = Math.min(WIDTH_HEIGHT_LIMIT, Math.max(1, Math.floor(height * scale)));
 
   return { width, height, scale };
 };
@@ -279,6 +313,7 @@ const generateElementCanvas = (
     theme: appState.theme,
     scale,
     zoomValue: zoom.value,
+    pixelRatio: window.devicePixelRatio,
     canvasOffsetX,
     canvasOffsetY,
     containingFrameOpacity:
@@ -392,8 +427,13 @@ const drawElementOnCanvas = (
           ? renderConfig.imageCache.get(element.fileId)
           : null;
       // YAZ-3944 D2: the frame on show of a playing GIF, else the still image
+      // YAZ-4354 1D: Edit colors fades the other parts while a number is pointed at
       const img = isInitializedImageElement(element)
-        ? renderConfig.gifPlayer?.frameFor(element) ?? cacheEntry?.image
+        ? (renderConfig.colorEditPreview?.current?.elementId === element.id
+            ? renderConfig.colorEditPreview.current.image
+            : null) ??
+          renderConfig.gifPlayer?.frameFor(element) ??
+          cacheEntry?.image
         : undefined;
 
       if (img != null && !(img instanceof Promise)) {
@@ -418,9 +458,10 @@ const drawElementOnCanvas = (
               height: "naturalHeight" in img ? img.naturalHeight : img.height,
             };
 
+        // YAZ-4355 1E: a many-color icon keeps its colors; every other SVG inverts (the board and the PNG export)
         const shouldInvertImage =
           renderConfig.theme === THEME.DARK &&
-          cacheEntry?.mimeType === MIME_TYPES.svg;
+          isDarkInvertedImage(cacheEntry?.mimeType, cacheEntry?.iconKind);
 
         if (shouldInvertImage && isSafari) {
           const devicePixelRatio = window.devicePixelRatio || 1;
@@ -606,6 +647,8 @@ const drawElementOnCanvas = (
           lineHeightPx,
         );
 
+        // YAZ-4277 D4: the visual lines of a done checklist item
+        let doneLine = -1;
         for (let index = 0; index < lines.length; index++) {
           const baseline = index * lineHeightPx + verticalOffset;
           context.font = lines[index].font;
@@ -632,7 +675,33 @@ const drawElementOnCanvas = (
             context.textAlign = "left";
             // YAZ-4100 3C: a right-to-left segment's letters and spaces in their order
             context.direction = lines[index].rtl ? "rtl" : "inherit";
+            const box = segments.find((segment) => segment.checkbox);
+            if (box?.checkbox === "done") {
+              doneLine = lines[index].logicalLine;
+            }
+            // the letters after the box, not the indent before it
+            const doneFrom =
+              doneLine === lines[index].logicalLine ? box?.end ?? 0 : Infinity;
+            const alpha = context.globalAlpha;
             for (const segment of segments) {
+              if (segment.checkbox) {
+                drawCheckbox(
+                  context,
+                  getCheckboxGeometry(
+                    segment,
+                    lineStart + segment.x,
+                    getListMarkerMiddle(
+                      element,
+                      index * lineHeightPx,
+                      lineHeightPx,
+                    ),
+                    element.fontSize,
+                  ),
+                  segment.checkbox === "done",
+                  textColor,
+                );
+                continue;
+              }
               if (segment.link) {
                 drawLinkPill(
                   context,
@@ -653,24 +722,28 @@ const drawElementOnCanvas = (
                   )
                 : textColor;
               const x = lineStart + segment.x;
+              // YAZ-4277 D4: a done item's letters, as notes show them
+              const done = segment.start >= doneFrom;
+              context.globalAlpha = done ? alpha * CHECKLIST_DONE_ALPHA : alpha;
               context.fillText(segment.text, x, baseline);
               if (segment.underlined) {
                 context.fillRect(
                   x,
-                  baseline + Math.max(1, element.fontSize * 0.08),
+                  baseline + element.fontSize * 0.08,
                   segment.width,
-                  Math.max(1, element.fontSize / 16),
+                  element.fontSize / 16,
                 );
               }
-              if (segment.strikethrough) {
+              if (segment.strikethrough || done) {
                 context.fillRect(
                   x,
                   baseline - element.fontSize * 0.3,
                   segment.width,
-                  Math.max(1, element.fontSize / 16),
+                  element.fontSize / 16,
                 );
               }
             }
+            context.globalAlpha = alpha;
             context.fillStyle = textColor;
             context.direction = "inherit";
             continue;
@@ -688,9 +761,9 @@ const drawElementOnCanvas = (
             if (lines[index].underlined) {
               context.fillRect(
                 underlineX,
-                baseline + Math.max(1, element.fontSize * 0.08),
+                baseline + element.fontSize * 0.08,
                 lineWidth,
-                Math.max(1, element.fontSize / 16),
+                element.fontSize / 16,
               );
             }
             if (lines[index].strikethrough) {
@@ -698,7 +771,7 @@ const drawElementOnCanvas = (
                 underlineX,
                 baseline - element.fontSize * 0.3,
                 lineWidth,
-                Math.max(1, element.fontSize / 16),
+                element.fontSize / 16,
               );
             }
           }
@@ -712,6 +785,35 @@ const drawElementOnCanvas = (
       }
     }
   }
+};
+
+/** YAZ-4277 D4: a checklist marker drawn as a box; a done box has a tick. */
+const drawCheckbox = (
+  context: CanvasRenderingContext2D,
+  box: ReturnType<typeof getCheckboxGeometry>,
+  done: boolean,
+  color: string,
+) => {
+  context.save();
+  context.strokeStyle = color;
+  context.lineWidth = box.strokeWidth;
+  context.lineJoin = "round";
+  context.lineCap = "round";
+  context.beginPath();
+  if (context.roundRect) {
+    context.roundRect(box.x, box.y, box.size, box.size, box.radius);
+  } else {
+    context.rect(box.x, box.y, box.size, box.size);
+  }
+  context.stroke();
+  if (done) {
+    context.beginPath();
+    context.moveTo(box.tick[0][0], box.tick[0][1]);
+    context.lineTo(box.tick[1][0], box.tick[1][1]);
+    context.lineTo(box.tick[2][0], box.tick[2][1]);
+    context.stroke();
+  }
+  context.restore();
 };
 
 /**
@@ -754,7 +856,7 @@ const drawLinkPill = (
     );
   } else if (link.icon === undefined) {
     context.strokeStyle = colors.text;
-    context.lineWidth = Math.max(1, pill.iconSize / 10);
+    context.lineWidth = pill.iconSize / 10;
     context.beginPath();
     for (const [index, [px, py]] of getLinkPillIconOutline(
       pill.iconSize,
@@ -807,9 +909,17 @@ const generateElementWithCanvas = (
   const gifFrame = isImageElement(element)
     ? renderConfig.gifPlayer?.frameToken(element)
     : undefined;
+  // YAZ-4354 1D: a new Edit colors preview draws this element again
+  const iconPreview =
+    renderConfig.colorEditPreview?.current?.elementId === element.id
+      ? renderConfig.colorEditPreview.current.image
+      : null;
   const changed =
     !prevElementWithCanvas ||
     shouldRegenerateBecauseZoom ||
+    // YAZ-4902: the App size changed since the bitmap was made
+    prevElementWithCanvas.pixelRatio !== window.devicePixelRatio ||
+    (prevElementWithCanvas.iconPreview ?? null) !== iconPreview ||
     prevElementWithCanvas.theme !== appState.theme ||
     prevElementWithCanvas.imageCrop !== imageCrop ||
     prevElementWithCanvas.containingFrameOpacity !== containingFrameOpacity;
@@ -831,6 +941,7 @@ const generateElementWithCanvas = (
     }
 
     elementWithCanvas.gifFrame = gifFrame;
+    elementWithCanvas.iconPreview = iconPreview;
     elementWithCanvasCache.set(element, elementWithCanvas);
 
     return elementWithCanvas;

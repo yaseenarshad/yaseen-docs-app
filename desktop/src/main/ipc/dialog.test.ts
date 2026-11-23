@@ -179,9 +179,9 @@ describe('dialog:open-file', () => {
   it('a dismissal is { cancelled: true }; a typed name that is not .excalidraw is UNSUPPORTED_EXTENSION; a file gone before the read is NOT_FOUND', async () => {
     showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
     expect(await open()).toEqual({ ok: true, value: { cancelled: true } })
-    const notes = await file('notes.txt', 'hello')
-    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [notes] })
-    expect(await open()).toMatchObject({ ok: false, error: { code: 'UNSUPPORTED_EXTENSION', path: notes } })
+    const pages = await file('pages.txt', 'hello')
+    showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [pages] })
+    expect(await open()).toMatchObject({ ok: false, error: { code: 'UNSUPPORTED_EXTENSION', path: pages } })
     showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [path.join(tmpdir(), 'yd-dialog-missing', 'gone.excalidraw')] })
     expect(await open()).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } })
   })

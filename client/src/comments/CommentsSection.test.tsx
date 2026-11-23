@@ -14,12 +14,13 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { readComments } from '@shared/comments'
 import type { CommentsOrder } from '@shared/types'
-import { CommentsSection } from './CommentsSection'
+import { CommentsSection, UNDO_MS } from './CommentsSection'
+import { CommentPrefsContext, type CommentPrefs } from './usePeople'
 import commentsCss from './comments.css?inline'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), writeFile: vi.fn(), shell: { openLink: vi.fn() } },
+  api: { readFile: vi.fn(), writeFile: vi.fn(), shell: { openLink: vi.fn() }, vaultConfig: { read: vi.fn(), write: vi.fn(), onChange: vi.fn(() => () => undefined) } },
 }))
 
 import { BridgeRequestError, api } from '../api'
@@ -38,16 +39,16 @@ const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/
 
 const fileOf = (content: string, mtime = 100) => ({ path: PATH, content, mtime, size: content.length })
 
-const note = (entries: string) => `---\ntitle: Funnel\ncomments:\n${entries}---\nBody\n`
+const page = (entries: string) => `---\ntitle: Funnel\ncomments:\n${entries}---\nBody\n`
 
 /** One comment, no replies yet. */
-const LONE = note(`  - id: aaaaaaaa
+const LONE = page(`  - id: aaaaaaaa
     at: 2026-09-11T20:00:00Z
     body: Parent comment
 `)
 
 /** LONE as the disk moved on after the prop was taken: the FRESH bytes a write must build on. */
-const FRESHER = note(`  - id: aaaaaaaa
+const FRESHER = page(`  - id: aaaaaaaa
     at: 2026-09-11T20:00:00Z
     body: Parent comment
   - id: ffffffff
@@ -56,7 +57,7 @@ const FRESHER = note(`  - id: aaaaaaaa
 `)
 
 /** Deliberately out of `at` order on disk: a thread of two replies, a lone comment, an orphan reply. */
-const THREADED = note(`  - id: aaaaaaaa
+const THREADED = page(`  - id: aaaaaaaa
     at: 2026-09-11T20:00:00Z
     body: Parent comment
   - id: bbbbbbbb
@@ -77,7 +78,7 @@ const THREADED = note(`  - id: aaaaaaaa
 `)
 
 /** A titled comment after a title-less one whose first line carries a Markdown marker. */
-const TITLED = note(`  - id: aaaaaaaa
+const TITLED = page(`  - id: aaaaaaaa
     at: 2026-09-11T20:00:00Z
     title: Churn
     body: Parent comment
@@ -88,7 +89,7 @@ const TITLED = note(`  - id: aaaaaaaa
       More text
 `)
 
-const AGENT = note(`  - id: aaaaaaaa
+const AGENT = page(`  - id: aaaaaaaa
     at: 2026-09-11T20:00:00Z
     by: agent
     body: Written by an agent
@@ -98,7 +99,7 @@ const AGENT = note(`  - id: aaaaaaaa
 `)
 
 /** Multi-line bodies and one title, so every comment but the one-liner has something to fold. */
-const FOLDABLE = note(`  - id: aaaaaaaa
+const FOLDABLE = page(`  - id: aaaaaaaa
     at: 2026-09-11T20:00:00Z
     body: |-
       Parent comment
@@ -120,7 +121,7 @@ const FOLDABLE = note(`  - id: aaaaaaaa
 `)
 
 /** Numbered the way `addComment` numbers, plus a hand-written comment without one and an orphan reply that has one. */
-const NUMBERED = note(`  - id: aaaaaaaa
+const NUMBERED = page(`  - id: aaaaaaaa
     n: 1
     at: 2026-09-11T20:00:00Z
     body: Parent comment
@@ -395,7 +396,7 @@ describe('CommentsSection — composer', () => {
     const textarea = textareaOf(composer)
     expect(textarea?.placeholder).toBe('Leave a comment…')
     expect(titleInputOf(composer)).toBeNull()
-    expect(submitOf(composer)?.textContent).toBe('Comment')
+    expect(submitOf(composer)?.textContent).toBe('Comment (Cmd+Enter)')
     expect(submitOf(composer)?.disabled).toBe(true)
 
     focus(textarea)
@@ -491,7 +492,7 @@ describe('CommentsSection — reply', () => {
 
     setValue(textareaOf(composer), 'Third reply')
     expect(composer.classList.contains('comments__composer--collapsed')).toBe(false)
-    expect(submitOf(composer)?.textContent).toBe('Reply')
+    expect(submitOf(composer)?.textContent).toBe('Reply (Cmd+Enter)')
 
     click(submitOf(composer))
     await flush()
@@ -515,7 +516,7 @@ describe('CommentsSection — edit and delete', () => {
 
     setValue(textareaOf(composer), 'Parent comment revised')
     setValue(titleInputOf(composer), 'Churn revisited')
-    click(buttonNamed(composer, 'Save'))
+    click(buttonNamed(composer, 'Save (Cmd+Enter)'))
     await flush()
 
     expect(written()).toMatch(/ {4}title: Churn revisited\n {4}edited: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\n {4}body: Parent comment revised\n/)
@@ -535,7 +536,7 @@ describe('CommentsSection — edit and delete', () => {
     const composer = must(q<HTMLElement>(titled, '.comments__composer'), 'edit composer')
 
     setValue(titleInputOf(composer), '')
-    click(buttonNamed(composer, 'Save'))
+    click(buttonNamed(composer, 'Save (Cmd+Enter)'))
     await flush()
 
     expect(written()).not.toContain('    title:')
@@ -622,7 +623,7 @@ describe('CommentsSection — numbers (🔒 D15)', () => {
   })
 
   it('a reply under a parent that has no number is a dot too — there is no run to belong to', () => {
-    const el = mount(note(`  - id: aaaaaaaa\n    at: 2026-09-11T20:00:00Z\n    body: Parent comment\n  - id: bbbbbbbb\n    n: 1\n    at: 2026-09-12T20:00:00Z\n    reply_to: aaaaaaaa\n    body: First reply\n`))
+    const el = mount(page(`  - id: aaaaaaaa\n    at: 2026-09-11T20:00:00Z\n    body: Parent comment\n  - id: bbbbbbbb\n    n: 1\n    at: 2026-09-12T20:00:00Z\n    reply_to: aaaaaaaa\n    body: First reply\n`))
     expect(articles(el).map((a) => markOf(a)?.textContent)).toEqual(['·', '·'])
   })
 
@@ -638,18 +639,18 @@ describe('CommentsSection — numbers (🔒 D15)', () => {
 // ---------- by ----------
 
 describe('CommentsSection — by', () => {
-  it('`by` marks the article as an agent’s and shows the raw value after the time; without it, neither', () => {
+  it('YAZ-4615 D6: `by: agent` is the agent — its name and an "AI" circle lead the row, in the agent colour; without `by`, the number keeps the seat', () => {
     const el = mount(AGENT)
     const [plain, agent] = articles(el)
 
     expect(agent.classList.contains('comments__item--agent')).toBe(true)
-    const by = must(q<HTMLElement>(agent, '.comments__by'), 'by')
-    expect(by.textContent).toBe('(agent)')
-    const time = must(q<HTMLElement>(agent, 'time.comments__when'), 'time')
-    expect(time.compareDocumentPosition(by) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(q(agent, '.comments__name')?.textContent).toBe('agent')
+    expect(q(agent, '.comments-avatar--agent')?.textContent).toBe('AI')
+    expect(q(agent, '.comments__by')).toBeNull()
 
     expect(plain.classList.contains('comments__item--agent')).toBe(false)
-    expect(q(plain, '.comments__by')).toBeNull()
+    expect(q(plain, '.comments__writer')).toBeNull()
+    expect(q(plain, '.comments__mark')).not.toBeNull()
   })
 })
 
@@ -711,7 +712,7 @@ describe('CommentsSection — errors', () => {
 describe('CommentsSection — links and stale edits', () => {
   it('a link in a body opens through the shell; the click never navigates the app window', () => {
     // Below the header line: the first line is the header, rendered as text, so a link lives in the rest.
-    const el = mount(note(`  - id: aaaaaaaa\n    at: 2026-09-11T18:22:31Z\n    body: "Read this\\nSee [the site](https://example.com) now."\n`))
+    const el = mount(page(`  - id: aaaaaaaa\n    at: 2026-09-11T18:22:31Z\n    body: "Read this\\nSee [the site](https://example.com) now."\n`))
     const a = must(q<HTMLAnchorElement>(el, '.comments__body a'), 'the link')
     const ev = new MouseEvent('click', { bubbles: true, cancelable: true })
     act(() => void a.dispatchEvent(ev))
@@ -736,7 +737,7 @@ describe('CommentsSection — links and stale edits', () => {
 
 describe('CommentsSection — one-liners keep their Markdown; nothing to fold, no fold-all', () => {
   it('a title-less one-liner renders its inline Markdown in the header row', () => {
-    const el = mount(note(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    body: "See **this** and [site](https://example.com)"\n`))
+    const el = mount(page(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    body: "See **this** and [site](https://example.com)"\n`))
     const head = must(q(el, '.comments__summary'), 'the header seat')
     expect(head.querySelector('strong')?.textContent).toBe('this')
     expect(head.querySelector('a')?.getAttribute('href')).toBe('https://example.com')
@@ -744,7 +745,7 @@ describe('CommentsSection — one-liners keep their Markdown; nothing to fold, n
   })
 
   it('a page of only one-liners has nothing to fold, so there is no fold-all button', () => {
-    const el = mount(note(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    body: One.\n  - id: bbbbbbbb\n    n: 2\n    at: 2026-09-11T19:22:31Z\n    body: Two.\n`))
+    const el = mount(page(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    body: One.\n  - id: bbbbbbbb\n    n: 2\n    at: 2026-09-11T19:22:31Z\n    body: Two.\n`))
     expect(articles(el)).toHaveLength(2)
     expect(tool(el)).toBeNull()
   })
@@ -753,7 +754,7 @@ describe('CommentsSection — one-liners keep their Markdown; nothing to fold, n
 // ---------- order (YAZ-1515) ----------
 
 /** Three top-level comments, numbered, filed in `at` order. */
-const THREE = note(`  - id: aaaaaaaa
+const THREE = page(`  - id: aaaaaaaa
     n: 1
     at: 2026-09-10T20:00:00Z
     body: First
@@ -848,7 +849,7 @@ describe('header wrap (YAZ-1516)', () => {
 
   it('a 48-char title is rendered WHOLE in the header row', () => {
     expect(TITLE).toHaveLength(48)
-    const el = mount(note(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    title: ${TITLE}\n    body: |-\n      Line one\n      Line two\n`))
+    const el = mount(page(`  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T18:22:31Z\n    title: ${TITLE}\n    body: |-\n      Line one\n      Line two\n`))
     const head = must(q(el, '.comments__summary'), 'the header seat')
     expect(head.textContent).toBe(TITLE)
     expect(head.classList.contains('comments__summary--title')).toBe(true)
@@ -901,5 +902,207 @@ describe('default open state (YAZ-1515 🔒 E)', () => {
     expect(header(el)?.textContent).toBe('Comments')
     expect(header(el)?.getAttribute('aria-expanded')).toBe('true')
     expect(bottomComposer(el)).not.toBeNull()
+  })
+})
+
+// ---------- YAZ-4615 ----------
+
+describe('CommentsSection — YAZ-4615 resolve, writers, signing', () => {
+  const ME = { handle: 'yaseen', name: 'Yaseen', picture: null }
+  const readConfig = vi.mocked(api.vaultConfig.read)
+  const writeConfig = vi.mocked(api.vaultConfig.write)
+
+  function mountWith(content: string, prefs: Partial<CommentPrefs> = {}, vault: string | null = null): HTMLElement {
+    unmount()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    readFile.mockResolvedValue(fileOf(content))
+    const value: CommentPrefs = { me: null, resolvedPlace: 'bottom', openProfile: () => undefined, ...prefs }
+    act(() =>
+      root?.render(
+        <CommentPrefsContext.Provider value={value}>
+          <CommentsSection file={{ path: PATH, content }} order="oldest" onChangeOrder={onChangeOrder} root={vault} />
+        </CommentPrefsContext.Provider>,
+      ),
+    )
+    return container
+  }
+  const button = (el: ParentNode, text: string) => all<HTMLButtonElement>(el, 'button').find((b) => b.textContent?.trim() === text) ?? null
+  /** Do it, then let the write's promise chain settle on microtasks alone (safe under fake timers too). */
+  const actAsync = async (fn: () => void): Promise<void> => {
+    fn()
+    await act(async () => {
+      for (let i = 0; i < 20; i++) await Promise.resolve()
+    })
+  }
+  const submitBottom = (el: HTMLElement, body: string) => submitVia(bottomComposer(el), body)
+  const actionOf = (article: Element, text: string) => all<HTMLButtonElement>(article, '.comments__action').find((b) => b.textContent === text) ?? null
+  const written = () => String(writeFile.mock.calls.at(-1)?.[0].content ?? '')
+
+  const RESOLVABLE = page(`  - id: aaaaaaaa
+    n: 1
+    at: 2026-09-11T20:00:00Z
+    body: Parent comment
+  - id: bbbbbbbb
+    n: 1
+    at: 2026-09-12T20:00:00Z
+    reply_to: aaaaaaaa
+    body: First reply
+  - id: cccccccc
+    n: 2
+    at: 2026-09-12T21:00:00Z
+    body: Lone comment
+`)
+
+  it('D5: resolving a parent with an open reply takes the whole thread to the folded group, leaves an Undo row in its place, and the header counts what is open', async () => {
+    const el = mountWith(RESOLVABLE)
+    expect(header(el)?.textContent).toBe('Comments (3)')
+    await actAsync(() => click(actionOf(articles(el)[0], 'Resolve')))
+    expect(written()).toMatch(/id: aaaaaaaa[\s\S]*resolved: \d{4}-[\s\S]*body: Parent comment/)
+    expect(header(el)?.textContent).toBe('Comments (1)')
+    expect(q(el, '.comments__undo')?.textContent).toContain('Resolved #1')
+    expect(button(el, '· 1 resolved')).not.toBeNull()
+    const group = must(q(el, '.comments__resolved'), 'group')
+    expect(q(group, '.comments__resolved-toggle')?.getAttribute('aria-expanded')).toBe('false')
+    expect(all(group, 'article')).toHaveLength(0)
+    click(q(group, '.comments__resolved-toggle'))
+    expect(all(group, 'article').map(textOf)).toEqual(['Parent comment', 'First reply'])
+    // Undo reopens it, on the bytes the resolve wrote.
+    readFile.mockResolvedValue(fileOf(written()))
+    await actAsync(() => click(button(el, 'Undo')))
+    expect(written()).not.toContain('resolved:')
+  })
+
+  it('D5: the Undo row goes after UNDO_MS', async () => {
+    vi.useRealTimers()
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    vi.setSystemTime(NOW)
+    try {
+      const el = mountWith(RESOLVABLE)
+      await actAsync(() => click(actionOf(articles(el)[2], 'Resolve')))
+      expect(q(el, '.comments__undo')).not.toBeNull()
+      act(() => vi.advanceTimersByTime(UNDO_MS + 1))
+      expect(q(el, '.comments__undo')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('D5: a resolved reply drops into a "1 resolved reply" fold at the end of its thread; the header link opens the group', () => {
+    const el = mountWith(RESOLVABLE.replace('    reply_to: aaaaaaaa\n', '    reply_to: aaaaaaaa\n    resolved: 2026-09-13T00:00:00Z\n').replace('    body: Lone comment', '    resolved: 2026-09-13T00:00:00Z\n    body: Lone comment'))
+    expect(header(el)?.textContent).toBe('Comments (1)')
+    const fold = must(button(el, '1 resolved reply'), 'reply fold')
+    expect(repliesOf(threads(el)[0])).toEqual([])
+    click(fold)
+    expect(repliesOf(threads(el)[0])).toEqual(['First reply'])
+    click(button(el, '· 1 resolved'))
+    expect(q(el, '.comments__resolved-toggle--group')?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('D5: the header link brings the group into view a frame later; with no scrollIntoView (jsdom, YAZ-4965 CI) or after an unmount nothing throws', async () => {
+    const errors: unknown[] = []
+    const onError = (e: ErrorEvent): void => {
+      errors.push(e.error)
+      e.preventDefault()
+    }
+    window.addEventListener('error', onError)
+    const frame = (): Promise<void> => new Promise((done) => requestAnimationFrame(() => done()))
+    try {
+      const el = mountWith(RESOLVABLE.replace('    body: Lone comment', '    resolved: 2026-09-13T00:00:00Z\n    body: Lone comment'))
+      // No scrollIntoView on the element (jsdom has none): the frame runs with no error.
+      click(button(el, '· 1 resolved'))
+      await frame()
+      expect(errors).toEqual([])
+      // Where the method exists, the group is brought to the top of the view.
+      const group = must(q(el, '.comments__resolved'), 'group')
+      const scroll = vi.fn()
+      Object.assign(group, { scrollIntoView: scroll })
+      click(button(el, '· 1 resolved'))
+      await frame()
+      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' })
+      // A click, then the section goes before its frame: the frame does nothing.
+      click(button(el, '· 1 resolved'))
+      unmount()
+      await frame()
+      expect(scroll).toHaveBeenCalledTimes(1)
+      expect(errors).toEqual([])
+    } finally {
+      window.removeEventListener('error', onError)
+    }
+  })
+
+  it('D5 In place: a resolved thread stays in time order, dimmed, with "Resolved" and Reopen', () => {
+    const el = mountWith(RESOLVABLE.replace('    body: Parent comment', '    resolved: 2026-09-13T00:00:00Z\n    body: Parent comment'), { resolvedPlace: 'inPlace' })
+    expect(threads(el)[0].classList.contains('comments__thread--resolved')).toBe(true)
+    expect(q(el, '.comments__resolved')).toBeNull()
+    expect(q(articles(el)[0], '.comments__resolved-by')?.textContent).toBe('Resolved')
+    expect(actionOf(articles(el)[0], 'Reopen')).not.toBeNull()
+  })
+
+  it('D2, D7: with a profile your comment is signed with your handle, the composer names you, and your card goes into the vault\'s people file', async () => {
+    readConfig.mockResolvedValue(null)
+    writeConfig.mockResolvedValue(undefined)
+    const el = mountWith(LONE, { me: ME }, '/vault')
+    expect(q(bottomComposer(el), '.comments__me')?.textContent).toBe('YAYaseen')
+    await submitBottom(el, 'Signed')
+    expect(written()).toContain('    by: yaseen\n')
+    await vi.waitFor(() => expect(writeConfig).toHaveBeenCalledWith('/vault', 'people.json', { version: 1, people: { yaseen: expect.objectContaining({ name: 'Yaseen', picture: null }) } }))
+  })
+
+  it('D7: with no profile the composer offers "Add your name", which opens Settings', () => {
+    const openProfile = vi.fn()
+    const el = mountWith(LONE, { openProfile })
+    click(q(bottomComposer(el), '.comments__me'))
+    expect(openProfile).toHaveBeenCalledOnce()
+  })
+
+  it('a card under the handle `agent` changes nothing: `agent` stays the violet "AI" with Edit', async () => {
+    readConfig.mockResolvedValue({ version: 1, people: { agent: { name: 'Agent Smith', picture: null, updated: '2026-09-01T00:00:00Z' } } })
+    const el = mountWith(page(`  - id: aaaaaaaa
+    at: 2026-09-11T20:00:00Z
+    by: agent
+    body: From an agent
+`), {}, '/vault')
+    await act(async () => await new Promise((r) => setTimeout(r, 0)))
+    const [a] = articles(el)
+    expect(q(a, '.comments-avatar--agent')?.textContent).toBe('AI')
+    expect(q(a, '.comments__name')?.textContent).toBe('agent')
+    expect(actionOf(a, 'Edit')).not.toBeNull()
+  })
+
+  it('D6, D8: a teammate shows by their card and has no Edit; your own, an agent\'s and an old comment keep Edit', async () => {
+    readConfig.mockResolvedValue({ version: 1, people: { sam: { name: 'Sam Lee', picture: null, updated: '2026-09-01T00:00:00Z' } } })
+    const el = mountWith(
+      page(`  - id: aaaaaaaa
+    at: 2026-09-11T20:00:00Z
+    by: sam
+    body: From Sam
+  - id: bbbbbbbb
+    at: 2026-09-11T21:00:00Z
+    by: yaseen
+    body: Mine
+  - id: cccccccc
+    at: 2026-09-11T22:00:00Z
+    by: claude
+    body: From Claude
+  - id: dddddddd
+    at: 2026-09-11T23:00:00Z
+    body: Old one
+`),
+      { me: ME },
+      '/vault',
+    )
+    await vi.waitFor(() => expect(q(articles(el)[0], '.comments__name')?.textContent).toBe('Sam Lee'))
+    const [sam, mine, claude, old] = articles(el)
+    expect(q(sam, '.comments-avatar--person')?.textContent).toBe('SL')
+    expect(actionOf(sam, 'Edit')).toBeNull()
+    expect(actionOf(sam, 'Delete')).not.toBeNull()
+    expect(q(mine, '.comments__name')?.textContent).toBe('Yaseen')
+    // A handle with no card is an agent that signed with its own name (Yaseen's pick on audit 4): violet initials, and Edit.
+    expect(q(claude, '.comments-avatar--agent')?.textContent).toBe('CL')
+    expect(q(claude, '.comments__name')?.textContent).toBe('claude')
+    expect(actionOf(claude, 'Edit')).not.toBeNull()
+    for (const a of [mine, old]) expect(actionOf(a, 'Edit')).not.toBeNull()
   })
 })

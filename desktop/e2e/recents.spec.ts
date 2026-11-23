@@ -1,8 +1,8 @@
 /**
  * RECENTS (YAZ-3235): the 6th sidebar tab lists the files the app saved last, by day (D3 to D7).
- * A save in the app logs the file (D1, S1); the note then stands at the top of "Today" with the time
+ * A save in the app logs the file (D1, S1); the page then stands at the top of "Today" with the time
  * of the save (S18). A right-click on its row → "Show in sidebar" shows the Files tab, unfolds the
- * folder and lights the note (D7, S20).
+ * folder and lights the page (D7, S20).
  *
  * Same harness as the rest of the suite: temp `--user-data-dir`, a temp vault, `recents-` step
  * screenshots, out of sight (`YASEEN_DOCS_E2E_HIDDEN`).
@@ -35,7 +35,7 @@ test.afterAll(async () => {
   await Promise.all([userData, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('a save puts the note at the top of Today with its time; "Show in sidebar" shows it lit in Files', async () => {
+test('a save puts the page at the top of Today with its time; "Show in sidebar" shows it lit in Files', async () => {
   const plan = path.join(vault, 'Projects', 'Plan.md')
   const old = path.join(vault, 'Old.md')
   await writeFile(plan, 'plan body\n')
@@ -48,14 +48,14 @@ test('a save puts the note at the top of Today with its time; "Show in sidebar" 
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')
 
-  // S1: type in the open note; the autosave writes it, and main logs the save.
+  // S1: type in the open page; the autosave writes it, and main logs the save.
   await win.locator('.ProseMirror').getByText('plan body').click()
   await win.keyboard.press('End')
   await win.keyboard.type(` ${MARKER}`, { delay: 15 })
   await expect.poll(async () => (await readFile(plan, 'utf8')).includes(MARKER), { timeout: 10_000 }).toBe(true)
   await expect.poll(async () => (await readState(userData)).folders[vault]?.edits[plan] ?? 0, { timeout: 10_000 }).toBeGreaterThan(now.getTime() - 1000)
 
-  // S13: the 6th tab, a glyph named "Recents". S18: the note at the top of Today, with the time on the right.
+  // S13: the 6th tab, a glyph named "Recents". S18: the page at the top of Today, with the time on the right.
   await recentsTab(win).click()
   await expect(recentsTab(win)).toHaveAttribute('aria-selected', 'true')
   await expect(win.locator('.sidebar__body .recents__day')).toHaveText(['Today', 'Yesterday'])
@@ -67,7 +67,7 @@ test('a save puts the note at the top of Today with its time; "Show in sidebar" 
   await expect(rowsOf(day(win, 'Yesterday')).locator('.tree__label')).toHaveText(['Old'])
   await shoot(win, 'recents-1-today')
 
-  // D7, S20: right-click → "Show in sidebar": the Files tab shows, the folder unfolds, and the note is lit.
+  // D7, S20: right-click → "Show in sidebar": the Files tab shows, the folder unfolds, and the page is lit.
   await top.click({ button: 'right' })
   await expect(win.locator('.ctx-overlay .ctx-menu [role="menuitem"]').first()).toHaveText('Show in sidebar')
   await shoot(win, 'recents-2-menu')
@@ -78,9 +78,9 @@ test('a save puts the note at the top of Today with its time; "Show in sidebar" 
   await shoot(win, 'recents-3-shown-in-files')
 })
 
-// YAZ-3246 (D1): a rename rewrites the links of the notes that point to it. Those are quiet writes:
-// the user did not edit those notes, so the save log and the Recents tab stay as they were.
-test('D1: a rename that rewrites the links of 3 notes logs none of them', async () => {
+// YAZ-3246 (D1): a rename rewrites the links of the pages that point to it. Those are quiet writes:
+// the user did not edit those pages, so the save log and the Recents tab stay as they were.
+test('D1: a rename that rewrites the links of 3 pages logs none of them', async () => {
   await quitApp(app)
   const ud = await mkdtemp(path.join(tmpdir(), 'yaz3246-userdata-'))
   const v = await mkdtemp(path.join(tmpdir(), 'yaz3246-vault-'))
@@ -94,7 +94,7 @@ test('D1: a rename that rewrites the links of 3 notes logs none of them', async 
     await menuItem(w, 'Rename').click()
     await w.locator('.create-inline__input').fill('Target2')
     await w.keyboard.press('Enter')
-    await expect(confirmSheet(w).locator('.confirm__text')).toHaveText("Rename 'Target' to 'Target2'? Links in 3 notes will be updated.")
+    await expect(confirmSheet(w).locator('.confirm__text')).toHaveText("Rename 'Target' to 'Target2'? Links in 3 pages will be updated.")
     await confirmSheet(w).locator('.confirm__btn', { hasText: 'Rename' }).click()
     await expect.poll(async () => (await readFile(path.join(v, 'C.md'), 'utf8')).includes('[[Target2]]')).toBe(true)
     await w.waitForTimeout(1500) // the store's debounced write

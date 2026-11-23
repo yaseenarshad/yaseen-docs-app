@@ -1,0 +1,18 @@
+/* The media line, on a page AND on Review's card. `page/pageLook.ts` and `review/PhoneCard.tsx` load it. */
+
+/* What the phone cannot show now: one calm line, the text around it still there (N3, C3). */
+.page-media {
+  display: block;
+  margin: 0.6em 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+/* A web picture, sound or video: a link to tap (Safari), never loaded by the app. */
+a.page-media--web {
+  color: var(--accent);
+  text-decoration: none;
+}

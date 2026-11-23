@@ -1,6 +1,6 @@
 /**
  * SIDEBAR SORT, END TO END (YAZ-3227): the sort button in the tab row, its menu, the order of the
- * Files tab under Name and Last updated, both ways, a note written on disk moving to its new place
+ * Files tab under Name and Last updated, both ways, a page written on disk moving to its new place
  * with no new walk (D2), and — the claim only the real app can make — the choice kept in
  * `settings.sidebarSort` across a quit and a relaunch (D1).
  *
@@ -34,8 +34,8 @@ async function pickSort(label: string): Promise<void> {
   await expect(menuItem(win, label)).toHaveCount(0)
 }
 
-/** A note with its modified time `minutes` ago. */
-async function note(rel: string, minutes: number): Promise<void> {
+/** A page with its modified time `minutes` ago. */
+async function page(rel: string, minutes: number): Promise<void> {
   const file = path.join(vault, rel)
   await mkdir(path.dirname(file), { recursive: true })
   await writeFile(file, `# ${path.basename(rel, '.md')}\n`)
@@ -46,11 +46,11 @@ async function note(rel: string, minutes: number): Promise<void> {
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'sort-userdata-'))
   vault = await mkdtemp(path.join(tmpdir(), 'sort-vault-'))
-  await note('Archive/old.md', 60 * 24 * 30)
-  await note('Projects/plan.md', 60)
-  await note('Phase 2.md', 60 * 24)
-  await note('Phase 10.md', 5)
-  await note('zebra.md', 60 * 3)
+  await page('Archive/old.md', 60 * 24 * 30)
+  await page('Projects/plan.md', 60)
+  await page('Phase 2.md', 60 * 24)
+  await page('Phase 10.md', 5)
+  await page('zebra.md', 60 * 3)
 })
 
 test.afterAll(async () => {
@@ -63,12 +63,13 @@ test('step 1 — Files starts by Name, A to Z: folders first, numbers in number 
   win = await appWindow(app, 'w1')
   await expect(topLabels(win)).toHaveText(['Archive', 'Projects', 'Phase 2', 'Phase 10', 'zebra'])
   await sortButton(win).click()
-  expect(await menuLabels(win)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated'])
+  // "Kind first" (YAZ-4614 D66) follows "Show last updated" on a sorted tab: off, so no ✓.
+  expect(await menuLabels(win)).toEqual(['Name✓', 'Last updated', 'A to Z✓', 'Z to A', 'Show last updated', 'Kind first'])
   await shoot(win, 'sort-01-menu')
   await win.keyboard.press('Escape')
 })
 
-test('step 2 — Last updated reads newest first, a folder as its newest note; Oldest first flips it', async () => {
+test('step 2 — Last updated reads newest first, a folder as its newest page; Oldest first flips it', async () => {
   await pickSort('Last updated')
   await expect(topLabels(win)).toHaveText(['Projects', 'Archive', 'Phase 10', 'zebra', 'Phase 2'])
   await pickSort('Oldest first')
@@ -76,7 +77,7 @@ test('step 2 — Last updated reads newest first, a folder as its newest note; O
   await shoot(win, 'sort-02-oldest-first')
 })
 
-test('step 3 — a note written on disk takes its new time at once (D2)', async () => {
+test('step 3 — a page written on disk takes its new time at once (D2)', async () => {
   await writeFile(path.join(vault, 'Phase 2.md'), '# Phase 2\n\nEdited.\n')
   await expect(topLabels(win)).toHaveText(['Archive', 'Projects', 'zebra', 'Phase 10', 'Phase 2'])
 })
@@ -88,6 +89,6 @@ test('step 4 — the choice is in the state file and comes back after a quit and
   win = await appWindow(app, 'w1')
   await expect(topLabels(win)).toHaveText(['Archive', 'Projects', 'zebra', 'Phase 10', 'Phase 2'])
   await sortButton(win).click()
-  expect(await menuLabels(win)).toEqual(['Name', 'Last updated✓', 'Newest first', 'Oldest first✓', 'Show last updated'])
+  expect(await menuLabels(win)).toEqual(['Name', 'Last updated✓', 'Newest first', 'Oldest first✓', 'Show last updated', 'Kind first'])
   await shoot(win, 'sort-04-relaunch')
 })

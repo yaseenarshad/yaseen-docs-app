@@ -124,11 +124,11 @@
 }
 
 /* A read-only editor has no gesture, and no handle or selected tint to promise one (S38). */
-.milkdown .ProseMirror[contenteditable='false'] .line-view.is-selected {
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .line-view.is-selected {
   background-color: transparent;
 }
 
-.milkdown .ProseMirror[contenteditable='false'] .line-view__end {
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .line-view__end {
   display: none;
 }
 

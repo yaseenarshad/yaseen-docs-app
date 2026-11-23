@@ -166,6 +166,19 @@ export const shouldTestInsideForSelection = (
   return hasVisibleSelectionSurface(element, elementsMap);
 };
 
+/**
+ * YAZ-4469 A1: the inside counts only where the element paints it: a fill,
+ * text, a picture or an embed. A box's label is its own hit
+ * (`hitElementBoundText`), so a label does not make the empty rest of a
+ * transparent box count as drawn.
+ */
+export const shouldTestInsideForDrawn = (element: ExcalidrawElement) =>
+  shouldTestInside(element) &&
+  ((hasBackground(element.type) && !isTransparent(element.backgroundColor)) ||
+    isIframeLikeElement(element) ||
+    isTextElement(element) ||
+    isImageElement(element));
+
 export type HitTestArgs = {
   point: GlobalPoint;
   element: ExcalidrawElement;
@@ -173,7 +186,7 @@ export type HitTestArgs = {
   elementsMap: ElementsMap;
   frameNameBound?: FrameNameBounds | null;
   overrideShouldTestInside?: boolean;
-  insideHitPolicy?: "selection";
+  insideHitPolicy?: "selection" | "drawn";
   useFreeTextInteractionBounds?: boolean;
 };
 
@@ -285,6 +298,8 @@ export const hitElementItself = ({
     ((
       insideHitPolicy === "selection"
         ? shouldTestInsideForSelection(element, elementsMap)
+        : insideHitPolicy === "drawn"
+        ? shouldTestInsideForDrawn(element)
         : overrideShouldTestInside
         ? true
         : shouldTestInside(element)

@@ -30,7 +30,7 @@ function isWellKnownText(name: string): boolean {
 /**
  * Classifies a file name or path using the one approved, case-insensitive extension contract. A name whose
  * extension is no kind (none at all, or `Dockerfile.dev`'s `.dev`) is `text` when it is a well-known name
- * (`WELL_KNOWN_TEXT_NAMES`, case-sensitive; YAZ-3505). An extension that is a kind wins: `Dockerfile.md` is a note.
+ * (`WELL_KNOWN_TEXT_NAMES`, case-sensitive; YAZ-3505). An extension that is a kind wins: `Dockerfile.md` is a page.
  */
 export function fileKind(name: string): FileKind | null {
   const kind = kindOfExtension(extensionOf(name))

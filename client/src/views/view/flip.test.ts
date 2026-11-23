@@ -45,7 +45,7 @@ describe('flipPlan', () => {
 /**
  * YAZ-1555: a scrolled board is NOT a moved board. Cards are measured in the FLIP root's content
  * space — the viewport rect minus the root's rect, plus the root's own scroll — so a scroll on the
- * root (sideways) or on an ancestor (the note, vertically) leaves every card's measurement
+ * root (sideways) or on an ancestor (the page, vertically) leaves every card's measurement
  * unchanged, and only a real reflow plans a move.
  */
 describe('flipRect', () => {
@@ -57,7 +57,7 @@ describe('flipRect', () => {
     expect(flipPlan(rects({ a: before }), rects({ a: after })).moves.size).toBe(0)
   })
 
-  it('the note scrolling vertically moves nothing — the root itself moved with the card', () => {
+  it('the page scrolling vertically moves nothing — the root itself moved with the card', () => {
     const before = flipRect(at(100, 50), origin, 0, 0)
     const after = flipRect(at(100, -350), at(0, -400), 0, 0)
     expect(flipPlan(rects({ a: before }), rects({ a: after })).moves.size).toBe(0)

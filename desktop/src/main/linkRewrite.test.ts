@@ -1,7 +1,7 @@
 // The ONE rewrite of an ID to a new ID in a file's text (YAZ-2677 D5, D6, D7): a clash fix, a change
 // of the vault's letters and the backfill of old IDs all go through `rewriteIds`.
 import { describe, expect, it } from 'vitest'
-import { rewriteIds } from '@shared/linkRewrite'
+import { exactLinkTarget, rewriteIds } from '@shared/linkRewrite'
 
 const ONE = new Map([['YAZ-1', 'YAZ-9']])
 
@@ -53,14 +53,14 @@ describe('rewriteIds: an ID becomes its new ID wherever a file names it', () => 
     expect(rewriteIds(before, ONE)).toEqual({ content: before, changed: 0 })
   })
 
-  it('the link places of a folder’s settings: a view’s order, an outline line, a column’s target', () => {
+  it('the link places of a folder’s settings: a view’s order and a column’s target; an old outline string is no link place (YAZ-4584 D40)', () => {
     const before =
       '---\nid: YAZ-4\nfolder_settings:\n  columns:\n    Parent:\n      type: text\n      target: "[[YAZ-1]]"\n  views:\n    - type: table\n      name: All\n      order:\n        - "[[YAZ-1]]"\n        - "[[YAZ-2]]"\n    - type: outline\n      name: Map\n      outline: |-\n        - [[YAZ-1]]\n            - see [[YAZ-1]] in prose\n---\n'
     const { content, changed } = rewriteIds(before, ONE)
     expect(content).toContain('target: "[[YAZ-9]]"')
     expect(content).toContain('- "[[YAZ-9]]"\n        - "[[YAZ-2]]"')
-    expect(content).toContain('- [[YAZ-9]]\n            - see [[YAZ-1]] in prose')
-    expect(changed).toBe(3)
+    expect(content).toContain('- [[YAZ-1]]\n            - see [[YAZ-1]] in prose')
+    expect(changed).toBe(2)
   })
 
   it('the file’s own `id:` line only when the caller asks (`own`)', () => {
@@ -72,9 +72,9 @@ describe('rewriteIds: an ID becomes its new ID wherever a file names it', () => 
 
   it('a function from an ID to its new ID: every ID of the vault from old letters to new letters (D5)', () => {
     const letters = (id: string): string | undefined => (id.startsWith('YAZ-') ? `DOC-${id.slice(4)}` : undefined)
-    const before = '---\nid: YAZ-3\nalso_in:\n  - YAZ-7\nin:\n  YAZ-7:\n    Status: open\n---\n[[YAZ-1]] [[yaz-12|x]] [[BUS-4]] [[6cbnmcq5n2sj]] [[Some note]]\n'
+    const before = '---\nid: YAZ-3\nalso_in:\n  - YAZ-7\nin:\n  YAZ-7:\n    Status: open\n---\n[[YAZ-1]] [[yaz-12|x]] [[BUS-4]] [[6cbnmcq5n2sj]] [[Some page]]\n'
     expect(rewriteIds(before, letters, { own: true })).toEqual({
-      content: '---\nid: DOC-3\nalso_in:\n  - DOC-7\nin:\n  DOC-7:\n    Status: open\n---\n[[DOC-1]] [[DOC-12|x]] [[BUS-4]] [[6cbnmcq5n2sj]] [[Some note]]\n',
+      content: '---\nid: DOC-3\nalso_in:\n  - DOC-7\nin:\n  DOC-7:\n    Status: open\n---\n[[DOC-1]] [[DOC-12|x]] [[BUS-4]] [[6cbnmcq5n2sj]] [[Some page]]\n',
       changed: 5,
     })
   })
@@ -99,5 +99,34 @@ describe('rewriteIds: an ID becomes its new ID wherever a file names it', () => 
 
   it('an ID that maps to itself is no change', () => {
     expect(rewriteIds('[[YAZ-1]]\n', new Map([['YAZ-1', 'YAZ-1']]))).toEqual({ content: '[[YAZ-1]]\n', changed: 0 })
+  })
+})
+
+describe('exactLinkTarget: a settings link leaf follows the rule of YAZ-4935 (YAZ-4954 part 2)', () => {
+  const only = (...names: string[]) => (page: string) => names.includes(page)
+
+  it('with the pages known: the left side wins when it is a page, in both orders', () => {
+    expect(exactLinkTarget('[[Covid pages|COVID-19]]', only('Covid pages', 'COVID-19'))).toBe('Covid pages')
+    expect(exactLinkTarget('[[Covid pages|COVID-19]]', only('COVID-19'))).toBe('COVID-19')
+    expect(exactLinkTarget('[[COVID-19|Covid pages]]', only('Covid pages', 'COVID-19'))).toBe('COVID-19')
+    expect(exactLinkTarget(' [[Covid pages#Intro|COVID-19]] ', only('Covid pages'))).toBe('Covid pages')
+  })
+
+  it('with no pages: it keeps both sides when only the pages can pick, as the index does', () => {
+    expect(exactLinkTarget('[[Covid pages|COVID-19]]')).toBe('Covid pages|COVID-19')
+    expect(exactLinkTarget('[[COVID-19|Covid pages]]')).toBe('COVID-19')
+    expect(exactLinkTarget('[[staging|WIKI-116]]')).toBe('staging|WIKI-116')
+    expect(exactLinkTarget('[[Postgres|database]]')).toBe('Postgres')
+    expect(exactLinkTarget('[[|WIKI-116]]')).toBe('WIKI-116')
+  })
+
+  it('a file is the page in both orders, with or without the pages', () => {
+    expect(exactLinkTarget('[[photo.png|FIG-1]]')).toBe('photo.png')
+    expect(exactLinkTarget('[[FIG-1|photo.png]]', only('FIG-1'))).toBe('photo.png')
+  })
+
+  it('no exact link, or an empty page: null', () => {
+    expect(exactLinkTarget('Covid pages')).toBeNull()
+    expect(exactLinkTarget('[[#Intro]]')).toBeNull()
   })
 })

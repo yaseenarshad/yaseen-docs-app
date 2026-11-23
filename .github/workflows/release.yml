@@ -76,6 +76,18 @@ jobs:
           - os: windows-latest
             script: desktop:build:win
             glob: desktop/dist-app/*.exe
+          - os: ubuntu-latest
+            script: desktop:build:linux
+            glob: |
+              desktop/dist-app/*-linux-*.tar.gz
+              desktop/dist-app/*-linux-*.deb
+              desktop/dist-app/*-linux-*.AppImage
+          - os: ubuntu-24.04-arm
+            script: desktop:build:linux
+            glob: |
+              desktop/dist-app/*-linux-*.tar.gz
+              desktop/dist-app/*-linux-*.deb
+              desktop/dist-app/*-linux-*.AppImage
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -123,6 +135,13 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
           rm -f "$RUNNER_TEMP/cert.p12"
           security find-identity -p codesigning "$KEYCHAIN"
+      - name: Add swap for Linux release build
+        if: runner.os == 'Linux'
+        run: |
+          sudo fallocate -l 4G /tmp/ci-swapfile
+          sudo chmod 600 /tmp/ci-swapfile
+          sudo mkswap /tmp/ci-swapfile
+          sudo swapon /tmp/ci-swapfile
       - run: npm run ${{ matrix.script }}
         env:
           # electron-builder signs nothing itself (`mac.identity: null`): `adhocSign.cjs` signs the Mac app. Windows stays unsigned.
@@ -130,10 +149,25 @@ jobs:
           # A Mac build without the certificate fails instead of falling back to ad-hoc (YAZ-2976 S27).
           REQUIRE_SIGN_IDENTITY: ${{ runner.os == 'macOS' && '1' || '0' }}
           # Monaco (the code tab, YAZ-3438) needs more build heap than Node's default on the hosted runners.
-          NODE_OPTIONS: --max-old-space-size=6144
+          NODE_OPTIONS: ${{ runner.os == 'Linux' && '--max-old-space-size=5120' || '--max-old-space-size=6144' }}
       - name: Show the signature
         if: runner.os == 'macOS'
         run: codesign -d -r- "desktop/dist-app/mac-arm64/Yaseen Docs.app"
+      # The spell checker helper (YAZ-4464 S4) ships in the packed app, is signed with the app's certificate, and answers there.
+      - name: Check the packed spell checker helper
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          APP="desktop/dist-app/mac-arm64/Yaseen Docs.app"
+          SPELLER="$APP/Contents/Resources/bin/speller"
+          codesign --verify --deep --strict "$APP"
+          codesign --verify --strict "$SPELLER"
+          SIGNED="$(codesign -dv "$SPELLER" 2>&1)"
+          echo "$SIGNED"
+          grep -qF 'Identifier=com.yasinarshad.yaseendocs.speller' <<< "$SIGNED"
+          ANSWER="$(printf 'relavent\n' | "$SPELLER")"
+          echo "speller: relavent -> $ANSWER"
+          grep -qF '["relevant"' <<< "$ANSWER"
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.validate.outputs.tag }}

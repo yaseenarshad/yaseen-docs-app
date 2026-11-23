@@ -137,8 +137,8 @@ describe('format commands over hidden lines (YAZ-3209 D1–D3)', () => {
     foldItem(crepe, 'A')
     select(crepe, posOf(crepe, 'A'), endOf(crepe, 'B'))
     call(crepe, turnIntoTextCommand)
-    // T takes a bullet out of its list too (YAZ-3806 T4): A's hidden kid stays a list, below it.
-    expect(md(crepe)).toBe('A\n\n* ### a1\n\nB\n')
+    // T never changes the list (YAZ-4369): A and B stay bullets, and A's hidden kid stays under A.
+    expect(md(crepe)).toBe('* A\n  * ### a1\n* B\n')
   })
 
   it('S11: Mod-Enter over folded parents cycles the parents; hidden kids keep their state', async () => {
@@ -187,6 +187,8 @@ describe('format commands over hidden lines (YAZ-3209 D1–D3)', () => {
   it('S17: ⌘A (select all) bolds the visible lines only, and Mod-Enter over it agrees', async () => {
     const { crepe, view } = await mount('* A\n* B\n  * b1\n')
     foldItem(crepe, 'B')
+    // On a bullet the first ⌘A selects its line (YAZ-4348 demo round 2); the second is the page's select all.
+    expect(pressKey(crepe, 'a', { mod: true })).toBe(true)
     expect(pressKey(crepe, 'a', { mod: true })).toBe(true)
     expect(view.state.selection).toBeInstanceOf(AllSelection)
     call(crepe, toggleStrongCommand)

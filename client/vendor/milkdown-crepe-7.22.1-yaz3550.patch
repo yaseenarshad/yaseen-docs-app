@@ -26,6 +26,36 @@ diff --git a/lib/cjs/feature/block-edit/index.js b/lib/cjs/feature/block-edit/in
  
  exports.blockEdit = blockEdit;
 -//# sourceMappingURL=index.js.map
+diff --git a/lib/cjs/feature/toolbar/index.js b/lib/cjs/feature/toolbar/index.js
+--- a/lib/cjs/feature/toolbar/index.js
++++ b/lib/cjs/feature/toolbar/index.js
+@@ -976,16 +976,18 @@ class ToolbarView {
+     __privateSet(this, _app, app);
+     __privateSet(this, _tooltipProvider, new tooltip.TooltipProvider({
+       content: __privateGet(this, _content),
++      nestedSelection: true,
+       debounce: 20,
+       offset: 10,
+       shouldShow(view2) {
+         const { doc, selection } = view2.state;
+         const { empty, from, to } = selection;
+-        const isEmptyTextBlock = !doc.textBetween(from, to).length && selection instanceof state.TextSelection;
+-        const isNotTextBlock = !(selection instanceof state.TextSelection);
++        const isEmptyTextBlock = !doc.textBetween(from, to).length && (selection instanceof state.TextSelection || selection instanceof state.AllSelection);
++        const isNotTextBlock = !(selection instanceof state.TextSelection || selection instanceof state.AllSelection);
+         const activeElement = view2.dom.getRootNode().activeElement;
+         const isTooltipChildren = content.contains(activeElement);
+-        const notHasFocus = !view2.hasFocus() && !isTooltipChildren;
++        const isInCode = (config == null ? void 0 : config.inNestedEditor == null ? void 0 : config.inNestedEditor(view2)) === true && activeElement !== null && view2.dom.contains(activeElement);
++        const notHasFocus = !view2.hasFocus() && !isTooltipChildren && !isInCode;
+         const isReadonly = !view2.editable;
+         if (notHasFocus || isNotTextBlock || empty || isEmptyTextBlock || isReadonly)
+           return false;
+@@ -1016,4 +1018,3 @@ const toolbar = (editor, config) => {
+ 
+ exports.keymapRef = keymapRef;
+ exports.toolbar = toolbar;
+-//# sourceMappingURL=index.js.map
 diff --git a/lib/cjs/index.js b/lib/cjs/index.js
 --- a/lib/cjs/index.js
 +++ b/lib/cjs/index.js
@@ -49,7 +79,29 @@ diff --git a/lib/cjs/index.js b/lib/cjs/index.js
            return false;
          const currentText = this.getContent(
            view2,
-@@ -4499,4 +4501,3 @@ exports.CrepeBuilder = CrepeBuilder;
+@@ -3840,16 +3842,18 @@ class ToolbarView {
+     __privateSet$2(this, _app$1, app);
+     __privateSet$2(this, _tooltipProvider, new tooltip.TooltipProvider({
+       content: __privateGet$2(this, _content),
++      nestedSelection: true,
+       debounce: 20,
+       offset: 10,
+       shouldShow(view2) {
+         const { doc, selection } = view2.state;
+         const { empty, from, to } = selection;
+-        const isEmptyTextBlock = !doc.textBetween(from, to).length && selection instanceof state.TextSelection;
+-        const isNotTextBlock = !(selection instanceof state.TextSelection);
++        const isEmptyTextBlock = !doc.textBetween(from, to).length && (selection instanceof state.TextSelection || selection instanceof state.AllSelection);
++        const isNotTextBlock = !(selection instanceof state.TextSelection || selection instanceof state.AllSelection);
+         const activeElement = view2.dom.getRootNode().activeElement;
+         const isTooltipChildren = content.contains(activeElement);
+-        const notHasFocus = !view2.hasFocus() && !isTooltipChildren;
++        const isInCode = (config == null ? void 0 : config.inNestedEditor == null ? void 0 : config.inNestedEditor(view2)) === true && activeElement !== null && view2.dom.contains(activeElement);
++        const notHasFocus = !view2.hasFocus() && !isTooltipChildren && !isInCode;
+         const isReadonly = !view2.editable;
+         if (notHasFocus || isNotTextBlock || empty || isEmptyTextBlock || isReadonly)
+           return false;
+@@ -4499,4 +4503,3 @@ exports.CrepeBuilder = CrepeBuilder;
  exports.CrepeFeature = CrepeFeature;
  exports.useCrepe = useCrepe;
  exports.useCrepeFeatures = useCrepeFeatures;
@@ -82,9 +134,55 @@ diff --git a/lib/esm/feature/block-edit/index.js b/lib/esm/feature/block-edit/in
  
  export { blockEdit };
 -//# sourceMappingURL=index.js.map
+diff --git a/lib/esm/feature/toolbar/index.js b/lib/esm/feature/toolbar/index.js
+--- a/lib/esm/feature/toolbar/index.js
++++ b/lib/esm/feature/toolbar/index.js
+@@ -1,5 +1,5 @@
+ import { tooltipFactory, TooltipProvider } from '@milkdown/kit/plugin/tooltip';
+-import { TextSelection } from '@milkdown/kit/prose/state';
++import { TextSelection, AllSelection } from '@milkdown/kit/prose/state';
+ import { defineComponent, ref, watch, computed, h, nextTick, Fragment, shallowRef, createApp } from 'vue';
+ import { createSlice } from '@milkdown/kit/ctx';
+ import { Icon } from '@milkdown/kit/component';
+@@ -974,16 +974,18 @@ class ToolbarView {
+     __privateSet(this, _app, app);
+     __privateSet(this, _tooltipProvider, new TooltipProvider({
+       content: __privateGet(this, _content),
++      nestedSelection: true,
+       debounce: 20,
+       offset: 10,
+       shouldShow(view2) {
+         const { doc, selection } = view2.state;
+         const { empty, from, to } = selection;
+-        const isEmptyTextBlock = !doc.textBetween(from, to).length && selection instanceof TextSelection;
+-        const isNotTextBlock = !(selection instanceof TextSelection);
++        const isEmptyTextBlock = !doc.textBetween(from, to).length && (selection instanceof TextSelection || selection instanceof AllSelection);
++        const isNotTextBlock = !(selection instanceof TextSelection || selection instanceof AllSelection);
+         const activeElement = view2.dom.getRootNode().activeElement;
+         const isTooltipChildren = content.contains(activeElement);
+-        const notHasFocus = !view2.hasFocus() && !isTooltipChildren;
++        const isInCode = (config == null ? void 0 : config.inNestedEditor == null ? void 0 : config.inNestedEditor(view2)) === true && activeElement !== null && view2.dom.contains(activeElement);
++        const notHasFocus = !view2.hasFocus() && !isTooltipChildren && !isInCode;
+         const isReadonly = !view2.editable;
+         if (notHasFocus || isNotTextBlock || empty || isEmptyTextBlock || isReadonly)
+           return false;
+@@ -1013,4 +1015,3 @@ const toolbar = (editor, config) => {
+ };
+ 
+ export { keymapRef, toolbar };
+-//# sourceMappingURL=index.js.map
 diff --git a/lib/esm/index.js b/lib/esm/index.js
 --- a/lib/esm/index.js
 +++ b/lib/esm/index.js
+@@ -8,7 +8,7 @@ import { createSlice } from '@milkdown/kit/ctx';
+ import { editorViewCtx, serializerCtx, commandsCtx, schemaCtx, editorCtx, EditorStatus, Editor, rootCtx, defaultValueCtx, editorViewOptionsCtx } from '@milkdown/kit/core';
+ import { aiBuildContextError, aiProviderError } from '@milkdown/kit/exception';
+ import { $ctx, $command, $prose, $nodeSchema, $inputRule, $remark, getMarkdown } from '@milkdown/kit/utils';
+-import { TextSelection, PluginKey, Plugin, NodeSelection, EditorState } from '@milkdown/kit/prose/state';
++import { TextSelection, PluginKey, Plugin, NodeSelection, EditorState, AllSelection } from '@milkdown/kit/prose/state';
+ import DOMPurify from 'dompurify';
+ import { TooltipProvider, tooltipFactory } from '@milkdown/kit/plugin/tooltip';
+ import { posToDOMRect, findParent, findNodeInSelection, nodeRule, browser } from '@milkdown/kit/prose';
 @@ -2500,7 +2500,8 @@ function getGroups$2(filter, config, ctx) {
    if (filter) {
      groups = groups.map((group) => {
@@ -105,7 +203,29 @@ diff --git a/lib/esm/index.js b/lib/esm/index.js
            return false;
          const currentText = this.getContent(
            view2,
-@@ -4493,4 +4495,3 @@ class Crepe extends CrepeBuilder {
+@@ -3838,16 +3840,18 @@ class ToolbarView {
+     __privateSet$2(this, _app$1, app);
+     __privateSet$2(this, _tooltipProvider, new TooltipProvider({
+       content: __privateGet$2(this, _content),
++      nestedSelection: true,
+       debounce: 20,
+       offset: 10,
+       shouldShow(view2) {
+         const { doc, selection } = view2.state;
+         const { empty, from, to } = selection;
+-        const isEmptyTextBlock = !doc.textBetween(from, to).length && selection instanceof TextSelection;
+-        const isNotTextBlock = !(selection instanceof TextSelection);
++        const isEmptyTextBlock = !doc.textBetween(from, to).length && (selection instanceof TextSelection || selection instanceof AllSelection);
++        const isNotTextBlock = !(selection instanceof TextSelection || selection instanceof AllSelection);
+         const activeElement = view2.dom.getRootNode().activeElement;
+         const isTooltipChildren = content.contains(activeElement);
+-        const notHasFocus = !view2.hasFocus() && !isTooltipChildren;
++        const isInCode = (config == null ? void 0 : config.inNestedEditor == null ? void 0 : config.inNestedEditor(view2)) === true && activeElement !== null && view2.dom.contains(activeElement);
++        const notHasFocus = !view2.hasFocus() && !isTooltipChildren && !isInCode;
+         const isReadonly = !view2.editable;
+         if (notHasFocus || isNotTextBlock || empty || isEmptyTextBlock || isReadonly)
+           return false;
+@@ -4493,4 +4497,3 @@ class Crepe extends CrepeBuilder {
  Crepe.Feature = CrepeFeature;
  
  export { Crepe, CrepeBuilder, CrepeFeature, useCrepe, useCrepeFeatures };
@@ -122,6 +242,22 @@ diff --git a/lib/types/feature/block-edit/menu/utils.d.ts b/lib/types/feature/bl
  };
  //# sourceMappingURL=utils.d.ts.map
 \ No newline at end of file
+diff --git a/lib/types/feature/toolbar/index.d.ts b/lib/types/feature/toolbar/index.d.ts
+--- a/lib/types/feature/toolbar/index.d.ts
++++ b/lib/types/feature/toolbar/index.d.ts
+@@ -1,3 +1,4 @@
++import type { EditorView } from '@milkdown/kit/prose/view';
+ import type { GroupBuilder } from '../../utils';
+ import type { DefineFeature } from '../shared';
+ import type { ToolbarItem } from './config';
+@@ -20,6 +21,7 @@ interface ToolbarConfig {
+     latexLabel: string;
+     aiLabel: string;
+     buildToolbar: (builder: GroupBuilder<ToolbarItem>) => void;
++    inNestedEditor: (view: EditorView) => boolean;
+ }
+ export type ToolbarFeatureConfig = Partial<ToolbarConfig>;
+ export declare const toolbar: DefineFeature<ToolbarFeatureConfig>;
 diff --git a/src/feature/block-edit/menu/config.ts b/src/feature/block-edit/menu/config.ts
 --- a/src/feature/block-edit/menu/config.ts
 +++ b/src/feature/block-edit/menu/config.ts
@@ -174,3 +310,66 @@ diff --git a/src/feature/block-edit/menu/utils.ts b/src/feature/block-edit/menu/
 +  /** YAZ-3550: more words the filter matches besides the label. */
 +  keywords?: string[]
  }
+diff --git a/src/feature/toolbar/index.ts b/src/feature/toolbar/index.ts
+--- a/src/feature/toolbar/index.ts
++++ b/src/feature/toolbar/index.ts
+@@ -7,7 +7,7 @@ import type {
+ import type { EditorView } from '@milkdown/kit/prose/view'
+ 
+ import { TooltipProvider, tooltipFactory } from '@milkdown/kit/plugin/tooltip'
+-import { TextSelection } from '@milkdown/kit/prose/state'
++import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
+ import { createApp, ref, shallowRef, type App, type ShallowRef } from 'vue'
+ 
+ import type { GroupBuilder } from '../../utils'
+@@ -40,6 +40,11 @@ interface ToolbarConfig {
+   latexLabel: string
+   aiLabel: string
+   buildToolbar: (builder: GroupBuilder<ToolbarItem>) => void
++  /// YAZ-5794: true when the selection is in an editor nested in the page
++  /// that wants the toolbar, such as a code block's CodeMirror. The toolbar
++  /// then shows while the focus is in that editor, placed over its own
++  /// selection. Absent: never.
++  inNestedEditor: (view: EditorView) => boolean
+ }
+ 
+ export type ToolbarFeatureConfig = Partial<ToolbarConfig>
+@@ -70,23 +75,33 @@ class ToolbarView implements PluginView {
+ 
+     this.#tooltipProvider = new TooltipProvider({
+       content: this.#content,
++      // YAZ-5794: in a nested editor, the toolbar goes over its DOM selection.
++      nestedSelection: true,
+       debounce: 20,
+       offset: 10,
+       shouldShow(view: EditorView) {
+         const { doc, selection } = view.state
+         const { empty, from, to } = selection
+ 
+-        const isEmptyTextBlock =
+-          !doc.textBetween(from, to).length &&
+-          selection instanceof TextSelection
++        // YAZ-4440: ⌘A (ProseMirror's select all) is an AllSelection; it shows the toolbar as a text selection does
++        const isText =
++          selection instanceof TextSelection || selection instanceof AllSelection
+ 
+-        const isNotTextBlock = !(selection instanceof TextSelection)
++        const isEmptyTextBlock = !doc.textBetween(from, to).length && isText
++
++        const isNotTextBlock = !isText
+ 
+         const activeElement = (view.dom.getRootNode() as ShadowRoot | Document)
+           .activeElement
+         const isTooltipChildren = content.contains(activeElement)
+ 
+-        const notHasFocus = !view.hasFocus() && !isTooltipChildren
++        // YAZ-5794: a selection inside a code block's own editor (CodeMirror) is a selection of the page too: the
++        // focus is in that editor, inside the page, and the toolbar shows its code buttons.
++        const isInCode =
++          config?.inNestedEditor?.(view) === true &&
++          activeElement !== null &&
++          view.dom.contains(activeElement)
++        const notHasFocus = !view.hasFocus() && !isTooltipChildren && !isInCode
+ 
+         const isReadonly = !view.editable
+ 

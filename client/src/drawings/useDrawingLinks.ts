@@ -1,10 +1,11 @@
 /**
  * A board's page links (YAZ-4039 D7, D11, D12, D15; `drawingLinks.ts`), for both hosts of the canvas: a drawing tab
- * (`DrawingEditor`) and the note embed's popup (`DrawingModal`). The board's vault joins the window's links while it is
+ * (`DrawingEditor`) and the page embed's popup (`DrawingModal`). The board's vault joins the window's links while it is
  * mounted; the pills' follower, the hover card beside a pill, the one link menu with Edit link and Remove link, the `[[`
  * picker and the paste are made once, and every live value is read through a ref at the event.
  */
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { fileKind } from '@shared/fileKind'
 import type { GestureAction } from '@shared/keys'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { DiagramDarkColors } from '@shared/types'
@@ -18,6 +19,7 @@ import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
 import { VaultLinksContext } from '../links/vaultLinks'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 import { IconsContext, fileIconDecoration } from '../sidebar/FileIcon'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import { useCardPreview, type PreviewScope } from '../tabs/cardPreview'
@@ -26,22 +28,26 @@ import { drawingDropLinks, drawingHostLinks, drawingPasteLink, drawingVaultOf, l
 import { openEditLinkBox } from './editLinkBox'
 import type { DrawingSurfaceLinks } from './ExcalidrawSurface'
 
-/** What a board's host passes for its links: the props a note's editor gets for its `[[links]]`. */
+/** What a board's host passes for its links: the props a page's editor gets for its `[[links]]`. */
 export interface DrawingLinkProps {
-  /** The window's resolve source of the board's vault. Wired only with `onOpenLinkBackground` too, as in a note; absent → `[[links]]` stay text. */
+  /** The window's resolve source of the board's vault. Wired only with `onOpenLinkBackground` too, as in a page; absent → `[[links]]` stay text. */
   wikilinks?: WikilinkResolveSource
   viewOnlyLinks?: ViewOnlyLinkSource
-  /** The `[[` picker's rows (YAZ-4039 D12), the note's: also what a pasted path becomes. */
+  /** The `[[` picker's rows (YAZ-4039 D12), the page's: also what a pasted path becomes. */
   wikilinkCandidates?: WikilinkCandidateSource
   /** An open gesture on a pill: this tab or a new tab in front (YAZ-3936). */
   onOpenLink?: (path: string, where?: GestureAction) => void
   /** ⌘-click on a pill: a background tab. */
   onOpenLinkBackground?: (path: string) => void
+  /** "Open in Explore" on a page pill (YAZ-4936, on a board since YAZ-4939): a reading layer. Absent → no row. */
+  onOpenExplore?: (path: string) => void
+  /** This vault's "Clicking a link" (YAZ-4936), read at each click: on a read-only board a plain click on a page pill opens it in Explore (YAZ-4939). */
+  exploreOnClick?: () => boolean
   /** The link menu's place rows (YAZ-3740). */
   linkActions?: LinkActions
   /** Where a missing page of a bare link is made (C2-, GRO-2240). */
-  newNoteFolderFor?: (sourcePath: string) => string
-  /** Settings › Preview on hover › Links in notes (YAZ-3403): a pill shows the page's card too. */
+  newPageFolderFor?: (sourcePath: string) => string
+  /** Settings › Preview on hover › Links in pages (YAZ-3403): a pill shows the page's card too. */
   hoverLinks?: boolean
   previewScope?: (path: string) => PreviewScope
   diagramDarkColors?: DiagramDarkColors
@@ -58,7 +64,17 @@ export interface DrawingLinkHost {
   onNotice: ((message: string) => void) | undefined
   /** Where the menu, the Edit link box and the picker are put. */
   hostRef: { current: HTMLElement | null }
+  /** The `[[` picker opened or closed (a diagram's frame sends its keys up only while it is open, YAZ-4748). */
+  onPickerShow?: (open: boolean) => void
   props: DrawingLinkProps
+}
+
+/**
+ * The links of one board, for the canvas (`DrawingSurfaceLinks`) and for a diagram's frame (YAZ-4748), which also asks
+ * by paths (`dropPaths`).
+ */
+export interface BoardLinks extends DrawingSurfaceLinks {
+  hostLinks: ReturnType<typeof drawingHostLinks>
 }
 
 export function useDrawingLinks(host: DrawingLinkHost) {
@@ -77,11 +93,15 @@ export function useDrawingLinks(host: DrawingLinkHost) {
     [],
   )
   const { root, props } = host
-  // The window's icons (the vaults' picks and rules): the pills' and the picker's file icons, as a note's.
+  // The window's icons (the vaults' picks and rules): the pills' and the picker's file icons, as a page's.
   const iconsHere = useContext(IconsContext)
   const icons = useRef(iconsHere)
   icons.current = iconsHere
   // The window's vaults: a pasted path of another of them is that vault's link.
+  // The vault's read-only door, read at the click (YAZ-4985).
+  const fileDoorHere = useContext(VaultReadOnly).allowFileAction
+  const fileDoor = useRef(fileDoorHere)
+  fileDoor.current = fileDoorHere
   const vaultLinksHere = useContext(VaultLinksContext)
   const vaultLinks = useRef(vaultLinksHere)
   vaultLinks.current = vaultLinksHere
@@ -93,18 +113,23 @@ export function useDrawingLinks(host: DrawingLinkHost) {
   }, [host.theme])
   // The vault joins the window's links before the canvas lays out its text (YAZ-4039 D7).
   useLayoutEffect(() => (props.wikilinks === undefined ? undefined : mountDrawingVault(root, props.wikilinks, props.viewOnlyLinks)), [root, props.wikilinks, props.viewOnlyLinks])
-  const [links] = useState<DrawingSurfaceLinks | undefined>(() => {
+  const [links] = useState<BoardLinks | undefined>(() => {
     const { wikilinks, viewOnlyLinks, onOpenLinkBackground } = props
     if (wikilinks === undefined || onOpenLinkBackground === undefined) return undefined
     const nav: WikilinkNav = {
       ...props.linkActions,
       root,
-      createFolder: () => live.current.props.newNoteFolderFor?.(live.current.path) ?? '',
+      createFolder: () => live.current.props.newPageFolderFor?.(live.current.path) ?? '',
       openCurrent: (page) => live.current.props.onOpenLink?.(page, 'thisTab'),
       openNewTab: (page) => live.current.props.onOpenLink?.(page, 'newTab'),
       openBackground: (page) => live.current.props.onOpenLinkBackground?.(page),
+      // "Open in Explore" and the vault's "Clicking a link" (YAZ-4936, YAZ-4939), as a page's pills have them.
+      ...(props.onOpenExplore === undefined ? {} : { openExplore: (page: string) => live.current.props.onOpenExplore?.(page) }),
+      exploreClick: () => live.current.props.exploreOnClick?.() === true,
       hotkeys: () => live.current.hotkeys,
       onNotice: (message) => live.current.onNotice?.(message),
+      // A link to a missing page asks the vault's read-only door before the page is made (YAZ-4985).
+      allowFileAction: (vault) => fileDoor.current(vault),
     }
     const follow = windowFollow(wikilinks, nav, wikilinkFollower(wikilinks, nav, viewOnlyLinks))
     const picker = createDrawingLinkPicker(
@@ -112,6 +137,7 @@ export function useDrawingLinks(host: DrawingLinkHost) {
       () => live.current.props.wikilinkCandidates?.candidates ?? [],
       (editor, name) => void createLinkedPage(editor, name, wikilinks, nav),
       { icon: (target, folder) => fileIconDecoration(icons.current, target, folder) },
+      (open) => live.current.onPickerShow?.(open),
     )
     closePicker.current = picker.close
     const pasteLink = (text: string): string | null => {
@@ -146,15 +172,20 @@ export function useDrawingLinks(host: DrawingLinkHost) {
       },
       picker,
       pasteLink,
-      // A drag from the sidebar (YAZ-3943 4D): each page a pill box, as a paste of its path.
+      // A drag from the sidebar (YAZ-3943 4D): each page a pill box, as a paste of its path. A diagram's frame knows no
+      // file paths, so it asks by the paths themselves (YAZ-4748 D4).
+      dropPaths: (paths) => drawingDropLinks(paths, vaultLinks.current?.roots ?? [root], pasteLink),
       dropLinks: (files) => drawingDropLinks(files.map((file) => api.file.pathFor(file)), vaultLinks.current?.roots ?? [root], pasteLink),
     })
     return { hostLinks: drawingHostLinks(deps), openShapeLink: (link, event) => openShapeLink(link, event, deps()) }
   })
-  // The card says how to open the link (YAZ-3879 point 9): "⌘-click to open in a background tab".
+  // The card says how to open the link (YAZ-3879 point 9): "⌘-click to open in a background tab"; on a read-only board
+  // with the vault's "Clicking a link" at Explore, "Click to open in Explore" for a page (YAZ-4939).
   const linkCard = (_: string, page: string): { root: string | null; name: string; hint?: string } | null => {
     const source = drawingVaultOf(page)?.source ?? live.current.props.wikilinks
-    return source === undefined ? null : { root: null, name: pageLabel(page, false, pathTitles(source.records, source.folders)), hint: linkOpenHint(live.current.hotkeys, !live.current.readOnly) }
+    const { readOnly, hotkeys } = live.current
+    const explore = readOnly && live.current.props.exploreOnClick?.() === true && fileKind(page) === 'markdown'
+    return source === undefined ? null : { root: null, name: pageLabel(page, false, pathTitles(source.records, source.folders)), hint: linkOpenHint(hotkeys, !readOnly, explore) }
   }
   return { links, linkPreview, linkCard }
 }

@@ -75,6 +75,7 @@ export {
 } from "./actionAlign";
 
 export {
+  actionTidyUp,
   distributeHorizontally,
   distributeVertically,
 } from "./actionDistribute";
@@ -106,5 +107,10 @@ export { actionChangeSmartShape } from "./actionSmartShape";
 
 export { actionToggleCropEditor } from "./actionCropEditor";
 export { actionToggleGifPlayback } from "./actionToggleGifPlayback";
+export { actionToggleColorEditor } from "./actionColorEditor";
+export {
+  actionChangeIconColors,
+  actionChangeIconOutline,
+} from "./actionIconColors";
 
 export { actionResizeSelectionToPreset } from "../selectionSizePresets";

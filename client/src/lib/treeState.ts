@@ -60,7 +60,7 @@ export function firstCopy(tops: readonly TreeNode[], path: string, expanded: Rea
   return (shown ?? holding[0])?.path ?? null
 }
 
-/** Every file in `tree` that is not a note, in tree order: the search's rows the index does not hold (YAZ-2620 🔒 D3). */
+/** Every file in `tree` that is not a page, in tree order: the search's rows the index does not hold (YAZ-2620 🔒 D3). */
 export function otherFiles(tree: readonly TreeNode[]): string[] {
   return tree.flatMap((n) => (n.type === 'dir' ? otherFiles(n.children) : n.kind === 'markdown' ? [] : [n.path]))
 }
@@ -94,9 +94,9 @@ export function findNode(tree: readonly TreeNode[], path: string): TreeNode | nu
   return null
 }
 
-/** The notes at `path` (YAZ-2420 3E1): the note itself, or every note under that folder, any depth. */
-export function notesAt(tree: readonly TreeNode[], path: string): string[] {
-  return tree.flatMap((n) => (n.type === 'dir' ? notesAt(n.children, path) : n.kind === 'markdown' && (n.path === path || n.path.startsWith(`${path}/`)) ? [n.path] : []))
+/** The pages at `path` (YAZ-2420 3E1): the page itself, or every page under that folder, any depth. */
+export function pagesAt(tree: readonly TreeNode[], path: string): string[] {
+  return tree.flatMap((n) => (n.type === 'dir' ? pagesAt(n.children, path) : n.kind === 'markdown' && (n.path === path || n.path.startsWith(`${path}/`)) ? [n.path] : []))
 }
 
 /**

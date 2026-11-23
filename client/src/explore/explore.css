@@ -1,0 +1,925 @@
+/* The explore stack (YAZ-2571): layers of search and page panels over the workspace, the newest on top, each a
+   little right of the one under it. The workspace never moves. Above the tab board and the preview panel, below
+   a menu (`.ctx-menu`, 1000). Light and dark come from the theme variables. */
+.explore {
+  position: fixed;
+  inset: 0;
+  /* Under a sheet and a toast App draws while it shows (YAZ-4987, app.css `:root`). */
+  z-index: var(--z-explore);
+  /* The workspace shows through a light dim: the trail stays readable. */
+  background: rgba(0, 0, 0, 0.28);
+}
+
+/* A drag of a head or a grip (round 3): its cursor on the whole stack until the drop. */
+.explore--tracking,
+.explore--tracking * {
+  cursor: var(--explore-cursor, grabbing) !important;
+  user-select: none;
+}
+
+/* One layer: placed by `useLayerBoxes` (its stack place, or where it was dragged), its own scroller inside, so a covered layer keeps its scroll. */
+.explore__layer {
+  position: absolute;
+  top: 10vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  max-height: 80vh;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
+  overflow: hidden;
+  outline: none;
+}
+.explore__layer--page,
+.explore__layer--board {
+  height: 80vh;
+}
+/* Search size (YAZ-5881 D2, YAZ-5977; the setting `exploreSize`): the SEARCH panel grows — its box, its input, its rows.
+   The page, board and card windows keep the app's size: their top bar never scales, and their text has the page zoom
+   alone. The stack's root carries the factor (`ExploreStack`); the layer's box, its grips and its place stay in window
+   px, so a drag and a resize follow the pointer. The search panel's width grows with it in `panelWidth`. */
+.explore__layer--search > :not(.explore__grip, .explore__head) {
+  zoom: var(--explore-size, 1);
+}
+/* The 8 resize grips (round 3), inside the edges (the layer clips at its rounded corners). */
+.explore__grip {
+  position: absolute;
+  z-index: 2;
+}
+.explore__grip[data-grip='n'] { top: 0; left: 8px; right: 8px; height: 5px; cursor: ns-resize; }
+.explore__grip[data-grip='s'] { bottom: 0; left: 8px; right: 8px; height: 5px; cursor: ns-resize; }
+.explore__grip[data-grip='e'] { right: 0; top: 8px; bottom: 8px; width: 5px; cursor: ew-resize; }
+.explore__grip[data-grip='w'] { left: 0; top: 8px; bottom: 8px; width: 5px; cursor: ew-resize; }
+.explore__grip[data-grip='nw'] { top: 0; left: 0; width: 10px; height: 10px; cursor: nwse-resize; }
+.explore__grip[data-grip='se'] { bottom: 0; right: 0; width: 10px; height: 10px; cursor: nwse-resize; }
+.explore__grip[data-grip='ne'] { top: 0; right: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+.explore__grip[data-grip='sw'] { bottom: 0; left: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+/* A layer resized by hand has its height in its style: the search's list grows with it. */
+.explore__layer[data-sized] .explore__results {
+  max-height: none;
+}
+
+/* Under the top layer, a light dim on each covered layer: the strips behind read as behind. */
+.explore__layer--covered::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+}
+
+/* Entry (Mochi's fade-up): opacity 0 → 1, translateY(10px) scale(.9) → none; a search in 100 ms, a page in 150 ms. The exit is the reverse. */
+@media (prefers-reduced-motion: no-preference) {
+  .explore__layer--in {
+    animation: explore-in var(--explore-ms, 150ms) cubic-bezier(0.4, 0.3, 0, 1);
+  }
+  .explore__layer--out {
+    animation: explore-in var(--explore-ms, 150ms) cubic-bezier(0.4, 0.3, 0, 1) reverse forwards;
+    pointer-events: none;
+  }
+}
+@keyframes explore-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The trail (YAZ-4925): chips at the top of the window, one per layer, the front one bold. Above every layer (each layer's z-index is its place in the front order, 12 at most). */
+.explore__trail {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 32px);
+  padding: 4px 8px;
+  transform: translateX(-50%);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.explore__trail-step {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.explore__trail-sep {
+  margin: 0 4px;
+  color: var(--fg-muted);
+}
+.explore__chip {
+  max-width: 180px;
+  padding: 2px 8px;
+  overflow: hidden;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.explore__chip:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+.explore__chip--top {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+/* ---------- the search panel ---------- */
+/* The search's top edge (round 3): the handle that moves the layer, with a small pill in the middle. */
+.explore__grab {
+  flex: none;
+  position: relative;
+  height: 12px;
+  cursor: grab;
+}
+.explore__grab::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  width: 28px;
+  height: 4px;
+  transform: translateX(-50%);
+  background: var(--border);
+  border-radius: 2px;
+}
+.explore__input-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: none;
+  border-bottom: 1px solid var(--border);
+}
+.explore__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+.explore__input::placeholder {
+  color: var(--fg-muted);
+}
+.explore__filter-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-right: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.explore__filter-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.explore__filter-btn--on {
+  color: var(--accent);
+}
+.explore__filter-btn--on::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.explore__filter-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 10px;
+  z-index: 20;
+  min-width: 210px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.explore__filter-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.explore__filter-type {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.explore__filter-type:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.explore__filter-type--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.explore__filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--fg);
+  cursor: pointer;
+  user-select: none;
+}
+.explore__inline-pill {
+  flex: none;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.explore__results {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(480px, calc(80vh - 88px));
+  padding: 6px;
+  overflow-y: auto;
+}
+.explore__results .search-results__row {
+  padding: 5px 8px;
+}
+.explore__snippet {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explore__empty {
+  margin: 0;
+  padding: 16px 14px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.explore__group {
+  padding: 4px 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.explore__foot {
+  flex: none;
+  display: flex;
+  gap: 14px;
+  padding: 7px 14px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- the page panel ---------- */
+.explore__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* ONE HEIGHT (YAZ-5164, Q50): the head never grows or shrinks on a switch, a scroll or a chip that comes and goes, so
+     nothing under it moves. Its parts are centred in it; their menus drop over the page. */
+  box-sizing: border-box;
+  height: var(--explore-head-height, 41px);
+  position: relative;
+  z-index: 7;
+  padding: 0 10px 0 16px;
+  border-bottom: 1px solid var(--border);
+  /* The head drags the layer (round 3). */
+  cursor: grab;
+  user-select: none;
+}
+/* ‹ 2/3 › (round 3): after the title, before the head's buttons. */
+.explore__steps {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.explore__step {
+  padding: 0 6px;
+  font: inherit;
+  font-size: 16px;
+  line-height: 20px;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.explore__step:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+.explore__step:disabled {
+  color: var(--fg-muted);
+  cursor: default;
+}
+.explore__count {
+  min-width: 2.6em;
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.explore__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The head's title (Q50): see-through while the page's own title is in view; it fades in once that scrolls away (the
+   layer writes `data-title-shown`). Opacity only: its slot keeps its place and the head its height. */
+.explore__head > .explore__title,
+.explore__head > .explore__id {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.explore__head[data-title-shown] > .explore__title,
+.explore__head[data-title-shown] > .explore__id {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .explore__head > .explore__title,
+  .explore__head > .explore__id {
+    transition: none;
+  }
+}
+/* The editor's window status in the head (YAZ-5974): the page's own Read only chip, Sync and Saved, while it edits. */
+.explore__status {
+  gap: 8px;
+}
+.explore__status[hidden] {
+  display: none;
+}
+/* While the layer's own chip holds the vault's Read only, the card file's chip for the same lock does not show twice. */
+.explore__head[data-layer-lock] .explore__status .read-only-chip {
+  display: none;
+}
+
+/* THE TITLE ROW'S PAGE CONTROLS (YAZ-5974 Q4): fold-all, the page's cog and the zoom pill, right of the title and
+   before the Properties chip (› ⚙ n, at the far right), the same box in reading and in editing so nothing moves on
+   Edit / Done. The title takes the room that is left and wraps there (its basis is 0, so a long title never sends the
+   controls or Properties under it); the controls stay at the row's top right, on the title's first line. They are the
+   layer's chrome: drawn at 100%, not at the page zoom (a tab's toolbar row is not zoomed either).
+   ONE GROUP (YAZ-5981): the row fills from the RIGHT (`row-reverse`, in `order`: the open Properties body, Properties,
+   the controls, the title), and a part with no room left starts a new line ABOVE (`wrap-reverse`). So the controls and
+   Properties always share a line at the right; where the title does not keep its least width beside them (a tiled
+   layer, 330–380 px), the title takes the top line alone and the two go together under it. The body (100% wide) is
+   the bottom line. The DOM order, which you read and Tab, is unchanged: title, controls, Properties, body. Each part
+   sits at its line's top (`start`; in a reversed wrap `flex-start` is the bottom). */
+.page-header:has(> .page-header__controls) {
+  flex-direction: row-reverse;
+  flex-wrap: wrap-reverse;
+  align-items: start;
+  column-gap: 12px;
+  container-type: inline-size;
+}
+.page-header:has(> .page-header__controls) > .page-title {
+  flex: 1 1 0;
+  min-width: min(140px, 100%);
+}
+.page-header:has(> .page-header__controls) > .page-header__controls {
+  order: -1;
+}
+.page-header:has(> .page-header__controls) .frontmatter-panel__body {
+  order: -3;
+}
+.editor-host > .page-header > .page-header__controls,
+.card-file__page > .card-file__top > .page-header__controls {
+  zoom: 1;
+}
+.page-header__controls {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  align-self: start;
+  /* On the title's first line: the title's text is 1.802em at 1.3 (app.css) of 16px, zoomed with the page. */
+  margin-top: calc((16px * 1.802 * 1.3 * var(--document-zoom, 1) - 28px) / 2 + 2px);
+}
+.page-header:has(> .page-header__controls) .frontmatter-panel__header {
+  order: -2;
+  margin-left: 0;
+  align-self: start;
+  /* The controls' offset on the screen, in this chip's own px: the chip is zoomed with the page, the controls are not
+     (YAZ-5981: at 400% it stood 189 px under the controls). */
+  margin-top: calc(((16px * 1.802 * 1.3 * var(--document-zoom, 1) - 28px) / 2 + 2px) / var(--document-zoom, 1));
+}
+.page-header__chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.page-header__chips:empty {
+  display: none;
+}
+/* A card file's Properties button stands last, as a page's Properties chip does. */
+.page-header__chips > .card-file__properties {
+  order: 1;
+}
+/* A very narrow (tiled) layer (Q4): the title keeps its room; the zoom pill shrinks to its %. Nothing folds into ⋯. */
+@container (max-width: 420px) {
+  .page-header__controls .document-zoom__step {
+    display: none;
+  }
+}
+/* A card file (YAZ-5974): the controls on the card's top line, right of the folder path. */
+.card-file__top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  container-type: inline-size;
+}
+.card-file__top > .card-file__path {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-bottom: 0;
+  zoom: var(--document-zoom, 1);
+}
+.card-file__page > .card-file__top {
+  zoom: 1;
+}
+.card-file__top > .page-header__controls {
+  margin-top: 0;
+  align-self: center;
+}
+.explore__mode {
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+/* The page tab's Read only chip in a Read only vault (YAZ-4939): its "Allow edits?" box hangs under it, over the body. */
+.explore__lock {
+  flex: none;
+  cursor: default;
+}
+/* The page's or folder's id after its title (round 1, item 1), in an ID vault. */
+.explore__id {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+/* A result row (YAZ-2571 round 5): the name is cut with "…" and the ID chip after it always shows. */
+.explore__results .search-results__label {
+  display: flex;
+  align-items: baseline;
+}
+.explore__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explore__results .explore__id {
+  flex: none;
+}
+.explore__button {
+  flex: none;
+  padding: 3px 9px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.explore__button:hover {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+/* Reading: the body is the one scroller, so a covered layer keeps its place. Editing: the editor fills the body and
+   scrolls inside itself (`.editor-host`), as a tab's does. */
+.explore__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 24px 32px;
+}
+/* The page layer's body box (YAZ-5164): the body on show fills it; while read ⇄ edit switches, the incoming body lies
+   under it at the same size, see-through, until it is up at the same place. Opacity, not visibility: the incoming editor
+   takes the caret as it mounts, and a hidden element cannot take it. */
+.explore__bodies {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+.explore__body--incoming {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  pointer-events: none;
+}
+.explore__body:focus {
+  outline: none;
+}
+/* ONE PAGE FRAME (YAZ-5164 Option A): reading, editing and a card file draw the page tab's own frame in the body, its
+   scroller with the page's 48 px sides (`.editor-host`, `.card-file`); the body itself has no sides and no scroll. */
+.explore__body--frame {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.explore__body--frame > .editor {
+  flex: 1;
+  min-height: 0;
+}
+/* Reading, the body IS the page's scroller (`PageFrame`): the tab's own, with its tail under the page. */
+.explore__body.explore__body--read {
+  padding: 0 0 64px;
+}
+
+/* The zoom of a page layer (round 4): `--document-zoom` on the body; the frame's own rules scale the page as in a tab.
+   The editor inside the layer carries its own zoom on its scroller (always 100 here: the stack takes the keys first),
+   a card file's view too: the layer's value wins. */
+.explore__body--frame :is(.editor-host, .card-file) {
+  --document-zoom: inherit !important;
+}
+
+/* YAZ-4956, YAZ-4986: a layer narrower than its head folds the head's parts ONE BY ONE, the least important first
+   (`FOLD_ORDER` in `ExploreHeadMore.tsx`): the zoom pill, the fold-all button, ‹ n/m ›, ↗, the Read only chip's word
+   (its lock stays), the chip, Edit / Done. The title (cut with "…"), the ID and × never fold. The observer writes
+   `data-folded` on a part and `data-compact` on the head while any part is folded; ⋯ then shows and holds them all.
+   The fold box is `display: contents`, so a full head is laid out as before. */
+.explore__fold {
+  display: contents;
+}
+.explore__part {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+.explore__more {
+  display: none;
+}
+.explore__head[data-compact] .explore__more {
+  display: block;
+}
+/* The card window's ⋯ has rows of its own (D13: review, history, Copy card ID): it shows at every width (YAZ-4964). */
+.explore__head .explore__more--always {
+  display: block;
+}
+.explore__head [data-folded] {
+  display: none;
+}
+/* The ID stays (Yaseen: "esp i need to see the id please"): the title gives way first. */
+.explore__head > .explore__id,
+.explore__head > .card__id {
+  flex: none;
+  white-space: nowrap;
+}
+.explore__head[data-compact] .explore__title {
+  min-width: 48px;
+}
+/* The Read only chip shows again while its "Allow edits?" box is open (E, or ⋯ › Allow edits…) or it has the keyboard. */
+.explore__head .explore__lock[data-folded]:is(:focus-within, :has(.read-only-chip__ask)) {
+  display: revert;
+}
+
+/* A board layer (YAZ-4943): the board embed's window fills the body (no scroll, no padding: the board pans inside
+   itself); a diagram's page tabs stand under it. */
+.explore__body--board {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.explore__board {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.explore__board > .board-window {
+  position: absolute;
+  inset: 0;
+}
+.explore__board .editor-msg {
+  padding: 16px 24px;
+}
+.explore__pages {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 4px 8px;
+  overflow-x: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-side);
+}
+.explore__page {
+  flex: none;
+  max-width: 200px;
+  padding: 3px 10px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.explore__page:hover {
+  color: var(--fg);
+}
+.explore__page[aria-selected='true'] {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* ---------- Tile (YAZ-4944): the tools at the end of the top bar, the Arrange popover, the glide ---------- */
+.explore__trail-tools {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 1px;
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+}
+.explore__tile,
+.explore__tile-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.explore__tile-more {
+  padding: 2px 6px;
+}
+.explore__tile svg {
+  fill: currentColor;
+}
+.explore__tile:hover:not(:disabled),
+.explore__tile-more:hover,
+.explore__tile-more[aria-expanded='true'] {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+.explore__tile:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The windows glide to their cells (the class lives 200 ms after a tile); never while a drag writes the box. */
+@media (prefers-reduced-motion: no-preference) {
+  .explore--gliding .explore__layer {
+    transition:
+      left 200ms cubic-bezier(0.4, 0.3, 0, 1),
+      top 200ms cubic-bezier(0.4, 0.3, 0, 1),
+      width 200ms cubic-bezier(0.4, 0.3, 0, 1),
+      height 200ms cubic-bezier(0.4, 0.3, 0, 1);
+  }
+}
+
+.explore__arrange {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  z-index: 21;
+  /* YAZ-4949: room for the five layout names on one line (see `.explore__layouts`); a narrower window shrinks it. */
+  width: 384px;
+  max-width: calc(100% - 32px);
+  padding: 12px;
+  transform: translateX(-50%);
+  color: var(--fg);
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+}
+.explore__arrange-title {
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.explore__layouts {
+  display: grid;
+  /* YAZ-4949: a 1fr track does not go below its content; minmax(0, 1fr) keeps the row inside the popover. */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* YAZ-4949 round 2: a 2 px gap, no side padding and 10.5 px names: "Grid + centre" (66 px) fits its 68 px on one line. */
+  gap: 2px;
+}
+.explore__layout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  gap: 4px;
+  padding: 6px 0;
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.explore__layout svg {
+  max-width: 100%;
+  height: auto;
+  fill: color-mix(in srgb, var(--fg) 14%, transparent);
+  stroke: color-mix(in srgb, var(--fg) 45%, transparent);
+  stroke-width: 0.8;
+}
+.explore__layout:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+.explore__layout[aria-pressed='true'] {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.explore__layout[aria-pressed='true'] svg {
+  fill: color-mix(in srgb, var(--accent) 30%, transparent);
+  stroke: var(--accent);
+}
+.explore__layout:focus-visible,
+.explore__arrange-apply:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.explore__layout-name {
+  max-width: 100%;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.explore__arrange-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0 4px;
+  color: var(--fg-muted);
+}
+.explore__arrange-count {
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.explore__arrange-searches {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.explore__arrange-list {
+  max-height: 210px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.explore__arrange-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.explore__arrange-row:hover {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+.explore__arrange-row--full {
+  color: var(--fg-muted);
+  cursor: default;
+}
+.explore__arrange-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explore__arrange-kind {
+  flex: none;
+  padding: 0 6px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.explore__arrange-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+.explore__arrange-hint {
+  color: var(--fg-muted);
+}
+.explore__arrange-apply {
+  flex: none;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.explore__arrange-apply:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The empty box (YAZ-4945): Opened and Edited, a heading each inside the one list; each row's time, muted, on the right. */
+.explore .search-results > .explore__group {
+  list-style: none;
+}
+.explore .search-results > .explore__group:not(:first-child) {
+  margin-top: 6px;
+}
+/* The row is a column (title, folder): the time stands at the right of the title's line, and the title leaves room for it. */
+.explore__results .explore__row--timed {
+  position: relative;
+}
+.explore__results .explore__row--timed > .search-results__label {
+  padding-right: 72px;
+}
+.explore__time {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* YAZ-5152: Explore hides while a card preview it opened shows, its layers kept; Esc brings it back. */
+.explore[hidden] {
+  display: none;
+}

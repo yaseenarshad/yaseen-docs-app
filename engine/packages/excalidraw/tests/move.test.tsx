@@ -102,8 +102,9 @@ describe("move element", () => {
     // select the second rectangle
     new Pointer("mouse").clickOn(rectB);
 
+    // YAZ-4469: one more for the hover outline as the pointer reaches rectB
     expect(renderInteractiveScene.mock.calls.length).toMatchInlineSnapshot(
-      `16`,
+      `17`,
     );
     expect(renderStaticScene.mock.calls.length).toMatchInlineSnapshot(`15`);
     expect(h.state.selectionElement).toBeNull();

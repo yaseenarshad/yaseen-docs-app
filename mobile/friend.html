@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1e1e1e" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/pwa/landing.css" />
+    <title>A friend on Yaseen Docs</title>
+  </head>
+  <body>
+    <main class="landing">
+      <img class="landing__icon" src="/icons/icon-192.png" alt="" width="64" height="64" />
+      <h1 id="title" class="title">A friend sent you a Yaseen Docs link</h1>
+      <p id="lead" class="lead">
+        Yaseen Docs puts your notes on your phone. You review your cards with it. Your friends see your review numbers.
+        They never see your cards.
+      </p>
+
+      <section id="has-code" hidden>
+        <p class="landing__say">Copy this code. Open the app. Tap Paste.</p>
+        <label class="field">
+          <span id="label" class="field__label">Your friend's code</span>
+          <input id="code" type="text" readonly autocomplete="off" autocapitalize="off" spellcheck="false" />
+        </label>
+        <button id="copy" class="btn btn--primary" type="button">Copy</button>
+        <a id="open-mac" class="btn btn--wide" hidden>Open in Mac app</a>
+        <p id="copied" class="muted" role="status"></p>
+        <ol class="guide-steps">
+          <li>Tap <b>Copy</b>.</li>
+          <li>Open <b>Yaseen Docs</b> from your Home Screen.</li>
+          <li>In <b>Friends</b>, tap <b class="paste-name">Paste a friend's link</b>.</li>
+        </ol>
+      </section>
+
+      <section id="no-code" class="problem" hidden>
+        <p id="no-code-text">This link has no friend code. Ask your friend to send the link again.</p>
+      </section>
+
+      <h2 class="section">No Yaseen Docs on this phone yet?</h2>
+      <ol class="guide-steps">
+        <li id="add-steps"></li>
+        <li>Open <b>Yaseen Docs</b> from your Home Screen. Connect your vault. The app shows the steps.</li>
+        <li>After you connect your vault, tap the link in Messages again, and tap Copy.</li>
+        <li>In <b>Friends</b>, tap <b class="paste-name">Paste a friend's link</b>.</li>
+      </ol>
+      <p><a href="/">Open Yaseen Docs in this browser</a>, and paste the code there.</p>
+      <p class="muted">Safari and the Home Screen app keep their data apart. Paste the code in the one you use.</p>
+      <p class="muted">This page sends the code nowhere. Only the app reads it, when you paste it.</p>
+    </main>
+    <script type="module" src="/src/pwa/landing.ts"></script>
+  </body>
+</html>

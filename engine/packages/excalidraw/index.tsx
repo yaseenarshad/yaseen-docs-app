@@ -102,6 +102,14 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
     autoFocus = false,
     generateIdForFile,
     hostLinks,
+    textEditor,
+    foldArrows,
+    newElementStyle,
+    fillSetsTextColor,
+    newShapesMatchZoom,
+    hoverOutline,
+    textEdgeDoubleClick,
+    defaultItemStyle,
     hostContextMenuItems,
     onExportPdf,
     onLinkOpen,
@@ -241,6 +249,14 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
           autoFocus={autoFocus}
           generateIdForFile={generateIdForFile}
           hostLinks={hostLinks}
+          textEditor={textEditor}
+          foldArrows={foldArrows}
+          newElementStyle={newElementStyle}
+          fillSetsTextColor={fillSetsTextColor}
+          newShapesMatchZoom={newShapesMatchZoom}
+          hoverOutline={hoverOutline}
+          textEdgeDoubleClick={textEdgeDoubleClick}
+          defaultItemStyle={defaultItemStyle}
           hostContextMenuItems={hostContextMenuItems}
           onExportPdf={onExportPdf}
           onLinkOpen={onLinkOpen}
@@ -408,6 +424,12 @@ export {
 } from "@excalidraw/element";
 
 export { getTextFromElements } from "@excalidraw/element";
+// YAZ-4277 1B: the box's letter styles and bullets, for the host's text editor
+export {
+  normalizeTextRuns,
+  remapTextRunsForTextEdit,
+  getBulletMarkerForDepth,
+} from "@excalidraw/element";
 // YAZ-4247: the Docs app's "New text size on screen".
 export {
   setNewTextScreenSize,
@@ -415,6 +437,17 @@ export {
   DEFAULT_NEW_TEXT_SCREEN_SIZE,
 } from "./textCreation";
 export { isInvisiblySmallElement } from "@excalidraw/element";
+// YAZ-4277 D3, D5: what the host needs of the folds (the `textFolds.ts`
+// switch point): the default fold arrows and the folds kept aside while
+// folding is off
+export {
+  DEFAULT_FOLD_ARROW_PREFS,
+  getFoldsAside,
+  getFoldsToPutBack,
+  takeFoldsAside,
+  withFoldsPutBack,
+} from "@excalidraw/element";
+export type { FoldArrowPrefs, FoldsAside } from "@excalidraw/element";
 
 export { defaultLang, useI18n, languages } from "./i18n";
 export {
@@ -562,3 +595,24 @@ export function useExcalidrawStateValue(
 export { _useOnAppStateChange as useOnExcalidrawStateChange };
 
 export { applyDarkModeFilter, getStrokeWidthByKey };
+
+// YAZ-5986 / YAZ-6069: snapping & layout helpers exported for unit testing
+export {
+  SnapCache,
+  getSnapBounds,
+  getSnapDistance,
+  getReferenceSnapPoints,
+  getVisibleGaps,
+  snapDraggedElements,
+  snapResizingElements,
+  getSnapLinesAtPointer,
+  getAltHoverMeasureLines,
+} from "./snapping";
+export {
+  renderSnaps,
+  renderResizeSizeBadge,
+  preCompensateDarkFilter,
+  SNAP_COLOR_LIGHT,
+  SNAP_COLOR_DARK,
+} from "./renderer/renderSnaps";
+export { tidyUpElements, actionTidyUp } from "./actions/actionDistribute";

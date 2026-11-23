@@ -9,6 +9,7 @@ import { storage } from '../lib/storage'
 import { TextField } from '../views/view/TextField'
 import { ContextMenu } from './ContextMenu'
 import { NameEnding } from './FileIcon'
+import { PencilIcon } from '../views/view/icons'
 import type { MenuSection } from './menuSections'
 
 /** The help line of an empty Sessions tab (YAZ-3147 S37). */
@@ -95,7 +96,7 @@ export const SessionList = memo(function SessionList({ titles, onOpenFile, onRes
           [
             { id: 'restore-session', label: 'Restore session', onSelect: () => onRestore(session.id) },
             ...(onUpdate === undefined ? [] : [{ id: 'update-session', label: 'Update with open tabs', onSelect: () => onUpdate(session.id) }]),
-            { id: 'rename-session', label: 'Rename', onSelect: () => setRenaming(session.id) },
+            { id: 'rename-session', label: 'Rename', icon: <PencilIcon />, onSelect: () => setRenaming(session.id) },
           ],
           [{ id: 'delete-session', label: 'Delete session', danger: true, onSelect: () => setDeleting(session) }],
         ]

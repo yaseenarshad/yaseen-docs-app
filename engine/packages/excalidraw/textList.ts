@@ -4,6 +4,7 @@ import {
   parseTextListLine,
   TEXT_LIST_INDENT,
   TEXT_LIST_BULLET_MARKERS,
+  TEXT_LIST_CHECK_MARKERS,
 } from "@excalidraw/element";
 
 import type {
@@ -180,7 +181,8 @@ const normalizeNumberedLines = (lines: string[]) => {
       let nextNumber = 1;
       for (let index = blockStart; index < blockEnd; index++) {
         const parsed = parseTextListLine(lines[index]);
-        if (parsed.markerKind === "none") {
+        // YAZ-4277 D4: a checklist item keeps its box
+        if (parsed.markerKind === "none" || parsed.markerKind === "check") {
           continue;
         }
         const marker =
@@ -331,7 +333,9 @@ export const indentTextList = (
         : removeOneIndent(record.parsed.indentation);
     const depth = Math.floor(getIndentationWidth(indentation) / 4);
     const marker =
-      record.resolvedMode === "numbered" && depth === 0
+      record.parsed.markerKind === "check"
+        ? record.parsed.marker
+        : record.resolvedMode === "numbered" && depth === 0
         ? "1."
         : getBulletMarkerForDepth(depth);
     return `${indentation}${marker} ${record.parsed.content}`;
@@ -376,7 +380,9 @@ export const continueTextListItem = (
       const indentation = removeOneIndent(record.parsed.indentation);
       const depth = Math.floor(getIndentationWidth(indentation) / 4);
       const marker =
-        mode === "numbered" && depth === 0
+        record.parsed.markerKind === "check"
+          ? record.parsed.marker
+          : mode === "numbered" && depth === 0
           ? "1."
           : getBulletMarkerForDepth(depth);
       nextLines[first] = `${indentation}${marker} `;
@@ -397,8 +403,11 @@ export const continueTextListItem = (
   }
 
   const localCaret = start - record.start;
+  // YAZ-4277 D4: the item after a checklist item starts open
   const marker =
-    mode === "numbered" && record.parsed.depth === 0
+    record.parsed.markerKind === "check"
+      ? TEXT_LIST_CHECK_MARKERS[0]
+      : mode === "numbered" && record.parsed.depth === 0
       ? "1."
       : getBulletMarkerForDepth(record.parsed.depth);
   const continuation = `${record.parsed.indentation}${marker} `;

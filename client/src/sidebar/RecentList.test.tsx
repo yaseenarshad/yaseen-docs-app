@@ -7,8 +7,8 @@ import { RecentList } from './RecentList'
 import { MAX_RECENTS, timeOf } from './recents'
 import { rowIcon } from './rowIcons'
 
-const note = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
-const tree = (root: string, paths: string[]): TreeResponse => ({ root, tree: paths.map(note), generatedAt: 1 })
+const page = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+const tree = (root: string, paths: string[]): TreeResponse => ({ root, tree: paths.map(page), generatedAt: 1 })
 const at = (y: number, m: number, d: number, h = 12, min = 0) => new Date(y, m - 1, d, h, min).getTime()
 const NOW = at(2026, 10, 23, 15)
 const stateWith = (edits: Record<string, Record<string, number>>): AppState => ({ ...defaultAppState(), folders: Object.fromEntries(Object.entries(edits).map(([root, log]) => [root, { ...defaultFolderState(), edits: log }])) })
@@ -24,7 +24,7 @@ function installBridge(app: AppState) {
         return () => undefined
       }),
     },
-    window: { identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: '/v', roots: ['/v', '/w'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'recents' })) },
+    window: { identity: vi.fn(async (): Promise<WindowIdentity> => ({ id: 'w1', root: '/v', roots: ['/v', '/w'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'recents' })), open: vi.fn(async () => undefined) },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
   return { emit: (next: AppState) => act(() => listener?.(next)) }
@@ -104,9 +104,9 @@ describe('RecentList (YAZ-3235 D3 to D7)', () => {
     expect(rows()[0].querySelector('.tree__label')?.textContent).toBe('Alpha page')
   })
 
-  it("a board row holds its extension after its name, for File icons Off to show (YAZ-3536 D4); a note's has none", async () => {
+  it("a board row holds its extension after its name, for File icons Off to show (YAZ-3536 D4); a page's has none", async () => {
     const board: TreeNode = { type: 'file', name: 'Flow.drawio', path: '/v/Flow.drawio', size: 1, mtime: 1, kind: 'diagram' }
-    const trees = new Map([['/v', { root: '/v', tree: [note('/v/a.md'), board], generatedAt: 1 }]])
+    const trees = new Map([['/v', { root: '/v', tree: [page('/v/a.md'), board], generatedAt: 1 }]])
     await mount(stateWith({ '/v': { '/v/Flow.drawio': at(2026, 10, 23, 9, 5), '/v/a.md': at(2026, 10, 23, 8) } }), { trees })
     const label = (row: Element) => row.querySelector('.tree__label')
     expect(label(rows()[0])?.firstChild?.nextSibling?.textContent).toBe('Flow')
@@ -135,6 +135,43 @@ describe('RecentList (YAZ-3235 D3 to D7)', () => {
     expect(rows()).toEqual([])
     act(() => onFold.mock.lastCall?.[0].setAll(true))
     expect(rows().map((r) => r.title)).toEqual(['/v/a.md', '/v/b.md'])
+  })
+
+  it('YAZ-4450 D7, D8: with groups, each day holds one fold row for each vault, in the window\'s order, with no count (YAZ-4470, 10); a group folds on its own, and the expand-all button folds the groups too', async () => {
+    const names: Record<string, string> = { '/v': 'Pages', '/w': 'Work' }
+    let fold: Parameters<NonNullable<Parameters<typeof RecentList>[0]['onFold']>>[0] = null
+    await mount(stateWith({ '/v': { '/v/a.md': at(2026, 10, 23, 9), '/v/b.md': at(2026, 10, 22, 9) }, '/w': { '/w/d.md': at(2026, 10, 23, 14) } }), { groups: { nameOf: (r) => names[r] ?? r }, onFold: (f) => (fold = f) })
+    const files = () => [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Recents"] .tree__row[title]')]
+    const groups = () => [...el.querySelectorAll<HTMLButtonElement>('.recents__vault')].map((g) => text(g).join(' '))
+    expect(dayLabels()).toEqual(['Today', 'Yesterday'])
+    expect(groups()).toEqual([' Pages', ' Work', ' Pages']) // the window's order, not the newest save (D8)
+    expect(files().map((r) => r.title)).toEqual(['/v/a.md', '/w/d.md', '/v/b.md'])
+    // The tree's levels (YAZ-4473): a day is a level-0 folder, a vault group level 1, a file under it level 2 — the
+    // indents of Files (8 + level * 14, a file 14 more), so the level lines, the thread and sticky rows reach them.
+    expect(files()[0].style.paddingLeft).toBe('50px')
+    expect(el.querySelector<HTMLButtonElement>('.recents__vault')?.style.paddingLeft).toBe('22px')
+    const day = el.querySelector('.recents__day')?.closest('li')
+    expect(day?.getAttribute('role')).toBe('treeitem')
+    expect(day?.getAttribute('aria-expanded')).toBe('true')
+    expect(el.querySelector('.recents__day')?.classList.contains('tree__row--sticky')).toBe(true)
+    expect([...el.querySelectorAll<HTMLElement>('[aria-label="Recents"] ul[role="group"]')].map((ul) => ul.style.getPropertyValue('--tree-depth'))).toEqual(['1', '2', '2', '1', '2'])
+    fire(el.querySelectorAll('.recents__vault')[1], 'click')
+    expect(files().map((r) => r.title)).toEqual(['/v/a.md', '/v/b.md']) // Today's Work folded, Yesterday's Pages still open
+    act(() => fold?.setAll(false))
+    expect(el.querySelectorAll('.recents__vault')).toHaveLength(0) // every day shut, so no group shows
+    act(() => fold?.setAll(true))
+    expect(groups()).toHaveLength(3)
+    expect(files()).toHaveLength(3)
+  })
+
+  it('⇧⌘-click opens the file in a new window on its own vault (YAZ-4444 D32): no tab', async () => {
+    await mount(stateWith({ '/w': { '/w/d.md': at(2026, 10, 23, 9) } }))
+    const [row] = rows()
+    fire(row, 'click', { metaKey: true, shiftKey: true, detail: 1 })
+    const bridge = (window as unknown as { yaseenDocs: { window: { open: ReturnType<typeof vi.fn> } } }).yaseenDocs
+    expect(bridge.window.open).toHaveBeenCalledExactlyOnceWith({ root: '/w', file: '/w/d.md' })
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+    expect(props.onOpenFileBackground).not.toHaveBeenCalled()
   })
 
   it('S19, S20: a click previews, a ⌘-click opens a background tab, a double-click keeps the tab; a right-click hands the path and the event to the menu', async () => {
@@ -174,6 +211,18 @@ describe('RecentList (YAZ-3235 D3 to D7)', () => {
     act(() => root?.unmount())
     root = null
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  // Review rules v1, rule 17 (YAZ-5655): Recent uses the ONE shared day timer (`useLocalDay`), so it wakes on
+  // `visibilitychange` too (a phone app or a window back from the background), not only on focus or its timer.
+  it('rule 17: Recent uses the one shared day timer: back from the background after midnight, "Today" is "Yesterday" at once', async () => {
+    vi.setSystemTime(at(2026, 10, 23, 23, 58))
+    await mount(stateWith({ '/v': { '/v/a.md': at(2026, 10, 23, 23, 57) } }))
+    expect(dayLabels()).toEqual(['Today'])
+    // The Mac slept: the clock is past midnight and no timer fired.
+    vi.setSystemTime(at(2026, 10, 24, 7, 0))
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    expect(dayLabels()).toEqual(['Yesterday'])
   })
 
   it('a broadcast with the same save logs does not draw the list again; a new save does', async () => {

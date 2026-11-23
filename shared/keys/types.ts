@@ -1,19 +1,19 @@
 /**
  * One row of the app's key list (YAZ-3564 K1): an action of one place and its default key(s). Every key the app
  * reacts to has a row, the ones you cannot change too (`changeable: false`, "Built in" on Settings › Hotkeys).
- * Each place's file (`app.ts`, `note.ts`, `drawing.ts`, `diagram.ts`, `code.ts`, `views.ts`) holds its rows, and a
+ * Each place's file (`app.ts`, `page.ts`, `drawing.ts`, `diagram.ts`, `code.ts`, `views.ts`, `explore.ts`) holds its rows, and a
  * drift test per place reads that editor's real keys and fails on one that has no row.
  */
 
 /** Where a key works. `app` keys are the menu's and the window's: on a Mac they fire before any page (K3). */
-export type KeyScope = 'app' | 'note' | 'drawing' | 'diagram' | 'code' | 'views'
+export type KeyScope = 'app' | 'page' | 'drawing' | 'diagram' | 'code' | 'views' | 'explore' | 'review'
 
 /** The places an App key can let keep their own key on it (K9): the tabs that are a canvas or an editor of their own. */
 export type AsidePlace = Extract<KeyScope, 'drawing' | 'diagram' | 'code'>
 export const ASIDE_PLACES: readonly AsidePlace[] = ['drawing', 'diagram', 'code']
 
 export interface KeyRow {
-  /** `<scope>.<name>`, stable: the settings store keys a change by it ('note.bold'). */
+  /** `<scope>.<name>`, stable: the settings store keys a change by it ('page.bold'). */
   id: string
   scope: KeyScope
   /** Short, sentence case, what the key does ("Bold", "Duplicate"). */
@@ -33,10 +33,22 @@ export interface KeyRow {
   macStandard?: true
   /**
    * An App key that never takes the key from a page: an Edit menu role (Undo, Copy…), which hands the key to the page
-   * in front, or a window key that acts only outside a note, a drawing, a diagram or a field (the file clipboard, a
+   * in front, or a window key that acts only outside a page, a drawing, a diagram or a field (the file clipboard, a
    * move's undo, ⌘⌫). It blocks no place (K3); a place's row still cannot take it, since it is a Mac standard or built in.
    */
   passesToPages?: true
   /** An App key that exists only while a tab of these places is in front (the board items of the File menu, YAZ-3564 K13): it blocks only them. */
   onlyIn?: readonly KeyScope[]
+  /**
+   * A built-in drawing key that acts only while something is selected (YAZ-4348: the colour letters, the size digits).
+   * The tool on the same letter has the key the rest of the time, so it clashes with no row and blocks none (K3); its
+   * key card shows both.
+   */
+  withSelection?: true
+  /**
+   * A mutually exclusive mode inside a scope (YAZ-5996: two-button vs four-button review answers).
+   * Rows of the same scope with different `mode` values never clash with each other; rows with no `mode`
+   * clash with every mode of their scope.
+   */
+  mode?: string
 }

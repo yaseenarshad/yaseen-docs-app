@@ -1,5 +1,5 @@
 /**
- * Reading a drawing back off disk: the note embed's sidecar (YAZ-878) and, since YAZ-3028, the
+ * Reading a drawing back off disk: the page embed's sidecar (YAZ-878) and, since YAZ-3028, the
  * scene text a drawing TAB loads through `drawing:load` (`parseSceneText`, `openViewport`, ported
  * from Draw's `drawingScene.ts`).
  *
@@ -10,48 +10,20 @@
  * The bytes come back base64 (the asset pipe's shape for images and drawings alike), so a scene
  * is `atob` → UTF-8 → `JSON.parse`. Anything that is not a scene — a missing file, unreadable
  * bytes, invalid JSON, JSON without an `elements` ARRAY — throws, and every throw lands in the
- * preview's ONE broken state (never a crash, `editor/drawing/drawingPreview.ts`). No repair, no
+ * popup's ONE error line (never a crash). No repair, no
  * partial render: a half-parsed scene would be a lie about what the file holds.
  */
 import type { DrawingFileEntry } from '@shared/types'
-import { BOARD_META_KEY, hoverLinksOff, picturesFolderOf, picturesOut, referencedFileIds } from '@shared/drawingAssets'
+import { referencedFileIds } from '@shared/drawingAssets'
+import { isDrawing } from '@shared/fileKind'
 import { isRecord } from '@shared/guards'
-import { isDrawingReadOnly } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
+import { restoreForPicture } from './drawingPicture'
+import { loadExcalidraw, type ExcalidrawModule } from './engine'
+import { parseSceneText, readOnlyOf, type DrawingScene } from './sceneText'
 
-/** The scene shape a preview needs; deliberately loose — the file is user data, not our type. */
-export interface DrawingScene {
-  /** Excalidraw elements exactly as the file holds them; validated only as "an array". */
-  readonly elements: readonly unknown[]
-  /** Optional in the file (YAZ-877 writes `{}`); missing = Excalidraw's own defaults. */
-  readonly appState: Record<string, unknown>
-  /** The binary-asset map; `null` when the file has none, which is what exportToSvg wants. */
-  readonly files: Record<string, unknown> | null
-  /** The file's read-only switch (YAZ-3076 D1, `isDrawingReadOnly`), read in the same parse; absent = editable. */
-  readonly readOnly?: boolean
-  /** `"pictures": "assets"` in the block (YAZ-3943 D5), read in the same parse; absent = the pictures are inside. */
-  readonly picturesOut?: boolean
-  /** The board's own pictures folder (`picturesFolder`, YAZ-3943 demo round 3), vault-relative, when the block names a valid one. */
-  readonly picturesFolder?: string
-  /** `"hoverLinks": false` in the block (YAZ-3943 demo 2): the board's link preview on hover is off; absent = on. */
-  readonly hoverLinksOff?: boolean
-}
-
-/** The scene's switches, each present only when it is not the default: a plain scene keeps the shape it always had. */
-const readOnlyOf = (scene: Record<string, unknown>): { readOnly?: true; picturesOut?: true; picturesFolder?: string; hoverLinksOff?: true } => ({
-  ...(isDrawingReadOnly(scene) ? { readOnly: true } : {}),
-  ...(picturesOut(scene[BOARD_META_KEY]) ? { picturesOut: true } : {}),
-  ...(picturesFolderOf(scene[BOARD_META_KEY]) === null ? {} : { picturesFolder: picturesFolderOf(scene[BOARD_META_KEY]) as string }),
-  ...(hoverLinksOff(scene[BOARD_META_KEY]) ? { hoverLinksOff: true } : {}),
-})
-
-/** Embed targets that get a preview — everything else renders exactly as it always has. */
-export const DRAWING_EMBED_SUFFIX = '.excalidraw'
-
-/** True for `Sketch.excalidraw` / `assets/drawings/Sketch.excalidraw` (case-insensitive, like readAsset). */
-export function isDrawingTarget(target: string): boolean {
-  return target.toLowerCase().endsWith(DRAWING_EMBED_SUFFIX)
-}
+// YAZ-5440: the scene text's parse is the phone's too, so it lives in `sceneText.ts` (no bridge); its name stays here.
+export { parseSceneText, type DrawingScene }
 
 /** base64 → the UTF-8 text it carries (scene JSON is text, and text can hold non-ASCII). */
 function decodeBase64(data: string): string {
@@ -104,7 +76,7 @@ export async function openDrawing(root: string, target: string): Promise<LoadedD
   } catch (err) {
     // YAZ-3943 D5: a board keeps its pictures inside, so it can pass the asset pipe's 10 MiB cap. The
     // board's own loader reads it (to 200 MiB), at the path the pipe resolved and named in its refusal.
-    if (err instanceof BridgeRequestError && err.code === 'TOO_LARGE' && err.path !== undefined && isDrawingTarget(err.path)) return openLargeDrawing(root, err.path)
+    if (err instanceof BridgeRequestError && err.code === 'TOO_LARGE' && err.path !== undefined && isDrawing(err.path)) return openLargeDrawing(root, err.path)
     throw err
   }
   const parsed = parseScene(asset.data)
@@ -144,18 +116,6 @@ async function withStoredFiles(root: string, path: string, scene: DrawingScene):
 }
 
 /**
- * A drawing TAB's scene text (`drawing:load`'s `json`, Draw's 🔒 YAZ-1810) → the canvas's opening
- * scene; throws on anything that is not one, which the tab shows as its ONE readable error pane.
- */
-export function parseSceneText(text: string): DrawingScene {
-  const parsed: unknown = JSON.parse(text)
-  if (!isRecord(parsed)) throw new Error('not an Excalidraw scene')
-  if (!Array.isArray(parsed.elements)) throw new Error('not an Excalidraw scene: no elements')
-  // The same `isRecord` the whole scene got: a file whose `appState` is an ARRAY carries no prefs, not a list.
-  return { elements: parsed.elements, appState: isRecord(parsed.appState) ? parsed.appState : {}, files: isRecord(parsed.files) ? parsed.files : {}, ...readOnlyOf(parsed) }
-}
-
-/**
  * The view a drawing OPENS on (Draw's 🔒 YAZ-1855 D1, fit-on-open): the engine's
  * `initialState.viewport`, fitting every live element and never zooming past 100% (`scale-down`;
  * the engine floors it at 10%). An empty drawing has nothing to fit, so `undefined` leaves the
@@ -166,7 +126,61 @@ export function openViewport(scene: DrawingScene): { viewport: { target: readonl
   return target.length > 0 ? { viewport: { target, fit: 'scale-down' } } : undefined
 }
 
-/** Reads `target` under `root` and parses it; rejects for the preview's broken state. */
-export async function loadDrawingScene(root: string, target: string): Promise<DrawingScene> {
-  return (await openDrawing(root, target)).scene
+/** A drawing read for a PICTURE (YAZ-4834 A19): the sidebar's hover picture and an embed's window read it this way. */
+export interface DrawingForPicture {
+  engine: ExcalidrawModule
+  /** The file's own appState (its background colour). */
+  appState: Record<string, unknown>
+  /** Restored as the canvas would, the soft-deleted left out; none means nothing to draw. */
+  elements: unknown[]
+  /** The image map exactly as the editor builds it (`DrawingEditor`'s `toDocument`). */
+  files: Record<string, unknown>
+}
+
+/** Reads `path` through `drawing:load` (pictures in it at most `imageMaxPx`) and restores it for a picture. */
+export async function readDrawingForPicture(root: string, path: string, imageMaxPx: number): Promise<DrawingForPicture> {
+  const [res, engine] = await Promise.all([api.drawing.load({ root, path, imageMaxPx }), loadExcalidraw()])
+  const parsed = parseSceneText(res.json)
+  const elements = restoreForPicture(engine, parsed.elements)
+  const files: Record<string, unknown> = {}
+  const created = Date.now()
+  for (const [id, entry] of Object.entries(res.files)) files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
+  return { engine, appState: parsed.appState, elements, files }
+}
+
+/** Opens an inline Excalidraw drawing from `.md` JSON text, resolving any referenced images from `<root>/assets/` (YAZ-5040). */
+export async function openInlineDrawing(root: string, json: string, pagePath: string): Promise<LoadedDrawing> {
+  const parsed = parseSceneText(json)
+  const own = parsed.files ?? {}
+  const missing = [...referencedFileIds(parsed.elements)].filter((id) => !(id in own))
+  const files: Record<string, unknown> = { ...own }
+  const stored: string[] = []
+  if (missing.length > 0 && root !== '') {
+    const resolved = await api.drawing.resolveAssets({ root, fileIds: missing }).catch(() => ({ files: {} as Record<string, DrawingFileEntry>, stored: [] as string[] }))
+    const created = Date.now()
+    for (const [id, entry] of Object.entries(resolved.files)) {
+      files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
+    }
+    stored.push(...resolved.stored)
+  }
+  return { scene: { ...parsed, files }, path: pagePath, mtime: 0, stored }
+}
+
+/** Reads an inline Excalidraw JSON string for a preview window picture, resolving images from `<root>/assets/` (YAZ-5040). */
+export async function readInlineDrawingForPicture(root: string, json: string, imageMaxPx: number): Promise<DrawingForPicture> {
+  const parsed = parseSceneText(json)
+  const missing = [...referencedFileIds(parsed.elements)].filter((id) => parsed.files === null || !(id in parsed.files))
+  const [resolved, engine] = await Promise.all([
+    missing.length > 0 && root !== ''
+      ? api.drawing.resolveAssets({ root, fileIds: missing, imageMaxPx }).catch(() => ({ files: {} as Record<string, DrawingFileEntry>, stored: [] as string[] }))
+      : Promise.resolve({ files: {} as Record<string, DrawingFileEntry>, stored: [] as string[] }),
+    loadExcalidraw(),
+  ])
+  const elements = restoreForPicture(engine, parsed.elements)
+  const files: Record<string, unknown> = { ...parsed.files }
+  const created = Date.now()
+  for (const [id, entry] of Object.entries(resolved.files)) {
+    files[id] = { id, mimeType: entry.mimeType, dataURL: entry.dataURL, created }
+  }
+  return { engine, appState: parsed.appState, elements, files }
 }

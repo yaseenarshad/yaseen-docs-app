@@ -13,6 +13,8 @@ import { useEffect, useMemo, useRef } from 'react'
 import { readNeedle } from '../links/completion'
 import { marked } from './marked'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
+import { PlaceName } from '../sidebar/PlaceName'
+import { dirname } from '../lib/paths'
 import { FolderIcon } from '../views/view/icons'
 import type { SearchCandidate } from './searchCandidates'
 
@@ -70,7 +72,8 @@ export function SearchResults({ results, query, selected, onSelect, onActivate, 
             {marked(r.label, needle)}
             {r.kind === 'file' && <NameEnding path={r.path} />}
           </span>
-          {r.folder !== '' && <span className="search-results__folder">{r.folder}</span>}
+          {/* YAZ-5402: the folder icon before the folder's path. */}
+          {r.folder !== '' && <PlaceName className="search-results__folder" path={dirname(r.path)} kind="folder" label={r.folder} />}
         </li>
       ))}
     </ul>

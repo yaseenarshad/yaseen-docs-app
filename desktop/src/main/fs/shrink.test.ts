@@ -149,7 +149,7 @@ describe('shrinkVault (YAZ-1801 D5)', () => {
     expect(await readFile(file, 'utf8')).toBe(hidden)
   })
 
-  it("never rewrites a note embed in assets/drawings/: it keeps its pictures inside on purpose (rule 28, YAZ-3039)", async () => {
+  it("never rewrites a page embed in assets/drawings/: it keeps its pictures inside on purpose (rule 28, YAZ-3039)", async () => {
     const embed = legacy({ e: { mimeType: 'image/png', dataURL: png('E') } }, [imageEl('e')])
     const file = await seed('assets/drawings/Embed.excalidraw', embed)
     expect(await shrinkVault(root)).toEqual({ shrunk: 0, skipped: 0, bytesMoved: 0 })

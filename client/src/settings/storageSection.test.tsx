@@ -78,7 +78,7 @@ const row = (el: HTMLElement, id: string) => el.querySelector<HTMLElement>(`[dat
 describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
   it('is a standalone page under the divider, after Memory and before Hotkeys — and absent with no vault', () => {
     const { el } = mount(STATS)
-    expect(navTitles(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Code', 'Drawings', 'Images', 'Files & Links', 'Sync', 'Memory', 'Storage', 'Hotkeys'])
+    expect(navTitles(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Sync', 'Memory', 'Storage', 'Hotkeys'])
     // Under the divider with Memory (YAZ-3737 D9) and Hotkeys, a reference page like them.
     expect(el.querySelector('.settings-nav__divider + .settings-nav__item + .settings-nav__item')?.textContent).toBe('Storage')
     expect(row(el, 'storageGithub')).toBeNull()
@@ -194,7 +194,7 @@ describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
     expect(el.querySelector('[role="status"]')).toBeNull()
   })
 
-  it.each(['old versions', 'too big', 'shrink'])('search for "%s" still reaches the page (S8)', (query) => {
+  it.each(['old versions', 'too big'])('search for "%s" still reaches the page (S8)', (query) => {
     const { el } = mount(STATS)
     const input = el.querySelector<HTMLInputElement>('input[aria-label="Search settings"]')!
     act(() => {
@@ -204,7 +204,20 @@ describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
     expect(el.querySelector('.settings-section__title')?.textContent).toMatch(/^Storage( › |$)/)
   })
 
-  it('search for "pictures" still reaches the page (S8), after Files & Links\' picture rows (YAZ-3943 demo 2, round 3: registry order)', () => {
+  it('search for "shrink" still reaches the page (S8), beside the board\'s "Double-click a text box edge" row whose choice is "Only shrink" (YAZ-5771, YAZ-5775: registry order)', () => {
+    const { el } = mount(STATS)
+    const input = el.querySelector<HTMLInputElement>('input[aria-label="Search settings"]')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'shrink')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const titles = [...el.querySelectorAll('.settings-section__title')].map((t) => t.textContent ?? '')
+    expect(titles.some((t) => /^Storage( › |$)/.test(t))).toBe(true)
+    expect(el.querySelector('[data-testid="storage-shrink"]')).not.toBeNull()
+    expect(titles.some((t) => /^Drawings and diagrams › Drawing aids/.test(t))).toBe(true)
+  })
+
+  it('search for "pictures" still reaches the page (S8), with Files & Links\' picture rows (YAZ-3943 demo 2, round 3: registry order)', () => {
     const { el } = mount(STATS)
     const input = el.querySelector<HTMLInputElement>('input[aria-label="Search settings"]')!
     act(() => {
@@ -212,7 +225,9 @@ describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
     const titles = [...el.querySelectorAll('.settings-section__title')].map((t) => t.textContent ?? '')
-    expect(titles[0]).toMatch(/^Files & Links( › |$)/)
+    // YAZ-4447: Images › Add panel (the picture hover zoom) comes first in registry order now
+    expect(titles[0]).toMatch(/^Images › Add panel/)
+    expect(titles.some((t) => /^Files & Links( › |$)/.test(t))).toBe(true)
     expect(titles.some((t) => /^Storage( › |$)/.test(t))).toBe(true)
   })
 

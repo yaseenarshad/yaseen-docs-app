@@ -1,0 +1,47 @@
+/* The Review tab's place in the shell and its waiting state. The first load draws them (`Shell.tsx`,
+   `Review.tsx`) before the Review chunk and its `review.css` come, so their style comes with the code that draws them. */
+.review {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100%;
+}
+
+.review--waiting,
+.review--off {
+  justify-content: center;
+  text-align: center;
+}
+
+.review-slot,
+.review-host {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The chain fills the screen by flex, never by a percent of a parent with no set height, so the answer
+   buttons sit at the bottom on a short card as on a long one. `.screen` is a flex item of a set height. */
+.review-slot {
+  min-height: 100%;
+}
+
+.review-host,
+.review-host > .review {
+  flex: 1 0 auto;
+}
+
+/* On the Review tab the screen does not scroll; the card scrolls inside itself, the buttons stay put. */
+.screen--review > .review-slot {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.screen--review .review-host {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.screen--review .review-host > .review {
+  flex: 1 1 0;
+  min-height: 0;
+}

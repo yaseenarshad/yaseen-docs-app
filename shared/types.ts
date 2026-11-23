@@ -1,3 +1,4 @@
+import { DEFAULT_FOLDER_PAGES } from './folderPagesDefault'
 /**
  * Shared renderer/main contracts for Yaseen Docs (locked in GRO-1961, bridge in GRO-2153) —
  * see docs/CONTRACTS.md for the prose version.
@@ -7,9 +8,13 @@
  */
 
 import type { IconRule } from './vaultIcons'
-import type { ReviewEntry } from './reviews'
+import type { CardRecord } from './cardLine'
 import type { HotkeyOverrides } from './hotkeyBindings'
-import { DEFAULT_DAILY_NOTE_FORMAT } from './dailyNote'
+import { isAppVault } from './appVaults'
+import { defaultCourseState, type CourseState } from './courseState'
+export type { CoursePatch, CourseSpeed, CourseState } from './courseState'
+import { DEFAULT_DAILY_PAGE_FORMAT } from './dailyPageDefault'
+import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from './iconPacks'
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT } from './timeFormat'
 
 // ---------- Errors ----------
@@ -111,6 +116,27 @@ export const TEXT_VIEW_EXTENSIONS = [
   '.cmake',
   '.fs',
   '.elm',
+  // YAZ-4502: 20 more code/config extensions for external repos.
+  '.tf',
+  '.tfvars',
+  '.hcl',
+  '.bicep',
+  '.bat',
+  '.cmd',
+  '.ex',
+  '.exs',
+  '.sol',
+  '.wgsl',
+  '.dockerfile',
+  '.nix',
+  '.prisma',
+  '.zig',
+  '.cue',
+  '.rego',
+  '.kdl',
+  '.awk',
+  '.glsl',
+  '.just',
 ] as const
 /**
  * Well-known files with no extension that open as `text` (YAZ-3505, 2D3; YAZ-3439 "Decision — Demo round 2"
@@ -118,7 +144,7 @@ export const TEXT_VIEW_EXTENSIONS = [
  * (`WELL_KNOWN_TEXT_PREFIXES`) when its extension is no kind of its own. Dot-files (`.gitignore`) stay hidden
  * (`isSkipped`).
  */
-export const WELL_KNOWN_TEXT_NAMES = ['Dockerfile', 'Makefile', 'Procfile', 'Gemfile', 'Jenkinsfile', 'Vagrantfile', 'LICENSE', 'CODEOWNERS'] as const
+export const WELL_KNOWN_TEXT_NAMES = ['Dockerfile', 'Makefile', 'Procfile', 'Gemfile', 'Jenkinsfile', 'Vagrantfile', 'LICENSE', 'CODEOWNERS', 'Justfile', 'Brewfile', 'Rakefile'] as const
 /** `Dockerfile.dev`, `Dockerfile.prod`: a base name that starts with one of these, and goes on. */
 export const WELL_KNOWN_TEXT_PREFIXES = ['Dockerfile.'] as const
 export const PDF_EXTENSIONS = ['.pdf'] as const
@@ -182,7 +208,7 @@ export type TreeNode =
  * one tree feed both queue a caller behind the read in flight. A read that hangs (a network volume
  * gone away) must not hold every later caller forever, so one in flight longer than this is
  * bypassed: the caller reads on its own, exactly as every read did before coalescing, and a
- * volume that recovers answers again. Far above any real walk (42 ms at 10k notes).
+ * volume that recovers answers again. Far above any real walk (42 ms at 10k pages).
  */
 export const STALE_FLIGHT_MS = 10_000
 
@@ -196,11 +222,11 @@ export interface TreeResponse {
 
 // ---------- Bases property index (GRO-2127; bridge method index(root) — Desktop D10) ----------
 
-/** One markdown note as the Bases query engine sees it. */
+/** One markdown page as the Bases query engine sees it. */
 export interface IndexRecord {
   /** Absolute path. */
   path: string
-  /** Frontmatter `id` when it is a note id (`shared/noteId.ts`, YAZ-2293): the note's permanent identity, as the app writes it (YAZ-2677 R2: `YAZ-12`, or an old 12-character ID). Absent when it has none. */
+  /** Frontmatter `id` when it is a page id (`shared/pageId.ts`, YAZ-2293): the page's permanent identity, as the app writes it (YAZ-2677 R2: `YAZ-12`, or an old 12-character ID). Absent when it has none. */
   id?: string
   /** File name with extension. */
   name: string
@@ -220,7 +246,7 @@ export interface IndexRecord {
   properties: Record<string, unknown>
   frontmatterError?: string
   /**
-   * Frontmatter `aliases`: extra NAMES this note answers to (Links E2, GRO-2214). List items, or
+   * Frontmatter `aliases`: extra NAMES this page answers to (Links E2, GRO-2214). List items, or
    * a scalar string as ONE alias (never comma-split, unlike `tags`); trimmed, empties and
    * non-strings dropped, de-duplicated. Resolved after path/root-relative/basename, so a real
    * name always wins. Alias values are never outgoing `links`.
@@ -228,41 +254,75 @@ export interface IndexRecord {
   aliases: string[]
   /** Frontmatter `tags`/`tag` + inline `#tags`; no leading '#'; nested 'a/b' kept; de-duplicated, order of first appearance. */
   tags: string[]
-  /** `[[target]]` targets (`|alias` and `#heading` stripped) from body + frontmatter string values; embeds excluded. */
+  /**
+   * `[[target]]` targets (`|alias` and `#heading` stripped) from body + frontmatter string values; embeds excluded.
+   * Words that only LOOK like an ID keep both page sides, `Covid pages|COVID-19` (`indexTarget`, YAZ-4954): the
+   * resolver picks (the left side when it is a page), so a reader passes each target to a resolver, never compares text.
+   */
   links: string[]
-  /** `![[target]]` targets. */
+  /** `![[target]]` targets, kept as `links` keeps them. */
   embeds: string[]
-  /** The note's review log (`shared/reviews.ts`, YAZ-2322), `at` ascending; absent when never reviewed. When it is next due is computed, never stored. */
-  reviews?: ReviewEntry[]
-  /** `textFingerprint` of the body: a review records the one it saw, so the body counts as changed when they differ. Absent when the file was not read. */
-  text?: string
+  /**
+   * The page's cards (`shared/cardLine.ts`, YAZ-4960 D4), in page order: each card's ID (null before the sweep
+   * gives one), whether review is off, and its reviews as its card line holds them; its title (its card line's `title`,
+   * YAZ-5308: what a `[[card ID]]` link shows) and whether the title is hidden on the Inbox's front (YAZ-5030). No other card text: it is
+   * read when a card shows. Absent when the page has no card, or was not read. When a card is due is computed (`cardSchedule.ts`).
+   */
+  cards?: CardRecord[]
+  /** Inline Excalidraw drawings in the page (YAZ-6143), in page order: 0-based index and title ('' when untitled). Absent when none. */
+  inlineDrawings?: readonly InlineDrawingRecord[]
+  /**
+   * `card` when the file is a CARD FILE (YAZ-5037): its properties hold `kind: card` (`shared/cardFileFormat.ts`). Its
+   * `title` is then its card's title (off its card line, YAZ-5308; its file name when it has none), and `cards` holds every card in it (one, unless the file is not valid). Absent
+   * for a page.
+   */
+  kind?: 'card'
+}
+
+/** One inline Excalidraw drawing entry stored on `IndexRecord` (YAZ-6143). */
+export interface InlineDrawingRecord {
+  index: number
+  title: string
 }
 
 export interface IndexResponse {
   root: string
-  /** Every markdown note under `root` (dot-entries and `node_modules` skipped), sorted by path. */
+  /** Every markdown page under `root` (dot-entries and `node_modules` skipped), sorted by path. */
   records: IndexRecord[]
   /** Every folder's settings file (`FOLDER_SETTINGS_FILE`, YAZ-2290 D8), sorted by path; never in `records`. */
   folders: IndexRecord[]
   /** Main-process time (epoch ms) when this snapshot was taken. */
   generatedAt: number
   /**
-   * Does this vault give its notes IDs (YAZ-2523 🔒 V5)? True only when its `ids.json` says yes.
+   * Does this vault give its pages IDs (YAZ-2523 🔒 V5)? True only when its `ids.json` says yes.
    * When false no record carries an `id`, and each one's `title` is its file name (🔒 V12).
    */
   ids: boolean
   /**
    * Only when `ids`: the vault's ID letters (YAZ-2677 R9), the current ones first and then each it
    * had before (`was`). Every record's `id` is an ID of THIS vault and, when it is a number ID,
-   * carries the current letters (R5); `vaultNoteId` reads a typed or linked ID with this list.
+   * carries the current letters (R5); `vaultPageId` reads a typed or linked ID with this list.
    */
   letters?: string[]
   /**
    * Only while the vault's answer is not yes, so for one that said no too (YAZ-2677 🔒 D2): what a
-   * yes would write (🔒 V2). `notes` would be given an id, `foreign` of them over another tool's
+   * yes would write (🔒 V2). `pages` would be given an id, `foreign` of them over another tool's
    * `id`; `folders` would be given a `.folder.md`, or an `id` in the one they have.
    */
-  ask?: { notes: number; folders: number; foreign: number; /** The ID letters the vault's `ids.json` already holds (YAZ-2677 S9): the box asks for these. None: the user chooses them (S5). */ letters?: string }
+  ask?: {
+    pages: number
+    folders: number
+    foreign: number
+    /** The ID letters the vault's `ids.json` already holds (YAZ-2677 S9): the box asks for these. None: the user chooses them (S5). */
+    letters?: string
+    /**
+     * The number IDs the pages and folders already hold, by their letters, the biggest group first (YAZ-4922 🔒 D2).
+     * Only where some group is not an ID of the vault yet: the box then offers "Keep <letters>" of the first group.
+     */
+    groups?: IdGroup[]
+    /** With `groups`: how many of the `pages` hold no ID at all, the only ones a yes then gives a number (YAZ-4922 D2). */
+    bare?: number
+  }
   /** Only when `ids`: a run of "Give old IDs numbers" stopped with files left, and its plan is in the vault (YAZ-2677 🔒 D6, S90): a second run finishes it. */
   unfinished?: true
   /**
@@ -271,6 +331,12 @@ export interface IndexResponse {
    * `was`: the IDs it held before a two-Mac merge (YAZ-4071 7I, `formerIds`), with the current letters; a link to one still opens it.
    */
   boards?: { path: string; id: string; was?: string[] }[]
+}
+
+/** One group of number IDs with the same letters, and how many pages and folders hold one (YAZ-4922 D2). */
+export interface IdGroup {
+  letters: string
+  count: number
 }
 
 // ---------- coldDiff(root) (Links E1c, GRO-2242) ----------
@@ -321,12 +387,12 @@ export interface FileResponse {
 
 // ---------- readHeads(paths) (YAZ-2648 D6) ----------
 
-/** How many bytes of a note `readHeads` reads off disk: room for the frontmatter block and the head under it. */
+/** How many bytes of a page `readHeads` reads off disk: room for the frontmatter block and the head under it. */
 export const HEAD_READ_BYTES = 8192
-/** How much of a note's body `readHeads` answers with, in UTF-16 units: the first lines of a page of the tab board. */
+/** How much of a page's body `readHeads` answers with, in UTF-16 units: the first lines of a page of the tab board. */
 export const HEAD_CHARS = 600
 
-/** The top of one note, for its page of the tab board (YAZ-2648 D6). */
+/** The top of one page, for its page of the tab board (YAZ-2648 D6). */
 export interface FileHead {
   path: string
   mtime: number
@@ -379,11 +445,18 @@ export interface ImageResponse {
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp'] as const
 
 /**
+ * The sound extensions the `app://vault` protocol serves (no dot, YAZ-5014): a card's one-line player. Over the
+ * protocol only, with the image rules (the same resolver and vault edge) and byte ranges for seeking; never through
+ * `readAsset` or `writeAsset`.
+ */
+export const AUDIO_EXTENSIONS = ['mp3', 'm4a', 'wav', 'ogg'] as const
+
+/**
  * Drawing sidecars the asset pipe reads AND writes (Excalidraw embed, YAZ-852 / YAZ-876): scene
- * JSON standing on its own in the vault (`assets/drawings/` by default), a note holding only
+ * JSON standing on its own in the vault (`assets/drawings/` by default), a page holding only
  * `![[<name>.excalidraw]]`. Since YAZ-3028 D2 the same file is also the `drawing` FileKind: the
  * Files tree lists it and a tab opens it through `drawing:load` / `drawing:save`. The Markdown
- * index still omits it, and a note embed still rides this pipe (the modal, rule 28).
+ * index still omits it, and a page embed still rides this pipe (the modal, rule 28).
  */
 export const DRAWING_EXTENSIONS = ['excalidraw'] as const
 
@@ -427,6 +500,23 @@ export interface AssetWriteResponse {
   path: string
   mtime: number
   size: number
+}
+
+/**
+ * "Paste a link" of an Image cell (YAZ-4802): main downloads one picture from the web, ONCE. `http:`/`https:` only, an
+ * `image/*` answer only, at most `MAX_FILE_BYTES` (what `writeAsset` takes), within a timeout. Nothing is written: the
+ * renderer saves the bytes through `writeAsset`, the one door into `assets/images/`.
+ */
+export interface ImageDownloadRequest {
+  url: string
+}
+
+export interface ImageDownloadResponse {
+  bytes: Uint8Array
+  /** The answer's `Content-Type`, without parameters (`image/png`). */
+  mimeType: string
+  /** A file name from the URL's last part, made safe, without its extension ('' when the URL names none). */
+  name: string
 }
 
 // ---------- drawing:* / diagram:* / fs:create-board (YAZ-3028 D2, ported from Draw's YAZ-1810 / YAZ-1802) ----------
@@ -516,6 +606,28 @@ export interface DrawingSaveResponse {
   movedOut?: true
   /** YAZ-3943 4C: the ID this save gave the board (its first save in a vault that gives IDs). Absent when it had one. */
   id?: string
+}
+
+/** Resolve image fileIds from `<vault>/assets/` for an inline Excalidraw drawing (YAZ-5040). */
+export interface DrawingResolveAssetsRequest {
+  root: string
+  fileIds: string[]
+  imageMaxPx?: number
+}
+
+export interface DrawingResolveAssetsResponse {
+  files: Record<string, DrawingFileEntry>
+  stored: string[]
+}
+
+/** Land pasted image bytes into `<vault>/assets/` before saving an inline drawing back into `.md` (YAZ-5040). */
+export interface DrawingLandAssetsRequest {
+  root: string
+  newFiles: DrawingNewFile[]
+}
+
+export interface DrawingLandAssetsResponse {
+  persisted: string[]
 }
 
 export interface DiagramLoadRequest {
@@ -622,9 +734,33 @@ export interface BoardHoverLinksRequest {
 }
 
 /**
+ * `board:set-fold-arrows` (YAZ-4277 D5, D18, D19): the cog's "Fold arrows" on a drawing: `'app'` (no key: the app
+ * setting), or `"foldArrows": "hover"` / `"always"` / `"off"` in the board's `yaseendraw` block. One read, one atomic write, as Read only.
+ */
+export interface BoardFoldArrowsRequest {
+  root: string
+  path: string
+  value: 'app' | FoldArrowMode
+  /** Required: the mtime the tab last read or wrote. A differing disk mtime rejects `CONFLICT` and writes NOTHING. */
+  expectedMtime: number
+}
+
+/**
+ * `board:set-hover-outline` (YAZ-4469 demo): the cog's "Hover outline" on a drawing: `'app'` (no key: the app
+ * setting), or `"hoverOutline": true` / `false` in the board's `yaseendraw` block. One read, one atomic write, as Read only.
+ */
+export interface BoardHoverOutlineRequest {
+  root: string
+  path: string
+  value: 'app' | boolean
+  /** Required: the mtime the tab last read or wrote. A differing disk mtime rejects `CONFLICT` and writes NOTHING. */
+  expectedMtime: number
+}
+
+/**
  * `fs:create-board` (YAZ-3028 D9): a NEW drawing or diagram, born with its empty content. Main picks
  * the content by the kind of `path` — the renderer sends none — stamps the dates, and never
- * overwrites (`ALREADY_EXISTS`). No note ID: IDs are for notes only.
+ * overwrites (`ALREADY_EXISTS`). No page ID: IDs are for pages only.
  */
 export interface CreateBoardRequest {
   /** Vault root; `path` must resolve inside it. */
@@ -726,7 +862,7 @@ export interface FileWriteRequest {
   expectedMtime?: number
   /**
    * A tidy-up write that the user did not make on this file (YAZ-3235 D1): a link rewrite after a
-   * rename, a deleted column stripped from each note, stale folder values dropped after a move, a
+   * rename, a deleted column stripped from each page, stale folder values dropped after a move, a
    * folder's id. The bytes land as for any write; the save log skips it, so Recents does not list it.
    */
   quiet?: boolean
@@ -762,7 +898,7 @@ export interface CreateFileRequest {
   path: string
   /** Initial file contents; omitted → a file holding only its `id`. */
   content?: string
-  /** The note id to be born with (YAZ-2293), for a caller that needs it before the file exists; omitted → a fresh one. */
+  /** The page id to be born with (YAZ-2293), for a caller that needs it before the file exists; omitted → a fresh one. */
   id?: string
 }
 
@@ -771,7 +907,7 @@ export interface CreateFileResponse {
   mtime: number
   /** The created file's byte length. */
   size: number
-  /** The note id written into the file's frontmatter; absent when the seed's frontmatter would not parse. */
+  /** The page id written into the file's frontmatter; absent when the seed's frontmatter would not parse. */
   id?: string
 }
 
@@ -794,16 +930,16 @@ export interface RenameFileRequest {
 
 /**
  * What Settings shows about the IDs of a vault that uses them (YAZ-2677 🔒 D5, D6), counted by the
- * main process from its index. A folder's settings file counts like a note.
+ * main process from its index. A folder's settings file counts like a page.
  */
 export interface IdsState {
   /** The vault's ID letters now; the default of its folder's name while its `ids.json` holds none (R11). */
   letters: string
-  /** Notes that hold a number ID: what "Change letters" changes (S80). */
-  notes: number
-  /** Notes that still have letters the vault had before, in their ID, in an ID they name or in their file name (S83). */
+  /** Pages that hold a number ID: what "Change letters" changes (S80). */
+  pages: number
+  /** Pages that still have letters the vault had before, in their ID, in an ID they name or in their file name (S83). */
   stale: number
-  /** Notes that hold an old 12-character ID (S88). */
+  /** Pages that hold an old 12-character ID (S88). */
   old: number
   /** A run of "Give old IDs numbers" stopped with files left (`IndexResponse.unfinished`, S90). */
   unfinished: boolean
@@ -819,7 +955,7 @@ export interface RenameFileResponse {
 // ---------- file.retitle(req) (YAZ-2420) ----------
 
 /**
- * A title edit (🔒 D16), for a note or a folder: `title` is written to its frontmatter (a folder's
+ * A title edit (🔒 D16), for a page or a folder: `title` is written to its frontmatter (a folder's
  * `.folder.md`), then it is renamed to the name built from that title. Answers as a rename does,
  * with `newPath` equal to `oldPath` when the built name is the one it has; a path that changed is
  * repaired and pushed exactly as `file.rename`'s is.
@@ -875,14 +1011,19 @@ export const CLIP_CHANGED = 'The clipboard changed. Paste again.'
 /**
  * Per-entry outcome of a paste (D3): every clipboard entry lands in exactly one of the two
  * lists, in clipboard order — except a cut entry already in `targetDir`, which is skipped
- * silently (nothing to do). A copy that clashes takes Finder's next free name (`Note copy.md`,
- * `Note copy 2.md`; folders keep the whole name); a cut that clashes fails `ALREADY_EXISTS`.
+ * silently (nothing to do). A copy that clashes takes Finder's next free name (`Page copy.md`,
+ * `Page copy 2.md`; folders keep the whole name); a cut that clashes fails `ALREADY_EXISTS`.
  * A cut across volumes fails `IO_ERROR` ("cannot move across disks; copy it instead"); a
  * stale entry `NOT_FOUND`; a hidden source or a folder into itself `BAD_REQUEST`.
  */
 export interface PasteResponse {
   pasted: { from: string; to: string; kind: 'file' | 'dir' }[]
   failed: { from: string; code: BridgeErrorCode; message: string }[]
+}
+
+/** "Duplicate page" in a folder page's row menu (YAZ-4592 S26): `path` is copied beside itself. The answer is the one entry that landed. */
+export interface DuplicateRequest {
+  path: string
 }
 
 /**
@@ -941,6 +1082,8 @@ export interface DragLandedEvent {
  */
 export interface DragEndedEvent {
   paths: string[]
+  /** The release was over a Finder window or the desktop (YAZ-5840 D1): only there did Finder take a copy. */
+  overFinder: boolean
 }
 
 /**
@@ -987,8 +1130,9 @@ export type WatchEvent =
 export type RecentRoots = Array<{ path: string; lastOpened: number }>
 export const MAX_RECENT_ROOTS = 10
 
-/** Pure: prepend `path` to the MRU list, de-duplicated, capped — shared by the client cache and the main store. */
+/** Pure: prepend `path` to the MRU list, de-duplicated, capped — shared by the client cache and the main store. The app's own vault (the card skill, YAZ-5108) never joins: `list` comes back as it is. */
 export function addRecentRoot(list: RecentRoots, path: string, now: number): RecentRoots {
+  if (isAppVault(path)) return list
   return [{ path, lastOpened: now }, ...list.filter((r) => r.path !== path)].slice(0, MAX_RECENT_ROOTS)
 }
 
@@ -1032,6 +1176,24 @@ export function sameVaults(a: readonly string[], b: readonly string[]): boolean 
   const left = new Set(a.map(stripSlash))
   const right = new Set(b.map(stripSlash))
   return left.size === right.size && [...left].every((vault) => right.has(vault))
+}
+
+/**
+ * THE PLACE OF A WINDOW (YAZ-4922 🔒 D3). A window's `roots` are its places: each is a vault, or "a folder of <vault>"
+ * (`FolderState.in`). The place is the window's identity — the recents, the vault switcher's rows, Open / Not open, ⌘1–9,
+ * the workspaces and the windows a reopen brings back all name it. What a place's pages are read and written AS is its
+ * vault: the index, the IDs, the links, the sync and `.yaseendocs`. `placeVault` is that vault; a vault is its own.
+ */
+export const placeVault = (folders: Readonly<Record<string, Pick<FolderState, 'in'> | undefined>> | undefined, place: string): string => folders?.[place]?.in ?? place
+
+/** Each place's vault (`placeVault`), in order: what the main process reads and writes a window's pages as. */
+export const placeVaults = (folders: Readonly<Record<string, Pick<FolderState, 'in'> | undefined>> | undefined, places: readonly string[]): string[] => places.map((place) => placeVault(folders, place))
+
+/** What the app calls a place (YAZ-4922 D3): its display name, else its folder name; "a folder of" reads "<folder> · in <vault>". */
+export function placeName(folders: Readonly<Record<string, Pick<FolderState, 'in' | 'name'> | undefined>>, place: string): string {
+  const own = folders[place]?.name ?? basename(place)
+  const vault = folders[place]?.in
+  return vault == null ? own : `${own} · in ${folders[vault]?.name ?? basename(vault)}`
 }
 
 /** Last path segment (trailing slashes ignored); the input itself for `/`. The client's `lib/paths` hands it on; it is here so `listVaults` and `keyedVaults` name a folder the same way (YAZ-2556). */
@@ -1168,7 +1330,10 @@ export const DEFAULT_SIDEBAR_TABS: SidebarTabsPrefs = { order: [...SIDEBAR_TABS]
 export const TOOLBAR_LAYOUT = {
   lineType: ['h1', 'h2', 'h3', 'text'],
   lists: ['checklist', 'bulletList', 'numberedList'],
-  textStyle: ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink'],
+  // `highlight-more` (YAZ-4348 demo round 2): the ▾ of the highlight colour panel. Last, so a saved order (the loader
+  // appends a new button) puts it right after the highlight buttons too. Pink left the strip for the panel (demo round
+  // 2, Yasin): a saved setting that still names `highlight-pink` loses it on load, as any unknown name.
+  textStyle: ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more'],
   insert: ['code', 'link'],
 } as const
 export type ToolbarGroupId = keyof typeof TOOLBAR_LAYOUT
@@ -1186,12 +1351,32 @@ export interface ToolbarPrefs {
   hidden: ToolbarButtonId[]
 }
 export const DEFAULT_TOOLBAR: ToolbarPrefs = { groups: [...TOOLBAR_GROUPS], buttons: [...TOOLBAR_BUTTONS], hidden: [] }
-/** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites; Files has none. `best` is Search's alone (YAZ-3511 D12). */
+/** A custom highlight colour (lowercase `#rrggbb`) and how many times it was picked (YAZ-4348 demo round 2). */
+export interface HighlightCustomColor {
+  color: string
+  uses: number
+}
+/** How many custom highlight colours the settings keep: more than the row shows, so a new colour can climb into it. */
+export const HIGHLIGHT_CUSTOM_COLORS_KEPT = 10
+/** How many the highlight panel's "Most used custom colours" row shows: one row of its grid. */
+export const HIGHLIGHT_CUSTOM_COLORS_SHOWN = 5
+/** A custom highlight colour exactly as the page's mark and this setting keep it: lowercase `#rrggbb`. */
+export const isHighlightHex = (v: unknown): v is `#${string}` => typeof v === 'string' && /^#[0-9a-f]{6}$/.test(v)
+/** A kept entry: a lowercase `#rrggbb` and a whole count of one or more. */
+export const isHighlightCustomColor = (v: unknown): v is HighlightCustomColor =>
+  typeof v === 'object' && v !== null && isHighlightHex((v as HighlightCustomColor).color) &&
+  Number.isInteger((v as HighlightCustomColor).uses) && (v as HighlightCustomColor).uses >= 1
+/** How a tab of the sidebar orders its rows (YAZ-3227 D4). `manual` is the drag order of Focus and Favorites, and of Files since YAZ-5916 (each folder's order in the vault, `shared/filesOrder.ts`). `best` is Search's alone (YAZ-3511 D12). */
 export type SortBy = 'manual' | 'name' | 'updated' | 'best'
-/** One tab's sort (YAZ-3227): `reverse` flips the natural way — Name reads A to Z, Last updated newest first. */
+/**
+ * One tab's sort (YAZ-3227): `reverse` flips the natural way — Name reads A to Z, Last updated newest first.
+ * `kinds` is the menu's "Kind first" (YAZ-4614 D66): the rows of a level go by kind (folders, pages, drawings, diagrams,
+ * PDFs, images, text files, other files), then by the sort inside each kind. Absent = off, so a file from before reads as before.
+ */
 export interface TabSort {
   by: SortBy
   reverse: boolean
+  kinds?: boolean
 }
 /** The tabs that sort (YAZ-3227 D5). Search has its own `searchSort` (YAZ-3511); Sessions and Recents (YAZ-3235) have none. */
 export type SortedTab = 'files' | 'focus' | 'favorites'
@@ -1206,6 +1391,12 @@ export const DEFAULT_SEARCH_SORT: TabSort = { by: 'best', reverse: false }
 /** Which tabs show the last updated date at the right end of each row (YAZ-3511 D10): one switch for each tab, on for Search only. */
 export type RowDates = Record<SortMenuTab, boolean>
 export const DEFAULT_ROW_DATES: RowDates = { files: false, focus: false, favorites: false, search: true }
+/** Which list of a vault the window shows (YAZ-4450 D1): its own, or its list for a window with two or more vaults. */
+export type ListScope = 'vault' | 'workspace'
+export const LIST_SCOPES: readonly ListScope[] = ['vault', 'workspace']
+/** "Separate list for workspaces" (YAZ-4450 D4): one switch for Focus, one for Favorites. On by default: a workspace shows its own lists. */
+export type WorkspaceLists = Record<'focus' | 'favorites', boolean>
+export const DEFAULT_WORKSPACE_LISTS: WorkspaceLists = { focus: true, favorites: true }
 
 /**
  * `AppState.sidebarWidth` — the drag-to-resize bounds (YAZ-738), clamped on every write and on load. The max is only a
@@ -1237,7 +1428,74 @@ export function defaultRightPanelIdentity(): RightPanelIdentity {
 
 /** Global content-width presets, ordered exactly as shown in Settings (YAZ-1176). */
 export const CONTENT_WIDTHS = ['narrow', 'medium', 'full'] as const
-export type ContentWidth = (typeof CONTENT_WIDTHS)[number]
+/** A step of Content width by its name. */
+export type ContentStep = (typeof CONTENT_WIDTHS)[number]
+/**
+ * Content width (YAZ-5871 D1): a step by its name, or Custom, whole px of text from `PAGE_WIDTH_MIN` to `PAGE_WIDTH_MAX`.
+ * Settings' `contentWidth` and a page's `page-width` hold one. An old value (a step) stays valid; an old app copy reads a
+ * number as Narrow.
+ */
+export type ContentWidth = ContentStep | number
+export const PAGE_WIDTH_MIN = 400
+/** Settings' Explore window width (YAZ-5976): the Custom px box's range and its start. The window cuts it further. */
+export const EXPLORE_WIDTH_MIN = 400
+export const EXPLORE_WIDTH_MAX = 4000
+export const EXPLORE_WIDTH_START = 800
+export const isExploreWidth = (v: unknown): v is number | null => v === null || (typeof v === 'number' && Number.isInteger(v) && v >= EXPLORE_WIDTH_MIN && v <= EXPLORE_WIDTH_MAX)
+export const PAGE_WIDTH_MAX = 2400
+/** Custom's start in the controls: Medium's px. */
+export const PAGE_WIDTH_START = 900
+export const isContentWidth = (v: unknown): v is ContentWidth =>
+  (typeof v === 'string' && (CONTENT_WIDTHS as readonly string[]).includes(v)) || (typeof v === 'number' && Number.isInteger(v) && v >= PAGE_WIDTH_MIN && v <= PAGE_WIDTH_MAX)
+/**
+ * Page position (YAZ-5871 D2): where a page's column sits when the window is wider than it. Centre (the default, the look
+ * before) or Left. Full has no position: its column fills the window. Settings' `contentPosition` and a page's
+ * `page-position` hold one.
+ */
+export const CONTENT_POSITIONS = ['center', 'left'] as const
+export type ContentPosition = (typeof CONTENT_POSITIONS)[number]
+export const isContentPosition = (v: unknown): v is ContentPosition => typeof v === 'string' && (CONTENT_POSITIONS as readonly string[]).includes(v)
+/**
+ * Each Content width step as the widest the text gets, px; `null` is the whole window (YAZ-5144, Yaseen: "even though
+ * its set to "narrow" it doesnt look like there's a big change bw the options?"). The steps were the shell's 1040 px
+ * and 1440 px: at a 1180 px page (a 1440 px window less the sidebar) the text was 944 px, then 1084 px for Medium AND
+ * Full. Now: Narrow 640 px, about 75 letters of 16 px text, a book's line; Medium 900 px; Full the window. Each step
+ * is about 250 px apart at a common window. The pages' column adds its 48 px sides (`--content-max-width`); Card
+ * width uses the same steps for a card's text (`--card-text-width`).
+ */
+export const CONTENT_TEXT_WIDTHS: Readonly<Record<ContentStep, number | null>> = { narrow: 640, medium: 900, full: null }
+/**
+ * Settings › Review › Card width, Custom (YAZ-5144 round 2, Yaseen: "custom gives you a px that you can adjust"): the
+ * card's text at most this many px. It starts at Narrow's 640; Clean sets Mochi's line, about 62 letters (31em of the
+ * Inbox's 16.8 px text, so 520 px).
+ */
+export const CARD_WIDTH_MIN = 400
+export const CARD_WIDTH_MAX = 1600
+export const CARD_WIDTH_START = 640
+export const CARD_WIDTH_CLEAN = 520
+export const isCardWidth = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= CARD_WIDTH_MIN && v <= CARD_WIDTH_MAX
+/**
+ * Settings › Cards › Card look › Card text size, Custom (YAZ-5387, Yaseen: "add text sizing for cards ... same as pages
+ * versus custom"): a card's text in whole px. It starts at the pages' default 16 px; 12–32, so a card read at arm's
+ * length in the Inbox can be larger than any page.
+ */
+export const CARD_TEXT_SIZE_MIN = 12
+export const CARD_TEXT_SIZE_MAX = 32
+export const CARD_TEXT_SIZE_START = 16
+export const isCardTextSize = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= CARD_TEXT_SIZE_MIN && v <= CARD_TEXT_SIZE_MAX
+/**
+ * Card look › Card title size (YAZ-5387, Yaseen: "why wouldn't we just give them the px just like we give them px for
+ * everything else? ... default or custom"): `null`, Default, follows the card's text at `CARD_TITLE_SCALE` (18 px next to
+ * 16 px text), so a bigger card text brings its title along; else Custom, whole px, 12–40, everywhere a card shows.
+ * Custom starts at Default's size for the card text of the moment (`cardTitleSizeStart`). `--card-title-size` on `.app`,
+ * Custom only. A file saved with round 1's Small · Medium · Large fails the door and reads Default.
+ */
+export const CARD_TITLE_SCALE = 1.125
+export const CARD_TITLE_SIZE_MIN = 12
+export const CARD_TITLE_SIZE_MAX = 40
+export const isCardTitleSize = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= CARD_TITLE_SIZE_MIN && v <= CARD_TITLE_SIZE_MAX
+/** Default's title size in whole px for a Card text size (`null`, Same as pages, reads the pages' 16 px). */
+export const cardTitleSizeStart = (cardTextSize: number | null): number => Math.round((isCardTextSize(cardTextSize) ? cardTextSize : CARD_TEXT_SIZE_START) * CARD_TITLE_SCALE)
 
 /**
  * `AppState.settings` — app-global editor preferences (GRO-2024). Applied as CSS custom
@@ -1275,6 +1533,9 @@ export const LASER_COLORS = ['#ff0000', '#ffd400', '#00c853', '#2979ff', '#d500f
 export type LaserColor = (typeof LASER_COLORS)[number]
 export const LASER_SIZES = ['S', 'M', 'L'] as const
 export type LaserSize = (typeof LASER_SIZES)[number]
+export const SNAP_GAP_STYLES = ['pill', 'bracket', 'band'] as const
+export type SnapGapStyle = (typeof SNAP_GAP_STYLES)[number]
+export const SNAP_COLOR_PRESETS = ['#e024a7', '#3b82f6', '#10b981', '#f97316', '#ef4444', '#8b5cf6'] as const
 
 /**
  * The fork's `FONT_FAMILY` ids the Settings › Canvas "Default font" row offers
@@ -1300,6 +1561,12 @@ export const FONT_FAMILY_OPTIONS: ReadonlyArray<{ id: number; label: string }> =
 export interface CanvasPrefs {
   gridModeEnabled: boolean
   objectsSnapModeEnabled: boolean
+  /** YAZ-5986 D5: how equal-spacing gap guides and Option-hover distances render. */
+  snapGapStyle: SnapGapStyle
+  /** YAZ-5986: custom `#rrggbb` color for snap guides, gap spacing, and distance pills. */
+  snapColor: string
+  /** YAZ-5986: opt-in live W × H pixel badge while resizing shapes (default off). */
+  showResizeSizeBadge: boolean
   /** The engine's `isMidpointSnappingEnabled`. */
   snapToMidpoints: boolean
   /** The engine's `isBindingEnabled` (arrows bind to the shapes they touch). */
@@ -1344,7 +1611,83 @@ export interface CanvasPrefs {
   laserColor: LaserColor
   /** The laser's size (`laserSize`): `S` (🔒 YAZ-1989 D1). */
   laserSize: LaserSize
+  /**
+   * YAZ-4277 D5: when an open bullet in a text box shows its fold arrow ▾: on hover over its line, or always. A folded
+   * bullet always shows ▸. A board's cog can override it (`"foldArrows"` in its `yaseendraw` block). Never appState:
+   * the engine's `foldArrows` prop.
+   */
+  foldArrowsOpen: FoldArrowMode
+  /** YAZ-4277 D7: the fold arrow's size, in % of its text size. `FOLD_ARROW_SIZE_MIN`–`MAX`. */
+  foldArrowSize: number
+  /** YAZ-4277 D7: the fold arrow's line. */
+  foldArrowThickness: FoldArrowThickness
+  /**
+   * YAZ-4277 D7: the smallest fold arrow on screen, px: zoomed out, an arrow stops shrinking here, so a folded bullet
+   * shows from afar. Screen only: exports use the size alone. `FOLD_ARROW_MIN_SIZE_MIN`–`MAX`.
+   */
+  foldArrowMinSize: number
+  /**
+   * YAZ-4277 D14: "New shapes and text". `default`: a style changed on a selection stays on it, a style picked for a
+   * tool lasts until the selection tool, and the defaults above change only here. `keep`: the last style carries to the
+   * next shape, and a pick writes the font, sloppiness, align and line widths back here (the behaviour before D14).
+   * Never appState: the engine's `newElementStyle` prop.
+   */
+  newElementStyle: NewElementStyleMode
+  /**
+   * YAZ-4277 demo: "Text color follows the fill". A dark fill on dark text turns the text white; a light fill (or
+   * none) on white text turns it black; any other text color stays. Never appState: the engine's `fillSetsTextColor`.
+   */
+  fillSetsTextColor: boolean
+  /**
+   * YAZ-4277 demo: "New shapes match the zoom". A new shape's line width, corner radius, wobble and arrowheads keep
+   * their screen size at the zoom it is made at, and the width and corner pickers speak screen px. Never appState: the
+   * engine's `newShapesMatchZoom` prop.
+   */
+  newShapesMatchZoom: boolean
+  /**
+   * YAZ-4469 demo: "Hover outline". While the selection tool hovers, a faint outline shows what a click will pick. A
+   * board's cog can override it (`"hoverOutline"` in its `yaseendraw` block). Never appState: the engine's
+   * `hoverOutline` prop.
+   */
+  hoverOutline: boolean
+  /**
+   * YAZ-5771: "Double-click a text box edge". A double click on the left or right edge of a selected free text snaps
+   * its width. `shrink`: the box keeps its line breaks and becomes as wide as its widest line, never wider. `fit`: each
+   * paragraph on one line, the box grows with the text (the right-click menu's "Enable text auto-resizing"). Drawings
+   * only. Never appState: the engine's `textEdgeDoubleClick` prop.
+   */
+  textEdgeDoubleClick: TextEdgeDoubleClickMode
 }
+
+/** YAZ-5771: "Only shrink" or "Fit the text". */
+export const TEXT_EDGE_DOUBLE_CLICK_MODES = ['shrink', 'fit'] as const
+export type TextEdgeDoubleClickMode = (typeof TEXT_EDGE_DOUBLE_CLICK_MODES)[number]
+
+/** YAZ-4277 D14: "Start with the default style" or "Keep the last style". */
+export const NEW_ELEMENT_STYLE_MODES = ['default', 'keep'] as const
+export type NewElementStyleMode = (typeof NEW_ELEMENT_STYLE_MODES)[number]
+
+/**
+ * YAZ-4277 D5: when an open bullet shows its fold arrow. `'off'` (demo round 1): no folding at all; the saved folds
+ * stay in the file, unshown, and come back when folding is on again (`ExcalidrawSurface.tsx`).
+ */
+export const FOLD_ARROW_MODES = ['hover', 'always', 'off'] as const
+export type FoldArrowMode = (typeof FOLD_ARROW_MODES)[number]
+/** YAZ-4277 D7: the fold arrow's line, thin to thick. */
+export const FOLD_ARROW_THICKNESSES = ['thin', 'normal', 'thick'] as const
+export type FoldArrowThickness = (typeof FOLD_ARROW_THICKNESSES)[number]
+/**
+ * YAZ-4277 D5, D7: what the engine's `foldArrows` prop gets (`foldArrowsOf`). The engine has its own copy of these
+ * three types (`FoldArrowPrefs` in `engine/packages/element/src/textFoldArrows.ts`), because `shared/` never imports
+ * the engine and the engine never imports `shared/`. `client/src/drawings/foldArrowTypes.test.ts` keeps them equal.
+ */
+export type FoldArrowPrefs = Readonly<{ openArrows: FoldArrowMode; size: number; thickness: FoldArrowThickness; minScreenSize: number }>
+/** YAZ-4277 D7: the fold arrow's size, % of the text size. */
+export const FOLD_ARROW_SIZE_MIN = 50
+export const FOLD_ARROW_SIZE_MAX = 300
+/** YAZ-4277 D7: the smallest fold arrow on screen, px. */
+export const FOLD_ARROW_MIN_SIZE_MIN = 6
+export const FOLD_ARROW_MIN_SIZE_MAX = 48
 
 /** New text's size on screen (YAZ-4247), px. */
 export const NEW_TEXT_SCREEN_SIZE_MIN = 8
@@ -1355,7 +1698,10 @@ export const NEW_TEXT_WRAP_MARGIN_MAX = 600
 /** The engine's own defaults (`appState.ts` `getDefaultAppState()` + `constants.ts`). */
 export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
   gridModeEnabled: false,
-  objectsSnapModeEnabled: false,
+  objectsSnapModeEnabled: true,
+  snapGapStyle: 'pill',
+  snapColor: '#e024a7',
+  showResizeSizeBadge: false,
   snapToMidpoints: true,
   arrowBinding: true,
   selectOn: 'wrap',
@@ -1373,6 +1719,15 @@ export const DEFAULT_CANVAS_PREFS: CanvasPrefs = {
   laserTrailMode: 'fade',
   laserColor: '#ff0000',
   laserSize: 'S',
+  foldArrowsOpen: 'hover',
+  foldArrowSize: 100,
+  foldArrowThickness: 'thick',
+  foldArrowMinSize: 14,
+  newElementStyle: 'default',
+  fillSetsTextColor: true,
+  newShapesMatchZoom: true,
+  hoverOutline: true,
+  textEdgeDoubleClick: 'shrink',
 }
 
 /**
@@ -1467,20 +1822,30 @@ export type StoredMediaItem = MediaItem & { updatedAt: number }
 export type UsedMediaItem = StoredMediaItem & { count: number; words: string[] }
 
 /**
- * `<library>/media.json` (🔒 YAZ-1775 D5): the cross-vault media library, ONE file for the whole account.
+ * The cross-vault media library (🔒 YAZ-1775 D5): ONE library for the whole account.
  * The lists are newest-first and de-duplicated by `itemKey`; `favorites` is the user's pinned
  * set, `recent` is an MRU of what they actually placed on a board, `used` is what the Add tab learned from
- * those adds (YAZ-4157 D1). Still version 1: a build from before drops `used` and reads the rest.
+ * those adds (YAZ-4157 D1). Still version 1: a build from before drops `used` and `removed` and reads the rest.
+ *
+ * Two Macs (YAZ-4364, round 3 decision 2): each Mac writes only `<library>/media-<macId>.json`, and a read merges
+ * every Mac's file and an old `media.json` (`mergeMediaLibraries`). `removed` is each favorite taken out (itemKey →
+ * when), so a merge does not bring it back.
  */
 export interface MediaLibraryFile {
   version: 1
   favorites: StoredMediaItem[]
   recent: StoredMediaItem[]
   used: UsedMediaItem[]
+  removed: Record<string, number>
 }
 
-/** The library file's name inside the library folder. */
+/** The library file of a build from before YAZ-4364, inside the library folder: still read, never written. */
 export const MEDIA_LIBRARY_FILE = 'media.json'
+/**
+ * The removals a library keeps, the newest first (YAZ-4364): older ones drop, but never one that still holds back a
+ * favorite in another library file (YAZ-4366, `mergeMediaLibraries`).
+ */
+export const MAX_MEDIA_REMOVED = 2000
 /**
  * `<library>/components/` (🔒 YAZ-1775 D5): where YAZ-1819 writes a saved component's `.excalidraw` + `.png`.
  * Named here so nothing else claims it; YAZ-1817 creates NOTHING — the folder appears on YAZ-1819's first write.
@@ -1488,8 +1853,12 @@ export const MEDIA_LIBRARY_FILE = 'media.json'
 export const LIBRARY_COMPONENTS_DIR = 'components'
 /** The components index beside that folder: `<library>/components.json` (🔒 YAZ-1775 D5, YAZ-1819). */
 export const COMPONENTS_INDEX_FILE = 'components.json'
-/** Favorites are capped at the web app's `listFavorites` ceiling; the oldest fall off the end. */
-export const MAX_MEDIA_FAVORITES = 500
+/**
+ * `<library>/favorites/` (YAZ-4363): one full-quality copy of each favorite, of every kind (YAZ-4370), named
+ * `<sha1(itemKey)>.<ext>` — the name comes from the id, so no field in `media.json` can lose it.
+ * Favorites have NO cap (YAZ-4363, round 2 decision 7): a list the user builds by hand never deletes itself.
+ */
+export const LIBRARY_FAVORITES_DIR = 'favorites'
 /** The MRU's length, the web app's `RECENT_LIMIT` exactly. */
 export const RECENT_LIMIT = 60
 /** The `used` rows kept; the one used longest ago falls off (YAZ-4157 D1). */
@@ -1507,7 +1876,37 @@ export type MediaFavoritesRequest = { op: 'list' } | { op: 'add'; item: MediaIte
  * `media:used` (YAZ-4157 D1) — every verb answers the whole library: `record` is one add (the MRU, the count, the
  * word `query`, and the favorite at the third), `add-word` is "Add a word…" (the item, so a row can start at 0).
  */
-export type MediaUsedRequest = { op: 'list' } | { op: 'record'; item: MediaItem; query: string } | { op: 'add-word'; item: MediaItem; word: string }
+export type MediaUsedRequest =
+  | { op: 'list' }
+  | { op: 'record'; item: MediaItem; query: string }
+  | { op: 'add-word'; item: MediaItem; word: string }
+  // YAZ-4348 demo round 2: the × on a word chip in Search words…
+  | { op: 'remove-word'; itemKey: string; word: string }
+
+/**
+ * `media:favorite-copies` (YAZ-4363, YAZ-4370): Settings › Images' line about the favorites' own copies. Every favorite
+ * needs one, whatever its kind. Each is `saved`, `saving` (the backfill has it still to do), `waitingForKey` (Pixabay,
+ * with no key on this Mac), `waitingForPanel` (a shape: the Add panel makes its copy when it opens) or `failed` (the
+ * last try could not get it). `bytes` is the size of every copy in the folder.
+ */
+export interface FavoriteCopiesStatus {
+  favorites: number
+  saved: number
+  saving: number
+  waitingForKey: number
+  waitingForPanel: number
+  failed: number
+  bytes: number
+}
+
+/**
+ * `media:save-favorite-elements` (YAZ-4370): the Add panel's copy of a shape favorite, a component fragment's text.
+ * Main keeps it only for a favorite with no copy yet.
+ */
+export interface FavoriteElementsSaveRequest {
+  itemKey: string
+  fragmentJson: string
+}
 
 // ---------- Image Studio: the provider doors (🔒 YAZ-1775 D4, YAZ-1818) ----------
 
@@ -1538,6 +1937,11 @@ export interface MediaSearchRequest {
   source: MediaSearchSource
   /** The `nextCursor` of the previous page; absent or null starts over. Opaque: main minted it, main reads it. */
   cursor?: string | null
+  /**
+   * The Filter menu's choices (YAZ-4360, `shared/iconPacks.ts`); main applies them to the icons. Absent = no filter.
+   * With exactly one pack in `packs`, `q` may be empty: that is the pack page's every icon (YAZ-4361).
+   */
+  filters?: MediaFilters
 }
 
 /**
@@ -1557,7 +1961,19 @@ export interface MediaSearchResponse {
 export interface MediaBytesRequest {
   provider: MediaBytesProvider
   id: string
+  /**
+   * `media:preview` only. The hover zoom's sharp picture (YAZ-4447 demo round 2): a Pixabay item's `webformatURL` at
+   * this width, which fits the zoom box. Never cached by main (the panel keeps the last 40); an icon ignores it.
+   */
+  zoomWidth?: MediaZoomWidth
 }
+/** The sizes Pixabay serves a `webformatURL` at (its `_640` swapped): the hover zoom asks the one that fits its box. */
+export const MEDIA_ZOOM_WIDTHS = [340, 640, 960] as const
+export type MediaZoomWidth = (typeof MEDIA_ZOOM_WIDTHS)[number]
+export const isMediaZoomWidth = (v: unknown): v is MediaZoomWidth => (MEDIA_ZOOM_WIDTHS as readonly unknown[]).includes(v)
+/** The hover zoom's sizes (YAZ-4447 demo round 2), `SettingsState.mediaHoverZoomSize`. */
+export const MEDIA_HOVER_ZOOM_SIZES = ['small', 'medium', 'large'] as const
+export type MediaHoverZoomSize = (typeof MEDIA_HOVER_ZOOM_SIZES)[number]
 export type MediaPreviewRequest = MediaBytesRequest
 export type MediaImportRequest = MediaBytesRequest
 
@@ -1668,12 +2084,191 @@ export interface SecretHasRequest {
 /** The name the Pixabay API key is stored under (🔒 YAZ-1775 D4); YAZ-1818 reads it in main, never here. */
 export const PIXABAY_SECRET = 'pixabayApiKey'
 
+/**
+ * The name the GitHub token is stored under (YAZ-5098; Settings › Cards › "Friends").
+ * The friends sender (4E5, YAZ-5086) reads it in main with
+ * `secrets.read(GITHUB_TOKEN_SECRET)`. A fine-grained token: Contents (read and write) and Gists (decisions 13, 17).
+ * A renderer may write it (`secrets:set`, checked with `cleanToken`) and ask `secrets:has`; it never reads it back.
+ */
+export const GITHUB_TOKEN_SECRET = 'githubToken'
+
+/**
+ * The Mac's send of the numbers to friends (YAZ-5086, 4E5; decision 16), as Settings › Cards › "Friends" shows
+ * it. Numbers and words only: no token, no gist ID, no repo name.
+ * - `no-token`: no GitHub token saved. `no-friends`: no friend and no group (decision 22). `no-list`: no friends list
+ *   on the token's account (`login`): a person with no friends yet, or a token of another account (YAZ-5254).
+ * - `missing-vaults`: this Mac cannot count every vault that counts (`missing` of them): not on this Mac, older than
+ *   GitHub's copy (`behind`), or not readable (`unreadable`). YAZ-5252: "holds" means "on this Mac".
+ * - `phone-first`: the friends list waits for a change that the phone makes (a remove, a numbers gist to make again, two
+ *   lists to join). The Mac only sends, so it waits.
+ * - `waiting`: the 5-minute rule; `slowed`: near GitHub's limit or a rate limit; both say `retryAt`.
+ * - `no-gists`, `sign-in-again`, `offline`, `needs-repair`, `needs-newer-app`, `failed`: quiet failures, in plain words.
+ */
+export type FriendsSendStatus =
+  | 'idle'
+  | 'no-token'
+  | 'no-friends'
+  | 'no-list'
+  | 'missing-vaults'
+  | 'phone-first'
+  | 'waiting'
+  | 'slowed'
+  | 'sent'
+  | 'unchanged'
+  | 'no-gists'
+  | 'sign-in-again'
+  | 'offline'
+  | 'needs-repair'
+  | 'needs-newer-app'
+  /** YAZ-5083: the friends list is in a vault (`home`) that is not open on this Mac. */
+  | 'list-elsewhere'
+  /** YAZ-5083: the token cannot read the vault that holds the friends list. */
+  | 'no-list-access'
+  | 'failed'
+
+export interface FriendsSendView {
+  status: FriendsSendStatus
+  /** The last update of the numbers gist from THIS Mac (ms), or null. */
+  lastSentAt: number | null
+  retryAt: number | null
+  /** Friends and groups in the friends list, as last read. */
+  friends: number
+  groups: number
+  /** For `missing-vaults`: how many vaults that count this Mac cannot count now (all three kinds below together). */
+  missing: number
+  /**
+   * YAZ-5391: of `missing`, the closed vaults whose copy on this Mac is older than the newest the Mac knows (its HEAD is
+   * behind its remote-tracking branch, from the last fetch).
+   */
+  behind?: number
+  /** YAZ-5388, YAZ-5395, YAZ-5396: of `missing`, the closed vaults the count could not read (a link inside, a read error). */
+  unreadable?: number
+  /** For `no-list`: the GitHub login of the Mac's token, or null when GitHub did not say. */
+  login?: string | null
+  /** For `list-elsewhere` (YAZ-5083): the vault (`owner/name`) that holds the friends list. */
+  home?: string | null
+  /** Known vaults on this Mac with per-vault Friends include/exclude state (YAZ-6275). */
+  knownVaults?: { path: string; name: string; included: boolean }[]
+}
+
+/** The choices of each Settings › Folder pages row that is not a switch (YAZ-4585). The first is the default. */
+export const FOLDER_PAGE_CHOICES = {
+  weekStartsOn: ['sunday', 'monday'],
+  rowHeight: ['short', 'medium', 'tall'],
+  textInCells: ['kind', 'wrap', 'clip'],
+  groupIndent: ['medium', 'small', 'large'],
+  subfolders: ['pages', 'rows', 'both', 'hide'],
+  // YAZ-5588: Rolling, one scrolling column of week rows with no month breaks.
+  calendarScale: ['month', 'week', 'rolling'],
+  cardTitles: ['clip', 'wrap'],
+  // YAZ-6331: Calendar default card (pill) style: Soft Accent, Soft Slate, White + Bar, White.
+  calendarCardStyle: ['accent', 'slate', 'bar', 'plain'],
+  columnMarks: ['icon', 'name', 'off'],
+  // YAZ-4798: a grouped table's group lines, the three choices of Settings › Sidebar › Level lines (`TocLines`), and their look (`SidebarLineStyle`).
+  groupLines: ['hover', 'always', 'off'],
+  groupLineStyle: ['plain', 'thread'],
+  // YAZ-5582: what a plain click on a Calendar or Board card opens. A background tab first: a Calendar's click before the setting.
+  cardClickOpens: ['background', 'window'],
+} as const
+
+/**
+ * Settings › Folder pages (YAZ-4585, D34 of YAZ-4501). Every default is the look before the page existed.
+ * YAZ-5489 REPLACES D34's "global side": the view and page defaults (27 parts, `FOLDER_PAGES_VAULT_PARTS`) are the
+ * vault's, in `.yaseendocs/folder-pages.json` (`shared/folderPages.ts`); these app values are the fallback for a vault
+ * with no file. The personal parts stay here.
+ * - Personal, in Settings only: `weekStartsOn`, `rowBand`, `keepWindowPinned` (and "Preview rows on hover" and "Preview
+ *   links on hover", which stay `hoverPreviewIn.folderViews` and `hoverPreviewIn.folderLinks`).
+ * - View defaults: a view with no key of its own reads these (`views/viewDefaults.tsx`).
+ * - Page default: `showFolderPageFiles`, the sidebar's folder page file rows (D37); a folder's `show_page_file` beats it.
+ *   `showOtherFiles`, the Other files tray at the foot of a folder page (YAZ-4597, D43); a folder's `show_other_files` beats it.
+ *   `inheritColumns`, a folder page shows its parent folders' columns too (YAZ-4713 C2, C12); a folder's `inherit_columns` beats it.
+ */
+export interface FolderPagesSettings {
+  /** The calendar view's first day. */
+  weekStartsOn: (typeof FOLDER_PAGE_CHOICES.weekStartsOn)[number]
+  /** A folder table's row band on hover. null = as Settings › Editor › Tables › Row band: on unless that is Off. */
+  rowBand: boolean | null
+  /** The page window opens pinned. null = as Settings › Editor › Cell notes › Keep cell notes open. */
+  keepWindowPinned: boolean | null
+  rowHeight: (typeof FOLDER_PAGE_CHOICES.rowHeight)[number]
+  rowNumbers: boolean
+  /** "Column type icons" (YAZ-4779): a table header shows each column's type icon before its name. A view can say otherwise (`columnTypeIcons`). */
+  columnTypeIcons: boolean
+  /** "Folder icon" (YAZ-4848): a subfolder's row shows the folder icon before its title, in every view. A view can say otherwise (`folderIcons`). */
+  folderIcons: boolean
+  /** "Pages inside count" (YAZ-4848): a subfolder's row shows how many pages its page holds ("2 inside"). Off by default. A view can say otherwise (`folderCounts`). */
+  folderCounts: boolean
+  /** A table column with no Wrap or Clip of its own (D29): `kind` wraps the chip kinds and clips the rest. */
+  textInCells: (typeof FOLDER_PAGE_CHOICES.textInCells)[number]
+  groupIndent: (typeof FOLDER_PAGE_CHOICES.groupIndent)[number]
+  /**
+   * "Sticky group headers" (YAZ-4798): in a grouped table, the headers of the groups the top rows are in stay under the
+   * column header while the rows scroll, one level under another, as the sidebar's sticky folders (YAZ-3440). A view
+   * can say otherwise (`stickyGroups`).
+   */
+  stickyGroups: boolean
+  /** "Group lines" (YAZ-4798): a thin line from each open group's header down to its last row — on hover (the pointer over the table), always, or never. A view can say otherwise (`groupLines`). */
+  groupLines: (typeof FOLDER_PAGE_CHOICES.groupLines)[number]
+  /** "Group line style" (YAZ-4798): `plain` grey lines, or `thread`: the lines and headers of the groups that hold the row under the pointer light up, as the sidebar's thread. A view can say otherwise (`groupLineStyle`). */
+  groupLineStyle: (typeof FOLDER_PAGE_CHOICES.groupLineStyle)[number]
+  /** A Table's "Show empty groups" (its `showEmptyColumns`). Separate from the Board's (YAZ-4608 C2). */
+  showEmptyGroups: boolean
+  /** A Board's "Show empty columns" (its `showEmptyColumns`, YAZ-4608 C2). A stored file without it starts from `showEmptyGroups`. */
+  showEmptyColumns: boolean
+  subfolders: (typeof FOLDER_PAGE_CHOICES.subfolders)[number]
+  foldersFirst: boolean
+  /** "Calendar opens in": Month or Week. */
+  calendarScale: (typeof FOLDER_PAGE_CHOICES.calendarScale)[number]
+  cardTitles: (typeof FOLDER_PAGE_CHOICES.cardTitles)[number]
+  /** A calendar's default card (pill) style (YAZ-6331): Soft Accent, Soft Slate, White + Bar, or White. */
+  calendarCardStyle: (typeof FOLDER_PAGE_CHOICES.calendarCardStyle)[number]
+  /** A calendar's default card colour and strength (YAZ-6344): `readColorStrength`, or `''` for the app's `--accent` at Light. */
+  calendarCardColor: string
+  /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. */
+  hideWeekends: boolean
+  /** A calendar's lines (YAZ-4878): the width between weeks and between days, whole px 1–`MAX_CAL_LINE`, and each line's colour and strength (`readColorStrength`: `gray`, `blue light`). */
+  weekLine: number
+  dayLine: number
+  weekLineColor: string
+  dayLineColor: string
+  /** Rolling's "Shade every other month" (YAZ-5608, YAZ-6331): on/off and its colour + strength (`readColorStrength`, default `'gray light'`). */
+  monthShade: boolean
+  monthShadeColor: string
+  /** A calendar's line "Between months" (YAZ-5608, YAZ-6331): 0 (Off) or 1–`MAX_CAL_LINE` px, and its colour + strength (default `'blue'`). */
+  monthLine: number
+  monthLineColor: string
+  showFolderPageFiles: boolean
+  /** A folder page's "Delete page…" asks first (YAZ-4592 S26). Its own switch: Files › Confirm before deleting does not touch it. */
+  askBeforeDelete: boolean
+  /** "Confirm changes" (YAZ-3746 13AN): a change to a page's values from a folder page asks first. A folder's cog can say otherwise (`confirm_changes`). */
+  confirmChanges: boolean
+  /** "Show New buttons" (YAZ-3746 13BL): the toolbar's + New, a table's + New rows, a board's + New card. A folder's `show_new_buttons` beats it. */
+  showNewButtons: boolean
+  showOtherFiles: boolean
+  inheritColumns: boolean
+  /**
+   * "Show where columns come from" (YAZ-4713 C11): the column header's mark — `icon` (↳ from a parent folder, ↑ from a
+   * subfolder, a lock for a separate value; the folder's name on hover), `name` (the icon and the folder's name in small
+   * text), `off`. A folder's `column_marks` beats it.
+   */
+  columnMarks: (typeof FOLDER_PAGE_CHOICES.columnMarks)[number]
+  /**
+   * "Clicking a card opens" (YAZ-5582): a plain click on a Calendar or Board card opens its page in a `background` tab
+   * or in the folder page's mini `window`. A view can say otherwise (`clickOpens`). ⌘, ⌥ and ⇧ keep their own meaning.
+   */
+  cardClickOpens: (typeof FOLDER_PAGE_CHOICES.cardClickOpens)[number]
+}
+
+// The Settings › Folder pages defaults live in their own module (YAZ-5460): the phone's folder page reads them from a
+// lazy chunk, and a value here would sit in the phone's first load, where `types.ts` is.
+export { DEFAULT_FOLDER_PAGES } from './folderPagesDefault'
+
 export interface SettingsState {
   /** Line height within a block (Google-Docs-style presets). */
   lineSpacing: number
   /** Vertical padding above and below each block, px (spacing between blocks = 2×). */
   blockGap: number
-  /** Accent the root → caret bullet path (GRO-2094). View-only; never written into the file. */
+  /** Settings › Editor › Bullet threading › "Bullet threading default" (GRO-2094, YAZ-4432): accent the root → caret bullet path on each page with no choice in its cog (`bullet-threading`) and in every editor with no cog. A page's choice wins. Off by default (D29); a saved value stays. */
   bulletThreading: boolean
   /** Thread line width in px: 1 | 2 | 3, like logseq-bullet-threading (GRO-2109). */
   threadWidth: number
@@ -1681,7 +2276,7 @@ export interface SettingsState {
   threadColor: string | null
   /** Settings › Outline › "Guide lines default" (YAZ-4094 D2): the thin grey lines of nested bullets, on or off, for each page with no choice in its cog (`guide-lines`) and in every editor with no cog. A page's choice wins. */
   guideLinesOnByDefault: boolean
-  /** Settings › Outline › "Guide lines show" (YAZ-4094 G2): always, or only while the mouse is over the note (Section indent's rule). */
+  /** Settings › Outline › "Guide lines show" (YAZ-4094 G2): always, or only while the mouse is over the page (Section indent's rule). */
   guideLinesShow: GuideLinesShow
   /** Settings › Outline › "Guide line darkness" (YAZ-4094 G3): a percent of the text colour, `GUIDE_LINE_DARKNESS_MIN`–`MAX` in steps of 5, the grid of Text formatting's line darkness (YAZ-3208). */
   guideLineDarkness: number
@@ -1689,12 +2284,14 @@ export interface SettingsState {
   foldingOnByDefault: boolean
   /** Appearance (Desktop K, GRO-2218): explicit values win; `system` tracks the OS live. */
   theme: Theme
-  /** Global reading surface width (YAZ-1176): 1040px, 1440px, or fluid within the workspace. */
+  /** Global reading surface width (YAZ-1176): its text at most `CONTENT_TEXT_WIDTHS` (YAZ-5144: 640 px, 900 px, or the window), or Custom px (YAZ-5871). */
   contentWidth: ContentWidth
+  /** Settings › Appearance › Page position (YAZ-5871 D2): the pages' column at Centre (the default) or at the Left. Off with Full. */
+  contentPosition: ContentPosition
   /** Files & Links (Links C2-, GRO-2240): where a BARE unresolved `[[link]]` creates its page. */
-  newNoteLocation: NewNoteLocation
-  /** Root-relative folder for `newNoteLocation: 'folder'` ('' = the vault root); ignored otherwise. Interpreted per-vault against each window's root. */
-  newNoteFolder: string
+  newPageLocation: NewPageLocation
+  /** Root-relative folder for `newPageLocation: 'folder'` ('' = the vault root); ignored otherwise. Interpreted per-vault against each window's root. */
+  newPageFolder: string
   /**
    * Show the confirm sheet before deleting (GRO-2272 — VS Code's `explorer.confirmDelete`).
    * Defaults TRUE and should stay that way: the sheet is the ONLY guard on delete, because
@@ -1703,7 +2300,7 @@ export interface SettingsState {
    * cog — a one-way switch would leave hand-editing `yaseendocs.json` as the only way back.
    */
   confirmDelete: boolean
-  /** Show the rename sheet, with its count of links to update, before a note or folder is renamed (YAZ-2420 3C1). Off renames at once; the links still follow. */
+  /** Show the rename sheet, with its count of links to update, before a page or folder is renamed (YAZ-2420 3C1). Off renames at once; the links still follow. */
   confirmRename: boolean
   /** Files & Links (YAZ-3808 D2, D3): where a page opened in a new tab opens — next to the current tab, or at the end of the strip. ⌘T, the "+", Move to ▸ and Restore session always go to the end; a tab dropped on the strip goes where it is dropped. */
   newTabPlace: NewTabPlace
@@ -1715,42 +2312,151 @@ export interface SettingsState {
    * as `picturesFolder` beside `"pictures": "assets"`. `''` (not chosen yet) behaves as 'assets'.
    */
   newBoardPicturesFolder: string
-  /** Rest the pointer on a note, drawing or diagram row to see it (Draw's YAZ-1800 D2; YAZ-3044 A20; notes since YAZ-3075 D5). Text, PDF and image rows never preview. */
+  /** Rest the pointer on a page, drawing or diagram row to see it (Draw's YAZ-1800 D2; YAZ-3044 A20; pages since YAZ-3075 D5). Text, PDF and image rows never preview. */
   hoverPreview: boolean
   /** Each place's own say on the hover preview (YAZ-3403), under the `hoverPreview` master switch: a place shows it only while both are on (`hoverOn`). A place missing from a stored state reads on. */
   hoverPreviewIn: Record<HoverPlace, boolean>
-  /** Comment stream order (YAZ-1515): how you READ, global, never part of a note. */
+  /** Comment stream order (YAZ-1515): how you READ, global, never part of a page. */
   commentsOrder: CommentsOrder
+  /** YAZ-4615 D5: where resolved comments sit — a folded group at the bottom, or in their place by time. */
+  commentsResolved: CommentsResolvedPlace
+  /** YAZ-4615 D10: each new page the app creates carries `COMMENTS_HINT` at the top of its frontmatter. */
+  commentsHint: boolean
+  /**
+   * Settings › Review › "Card skill in the sidebar" (YAZ-5059 decision 3, YAZ-5108): Show (true, the default) or Hide. On
+   * Show, a window whose vault has reviews on shows the app's copy of the card skill as its own row at the bottom of the sidebar.
+   */
+  cardSkillInSidebar: boolean
+  /** YAZ-4615 D1/D7: who you are on a comment; null until set. Travels with the settings folder. */
+  profile: CommentProfile | null
   /** Each sidebar tab's sort (YAZ-3227 D1): how you READ, global to this Mac, never part of a vault. */
   sidebarSort: SidebarSort
   /** The Search tab's own sort (YAZ-3511 D1, D12): Files can stay by name while a search shows the best match first. */
   searchSort: TabSort
   /** Which tabs show each row's Last updated at the right end (YAZ-3511 D7, D10): one switch for each tab of the sort menu. */
   rowDates: RowDates
+  /** Each tab's "Separate list for workspaces" (YAZ-4450 D4): a window with two or more vaults shows each vault's workspace list. Travels with the settings. */
+  workspaceLists: WorkspaceLists
+  /** Recents in a window with two or more vaults splits each day by vault (YAZ-4450 D7). Travels with the settings. */
+  recentsByVault: boolean
   /** The tab row's order, its hidden tabs and its hidden buttons (YAZ-3273 D8): global to this Mac, never part of a vault. */
   sidebarTabs: SidebarTabsPrefs
   /** The selection toolbar's group order, button order and hidden buttons (YAZ-3806 T5). Travels with the settings. */
   selectionToolbar: ToolbarPrefs
+  /**
+   * The custom highlight colours picked in the page's highlight panel (YAZ-4348 demo round 2), most used first: its
+   * "Most used custom colours" row shows the first `HIGHLIGHT_CUSTOM_COLORS_SHOWN`. Travels with the settings.
+   */
+  highlightCustomColors: HighlightCustomColor[]
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
   startupWindows: StartupWindows
   /** What a vault opens on (YAZ-3487 D15): every vault open reads it — main's new windows, `openRoot`, `bootTabs`, the empty-window door. */
   vaultOpensOn: VaultOpensOn
   /** Section indent (YAZ-2709): the width of one step in px, 24 | 30 | 36. On or off is per page (the page cog), never here. View-only. */
   sectionStep: number
-  /** Section indent (YAZ-2709): the grey section lines show always, or only while the pointer is over the note. */
+  /** Section indent (YAZ-2709): the grey section lines show always, or only while the pointer is over the page. */
   sectionLines: SectionLines
-  /** The table of contents at a note's right edge (YAZ-2700): how you READ, global, never part of a note. Settings › "Pin default"; the card's "Pin" and "Unpin" write it too. */
+  /**
+   * A card's shown hidden word (YAZ-5005): highlighted (the default) or underlined, in the page, the Inbox and
+   * the card window. YAZ-5484 replaces YAZ-5005's "for every vault": the VAULT's (`card-look.json`, `shared/cardLook.ts`);
+   * this app value is the fallback for a vault with no file. `--shown-hidden-words`. The blanks do not change.
+   */
+  shownHiddenWords: ShownHiddenWords
+  /**
+   * Settings › Review › Mark the next hidden word (YAZ-5053 round 3, Yaseen: "can it have a color to it so we know that
+   * that is where the eye should go?"): the one blank the next Space shows takes a colour, in the look of Shown hidden
+   * words. `--mark-next-hidden` (the vault's since YAZ-5484, as all of Card look); the render marks the blank (`data-next`).
+   */
+  markNextHidden: boolean
+  /** Its colour: `null` is the theme's calm default (`--next-hidden` in `app.css`, light and dark); else a hex colour for both. */
+  nextHiddenColour: string | null
+  /**
+   * Settings › Review › Card tips (YAZ-5114, YAZ-5059 decision 8): the quiet format hint under a new, empty card in Edit
+   * card names the formats of the card skill. On by default; Off hides it. For the whole app.
+   */
+  cardTips: boolean
+  /**
+   * Settings › Review › Card spacing (YAZ-5050): how a card reads in the Inbox, the card window and the page.
+   * `pages` (the default) follows the pages' Line spacing, Space between blocks, Bullet indent and Bullet gap; `custom`
+   * uses the four `card*` values below, on `.app` as `--card-line-height`, `--card-block-gap`, `--card-bullet-indent`
+   * and `--card-bullet-gap`. Round 3: Custom starts at Mochi's clean values (`CARD_SPACING_CLEAN`). Round 4: `clean`
+   * uses them, with Mochi's softer text, Inbox padding and line length (`--card-clean`, the vault's since YAZ-5484); Custom keeps that look.
+   */
+  cardSpacing: CardSpacing
+  /**
+   * Settings › Review › Card width (YAZ-5144, Yaseen: "a global setting for card pages to have a certain width ... same as
+   * pages or select a different one"): how wide a card's text reads in the Inbox, the card window and a card file's
+   * tab. `null`, Same as pages (the default), follows Content width; round 2: else Custom, whole px (`isCardWidth`).
+   * `--card-text-width` on `.app`. Card spacing's Clean sets it to `CARD_WIDTH_CLEAN`, Mochi's line.
+   */
+  cardWidth: number | null
+  /**
+   * Settings › Cards › Card look › Card text size (YAZ-5387): `null`, Same as pages (the default), reads the page's text
+   * size (a card in a page, its embed, a card file's tab) or the screen's own (the Inbox, Preview, Explore); else Custom,
+   * whole px everywhere a card shows (`isCardTextSize`). `--card-text-size` on `.app`, Custom only.
+   */
+  cardTextSize: number | null
+  /** Card look › Card title size (YAZ-5387): `null`, Default (the card's text × `CARD_TITLE_SCALE`); else Custom px (`isCardTitleSize`). */
+  cardTitleSize: number | null
+  /**
+   * Settings › Review › Card look › Card tables (YAZ-5136 round 3, Yaseen: "it might be different for cards vs pages"):
+   * where a table sits in a card, read anywhere and in Edit card. `pages` (the default) follows `tablePosition`.
+   * `--card-table-inline` on `.app`, read by the one Table position rule (`table.css`).
+   */
+  cardTablePosition: CardTablePosition
+  /**
+   * Settings › Cards › Inbox: O opens the page at (YAZ-5307, Yaseen: "by default it open at top of page but if someone
+   * wants to change it to go to the card on the page they can"): where the Inbox's O (and the links that open as O does)
+   * opens a card that lives in a page. `top` (the default) is the page's top, as YAZ-5022; `card` lands on the card with
+   * the one flash every way to a card in its page has (Explore's page layer `card`, `landOn`, YAZ-5164). A card file and E do not change.
+   */
+  inboxOpenAt: InboxOpenAt
+  /**
+   * Settings › Cards › Card look › Card sides in pages (YAZ-5904 D1): `true` folds Side 2 and after of a card in a page,
+   * an embed, the hover preview and the phone's page (`--card-sides-fold-pages`). A page's `card-sides` key wins.
+   * `false` (the default) shows all. Never the Inbox, Preview, Review or Edit card.
+   */
+  cardSidesFold: boolean
+  /** Card look › Card sides on card pages (YAZ-5904 Q1): the same fold on a card page, a card file's tab (`--card-sides-fold-card-pages`). Its `card-sides` key wins. Default `false`, Show all. */
+  cardSidesFoldCardPages: boolean
+  /** Card look › Card sides in Explore (YAZ-5904 D3): the same fold in Explore's page and card layers (`--card-sides-fold-explore`). Default `false`, Show all. */
+  cardSidesFoldExplore: boolean
+  /** Card spacing, Custom (YAZ-5050): the card's line spacing, as `lineSpacing`. */
+  cardLineSpacing: number
+  /** Card spacing, Custom (YAZ-5050): the card's space between blocks, px per side, as `blockGap`. */
+  cardBlockGap: number
+  /** Card spacing, Custom (YAZ-5050): the card's bullet indent, px, as `pageBulletIndent`. */
+  cardBulletIndent: number
+  /** Card spacing, Custom (YAZ-5050): the card's bullet gap, px, as `pageBulletGap`. */
+  cardBulletGap: number
+  /** Card spacing, Custom (YAZ-5050 round 3): the space above and below each bullet, px per side; Same as pages uses the space between blocks. */
+  cardBulletSpace: number
+  /** The table of contents at a page's right edge (YAZ-2700): how you READ, global, never part of a page. Settings › "Pin default"; the card's "Pin" and "Unpin" write it too. */
   tableOfContents: TableOfContents
-  /** Settings › "Table of contents default" (YAZ-3558 D2): on or off for each page that made no choice in its cog: a note's choice is its `toc` key (YAZ-4094 G4), a code file's is in `tocSwitches`. A page's choice wins. */
+  /** Settings › "Table of contents default" (YAZ-3558 D2): on or off for each page that made no choice in its cog: a page's choice is its `toc` key (YAZ-4094 G4), a code file's is in `tocSwitches`. A page's choice wins. */
   tocOnByDefault: boolean
-  /** The width of the table of contents' names column (YAZ-2752): whole px, `TOC_MIN_W` to `TOC_MAX_W`. The reader drags the column's edge; one width for every note and window. */
+  /** The width of the table of contents' names column (YAZ-2752): whole px, `TOC_MIN_W` to `TOC_MAX_W`. The reader drags the column's edge; one width for every page and window. */
   tableOfContentsWidth: number
-  /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the mouse or the keyboard is in the list (`hover`; the path also while the reader moves the note with the wheel), always, or never. */
+  /** The table of contents (YAZ-2762): its level lines — the grey ones and the path to the current row — show only while the mouse or the keyboard is in the list (`hover`; the path also while the reader moves the page with the wheel), always, or never. */
   tocLines: TocLines
-  /** Settings › Editor › Outside changes (YAZ-3704 D5): how long the words that an AI or another app changed in an open note glow. `off`: no glow and no one-line note; the merge still runs. */
+  /** Settings › Editor › Find › Folded bullets (YAZ-4787): what ⌘F does with folded bullets and headings that hide a match. A page's `find-folds` key wins. */
+  findFolds: FindFolds
+  /** Settings › Editor › Outside changes (YAZ-3704 D5): how long the words that an AI or another app changed in an open page glow. `off`: no glow and no one-line note; the merge still runs. */
   outsideChangeGlow: OutsideChangeGlow
-  /** Settings › Editor › Outside changes › Pin default (YAZ-3704 demo): the numbered list of the changes sits left of the note; off, it opens from the bar's count. The list's own Pin and Unpin write it. */
+  /** Settings › Editor › Outside changes › Pin default (YAZ-3704 demo): the numbered list of the changes sits left of the page; off, it opens from the bar's count. The list's own Pin and Unpin write it. */
   outsideListPinned: boolean
+  /**
+   * Settings › Editor › Code blocks › Width (YAZ-4783 layer 3): every code block's width in px at 100% zoom
+   * (`isBlockWidth`), or `null`, "Text column" (the look before). `--code-block-width` on `.app`. A page's `code-width`
+   * key and a block's own width (`<!-- code: width … -->`) win over it.
+   */
+  codeBlockWidth: number | null
+  /**
+   * Settings › Tables › All tables › Width (YAZ-4783 layer 3): every page table's width in px at 100% zoom
+   * (`isBlockWidth`), its columns shared evenly, or `null`, "Text column" (the look before). `--table-width` on `.app`.
+   * A page's `table-width` key wins over it; a table whose every column has a width keeps its own.
+   */
+  tableWidth: number | null
   /** Settings › Editor › Tables › Row band (YAZ-4167, YAZ-4159 D16): a light accent band on the table row under the caret or the mouse, its first cell bold — in no table, in calendar tables, or in all tables. A look, never in the file: `data-table-row-band` on `.app`. */
   tableRowBand: TableRowBand
   /** Settings › Editor › Tables › Band colour (the YAZ-3818 demo): `accent`, a table colour (`red` … `brown`), or a `#rrggbb`. `--table-band-colour` on `.app`. */
@@ -1759,12 +2465,39 @@ export interface SettingsState {
   tableBandStrength: number
   /** Settings › Editor › Tables › Rows it marks (the YAZ-3818 demo): the caret's row and the mouse's, or one of them. `data-table-band-rows` on `.app`. */
   tableBandRows: TableBandRows
-  /** Settings › Editor › Tables › Bold first cell (the YAZ-3818 demo): the band's row shows its first cell in bold. Off keeps the band. `data-table-band-bold` on `.app`. */
+  /** Settings › Editor › Tables › Bold first cell (the YAZ-3818 demo): On shows the band's row's first cell in bold. Off (the default, YAZ-5668) keeps the band alone. `--table-band-bold` (`tableLookVars`). */
   tableBandBold: boolean
+  /** Settings › Tables › All tables › Header row (YAZ-4774): every table's header row, a page table's and a folder table's. A table's comment or a view can say otherwise. `data-table-header-*` on `.app`. */
+  tableHeaderRow: HeaderRow
+  /** Settings › Tables › All tables › Subheader row (YAZ-4899): the look of every page table's subheader rows. A table's own `subheader` part can say otherwise. `data-table-subheader-*` on `.app`. */
+  tableSubheaderRow: HeaderRow
+  /** Settings › Tables › All tables › Sticky subheaders (YAZ-4899): a subheader row stays at the top of the page while its section scrolls by. On by default; a table's own `sticky` / `nosticky` wins. `data-table-sticky-subheaders` on `.app`. */
+  tableStickySubheaders: boolean
+  /** Settings › Tables › All tables › Sticky header row (YAZ-4899 round 2): the header row stays at the top of the page while the table scrolls by (frozen, as "Freeze up to this row"). On by default; a table's own `stickyheader` / `nostickyheader` wins, and its own freeze over that. */
+  tableStickyHeader: boolean
+  /** Settings › Tables › All tables › Text in cells (YAZ-4900): every page table's cells Wrap (default) or Clip (one line, cut with "…"). A table's own `wrap` / `nowrap` wins, and a column's own `text` over that. `data-table-text` on `.app`. */
+  tableTextInCells: TableTextInCells
+  /**
+   * Settings › Tables › Table position (YAZ-5136 round 2): `center` centres every table, in pages (edited and read) and in
+   * cards read anywhere: `data-table-position` on `.app`, one rule in `table.css`. The file never changes.
+   */
+  tablePosition: TablePosition
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
+  /**
+   * Settings › Editor › Calendar tables › Shade the next time slot (YAZ-5541): a calendar table's body row right after the
+   * now row gets a light tint, at the now tint's strength, in `tableNextColour`. Off by default. The vault's
+   * table-look.json (`look.nextShade`), as the now mark.
+   */
+  tableNextShade: boolean
+  /** Its colour (YAZ-5541): the band colour's choices (`isBandColour`: the accent, a table colour, `#rrggbb`). A table colour is its TEXT colour, so `red`, the default, is the now mark's red. */
+  tableNextColour: string
   /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
   tableNowButton: boolean
+  /** Settings › Tables › Cell notes › Add button (YAZ-4790): the "+" on the corner of a table cell that adds a cell note. Off by default (YAZ-4790 demo). A table's own `notebutton` / `nonotebutton` turns its button on or off alone. `data-cell-note-button` on `.app`. */
+  tableCellNoteButton: boolean
+  /** Settings › Tables › All tables › New tables start as (YAZ-4869 item 22): the slash menu's "Table" makes a plain table (default) or a Super table. Read at the click. */
+  tableNewStyle: TableNewStyle
   /** Settings › Editor › Calendar tables › Dim past rows (YAZ-4162 D14; the shade from the YAZ-4163 demo): a calendar table's rows before now show grey text, or grey text on a light grey shade. `data-table-dim-past` on `.app`. */
   tableDimPast: TableDimPast
   /** Settings › Editor › Calendar tables › Shade darkness (YAZ-4163 demo): the past rows' shade, a percent of the text colour, `TABLE_SHADE_MIN`–`MAX` in steps of `TABLE_SHADE_STEP`. `--table-past-shade` on the root. */
@@ -1776,20 +2509,30 @@ export interface SettingsState {
   tableCellBulletIndent: number
   /**
    * Settings › Editor › Outline › Bullet indent (the YAZ-3818 demo): how far each child bullet steps in, px,
-   * `NOTE_BULLET_INDENT_MIN`–`MAX`. The default is the note's own 2.15em (34px at 16px): `--note-bullet-indent` on
+   * `PAGE_BULLET_INDENT_MIN`–`MAX`. The default is the page's own 2.15em (34px at 16px): `--page-bullet-indent` on
    * `.app` only when it differs, so nothing moves until it is changed.
    */
-  noteBulletIndent: number
-  /** Settings › Editor › Outline › Bullet gap (the YAZ-3818 demo): the space between a bullet and its text, px, `NOTE_BULLET_GAP_MIN`–`MAX`. `--note-bullet-gap` on `.app` when it differs from 10. */
-  noteBulletGap: number
+  pageBulletIndent: number
+  /** Settings › Editor › Outline › Bullet gap (the YAZ-3818 demo): the space between a bullet and its text, px, `PAGE_BULLET_GAP_MIN`–`MAX`. `--page-bullet-gap` on `.app` when it differs from 10. */
+  pageBulletGap: number
   /** Settings › Editor › Tables › Bullet gap in cells (the YAZ-3818 demo): the gap between a cell bullet's marker and its text, px, `TABLE_CELL_BULLET_GAP_MIN`–`MAX`. `--cell-bullet-gap` on `.app`. */
   tableCellBulletGap: number
   /** Settings › Editor › Cell notes › New cell note starts with (round 3 of the YAZ-3818 demo): Markdown a new cell note starts with, lines and lists only; '' for one empty line. At most `CELL_NOTE_TEMPLATE_MAX` characters. */
   tableCellNoteTemplate: string
-  /** Settings › Files & Links › New notes › New item name starts with (YAZ-4246, YAZ-4252): the name the New… box (⌘N) starts a note, drawing, diagram or folder with; `{YYYY}`, `{YY}`, `{MM}`, `{DD}`, `{HH}`, `{mm}` are the date and time (`renderTitleTemplate`). '' for a blank title. At most `NEW_NOTE_TITLE_MAX` characters. */
-  newNoteTitleTemplate: string
+  /** Settings › Files & Links › New pages › New item name starts with (YAZ-4246, YAZ-4252): the name the New… box (⌘N) starts a page, drawing, diagram or folder with; `{YYYY}`, `{YY}`, `{MM}`, `{DD}`, `{HH}`, `{mm}` are the date and time (`renderTitleTemplate`). '' for a blank title. At most `NEW_PAGE_TITLE_MAX` characters. */
+  newPageTitleTemplate: string
   /** Settings › Editor › Cell notes › Keep cell notes open (round 3 of the YAZ-3818 demo): a new tab's cell note card starts pinned (a click outside does not close it). Its pin button still toggles it for that tab. */
   tableCellNotePinned: boolean
+  /** Settings › Tables › Cell notes › Hover preview lines (YAZ-5717): how many lines of a cell note its hover box shows, then "…". Whole lines, `CELL_NOTE_PREVIEW_LINES_MIN`–`MAX`. A setting of this Mac, not of `table-look.json`. */
+  tableCellNotePreviewLines: number
+  /** Settings › Editor › Cell notes › All notes opens at (YAZ-4276 A1): a calendar table's "All notes" opens at the time block of the cell you came from, or at now. */
+  tableAllNotesOpensAt: AllNotesOpensAt
+  /** Settings › Editor › Typing › Arrows (YAZ-4273 D8): `->`, `==>`, `<-`, `<->` and the rest become one arrow character as you type (`typingArrows.ts`). */
+  typingArrows: boolean
+  /** Settings › Editor › Typing › Enter keeps the text style, in pages (YAZ-3746 13AB): Enter at the end of a styled line, and the new line types in that style (`enterKeepsStyle.ts`). */
+  enterKeepsStylePages: boolean
+  /** Settings › Editor › Typing › Enter keeps the text style, in drawing text boxes (YAZ-3746 13AB). */
+  enterKeepsStyleBoxes: boolean
   /** Settings › Editor › Calendar tables › Time format (YAZ-4163 D15): a style of `shared/timeFormat.ts`, like `h:mm a`, for new tables, new times in a table with none, and "Current time". */
   tableTimeFormat: string
   /** The sidebar tree (YAZ-3309 D3): its level lines, one below each open folder, show only while the mouse is over the list or a row has keyboard focus (`hover`), always, or never. It travels with the settings folder. */
@@ -1802,7 +2545,7 @@ export interface SettingsState {
   sidebarStickyLevels: SidebarStickyLevels
   /** The sidebar tree (YAZ-3440 D4): which icons its rows show — `material` (Material Icon Theme's, by file name, extension and folder name; the default) or `line` (the app's own line glyphs, one per kind). It travels with the settings folder. */
   sidebarIconSet: SidebarIconSet
-  /** The sidebar tree (YAZ-3440 D4): its file icons — `quiet` (every note grey, the other kinds in colour; the default), `color` (notes in colour too), `grey` (every file icon grey) or `off` (no file icons). A row's own pick or a rule keeps its colours in `quiet`. Folder icons are `sidebarFolderIcons`. It travels with the settings folder. */
+  /** The sidebar tree (YAZ-3440 D4): its file icons — `quiet` (every page grey, the other kinds in colour; the default), `color` (pages in colour too), `grey` (every file icon grey) or `off` (no file icons). A row's own pick or a rule keeps its colours in `quiet`. Folder icons are `sidebarFolderIcons`. It travels with the settings folder. */
   sidebarFileIcons: SidebarFileIcons
   /** The sidebar tree (YAZ-3440 D5 amended, YAZ-3554): a folder icon before each folder's name — `plain` (with Material its default folder for every folder; the default), `named` (with Material its folder-name icon, else the default folder) or `off`. With Line it is a grey folder either way; a pick or a rule still wins; the open twin while it is open. A vault row never has one. A stored boolean (before YAZ-3554) is not read: it becomes the default (D2). Independent of `sidebarFileIcons`, which is the file rows' alone. It travels with the settings folder. */
   sidebarFolderIcons: SidebarFolderIcons
@@ -1816,6 +2559,15 @@ export interface SettingsState {
    * It travels with the settings folder.
    */
   sidebarRevealActive: boolean
+  /**
+   * What keeps the sidebar's place (YAZ-5701): `window`, one place for the window (the default, as before), or `tab`,
+   * a place for each page tab — its sidebar tab, open folders, shut focus and favorite folders and scroll — in the
+   * window's memory for the session. With `tab` the window neither writes nor reads the open folders that the windows
+   * on a vault share. It travels with the settings folder.
+   */
+  sidebarPlace: SidebarPlace
+  /** When `sidebarPlace === 'tab'`, also remember a custom sidebar width per tab (default `true`). */
+  sidebarPerTabWidth: boolean
   /** The sidebar tree (YAZ-3440 D4): each kind's own icon colour, `#rrggbb`; a kind not in it has the built-in colour (`{}` = all built in). It travels with the settings folder, as a whole. */
   sidebarIconColors: SidebarIconColors
   /** The sidebar tree (YAZ-3440 D9): the name rules, `[{ match, kind, icon }]` (`shared/vaultIcons.ts`), the first that matches a row's name and kind naming its Material icon, after the row's own pick in its vault's `icons.json`. A personal preference: one list for every vault, and it travels with the settings folder. */
@@ -1833,6 +2585,23 @@ export interface SettingsState {
    */
   diagramDarkColors: DiagramDarkColors
   /**
+   * Board embeds in pages (YAZ-4820 D9): after this many seconds with no use, a Live window RESTS — the wheel scrolls
+   * the page and one click wakes it. 0 = never. One of `EMBED_REST_SECONDS`. Its row is Settings › Drawings and diagrams.
+   */
+  embedRestSeconds: EmbedRestSeconds
+  /**
+   * Where "/drawing" and "/diagram" put a new board made from a page (YAZ-4820 item 3): `page` = the page's own folder,
+   * `assets` = the vault's `assets/drawings/`. The file is named after the page either way.
+   */
+  newBoardFolder: NewBoardFolder
+  /**
+   * Where "/drawing" puts a new Excalidraw drawing inside a page (YAZ-5040): `inline` = inside the `.md` file
+   * as a ```` ```excalidraw ```` block (default), `file` = separate `.excalidraw` file.
+   */
+  newPageDrawing: NewPageDrawing
+  /** Whether Search and Explore include inline drawings and inline cards by default (YAZ-6143). */
+  searchIncludeInline: boolean
+  /**
    * The canvas panel's library folder (YAZ-3038; Draw's 🔒 YAZ-1775 D5): ONE folder every vault shares, for
    * saved components and media favorites. null = the default, `<userData>/library`, which only main
    * can resolve (`drawing.libraryFolder()`); never `''`, which would resolve to the process cwd.
@@ -1840,6 +2609,32 @@ export interface SettingsState {
   libraryFolder: string | null
   /** The canvas panel's last tab and dock preference (YAZ-3038). See `CanvasPanelState`. */
   canvasPanel: CanvasPanelState
+  /** The Add panel's Filter menu (YAZ-4360): Colors, Style, Packs, License. Travels with the settings. */
+  mediaFilters: MediaFilters
+  /** The packs "Pin pack" pinned (YAZ-4361), by prefix, first pinned first: they lead Filter › Packs. Travels. */
+  mediaPinnedPacks: string[]
+  /**
+   * The Add panel's "+41" groups (YAZ-4348 demo round 2): true shows one tile per icon with its look-alikes behind
+   * "+N"; false shows every icon as its own tile. Filter › Similar icons. Travels; Clear filters keeps it. Default
+   * false, "Show each one" (YAZ-4447, D34). A stored value stays: the store writes every field, so no migration.
+   */
+  mediaGroupSimilar: boolean
+  /**
+   * The Add panel's hover zoom (YAZ-4447, D34): the pointer resting on a picture tile shows it bigger. Filter › Hover
+   * zoom and Settings › Images › Add panel are the same switch. Travels; Clear filters keeps it. Default on.
+   */
+  mediaHoverZoom: boolean
+  /**
+   * How big the hover zoom is (YAZ-4447 demo round 2): Small 3 times the tile (240 px at most), Medium 8 times (640 px),
+   * Large 12 times (960 px); every size stays inside the window. Filter › Hover size and Settings › Images › Add panel
+   * are the same choice. Travels. Default Medium.
+   */
+  mediaHoverZoomSize: MediaHoverZoomSize
+  /**
+   * Where the downloaded icon packs live (YAZ-4359, D5 update): ONE folder for every vault and window of this Mac.
+   * null = `<userData>/icon-packs`, which only main can resolve. Stays on this Mac (`LOCAL_SETTINGS`).
+   */
+  iconPacksFolder: string | null
   /** How long a toast stays (YAZ-3303 D5). A toast with Undo stays at least `UNDO_NOTICE_MS`. */
   noticeLength: NoticeLength
   /** The toasts of a move, a rename or a delete, with Undo (YAZ-3303 D6). Off: no toast; ⌘Z still works. */
@@ -1867,17 +2662,39 @@ export interface SettingsState {
    */
   sidebarZoom: number
   /**
-   * The zoom of a note's table of contents in percent (YAZ-3939 D7–D11): its names and their fold arrows, never its
-   * header or the rail. One value for every note and window; the code Outline keeps 100%. The steps are the sidebar's
+   * Settings › Sidebar › Row spacing (YAZ-5885 D1–D3): the height of one row of the sidebar's lists in CSS px, before
+   * the sidebar zoom. Compact 22 (VS Code) · Default 25.5 (the look before) · Roomy 30 · any Custom px within 20–40
+   * (`SIDEBAR_ROW_HEIGHT_MIN` / `_MAX`). It sizes the Files, Favorites, Focus and Recents rows and the search results,
+   * a Files window too, through `--tree-row-h` on `.sidebar__body`. Stays on this Mac (`LOCAL_SETTINGS`).
+   */
+  sidebarRowHeight: number
+  /**
+   * The zoom of a page's table of contents in percent (YAZ-3939 D7–D11): its names and their fold arrows, never its
+   * header or the rail. One value for every page and window; the code Outline keeps 100%. The steps are the sidebar's
    * (`SIDEBAR_ZOOM_STEPS`); a stored value is kept within 50–200.
    */
   tocZoom: number
   /**
    * The App size in percent (YAZ-3432): the Chromium page zoom of EVERY window, a Files window too, set by main
    * (`webContents.setZoomFactor`). Only `APP_ZOOM_STEPS`; anything else is stored as 100. Mouse only: the footer's
-   * zoom menu writes it, never ⌘+ / ⌘− / ⌘0. The sidebar zoom and a note's zoom stack on it.
+   * zoom menu writes it, never ⌘+ / ⌘− / ⌘0. The sidebar zoom and a page's zoom stack on it.
    */
   appZoom: number
+  /**
+   * Search size in percent (YAZ-5881 D1, D2; named Explore size before YAZ-5977, the key kept): the search panel's
+   * width and all that is in it (its input, its rows), on `APP_ZOOM_STEPS`; 125 by default (`EXPLORE_SIZE_DEFAULT`).
+   * Page, board and card windows keep the app's size (their text has the Explore page zoom alone). The footer's zoom
+   * menu writes it, and ⌘+ / ⌘− / ⌘0 while the search panel is in front (D3).
+   */
+  exploreSize: number
+  /**
+   * Explore window width (YAZ-5976): the width, in px, a fresh Explore page or board window starts at — `null` (Default)
+   * is the page panel's own width (`PAGE_WIDTH`, explore/layers.ts); a number (`EXPLORE_WIDTH_MIN`–`EXPLORE_WIDTH_MAX`)
+   * is that width. Both are cut to the window, and Search size scales neither (YAZ-5977). The search panel keeps its own
+   * width. A window opened from a window sized by hand takes that one's size (YAZ-5975); a window resized by hand keeps
+   * its box.
+   */
+  exploreWidth: number | null
   /**
    * Code files (YAZ-3449, YAZ-3438 D5): every code tab opens read only, and shows the Read only chip. One app setting
    * for all code files, never stored with a file. "Allow edits" on a tab's chip unlocks that tab until it closes.
@@ -1904,27 +2721,27 @@ export interface SettingsState {
    */
   codeLanguageHelpers: boolean
   /**
-   * Where ⌘D goes (YAZ-3556 D2): a sidebar tab, a folder or a file by its root-relative path (the `newNoteFolder`
-   * rule), or today's daily note (YAZ-3607 D1). Each window reads the path in the vault of its active tab, else its
+   * Where ⌘D goes (YAZ-3556 D2): a sidebar tab, a folder or a file by its root-relative path (the `newPageFolder`
+   * rule), or today's daily page (YAZ-3607 D1). Each window reads the path in the vault of its active tab, else its
    * first vault. Travels whole (`WHOLE_FIELDS`).
    */
   goTo: GoToPlace
   /**
-   * Daily notes (YAZ-3607): the one switch. Off (the default): no "Today's daily note" in Go to, no footer button, and
-   * no File menu item or Hotkeys row for "Open today's daily note". On: all of them, and the rows below.
+   * Daily pages (YAZ-3607): the one switch. Off (the default): no "Today's daily page" in Go to, no footer button, and
+   * no File menu item or Hotkeys row for "Open today's daily page". On: all of them, and the rows below.
    */
-  dailyNotes: boolean
-  /** The daily notes folder (YAZ-3607 D2), root-relative ('' = the vault root): the `newNoteFolder` rule. */
-  dailyNoteFolder: string
-  /** The name style of a daily note (D4): a style of `shared/dailyNote.ts`, like `YYYY-MM-DD`. */
-  dailyNoteFormat: string
-  /** Make a folder for each day (D9): today's note goes in a folder of the same name. */
-  dailyNoteDayFolder: boolean
+  dailyPages: boolean
+  /** The daily pages folder (YAZ-3607 D2), root-relative ('' = the vault root): the `newPageFolder` rule. */
+  dailyPageFolder: string
+  /** The name style of a daily page (D4): a style of `shared/dailyPage.ts`, like `YYYY-MM-DD`. */
+  dailyPageFormat: string
+  /** Make a folder for each day (D9): today's page goes in a folder of the same name. */
+  dailyPageDayFolder: boolean
   /**
-   * The button opens (YAZ-4164 D11): `now` (the default) opens today's note at the now row of its first calendar table,
-   * the caret in the first empty cell; `note` opens it as before. The footer button, ⌘D and File › Open Today's Daily Note.
+   * The button opens (YAZ-4164 D11): `now` (the default) opens today's page at the now row of its first calendar table,
+   * the caret in the first empty cell; `page` opens it as before. The footer button, ⌘D and File › Open Today's Daily Page.
    */
-  dailyNoteOpens: DailyNoteOpens
+  dailyPageOpens: DailyPageOpens
   /**
    * Settings › Memory (YAZ-3737 D10): how long a tab stays unseen before it sleeps (tab sleep, 5A). Travels with the
    * other settings. Its row is in place before 5A reads it.
@@ -1932,9 +2749,11 @@ export interface SettingsState {
   tabSleepAfter: TabSleepAfter
   /** Settings › Memory (YAZ-3737 D6, D10): a window that holds too much memory reloads by itself (6). On by default; travels. */
   memoryReload: boolean
+  /** Settings › Folder pages (YAZ-4585, D34 of YAZ-4501): one object, `FolderPagesSettings`. Travels. */
+  folderPages: FolderPagesSettings
 }
 
-/** ⌘D's place (YAZ-3556 D2): a tab of the sidebar, a folder or a file by its path inside the vault ('' = the vault root), or today's daily note (YAZ-3607 D1). */
+/** ⌘D's place (YAZ-3556 D2): a tab of the sidebar, a folder or a file by its path inside the vault ('' = the vault root), or today's daily page (YAZ-3607 D1). */
 export type GoToPlace = { kind: 'tab'; tab: SidebarLens } | { kind: 'folder' | 'file'; path: string } | { kind: 'daily' }
 export const DEFAULT_GO_TO: GoToPlace = { kind: 'tab', tab: 'files' }
 
@@ -1943,19 +2762,39 @@ export const DEFAULT_GO_TO: GoToPlace = { kind: 'tab', tab: 'files' }
  * and a drag width each fit one Mac only, like `AppState.sidebarWidth`. So does the code tab's helper switch
  * (YAZ-3500): its helpers are a download on this Mac. Every other field travels.
  */
-export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers']
+export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers', 'iconPacksFolder', 'sidebarRowHeight']
 
-/** The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover. */
-export type HoverPlace = 'sidebar' | 'search' | 'newTab' | 'tabBoard' | 'tabs' | 'backlinks' | 'folderViews' | 'links' | 'drawings'
-export const HOVER_PLACES: readonly HoverPlace[] = ['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'links', 'drawings']
+/**
+ * The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover.
+ * A folder page has two (YAZ-4601 demo 13D, in Settings › Folder pages): `folderViews` is "Preview rows on hover" (a
+ * row, a card, an Other files line) and `folderLinks` "Preview links on hover" (a link pill in a cell). A stored
+ * state without `folderLinks` reads it as `folderViews` (`sanitizeHoverPreviewIn`): the one switch it was keeps its Off.
+ */
+export type HoverPlace = 'sidebar' | 'search' | 'newTab' | 'tabBoard' | 'tabs' | 'backlinks' | 'folderViews' | 'folderLinks' | 'links' | 'drawings'
+export const HOVER_PLACES: readonly HoverPlace[] = ['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'folderViews', 'folderLinks', 'links', 'drawings']
 
 /** Whether `place` shows the hover preview (YAZ-3403): the master switch and the place's own are both on. */
 export function hoverOn(settings: Pick<SettingsState, 'hoverPreview' | 'hoverPreviewIn'>, place: HoverPlace): boolean {
   return settings.hoverPreview && settings.hoverPreviewIn[place]
 }
 
+/** Settings › Folder pages › Row band on hover (YAZ-4585): its own switch, else as the table block's Row band (on unless Off). `data-folder-row-band` on `.app`. */
+export const folderRowBandOn = (settings: Pick<SettingsState, 'folderPages' | 'tableRowBand'>): boolean => settings.folderPages.rowBand ?? settings.tableRowBand !== 'off'
+
+/** Settings › Folder pages › Keep the mini window pinned (YAZ-4585; the name is YAZ-4605 D57): its own switch, else as "Keep cell notes open". */
+export const folderWindowPinned = (settings: Pick<SettingsState, 'folderPages' | 'tableCellNotePinned'>): boolean => settings.folderPages.keepWindowPinned ?? settings.tableCellNotePinned ?? true
+
 export type DiagramDarkColors = 'adapt' | 'keep'
 export const DIAGRAM_DARK_COLORS: readonly DiagramDarkColors[] = ['adapt', 'keep']
+/** YAZ-4820 D9: the resting times a board embed offers; 0 = never. */
+export type EmbedRestSeconds = 10 | 30 | 60 | 300 | 0
+export const EMBED_REST_SECONDS: readonly EmbedRestSeconds[] = [10, 30, 60, 300, 0]
+/** YAZ-4820 item 3: where a board made from a page goes. */
+export type NewBoardFolder = 'page' | 'assets'
+export const NEW_BOARD_FOLDERS: readonly NewBoardFolder[] = ['page', 'assets']
+/** YAZ-5040: whether `/drawing` creates an inline drawing inside `.md` or a standalone `.excalidraw` file. */
+export type NewPageDrawing = 'inline' | 'file'
+export const NEW_PAGE_DRAWINGS: readonly NewPageDrawing[] = ['inline', 'file']
 
 /** How long a tab stays unseen before it sleeps (YAZ-3737 D10): 30 min is the default. */
 export type TabSleepAfter = '15m' | '30m' | '1h' | '2h' | 'never'
@@ -1973,8 +2812,22 @@ export const SECTION_STEPS: readonly number[] = [24, 30, 36]
 /** Section indent (YAZ-2709): when the grey section lines show. */
 export type SectionLines = 'always' | 'hover'
 export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
+/** A shown hidden word's look (YAZ-5005); `box` (YAZ-5053) is Mochi's: a grey box while hidden, a light one when shown. */
+export type ShownHiddenWords = 'highlight' | 'underline' | 'box'
+export const SHOWN_HIDDEN_WORDS: readonly ShownHiddenWords[] = ['highlight', 'underline', 'box']
+/** Settings › Review › Card spacing (YAZ-5050); `clean` (round 4) is Mochi's look in one click. */
+export type CardSpacing = 'pages' | 'clean' | 'custom'
+export const CARD_SPACINGS: readonly CardSpacing[] = ['pages', 'clean', 'custom']
+/** A card's own space between blocks (YAZ-5050), px per side. */
+export const CARD_BLOCK_GAP_MAX = 24
+/**
+ * Card spacing's Clean values (YAZ-5050 round 3 and 4; updated YAZ-6035): roomy 1.65 line height, 8 px paragraph gap,
+ * and 3 px per side (6 px total) between list items. Clean uses them; Custom starts from them. Separate from the
+ * pages' own defaults.
+ */
+export const CARD_SPACING_CLEAN = { cardLineSpacing: 1.65, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 3 } as const
 
-/** Guide lines (YAZ-4094 G2): when they show — `near` is while the mouse is over the note. */
+/** Guide lines (YAZ-4094 G2): when they show — `near` is while the mouse is over the page. */
 export type GuideLinesShow = 'always' | 'near'
 export const GUIDE_LINES_SHOW: readonly GuideLinesShow[] = ['always', 'near']
 /** Guide line darkness (YAZ-4094 G3): the range and the grid of Text formatting's line darkness (`@shared/line`). */
@@ -1986,16 +2839,41 @@ export const GUIDE_LINE_DARKNESS_STEP = 5
 export type TocLines = 'hover' | 'always' | 'off'
 export const TOC_LINES: readonly TocLines[] = ['hover', 'always', 'off']
 
+/**
+ * ⌘F and folds (YAZ-4787): `current` opens only the fold that hides the match you are on and folds it again when you
+ * move on; `all` opens every fold that hides a match (before YAZ-4787); `keep` opens nothing and finds only what shows.
+ */
+export type FindFolds = 'current' | 'all' | 'keep'
+export const FIND_FOLDS: readonly FindFolds[] = ['current', 'all', 'keep']
 /** Outside changes (YAZ-3704 D5): a glow stays until you check it, ends after 10 s or 1 min, or never shows. */
-export type OutsideChangeGlow = 'until-checked' | '10s' | '60s' | 'off'
-export const OUTSIDE_CHANGE_GLOWS: readonly OutsideChangeGlow[] = ['until-checked', '10s', '60s', 'off']
+/** The glow of outside changes (YAZ-3704 D5): timed, until checked, or off. 10 seconds went in the YAZ-4272 demo: too quick to read. */
+export type OutsideChangeGlow = 'until-checked' | '60s' | '5m' | 'off'
+export const OUTSIDE_CHANGE_GLOWS: readonly OutsideChangeGlow[] = ['until-checked', '60s', '5m', 'off']
+/** Where a calendar table's "All notes" opens (YAZ-4276 A1): the time block of the cell you came from, or now's. */
+export type AllNotesOpensAt = 'cell' | 'now'
+export const ALL_NOTES_OPENS_AT: readonly AllNotesOpensAt[] = ['cell', 'now']
 
-/** Daily notes (YAZ-4164 D11): the button opens the note, or the note at the now row of its calendar table. */
-export type DailyNoteOpens = 'note' | 'now'
-export const DAILY_NOTE_OPENS: readonly DailyNoteOpens[] = ['note', 'now']
+/** Daily pages (YAZ-4164 D11): the button opens the page, or the page at the now row of its calendar table. */
+export type DailyPageOpens = 'page' | 'now'
+export const DAILY_PAGE_OPENS: readonly DailyPageOpens[] = ['page', 'now']
 
 /** Tables (YAZ-4167 D16): where the row band shows. */
 export type TableRowBand = 'off' | 'calendar' | 'all'
+/** What a new table starts as (YAZ-4869 item 22). */
+export const TABLE_NEW_STYLES = ['plain', 'super'] as const
+export type TableNewStyle = (typeof TABLE_NEW_STYLES)[number]
+/** Text in a page table's cells (YAZ-4900): Wrap onto more lines, or Clip to one line cut with "…". */
+/** Settings › Tables › Table position (YAZ-5136 round 2, Yaseen's pick A): every table at the left (the look before) or centred. */
+export const TABLE_POSITIONS = ['left', 'center'] as const
+export type TablePosition = (typeof TABLE_POSITIONS)[number]
+/** Settings › Review › Card look › Card tables (YAZ-5136 round 3): Same as pages (Table position), or the cards' own. */
+export const CARD_TABLE_POSITIONS = ['pages', ...TABLE_POSITIONS] as const
+export type CardTablePosition = (typeof CARD_TABLE_POSITIONS)[number]
+/** Settings › Cards › Inbox: O opens the page at (YAZ-5307): the page's top (the default), or the card. */
+export const INBOX_OPEN_AT = ['top', 'card'] as const
+export type InboxOpenAt = (typeof INBOX_OPEN_AT)[number]
+export const TABLE_TEXT_IN_CELLS = ['wrap', 'clip'] as const
+export type TableTextInCells = (typeof TABLE_TEXT_IN_CELLS)[number]
 export const TABLE_ROW_BANDS: readonly TableRowBand[] = ['off', 'calendar', 'all']
 
 /** Tables (the YAZ-3818 demo): the rows the band marks. */
@@ -2004,9 +2882,104 @@ export const TABLE_BAND_ROWS: readonly TableBandRows[] = ['both', 'caret', 'mous
 export const TABLE_BAND_STRENGTH_MIN = 1
 export const TABLE_BAND_STRENGTH_MAX = 60
 export const TABLE_BAND_STRENGTH_STEP = 1
+/**
+ * A width for every code block or every table (YAZ-4783 layers 2 and 3): Settings' `codeBlockWidth` / `tableWidth`, and a
+ * page's `code-width` / `table-width` key (`pageSwitches.ts`). Whole px at 100% document zoom, `BLOCK_WIDTH_MIN` to
+ * `BLOCK_WIDTH_MAX`; `null` in Settings is "Text column", the look before.
+ */
+export const BLOCK_WIDTH_MIN = 240
+export const BLOCK_WIDTH_MAX = 4000
+/** A block width, checked: a whole number of px in range. */
+export const isBlockWidth = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= BLOCK_WIDTH_MIN && v <= BLOCK_WIDTH_MAX
 /** A band colour: the accent, a table colour, or a `#rrggbb`. */
 export const isBandColour = (v: unknown): v is string =>
   typeof v === 'string' && (v === 'accent' || ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey', 'brown'].includes(v) || /^#[0-9a-f]{6}$/i.test(v))
+
+/**
+ * Header row (YAZ-4774): one look for a page table's header row and a folder table's. Gray is each table's own text
+ * colour; the others are the cell fill colours. Light is the 6% tint of before; Off is no tint.
+ * YAZ-4794: `text` is the text colour, Muted, Full or one of the eight fill colours (each its cell text colour, darker in
+ * light and lighter in dark, `table.css`); `align` is the whole row's alignment, `follow` (each header cell as its
+ * column, the look before) or Left / Center / Right.
+ */
+export const HEADER_ROW_CHOICES = {
+  // Black (YAZ-4794 demo: "option for black fill") goes all the way to solid black at Strong.
+  color: ['gray', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'black'],
+  strength: ['off', 'light', 'medium', 'strong'],
+  weight: ['bold', 'regular'],
+  // White (YAZ-4794 demo: "option for white text"), for a dark or black header.
+  text: ['muted', 'full', 'white', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'],
+  align: ['follow', 'left', 'center', 'right'],
+} as const
+export type HeaderRowOwn = { -readonly [K in keyof typeof HEADER_ROW_CHOICES]?: (typeof HEADER_ROW_CHOICES)[K][number] }
+/** Settings' header row: every part set, but `text`: null is each table's own (full in a page table, muted in a folder table). */
+export type HeaderRow = Required<Omit<HeaderRowOwn, 'text'>> & { text: NonNullable<HeaderRowOwn['text']> | null }
+export const HEADER_ROW_PARTS = Object.keys(HEADER_ROW_CHOICES) as (keyof HeaderRowOwn)[]
+export const DEFAULT_HEADER_ROW: HeaderRow = { color: 'gray', strength: 'light', weight: 'bold', text: null, align: 'follow' }
+/** A header row choice's name in a menu or a control (YAZ-4794): Align's `follow` is "Follow column", the rest capitalised. */
+export const headerRowLabel = (value: string): string => (value === 'follow' ? 'Follow column' : value.charAt(0).toUpperCase() + value.slice(1))
+/** The parts of `raw` that are one of their choices; the rest are left out. */
+export function headerRowOwn(raw: unknown): HeaderRowOwn {
+  if (typeof raw !== 'object' || raw === null) return {}
+  const src = raw as Record<string, unknown>
+  return Object.fromEntries(HEADER_ROW_PARTS.filter((part) => (HEADER_ROW_CHOICES[part] as readonly unknown[]).includes(src[part])).map((part) => [part, src[part]]))
+}
+/** The `data-table-header-*` attributes of the set parts: on `.app` (Settings), a page table's block and a folder table (`table.css`). */
+export const headerRowAttrs = (parts: Partial<HeaderRow>): Record<string, string> =>
+  Object.fromEntries(HEADER_ROW_PARTS.filter((part) => typeof parts[part] === 'string').map((part) => [`data-table-header-${part}`, parts[part] as string]))
+/**
+ * Subheader rows (YAZ-4899): a page table's body rows made subheaders share one look, the header row's parts, with
+ * their own default: stronger than the header row (Gray, Medium, Bold, Full, Follow column). Settings › Tables ›
+ * Subheader row is every table's default; a table's own `subheader` part says otherwise.
+ */
+export const DEFAULT_SUBHEADER_ROW: HeaderRow = { color: 'gray', strength: 'medium', weight: 'bold', text: 'full', align: 'follow' }
+/** The `data-table-subheader-*` attributes of the set parts: on `.app` (Settings) and a page table's block (`table.css`). */
+export const subheaderRowAttrs = (parts: Partial<HeaderRow>): Record<string, string> =>
+  Object.fromEntries(HEADER_ROW_PARTS.filter((part) => typeof parts[part] === 'string').map((part) => [`data-table-subheader-${part}`, parts[part] as string]))
+
+/**
+ * A colour with a strength (YAZ-4878, YAZ-4906): a calendar line's colour (`weekLineColor`) and a page's `color`
+ * property, one string a person can read: the colour name, then the strength when it is not Medium — `gray`,
+ * `blue light`, `black strong`. The colours are the header row's (`HEADER_ROW_CHOICES.color`). A card's Light, Medium and
+ * Strong are 15 %, 30 % and 50 % of the colour (`views.css`), Black 30 / 60 / 100 %; a calendar line's are 35 / 65 / 100 %
+ * (`calendar.ts` `calLineCss`).
+ */
+export const COLOR_STRENGTHS = ['light', 'medium', 'strong'] as const
+export type ColorStrength = (typeof COLOR_STRENGTHS)[number]
+export type ColorName = (typeof HEADER_ROW_CHOICES.color)[number]
+export interface ColorStrengthValue {
+  color: ColorName
+  strength: ColorStrength
+}
+/** The colour and strength `raw` names, or null: a word that is no colour, or a strength that is none. Case and spaces do not matter. */
+export function readColorStrength(raw: unknown): ColorStrengthValue | null {
+  if (typeof raw !== 'string') return null
+  const [color, strength = 'medium', more] = raw.trim().toLowerCase().split(/\s+/)
+  if (more !== undefined || !(HEADER_ROW_CHOICES.color as readonly string[]).includes(color) || !(COLOR_STRENGTHS as readonly string[]).includes(strength)) return null
+  return { color: color as ColorName, strength: strength as ColorStrength }
+}
+/** The string a colour and strength are written as: `blue` for Medium, else `blue light`. */
+export const writeColorStrength = ({ color, strength }: ColorStrengthValue): string => (strength === 'medium' ? color : `${color} ${strength}`)
+/**
+ * A card's style in its page (YAZ-4906): three properties, snake_case as the app's own keys are (`show_page_file`).
+ * `color` is the fill (`readColorStrength`); `text_color` one of the header row's Text choices (`readCardText`, no
+ * key = full); `weight` is `bold` (`readCardWeight`, no key = regular).
+ */
+export const CARD_STYLE_KEYS = { fill: 'color', text: 'text_color', weight: 'weight' } as const
+export type CardText = (typeof HEADER_ROW_CHOICES.text)[number]
+export type CardWeight = (typeof HEADER_ROW_CHOICES.weight)[number]
+export function readCardText(raw: unknown): CardText | null {
+  const word = typeof raw === 'string' ? raw.trim().toLowerCase() : null
+  return word !== null && (HEADER_ROW_CHOICES.text as readonly string[]).includes(word) ? (word as CardText) : null
+}
+export function readCardWeight(raw: unknown): CardWeight | null {
+  const word = typeof raw === 'string' ? raw.trim().toLowerCase() : null
+  return word !== null && (HEADER_ROW_CHOICES.weight as readonly string[]).includes(word) ? (word as CardWeight) : null
+}
+/** The widest a calendar grid line may be (YAZ-4878). */
+export const MAX_CAL_LINE = 12
+/** A calendar grid line's width (YAZ-4878): a stored whole number 1–`MAX_CAL_LINE`, else 1 (the line before the setting). */
+export const calLine = (value: unknown): number => (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_CAL_LINE ? value : 1)
 
 /** Calendar tables (YAZ-4162 D6): how the now row is marked. */
 export type TableNowMark = 'line' | 'tint' | 'both'
@@ -2019,20 +2992,23 @@ export const TABLE_SHADE_MIN = 2
 export const TABLE_SHADE_MAX = 30
 export const TABLE_SHADE_STEP = 2
 
-/** Bullets in notes (the YAZ-3818 demo), in px. */
-export const NOTE_BULLET_INDENT_MIN = 8
-export const NOTE_BULLET_INDENT_MAX = 48
-export const NOTE_BULLET_GAP_MIN = 2
-export const NOTE_BULLET_GAP_MAX = 20
+/** Bullets in pages (the YAZ-3818 demo), in px. */
+export const PAGE_BULLET_INDENT_MIN = 8
+export const PAGE_BULLET_INDENT_MAX = 48
+export const PAGE_BULLET_GAP_MIN = 2
+export const PAGE_BULLET_GAP_MAX = 20
 /** Tables (the YAZ-3818 demo): the bullets in a cell, in px; whole px. */
 export const TABLE_CELL_BULLET_INDENT_MIN = 8
 export const TABLE_CELL_BULLET_INDENT_MAX = 32
 export const TABLE_CELL_BULLET_GAP_MIN = 2
 export const TABLE_CELL_BULLET_GAP_MAX = 12
+/** The lines a cell note's hover box shows (YAZ-5717): whole lines. */
+export const CELL_NOTE_PREVIEW_LINES_MIN = 6
+export const CELL_NOTE_PREVIEW_LINES_MAX = 60
 /** The longest new cell note template (the YAZ-3818 demo), in characters. */
 export const CELL_NOTE_TEMPLATE_MAX = 2000
 /** The longest "New item name starts with" (YAZ-4246), in characters. */
-export const NEW_NOTE_TITLE_MAX = 200
+export const NEW_PAGE_TITLE_MAX = 200
 
 /** The sidebar tree (YAZ-3309 D7, D8): the look of its level lines. */
 export type SidebarLineStyle = 'plain' | 'thread'
@@ -2058,8 +3034,16 @@ export const SIDEBAR_FOLDER_ICONS: readonly SidebarFolderIcons[] = ['plain', 'na
 export type SidebarArrowMotion = 'instant' | 'smooth'
 export const SIDEBAR_ARROW_MOTIONS: readonly SidebarArrowMotion[] = ['instant', 'smooth']
 
-/** The sidebar tree (YAZ-3440 D4): the kinds whose icon has a colour of its own, in the order Settings shows them. `note` is a Markdown file's, coloured only with "All colour". */
-export const SIDEBAR_ICON_KINDS = ['note', 'text', 'pdf', 'image', 'drawing', 'diagram'] as const
+/** What keeps the sidebar's place (YAZ-5701): the window, or each page tab. */
+export type SidebarPlace = 'window' | 'tab'
+export const SIDEBAR_PLACES: readonly SidebarPlace[] = ['window', 'tab']
+
+/**
+ * The sidebar tree (YAZ-3440 D4): the kinds whose icon has a colour of its own, in the order Settings shows them. `page`
+ * is a Markdown file's: grey with "Colour" until a colour is picked. `card` and `folder` (YAZ-5100 round 2) colour in both
+ * icon sets; `text`, `pdf` and `image` in the Line set alone (Material has an icon per file type for them).
+ */
+export const SIDEBAR_ICON_KINDS = ['page', 'card', 'drawing', 'diagram', 'folder', 'text', 'pdf', 'image'] as const
 export type SidebarIconKind = (typeof SIDEBAR_ICON_KINDS)[number]
 export type SidebarIconColors = Partial<Record<SidebarIconKind, string>>
 
@@ -2093,11 +3077,11 @@ export type Theme = 'system' | 'light' | 'dark'
 export const THEMES: readonly Theme[] = ['system', 'light', 'dark']
 
 /**
- * Obsidian's "Default location for new notes" options and order (Links C2-, GRO-2240):
- * vault folder · same folder as current file · the folder named in `newNoteFolder`.
+ * Obsidian's "Default location for new pages" options and order (Links C2-, GRO-2240):
+ * vault folder · same folder as current file · the folder named in `newPageFolder`.
  */
-export type NewNoteLocation = 'root' | 'current' | 'folder'
-export const NEW_NOTE_LOCATIONS: readonly NewNoteLocation[] = ['root', 'current', 'folder']
+export type NewPageLocation = 'root' | 'current' | 'folder'
+export const NEW_PAGE_LOCATIONS: readonly NewPageLocation[] = ['root', 'current', 'folder']
 
 /** Where a new tab opens (YAZ-3808 D2): right after the current tab, or at the end of the strip. */
 export type NewTabPlace = 'next' | 'end'
@@ -2111,16 +3095,60 @@ export const NEW_BOARD_PICTURES: readonly NewBoardPictures[] = ['inside', 'asset
 export type CommentsOrder = 'oldest' | 'newest'
 export const COMMENTS_ORDERS: readonly CommentsOrder[] = ['oldest', 'newest']
 
+/** YAZ-4615 D5: a resolved thread moves to a folded "Resolved" group, or stays in time order, dimmed. */
+export type CommentsResolvedPlace = 'bottom' | 'inPlace'
+export const COMMENTS_RESOLVED_PLACES: readonly CommentsResolvedPlace[] = ['bottom', 'inPlace']
+
+/** YAZ-4615 D1: who you are on a comment. A comment holds `handle` in `by`; the vault's people file holds the rest. */
+export interface CommentProfile {
+  /** Lowercase letters, digits and `-`; filled from the name, editable. Stable when the name changes. */
+  handle: string
+  /** Your preferred name, as others see it. */
+  name: string
+  /** A 96 px WebP data URL, or null for initials. */
+  picture: string | null
+}
+
+/** A handle the app writes: lowercase letters, digits and single inner hyphens, 1–32 characters. */
+export const HANDLE_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+/** The handle an agent signs with when it gives no name of its own (the CLI's default `--by`). A person cannot take it. */
+export const AGENT_HANDLE = 'agent'
+/** The picture is a small data URL; anything bigger is not one the app made. */
+export const PROFILE_PICTURE_MAX = 64 * 1024
+
+export function isCommentProfile(v: unknown): v is CommentProfile {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false
+  const p = v as Record<string, unknown>
+  return (
+    typeof p.handle === 'string' && p.handle.length <= 32 && HANDLE_RE.test(p.handle) && p.handle !== AGENT_HANDLE &&
+    typeof p.name === 'string' && p.name.trim() !== '' && p.name.length <= 80 &&
+    (p.picture === null || (typeof p.picture === 'string' && p.picture.startsWith('data:image/') && p.picture.length <= PROFILE_PICTURE_MAX))
+  )
+}
+
+/** A handle from a name: `Yaseen Arshad` → `yaseen-arshad`; '' when the name has no letter or digit. */
+export function handleFromName(name: string): string {
+  return name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32)
+    .replace(/-+$/, '')
+}
+
 /** What a plain launch brings back (YAZ-2589 D2): every window · the windows of the vault used last · none (the list of vaults). */
 export type StartupWindows = 'all' | 'last' | 'none'
 export const STARTUP_WINDOWS: readonly StartupWindows[] = ['all', 'last', 'none']
 
-/** What a vault opens on (YAZ-3487 D15): a blank tab (the default, D7), or its remembered last note (the old YAZ-1767 D2). */
+/** What a vault opens on (YAZ-3487 D15): a blank tab (the default, D7), or its remembered last page (the old YAZ-1767 D2). */
 export type VaultOpensOn = 'blank' | 'last'
 export const VAULT_OPENS_ON: readonly VaultOpensOn[] = ['blank', 'last']
 
 /**
- * A note's table of contents (YAZ-2700): `auto` shows the names of its rows — its headings, or its
+ * A page's table of contents (YAZ-2700): `auto` shows the names of its rows — its headings, or its
  * bullets (`TocSource`) — when the window has room beside the text and small lines when it has
  * not, `pinned` keeps the names open, `off` shows nothing. `off` is the editor's mode for a page that
  * shows none, never a stored setting (YAZ-3558 D2: on or off is `tocOnByDefault` and the page's own choice).
@@ -2146,9 +3174,9 @@ export const CODE_SYMBOL_KINDS = ['file', 'module', 'namespace', 'package', 'cla
 export type CodeSymbolKind = (typeof CODE_SYMBOL_KINDS)[number]
 
 /**
- * What ONE note's table of contents is built from when the reader chose (YAZ-2700 D14): `headings`
- * is every H1-H5 of the note (YAZ-3051), the ones inside bullets too; `bullets` is its bullets, however many
- * headings it has. The third choice, Auto — the note's own structure decides — is the ABSENCE of
+ * What ONE page's table of contents is built from when the reader chose (YAZ-2700 D14): `headings`
+ * is every H1-H5 of the page (YAZ-3051), the ones inside bullets too; `bullets` is its bullets, however many
+ * headings it has. The third choice, Auto — the page's own structure decides — is the ABSENCE of
  * a choice: it is never stored, and reads as `null` everywhere.
  */
 export type TocSource = 'headings' | 'bullets'
@@ -2156,22 +3184,22 @@ export const TOC_SOURCES: readonly TocSource[] = ['headings', 'bullets']
 export const isTocSource = (v: unknown): v is TocSource => TOC_SOURCES.includes(v as TocSource)
 
 /**
- * Valid `newNoteFolder`: '' (the vault root) or root-relative — no leading/trailing `/`, no
+ * Valid `newPageFolder`: '' (the vault root) or root-relative — no leading/trailing `/`, no
  * empty segments, and no segment create-on-click would refuse: leading-`.` names (hidden —
  * subsumes `.` and `..`) and NUL. The segment rules mirror `validateEntryName` in
  * `client/src/sidebar/createEntry.ts`, which `createFromLink` runs over every segment at
  * click time; `shared/` cannot import from `client/`, so the rule is replicated — keep the
  * two in step (GRO-2197: `.archive` used to save cleanly here, then fail EVERY create).
  */
-export function isValidNewNoteFolder(v: string): boolean {
+export function isValidNewPageFolder(v: string): boolean {
   return v === '' || v.split('/').every((s) => s.trim() !== '' && !s.trim().startsWith('.') && !s.includes('\0'))
 }
 
-/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading on, 2px, accent; new notes beside the source page (YAZ-1643); section steps of 30px with the grey lines always there (YAZ-2709). */
+/** Matches the app's pre-settings look (Crepe: line-height 1.5, block padding 4px); threading off (YAZ-4432), 2px, accent; new pages beside the source page (YAZ-1643); section steps of 30px with the grey lines always there (YAZ-2709). */
 export const DEFAULT_SETTINGS: SettingsState = {
   lineSpacing: 1.5,
   blockGap: 4,
-  bulletThreading: true,
+  bulletThreading: false,
   threadWidth: 2,
   threadColor: null,
   guideLinesOnByDefault: true,
@@ -2180,47 +3208,87 @@ export const DEFAULT_SETTINGS: SettingsState = {
   foldingOnByDefault: true,
   theme: 'system',
   contentWidth: 'narrow',
-  newNoteLocation: 'current',
-  newNoteFolder: '',
+  contentPosition: 'center',
+  newPageLocation: 'current',
+  newPageFolder: '',
   confirmDelete: true,
   newTabPlace: 'next',
   newBoardPictures: 'inside',
   newBoardPicturesFolder: '',
   confirmRename: true,
   hoverPreview: true,
-  hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, links: true, drawings: true },
+  hoverPreviewIn: { sidebar: true, search: true, newTab: true, tabBoard: true, tabs: true, backlinks: true, folderViews: true, folderLinks: true, links: true, drawings: true },
   commentsOrder: 'oldest',
+  commentsResolved: 'bottom',
+  commentsHint: true,
+  cardSkillInSidebar: true,
+  profile: null,
   sidebarSort: DEFAULT_SIDEBAR_SORT,
   searchSort: DEFAULT_SEARCH_SORT,
   rowDates: DEFAULT_ROW_DATES,
+  workspaceLists: DEFAULT_WORKSPACE_LISTS,
+  recentsByVault: true,
   sidebarTabs: DEFAULT_SIDEBAR_TABS,
   selectionToolbar: DEFAULT_TOOLBAR,
+  highlightCustomColors: [],
   startupWindows: 'last',
   vaultOpensOn: 'blank',
   sectionStep: 30,
   sectionLines: 'always',
+  shownHiddenWords: 'highlight',
+  markNextHidden: true,
+  nextHiddenColour: null,
+  cardTips: true,
+  cardSpacing: 'pages',
+  cardWidth: null,
+  cardTextSize: null,
+  cardTitleSize: null,
+  cardTablePosition: 'pages',
+  inboxOpenAt: 'top',
+  cardSidesFold: false,
+  cardSidesFoldCardPages: false,
+  cardSidesFoldExplore: false,
+  ...CARD_SPACING_CLEAN,
   tableOfContents: 'auto',
   tocOnByDefault: true,
   tableOfContentsWidth: TOC_DEFAULT_W,
   tocLines: 'hover',
+  findFolds: 'current',
   outsideChangeGlow: 'until-checked',
   outsideListPinned: false,
+  codeBlockWidth: null,
+  tableWidth: null,
   tableRowBand: 'all',
   tableBandColour: 'accent',
   tableBandStrength: 10,
   tableBandRows: 'both',
-  tableBandBold: true,
+  tableBandBold: false,
+  tableHeaderRow: DEFAULT_HEADER_ROW,
+  tableSubheaderRow: DEFAULT_SUBHEADER_ROW,
+  tableStickySubheaders: true,
+  tableStickyHeader: true,
+  tableTextInCells: 'wrap',
+  tablePosition: 'left',
   tableNowMark: 'line',
+  tableNextShade: false,
+  tableNextColour: 'red',
   tableNowButton: true,
+  tableCellNoteButton: false,
+  tableNewStyle: 'plain',
   tableDimPast: 'shade',
   tableShadeDarkness: 6,
   tableCellBulletIndent: 20,
-  noteBulletIndent: 34,
-  noteBulletGap: 10,
+  pageBulletIndent: 34,
+  pageBulletGap: 10,
   tableCellBulletGap: 4,
   tableCellNoteTemplate: '',
-  newNoteTitleTemplate: '{MM}_{DD}- ',
+  newPageTitleTemplate: '{MM}_{DD}- ',
   tableCellNotePinned: true,
+  tableCellNotePreviewLines: 20,
+  tableAllNotesOpensAt: 'cell',
+  typingArrows: true,
+  enterKeepsStylePages: false,
+  enterKeepsStyleBoxes: true,
   tableDayStart: DEFAULT_CALENDAR_DAY.start,
   tableDayEnd: DEFAULT_CALENDAR_DAY.end,
   tableTimeFormat: DEFAULT_TIME_FORMAT,
@@ -2233,12 +3301,24 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarFolderIcons: 'plain',
   sidebarArrowMotion: 'instant',
   sidebarRevealActive: false,
+  sidebarPlace: 'window',
+  sidebarPerTabWidth: true,
   sidebarIconColors: {},
   sidebarIconRules: [],
   canvas: DEFAULT_CANVAS_PREFS,
   diagramDarkColors: 'adapt',
+  embedRestSeconds: 30,
+  newBoardFolder: 'page',
+  newPageDrawing: 'inline',
+  searchIncludeInline: true,
   libraryFolder: null,
   canvasPanel: DEFAULT_CANVAS_PANEL,
+  mediaFilters: DEFAULT_MEDIA_FILTERS,
+  mediaPinnedPacks: [],
+  mediaGroupSimilar: false,
+  mediaHoverZoom: true,
+  mediaHoverZoomSize: 'medium',
+  iconPacksFolder: null,
   noticeLength: '4s',
   noticeUndo: true,
   noticeClipboard: true,
@@ -2247,8 +3327,11 @@ export const DEFAULT_SETTINGS: SettingsState = {
   hotkeys: {},
   hotkeysAside: {},
   sidebarZoom: 100,
+  sidebarRowHeight: 25.5,
   tocZoom: 100,
   appZoom: 100,
+  exploreSize: 125,
+  exploreWidth: null,
   codeReadOnly: false,
   codeWrap: true,
   codeMinimap: false,
@@ -2257,13 +3340,14 @@ export const DEFAULT_SETTINGS: SettingsState = {
   codeOutlineLocals: false,
   codeLanguageHelpers: false,
   goTo: DEFAULT_GO_TO,
-  dailyNotes: false,
-  dailyNoteFolder: '',
-  dailyNoteFormat: DEFAULT_DAILY_NOTE_FORMAT,
-  dailyNoteDayFolder: false,
-  dailyNoteOpens: 'now',
+  dailyPages: false,
+  dailyPageFolder: '',
+  dailyPageFormat: DEFAULT_DAILY_PAGE_FORMAT,
+  dailyPageDayFolder: false,
+  dailyPageOpens: 'now',
   tabSleepAfter: '30m',
   memoryReload: true,
+  folderPages: DEFAULT_FOLDER_PAGES,
 }
 
 export interface WindowBounds {
@@ -2280,12 +3364,17 @@ export interface StoredTab {
   name?: string
   /** The zoom key of the bullet the tab is zoomed into (YAZ-3646 D14, `isZoomKey`): absent = the whole page. */
   zoom?: string
+  /** 0-based index of an inline Excalidraw drawing block in `path` (YAZ-6134): absent = the whole file. */
+  inlineDrawing?: number
   /** On the active copy of `file` only: which of two copies of one file was on show. */
   active?: true
 }
 
 /** A zoom key as `zoom.ts` makes it (`stem:occurrence`, YAZ-3646 D14): a short base-36 hash and a count. */
 export const isZoomKey = (raw: unknown): raw is string => typeof raw === 'string' && /^[0-9a-z]{1,8}:\d{1,6}$/.test(raw)
+
+/** A valid stored inline-drawing block index (YAZ-6134): non-negative integer < 10,000. */
+export const isInlineDrawingIndex = (raw: unknown): raw is number => typeof raw === 'number' && Number.isInteger(raw) && raw >= 0 && raw < 10_000
 
 /**
  * A window's kind (YAZ-3357 D1): `'files'` is a Files window, a window that is ONLY the sidebar — the vault
@@ -2329,10 +3418,11 @@ export type FilesOpenHow = 'preview' | 'keep' | 'background'
  * the window and pushes the action to it (`link:open-from-files`), and that window runs its own callback for it.
  */
 export type FilesAction =
-  // `copy` (YAZ-3943 5B): a ⌘-click's background tab, a copy when the page is open; the daily note's background open has none
+  // `copy` (YAZ-3943 5B): a ⌘-click's background tab, a copy when the page is open; the daily page's background open has none
   | { kind: 'open'; path: string; how: FilesOpenHow; copy?: true }
   | { kind: 'history' | 'share'; path: string }
-  | { kind: 'review'; dir: string }
+  // `page` (YAZ-4967, "Review this page"): `dir` is the page's path, and the review takes that page's cards alone
+  | { kind: 'review'; dir: string; page?: true }
   | { kind: 'inbox'; root: string }
   | { kind: 'session'; id: string }
 
@@ -2445,7 +3535,7 @@ export function addOpen(opens: Record<string, OpenStat>, file: string, now: numb
 
 /** A vault's save log keeps this many files at most (YAZ-3235 D1): the oldest saves go. */
 export const MAX_EDITS = 500
-/** A vault's "Recently closed" list keeps this many notes at most (YAZ-3487 D9): the oldest go. */
+/** A vault's "Recently closed" list keeps this many pages at most (YAZ-3487 D9): the oldest go. */
 export const MAX_CLOSED = 50
 
 /** Pure: `closed` with each of `files` closed at `now` (YAZ-3487 D9). Past MAX_CLOSED the oldest go. */
@@ -2489,24 +3579,77 @@ export interface FolderState {
   opens: Record<string, OpenStat>
   /** The save log (YAZ-3235 D1): file → when the app last saved it, ms (max MAX_EDITS). The main process alone adds a save, in the save doors; a pull never writes it. Persisted, per machine. Additive: a file without it loads as `{}`. */
   edits: Record<string, number>
-  /** The notes you closed (YAZ-3487 D9, "Recently closed"): file → when, ms (max MAX_CLOSED). The main process alone adds one (`addClosed`). Persisted, per machine. Additive: a file without it loads as `{}`. */
+  /** The pages you closed (YAZ-3487 D9, "Recently closed"): file → when, ms (max MAX_CLOSED). The main process alone adds one (`addClosed`). Persisted, per machine. Additive: a file without it loads as `{}`. */
   closed: Record<string, number>
-  /** file → what its table of contents is built from (YAZ-2700 D14), for the notes where the reader chose. A note on Auto has NO entry. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
+  /** file → what its table of contents is built from (YAZ-2700 D14), for the pages where the reader chose. A page on Auto has NO entry. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
   tocSources: Record<string, TocSource>
   /** file → the folded rows of its table of contents (YAZ-3939 D1): `tocFoldKeys` keys, max MAX_FOLD_KEYS_PER_FILE. Keyed by page, as `folds` is. Never written to the markdown. Additive: a file without it loads as `{}`. */
   tocFolds: Record<string, string[]>
-  /** Legacy (YAZ-2709 D2, until YAZ-4094 G4): file → a note's "Section indent" switch. The switch is now IN the note (`section-indent`, `shared/pageSwitches.ts`); `movePageSwitches.ts` moves each entry there once and nothing writes this list again. Only the move reads it: no rename or delete in the store follows it. A later release removes the field, once every Mac has run the move (YAZ-4111). Additive: a file without it loads as `{}`. */
+  /** Legacy (YAZ-2709 D2, until YAZ-4094 G4): file → a page's "Section indent" switch. The switch is now IN the page (`section-indent`, `shared/pageSwitches.ts`); `movePageSwitches.ts` moves each entry there once and nothing writes this list again. Only the move reads it: no rename or delete in the store follows it. A later release removes the field, once every Mac has run the move (YAZ-4111). Additive: a file without it loads as `{}`. */
   sectionIndents: Record<string, boolean>
-  /** file → a CODE file's "Table of contents" switch (YAZ-2950, YAZ-3506), for the files where the reader used it. A file with NO entry follows Settings › "Table of contents default". `true` and `false` are both kept. Keyed by page. A note's switch is IN the note since YAZ-4094 G4 (`toc`); `movePageSwitches.ts` moves the old note entries there once. Additive: a file without it loads as `{}`. */
+  /** file → a CODE file's "Table of contents" switch (YAZ-2950, YAZ-3506), for the files where the reader used it. A file with NO entry follows Settings › "Table of contents default". `true` and `false` are both kept. Keyed by page. A page's switch is IN the page since YAZ-4094 G4 (`toc`); `movePageSwitches.ts` moves the old page entries there once. Additive: a file without it loads as `{}`. */
   tocSwitches: Record<string, boolean>
   /** The vault's display name (YAZ-1974 D3) when this bucket's root is a vault; null = its folder name. Persisted, per machine. */
   name: string | null
   /** The vault's number, 1–9 (YAZ-2555 D2): ⌘<key> goes to it; null = none. One vault per number. Persisted, per machine. */
   key: number | null
+  /**
+   * "A folder of <vault>" (YAZ-4922 🔒 D3): this bucket's path is a FOLDER of the vault `in`, opened in a window of its
+   * own (`placeVault`). Its windows show the folder, and their IDs, links, sync and `.yaseendocs` are the vault's.
+   * Absent (or null) for a vault. Persisted, per machine. Additive within version 1: an old build drops the key.
+   */
+  in?: string | null
+  /**
+   * "Up next a day" (YAZ-5028): the card IDs of this vault whose Up next mark an answer took off on local day `day`
+   * (`YYYY-M-D`), so the day's places hold over an Inbox closed and the app restarted. The card line keeps no trace of
+   * the mark, so this Mac keeps it; another Mac does not see it. Persisted, per machine. Additive: absent = none.
+   */
+  upNext?: UpNextTaken
+  /**
+   * "Add more for today" (YAZ-5042): how many new cards and Up next cards the Inbox added past the Settings numbers on
+   * local day `day` (`YYYY-M-D`). The Settings numbers never change; an added number of another day is none (it resets
+   * at midnight). Persisted, per machine; another Mac does not see it. Additive: absent = none.
+   */
+  added?: CardsAdded
+}
+
+/** The Up next marks an answer took off on one day (YAZ-5028): at most `MAX_UP_NEXT_TAKEN` card IDs. */
+export interface UpNextTaken {
+  day: string
+  cards: string[]
+}
+
+export const MAX_UP_NEXT_TAKEN = 1000
+
+/** Pure (the store and the bridge): a valid `UpNextTaken`, or null — a day of `YYYY-M-D`, the string IDs kept once, cut at the limit. */
+export function cleanUpNextTaken(raw: unknown): UpNextTaken | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const { day, cards } = raw as { day?: unknown; cards?: unknown }
+  if (typeof day !== 'string' || !/^\d{4}-\d{1,2}-\d{1,2}$/.test(day) || !Array.isArray(cards)) return null
+  const ids = [...new Set(cards.filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length <= 200))]
+  return { day, cards: ids.slice(0, MAX_UP_NEXT_TAKEN) }
+}
+
+/** The numbers the Inbox added for one day (YAZ-5042): whole numbers, 0 to `MAX_CARDS_ADDED`. */
+export interface CardsAdded {
+  day: string
+  newCards: number
+  upNext: number
+}
+
+export const MAX_CARDS_ADDED = 100_000
+
+/** Pure (the store and the bridge): a valid `CardsAdded`, or null — a day of `YYYY-M-D` and two whole numbers in range. */
+export function cleanCardsAdded(raw: unknown): CardsAdded | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const { day, newCards, upNext } = raw as { day?: unknown; newCards?: unknown; upNext?: unknown }
+  const whole = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= MAX_CARDS_ADDED
+  if (typeof day !== 'string' || !/^\d{4}-\d{1,2}-\d{1,2}$/.test(day) || !whole(newCards) || !whole(upNext)) return null
+  return { day, newCards, upNext }
 }
 
 /** What `state.setFolder` may merge into a bucket — every other field has its own targeted mutator. */
-export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key'>>
+export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key' | 'in' | 'upNext' | 'added'>>
 
 /** Pure: `folders` with `key` taken from the vault that has it (YAZ-2555 D2: one vault per number) — shared by the client cache and the main store. */
 export function freeVaultKey(folders: Record<string, FolderState>, key: number): Record<string, FolderState> {
@@ -2622,6 +3765,17 @@ export interface AppState {
    * Additive within version 1: a file without it loads the default, and an old build drops the key.
    */
   tabCanvas: TabCanvasState
+  /**
+   * The card course (YAZ-5120): the place, the finished chapters, the offers' flags, Mute and Speed. Per machine
+   * (`shared/courseState.ts`). Additive within version 1: a file without it loads the default, and an old build drops the key.
+   */
+  course: CourseState
+  /**
+   * The vault settings move (YAZ-5491 and the rows after it; scoping section 6): for each vault root, the
+   * `.yaseendocs/` files (or `<file>#<part>`) this Mac has seeded from its app values, or found there. One that is in the
+   * list is never seeded again, so one a person deleted on purpose does not come back. Per machine. Absent is none; an old build drops the key.
+   */
+  seededVaultConfig?: Record<string, string[]>
 }
 
 /** At most this many moved cards are kept (YAZ-3343 D1), last moved first: about 60 KB of the state file. */
@@ -2649,7 +3803,7 @@ export interface TabRef {
  * A tab action ANOTHER window's board asks of this window's tab (YAZ-3343 D31: one card menu for every card):
  * the owner runs it itself. `show-in-sidebar` also raises the owner.
  */
-export type TabAction = { kind: 'duplicate' } | { kind: 'set-name'; name: string | null } | { kind: 'show-in-sidebar' } | { kind: 'set-review'; on: boolean }
+export type TabAction = { kind: 'duplicate' } | { kind: 'set-name'; name: string | null } | { kind: 'show-in-sidebar' }
 
 /** The two layouts of the board (YAZ-3343 D8): this window in folder groups, or every window in its own frame. */
 export type CanvasLayout = 'folder' | 'window'
@@ -2743,7 +3897,7 @@ export function sameTabCanvas(a: TabCanvasState, b: TabCanvasState): boolean {
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [], settingsFolder: null, approvedPictureFolders: [], settingsSavedAt: 0, tabCanvas: defaultTabCanvas() }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [], settingsFolder: null, approvedPictureFolders: [], settingsSavedAt: 0, tabCanvas: defaultTabCanvas(), course: defaultCourseState() }
 }
 
 export function defaultFolderState(): FolderState {
@@ -2771,9 +3925,10 @@ export interface VaultEntry {
 export function listVaults(state: { recents: Readonly<RecentRoots>; windows: readonly { roots: readonly string[] }[]; folders: Readonly<Record<string, FolderState>> }): VaultEntry[] {
   const open = openVaultRoots(state.windows)
   const recents = new Map(state.recents.map((r) => [r.path, r.lastOpened]))
-  return [...new Set([...recents.keys(), ...open, ...keyedVaults(state.folders).map((v) => v.path)])].map((path) => {
+  // The app's own vault (the card skill, YAZ-5108) is no vault of the person: never a row, whatever a list holds.
+  return [...new Set([...recents.keys(), ...open, ...keyedVaults(state.folders).map((v) => v.path)])].filter((path) => !isAppVault(path)).map((path) => {
     const folder = state.folders[path]
-    return { path, name: folder?.name ?? basename(path), key: folder?.key ?? null, open: open.includes(path), lastUsed: recents.get(path) ?? null }
+    return { path, name: placeName(state.folders, path), key: folder?.key ?? null, open: open.includes(path), lastUsed: recents.get(path) ?? null }
   })
 }
 
@@ -2830,11 +3985,47 @@ export interface GithubSyncConfig {
  * `no-identity` wants "set a name and email", `auth` wants "sign in again", `conflict` wants
  * "two machines edited the same lines" (the lossless rule: the working tree was put back exactly
  * as it was — see `git/sync.ts`; since YAZ-3039 boards merge instead, `git/resolve.ts`, so a
- * conflict is a note or another file sync does not merge), `too-large` wants "shrink it or move it
+ * conflict is a page or another file sync does not merge), `too-large` wants "shrink it or move it
  * out" (YAZ-1801 D3: files held back under `tooLarge`, everything else synced), and `error` is the
  * honest catch-all that carries a message.
  */
-export type GithubSyncAttention = 'no-git' | 'no-identity' | 'auth' | 'conflict' | 'error' | 'too-large'
+export type GithubSyncAttention = 'no-git' | 'no-identity' | 'auth' | 'repo-not-allowed' | 'conflict' | 'error' | 'too-large'
+
+/** Mac GitHub App sign-in state (YAZ-6190). Tokens never leave the main process. */
+export interface GithubAuthStatus {
+  signedIn: boolean
+  login?: string
+  hasManualToken: boolean
+  pending?: boolean
+  error?: string
+}
+
+/** One repo the yaseen-docs GitHub App is allowed to access (YAZ-6190). */
+export interface GithubInstalledRepo {
+  fullName: string
+  private: boolean
+  defaultBranch: string
+}
+
+/** Read-only detection of the separate GitHub AutoSync Mac app (YAZ-6190). */
+export interface AutoSyncStatus {
+  installed: boolean
+  vaultSynced: boolean
+  supportsDeepLink: boolean
+}
+
+/** Result of trying to add a vault folder to GitHub AutoSync (YAZ-6190). */
+export interface AddToAutoSyncResult {
+  ok: boolean
+  method: 'deep-link' | 'opened-app' | 'not-installed'
+}
+
+/** Result of connecting a non-git vault folder to an allowed GitHub repo (YAZ-6190). */
+export interface ConnectRepoResult {
+  ok: boolean
+  status?: GithubSyncStatus
+  error?: string
+}
 
 /**
  * YAZ-1801 D3 (Draw, ported by YAZ-3039): the size at which a sync pass holds a file back instead
@@ -2894,7 +4085,7 @@ export interface GithubSyncStatus {
 /**
  * One file a pass merged instead of stopping (YAZ-1897 D1/D3, YAZ-3039). A drawing merged shape by
  * shape has no `copy`; a diagram kept both versions — the remote's at `path`, ours at `copy` — and
- * the notice has to say where ours went. A note is never here: a note conflict still stops (D4).
+ * the notice has to say where ours went. A page is never here: a page conflict still stops (D4).
  */
 export interface GithubSyncMerge {
   /** Vault-relative POSIX path. */
@@ -2905,6 +4096,12 @@ export interface GithubSyncMerge {
   clashes: number
   /** Vault-relative POSIX path of our copy, when both versions were kept. */
   copy?: string
+  /** YAZ-4615: a PAGE (its comments merged by id); absent for a drawing or diagram. */
+  kind?: 'page'
+  /** YAZ-4615 D4: our comments that took a new number, `#4` → `#5`. */
+  renumbered?: readonly { from: string; to: string }[]
+  /** YAZ-4615: a page's title (its `title`, else its file or folder name) — what the notice calls it. */
+  title?: string
 }
 
 /** One entry in a drawing's or diagram's Version history (YAZ-1897 D4, YAZ-3039). */
@@ -2939,9 +4136,9 @@ export interface VaultStorageStats {
   root: string
   /** Every `.excalidraw` and `.drawio` under the vault (dot-folders skipped), `assets/` included. */
   boards: { bytes: number; count: number }
-  /** Every other file in the top-level `assets/` folder: note images and the drawings' picture store. */
+  /** Every other file in the top-level `assets/` folder: page images and the drawings' picture store. */
   pictures: { bytes: number; count: number }
-  /** Everything else that is not a dot-entry: notes, a video, a PDF someone dropped in. */
+  /** Everything else that is not a dot-entry: pages, a video, a PDF someone dropped in. */
   other: { bytes: number; count: number }
   git: {
     /** `git count-objects -v`: loose + packed, i.e. everything `.git` holds for this repo. */
@@ -3096,14 +4293,35 @@ export interface SharePermissionRequest extends ShareBoardRequest {
  * The editor set that exists (5B's `EditorKind`) plus the link/multi-link split. An unknown
  * `kind` string on disk is preserved there and read back as `text` (forward compat).
  */
-export const PROPERTY_KINDS = ['text', 'number', 'date', 'checkbox', 'list', 'link', 'multi-link', 'select', 'multi-select'] as const
+export const PROPERTY_KINDS = ['text', 'number', 'date', 'checkbox', 'list', 'link', 'multi-link', 'select', 'multi-select', 'image', 'mentions'] as const
 export type PropertyKind = (typeof PROPERTY_KINDS)[number]
 
 /**
- * Property-name grammar (GRO-2200 R4): snake_case. Enforced at the properties write boundary
- * (`desktop/src/main/properties/`) — one definition so no mirror can drift from it.
+ * The kinds a page's own field can have: all but `mentions`, a folder column's Linked mentions (YAZ-4738 L1), which the
+ * app works out from the index and never writes into a page. The vault-wide declarations and the page's Properties
+ * panel offer these.
  */
-export const PROPERTY_NAME = /^[a-z][a-z0-9_]*$/
+export type PagePropertyKind = Exclude<PropertyKind, 'mentions'>
+export const PAGE_PROPERTY_KINDS: readonly PagePropertyKind[] = PROPERTY_KINDS.filter((kind): kind is PagePropertyKind => kind !== 'mentions')
+
+/**
+ * The ONE property-name rule (YAZ-4551 D19): any name, as typed — "Due Date", "Yaseen". A name is
+ * a string, not empty, with no space at either end and no line break. The properties write
+ * boundary (`desktop/src/main/properties/`), the page's Properties panel and "+ Add column" hold it.
+ */
+export function isPropertyName(name: unknown): name is string {
+  return typeof name === 'string' && name !== '' && name === name.trim() && !/[\r\n]/.test(name)
+}
+
+/**
+ * Why a NEW property name is refused where a view could read it (YAZ-4637 M7), or null: a name under `file.`, `formula.`
+ * or `note.` would clash with the built-in columns of those prefixes. A stored key still reads — this guards the doors
+ * that make one: "+ Add column" and the Properties panel's add and rename.
+ */
+export function builtInPrefixRefusal(name: string): string | null {
+  const prefix = ['file.', 'formula.', 'note.'].find((p) => name.startsWith(p))
+  return prefix === undefined ? null : `${name} starts with ${prefix}, which the built-in columns use — choose another name`
+}
 
 /**
  * Folder-name grammar (GRO-2226, GRO-2204 audit fold-in): root-relative, '/'-separated
@@ -3112,19 +4330,80 @@ export const PROPERTY_NAME = /^[a-z][a-z0-9_]*$/
  * the vault). A STORED folder outside this grammar still reads — report-don't-block: use sites
  * treat it as absent, a vault is never refused over it.
  */
-export const FOLDER_NAME = /^(?![A-Za-z]:)[^\\\0/.][^\\\0/]*(?:\/[^\\\0/.][^\\\0/]*)*$/
 
 /** One declared property: what kind of editor it gets, and what a link points at. */
 export interface PropertyDecl {
   kind: PropertyKind
-  /** Ordered exact labels for Select and Multi-select; note values remain ordinary YAML strings/lists. */
+  /** Ordered exact labels for Select and Multi-select; page values remain ordinary YAML strings/lists. */
   options?: string[]
   /** Display order; omitted means manual. The options array retains its manual order. */
   optionSort?: 'manual' | 'ascending' | 'descending'
-  /** link/multi-link only: the picker constraint — a wikilink to a FOLDER ("the notes in [[X]]", resolved by belongsToBasenames; YAZ-2290 D10). */
+  /** link/multi-link only: the picker constraint — a wikilink to a FOLDER ("the pages in [[X]]", resolved by belongsToBasenames; YAZ-2290 D10). */
   target?: string
   /** Metadata for the future validation report (report-never-block: gates nothing in v1). */
   required?: boolean
+  /** What the column holds, in words (YAZ-4590 S23): Edit column sets it; the table header shows it on hover. */
+  description?: string
+  /** number/date only: how a cell shows the value (YAZ-4591 S21/S22). Display only — the stored value never changes. */
+  format?: PropertyFormat
+  /**
+   * mentions only (YAZ-4739 L2): which links count. `column`, a column key: only links held in that field of the linking
+   * page. `folder`, a link to a folder (`[[API]]`): only pages and folders under it. Absent: every link counts.
+   */
+  from?: MentionsFrom
+  /**
+   * mentions only (YAZ-4781 R1): the column is the other side of the link column `from.column` of the folder
+   * `from.folder` ("Both ways"). Its cells edit that link column's values in the linking pages (R2).
+   */
+  pair?: true
+  /**
+   * select/multi-select only (YAZ-4799 option parents): the column one level up (`column`, its key) and, for each of this
+   * column's options, its parent option there (`of`). Grouped parent › this column, a page joins only the groups whose
+   * parent is the parent group it is in. An option with no entry in `of` shows under every parent, as before.
+   */
+  parent?: OptionParent
+  /** image only (YAZ-4802): the picture's box in px, `IMAGE_SIZE_MIN`–`IMAGE_SIZE_MAX`; absent is `IMAGE_SIZE_DEFAULT`, the text height. */
+  size?: number
+  /** image only (YAZ-4802): absent is "as is" (the whole picture, never cropped); `rounded` and `circle` fill the box. */
+  shape?: ImageShape
+}
+
+/** An Image column's shapes besides "as is" (YAZ-4802). */
+export const IMAGE_SHAPES = ['rounded', 'circle'] as const
+export type ImageShape = (typeof IMAGE_SHAPES)[number]
+/** An Image column's size in px (YAZ-4802): the text height by default, so a row stays one line. */
+export const IMAGE_SIZE_DEFAULT = 18
+export const IMAGE_SIZE_MIN = 12
+export const IMAGE_SIZE_MAX = 240
+
+/** A column's option parents (YAZ-4799): `parent: { column: Layer, of: { "2) API": "4) App" } }`. */
+export interface OptionParent {
+  column: string
+  of: Record<string, string>
+  /**
+   * The options picked as "Any <column>" (YAZ-4799 demo): an empty group under every parent group. An option in
+   * neither `of` nor `any` is "Not set": it shows only under the parents its pages are in, with no empty groups.
+   */
+  any?: string[]
+}
+
+/** A Linked mentions column's narrowing (YAZ-4739 L2): `from: { column?, folder? }` on the column; either or both. */
+export interface MentionsFrom {
+  column?: string
+  folder?: string
+}
+
+/**
+ * A Number or Date column's display format (YAZ-4591, YAZ-6167). Number styles: `plain` (the default),
+ * `grouped` (1,234), `currency`, `percent`, with `decimals` 0–4 and `currency` an ISO 4217 code.
+ * Date styles: `iso` (the default), `medium` ("Nov 7, 2026"), `relative` ("in 3 days") and `custom`
+ * (with token `pattern`, e.g. `ddd MMM D`).
+ */
+export interface PropertyFormat {
+  style: 'plain' | 'grouped' | 'currency' | 'percent' | 'iso' | 'medium' | 'relative' | 'custom'
+  decimals?: number
+  currency?: string
+  pattern?: string
 }
 
 export interface PropertiesResponse {
@@ -3158,6 +4437,35 @@ export interface FocusConfig {
   focus: string[]
 }
 
+/* MAX_FOCUS_FOLDERS, MAX_FOLDER_ITEMS and isFocusFolder live in `vaultLists.ts` (YAZ-5453): the phone reads them from its lazy chunk, and this module is in its first load. */
+
+/**
+ * One focus folder (YAZ-4460 F1, F2): a named group of focus items, in the user's order, that moves nothing on disk.
+ * Each item names its vault by the vault's FOLDER NAME and the path inside it, so a copy reads the same on each Mac.
+ * `at` (ms) is the folder's last change: of two copies the later wins. `deleted` keeps a deleted folder as a tombstone.
+ */
+export interface FocusFolder {
+  id: string
+  name: string
+  /** When it was made (ms): the order of the folders on the tab, after the dragged ones. */
+  created: number
+  at: number
+  items: { vault: string; path: string }[]
+  deleted?: true
+  /** Its place on the tab once a drag set it (YAZ-4470, 13): 0 first; a folder with none goes after, by `created`. */
+  pos?: number
+}
+
+
+/** One Mac's focus folders file of a vault (YAZ-4460 F1), by `FocusConfig`'s rule: the latest `at` is the set. */
+export interface FocusFoldersConfig {
+  version: 1
+  at: string
+  folders: FocusFolder[]
+  /** The vault's folder name when the file was written (YAZ-4470, 2): a read that finds another name heals the vault's items. */
+  self?: string
+}
+
 // ---------- Bridge payloads: `window.yaseenDocs` itself is `CONTRACT` in shared/ipc.ts (GRO-2153, YAZ-2200) ----------
 
 /**
@@ -3185,7 +4493,7 @@ export interface RevealResponse {
 /** Standard Markdown link intent; main validates and resolves it before any OS side effect. */
 export interface OpenLinkRequest {
   href: string
-  /** Absolute current-note path, required only when `href` is relative. */
+  /** Absolute current-page path, required only when `href` is relative. */
   sourcePath?: string
 }
 
@@ -3262,10 +4570,20 @@ export interface WindowIdentity {
   reloadViews?: (StartView | null)[]
   /** The memory reload's size (YAZ-3737 D12), MB: the window shows its notice once. Given out with `reloadViews`. */
   reloadedAtMb?: number
+  /**
+   * The card skill's copy, `<userData>/card-skill` (YAZ-5108): the app's own vault, which the sidebar shows after the
+   * window's vaults while Settings › Review says Show. Given out by EVERY identity read, never stored. Absent: main has no copy.
+   */
+  cardSkill?: string
   /** `'files'` for a Files window (YAZ-3357 D1), as `WindowEntry.kind`. */
   kind?: WindowKind
   /** A Files window's own sidebar zoom in percent (YAZ-3389 D13), as `WindowEntry.zoom`; absent on a full window. */
   zoom?: number
+  /**
+   * Transient read-only window (YAZ-4502): opened with `--read-only`, keeps the vault read-only in memory without
+   * writing `.yaseendocs/read-only.json`. Given out by EVERY identity read (so reloads keep it); never persisted to `WindowEntry`.
+   */
+  readOnly?: true
 }
 
 /**
@@ -3282,12 +4600,19 @@ export interface PageView {
   /** The text size (⌘+ / ⌘−), percent; 100 = normal. */
   magnification: number
   /**
-   * The caret (YAZ-3737 D3): a note's ProseMirror positions, a code tab's text offsets. Absent where the tab has none
+   * The caret (YAZ-3737 D3): a page's ProseMirror positions, a code tab's text offsets. Absent where the tab has none
    * (a drawing) or the view is a new start (a bullet's new tab).
    */
   selection?: { anchor: number; head: number }
   /** A drawing's pan and zoom (YAZ-3737 D13): the engine's `scrollX`, `scrollY` and `zoom.value`. Only a drawing has it. */
   canvas?: { scrollX: number; scrollY: number; zoom: number }
+  /**
+   * The place in the TEXT (YAZ-5164, `client/src/editor/pagePlace.ts`): the block at the scroller's top, by its document
+   * position, and how far below the top edge it starts, px (negative: above). Explore's reading layer gives it to its
+   * editor, another view with other things above the text, where `scrollTop` would land elsewhere. Given and drawn, it
+   * wins over `scrollTop`. A tab's own view has none: its copy is the same editor.
+   */
+  top?: { pos: number; offset: number }
 }
 
 /** A page view for one file: what a popped-out window starts its active tab with (YAZ-2951 D2). Never stored. */
@@ -3333,11 +4658,30 @@ export interface MovedTab extends PopOutCarry {
   path: string
 }
 
+/** The Inbox's filters (YAZ-5017; no Archived since YAZ-5319, no To fix since YAZ-5430: a carried `fix` is left out, so All cards), as `useCardReview`'s `CardFilter`. */
+export const INBOX_FILTERS = ['all', 'next', 'due', 'new'] as const
+export type InboxFilter = (typeof INBOX_FILTERS)[number]
+
+/**
+ * An Inbox tab that goes to another window (YAZ-5054): its vault, what it reviews (a folder, root-relative, or one page,
+ * absolute; neither = the whole vault), its filter and the card on show. The window that takes it opens its own review
+ * of that scope, on that filter, at that card when it is still in the queue. Absent filter: All cards. Never stored.
+ */
+export interface InboxCarry {
+  root: string
+  folder?: string
+  page?: string
+  filter?: InboxFilter
+  card?: { path: string; id: string }
+}
+
 export interface OpenWindowOptions {
   root: string | null
   file: string | null
   /** More vaults for the window, after `root` (YAZ-2602); absent = `root` alone. */
   roots?: string[]
+  /** Transient read-only mode (YAZ-4502): never persisted to `WindowEntry` or `.yaseendocs/`. */
+  readOnly?: boolean
 }
 
 /** Clipboard text captured when the user chooses an explicit paste mode. */
@@ -3355,11 +4699,11 @@ export type CopyAsMode = 'plain' | 'markdown' | 'visible'
 /** What `visible` answers: the two formats normal Copy writes. */
 export interface CopyAsRich { text: string; html: string }
 
-/** A row of a note's right-click menu (YAZ-3653): main runs it on the window that sent it. */
-export type NoteMenuAction = 'cut' | 'copy' | 'paste' | `copy-${CopyAsMode}` | `paste-${ClipboardPasteRequest['mode']}` | 'add-word' | 'copy-image' | 'reveal-image'
+/** A row of a page's right-click menu (YAZ-3653): main runs it on the window that sent it. */
+export type PageMenuAction = 'cut' | 'copy' | 'paste' | `copy-${CopyAsMode}` | `paste-${ClipboardPasteRequest['mode']}` | 'add-word' | 'copy-image' | 'reveal-image'
 
-/** What a note menu row sends with its action: the word (`add-word`), the image's `src` (`reveal-image`), or the point right-clicked in page px (`copy-image`, YAZ-3727 D22). */
-export type NoteMenuArg = string | { x: number; y: number }
+/** What a page menu row sends with its action: the word (`add-word`), the image's `src` (`reveal-image`), or the point right-clicked in page px (`copy-image`, YAZ-3727 D22). */
+export type PageMenuArg = string | { x: number; y: number }
 
 /** One ⌘+ / ⌘− / ⌘0 press: up, down, or back to the default (YAZ-1710). */
 export type ZoomStep = -1 | 0 | 1
@@ -3369,8 +4713,20 @@ export const SIDEBAR_ZOOM_STEPS = [50, 75, 90, 100, 125, 150, 200] as const
 export const SIDEBAR_ZOOM_MIN = SIDEBAR_ZOOM_STEPS[0]
 export const SIDEBAR_ZOOM_MAX = SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1]
 
+/**
+ * Settings › Sidebar › Row spacing (YAZ-5885 D1): the three named heights of a sidebar row in CSS px, and the range of
+ * a Custom one. A row is its 13px * 1.5 line plus equal padding above and below (app.css `.tree__row`).
+ */
+export const SIDEBAR_ROW_HEIGHTS = { compact: 22, default: 25.5, roomy: 30 } as const
+export const SIDEBAR_ROW_HEIGHT_DEFAULT = SIDEBAR_ROW_HEIGHTS.default
+export const SIDEBAR_ROW_HEIGHT_MIN = 20
+export const SIDEBAR_ROW_HEIGHT_MAX = 40
+
 /** The App sizes in percent (YAZ-3432): the zoom menu's App size row walks them with − and +. Up to 200% (YAZ-3487, demo round 3). */
 export const APP_ZOOM_STEPS = [90, 100, 110, 125, 150, 175, 200] as const
+
+/** Explore size's default and ⌘0 (YAZ-5881 D1, D3): one of `APP_ZOOM_STEPS`. */
+export const EXPLORE_SIZE_DEFAULT = 125
 
 /**
  * One zoom step along `steps` (ascending): the next step in `direction`. A value between two steps snaps to the next
@@ -3395,7 +4751,7 @@ export interface MemoryWindowRow {
   id: string
   /** `WindowEntry.name`, else the window's title. */
   title: string
-  /** What it has open, as "2 notes, 2 drawings"; '' with no tab. */
+  /** What it has open, as "2 pages, 2 drawings"; '' with no tab. */
   open: string
   /** Its renderer plus every frame process in it (draw.io, PDF). */
   bytes: number
@@ -3453,9 +4809,11 @@ export interface MemoryReport {
  * The updater's state (YAZ-2976), owned by main and pushed to every window. `downloading` and `ready`
  * name the new version; `manual` = a newer version exists but this copy cannot replace itself (Windows,
  * an unpackaged run, a read-only or translocated folder, an ad-hoc build — S13). The first launch after
- * the swap is `idle` (YAZ-3698): the user read the notes before the install.
+ * the swap is `idle` (YAZ-3698): the user read the pages before the install. `idle` with `failed` = the download
+ * of that version failed (S9: a wrong sha256, or a stalled download) and the next check tries again; What's New says
+ * so in one line (YAZ-4384).
  */
-export type UpdateState = { kind: 'idle' } | { kind: 'downloading' | 'ready' | 'manual'; version: string }
+export type UpdateState = { kind: 'idle'; failed?: string } | { kind: 'downloading' | 'ready' | 'manual'; version: string }
 
 /** One GitHub release for the "What's new" window (YAZ-2976 D5): `body` is the release's Markdown as GitHub holds it. */
 export interface ReleaseNote {
@@ -3473,5 +4831,7 @@ export interface ReleaseNote {
  */
 export interface ReleaseNotes {
   current: string
+  /** False in a dev run with no update feed (S7): the sheet then offers no update from the **Latest** row (YAZ-4371). */
+  checks: boolean
   releases: ReleaseNote[]
 }

@@ -69,4 +69,70 @@ describe("Smart Shape canvas handles", () => {
       initialPoints,
     );
   });
+  // YAZ-4356: an arrow along a centre line, dragged through the board's own pointer code.
+  it("drags a circle arrow's opening and keeps the shape in its box", async () => {
+    const { container } = await render(<Excalidraw />);
+    const metadata = createSmartShapeMetadata("circle-arrow");
+    const build = (openingRatio: number) =>
+      generateSmartShapePoints("circle-arrow", 160, 160, {
+        ...metadata.parameters,
+        openingRatio,
+      });
+    const ring = newElementWith(
+      API.createElement({
+        type: "line",
+        x: 100,
+        y: 100,
+        width: 160,
+        height: 160,
+        points: build(metadata.parameters.openingRatio),
+      }),
+      { customData: { yasinSmartShape: metadata } },
+    );
+    API.setElements([ring]);
+    API.setSelectedElements([ring]);
+
+    const opening = getSmartShapeHandles(ring).find(
+      ({ name }) => name === "opening",
+    )!;
+    // Where the handle sits at an opening of 0.25, with the first point kept in place.
+    const wider = newElementWith(ring, {
+      points: build(0.25),
+      customData: {
+        yasinSmartShape: {
+          ...metadata,
+          parameters: { ...metadata.parameters, openingRatio: 0.25 },
+        },
+      },
+    });
+    const target = getSmartShapeHandles(wider).find(
+      ({ name }) => name === "opening",
+    )!.scenePoint;
+    const canvas = container.querySelector("canvas.interactive")!;
+    fireEvent.pointerDown(canvas, {
+      clientX: opening.scenePoint[0],
+      clientY: opening.scenePoint[1],
+      button: 0,
+      pointerType: "mouse",
+    });
+    fireEvent.pointerMove(canvas, {
+      clientX: target[0],
+      clientY: target[1],
+      buttons: 1,
+      pointerType: "mouse",
+    });
+    fireEvent.pointerUp(canvas, {
+      clientX: target[0],
+      clientY: target[1],
+      pointerType: "mouse",
+    });
+
+    await waitFor(() => {
+      expect(
+        getSmartShapeMetadata(h.elements[0])?.parameters.openingRatio,
+      ).toBeCloseTo(0.25, 2);
+    });
+    expect(h.elements[0].width).toBeCloseTo(160, 6);
+    expect(h.elements[0].height).toBeCloseTo(160, 6);
+  });
 });

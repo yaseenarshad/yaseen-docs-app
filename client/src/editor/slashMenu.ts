@@ -12,7 +12,8 @@
  *    checkbox).
  * Every other row does there what Crepe's command does (a heading, a quote, code or a table inside
  * the item; Task List makes the item a task) — except Text, which runs T's command (YAZ-3806 T4):
- * the item becomes a plain line, out of every list level, as T and ⌘⌥0 make it.
+ * the line becomes a plain line in the same item, as T and ⌘⌥0 make it; the list never changes
+ * (YAZ-4369, which replaces T4's "out of every list level").
  *
  * In a table cell and a cell note (YAZ-3818 D1) the menu shows only the rows for lines and lists (`HIDDEN_IN_CELL`);
  * a header cell holds one line, so it hides the list rows too (D7). A block put there anyway becomes lines
@@ -39,6 +40,11 @@
  * matches the label OR a keyword) let "now" and "clock" find it. "Calendar table" holds "time" too,
  * after it, so `/time` + Enter still picks it.
  *
+ * "Card" (YAZ-4961, D1, idea 9; `card/cardBlockView.ts` `cardRow`) comes after Code in the Advanced group:
+ * `/card` and `/card` find it (its keywords). It shows only in an editor whose host gives cards, while the
+ * vault gives IDs (`card.on()`, read by the plugin view on every update into a `shallowRef`, as the list flag).
+ * A cell hides it, as it hides Code.
+ *
  * 🔒 Crepe keeps the rows in a Vue `computed` that reads only the filter text, so "/" on a plain
  * line and then "/" in a bullet (the same filter, "") would reuse the plain line's rows. The
  * "in a list" flag (and the "in a cell" one) is therefore a Vue `shallowRef` (the copy Crepe itself runs on) that the
@@ -54,15 +60,17 @@ import {
   turnIntoTextCommand,
 } from '@milkdown/kit/preset/commonmark'
 import { createTable } from '@milkdown/kit/preset/gfm'
+import { newTableNode } from './table/super/superTables'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, type Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { formatTime } from '@shared/timeFormat'
 import { shallowRef } from 'vue'
 import { cellPosAround, isListItem } from './outline/listNodes'
-import { inCellOrNote } from './table/cellBlocks'
+import { inCellOrPage } from './table/cellBlocks'
 import { calendarTableNode, minutesOf } from './table/tableCalendar'
 import { timeFormatSetting } from './table/timeFormatSetting'
+import type { TableLookPlace } from './table/tableLook'
 
 /** One slash row as Crepe's builder takes it (`keywords` is the YAZ-3550 patch's field). */
 export interface SlashRow {
@@ -91,13 +99,13 @@ export const HIDDEN_IN_LIST = ['divider', 'bullet-list'] as const
  * The rows a cell and a cell note hide (YAZ-3818 D1): they hold lines and lists, so no heading, quote, rule, image,
  * code, table (the calendar table too), math or drawing. A header cell holds one line (D7): its list rows go too.
  */
-export const HIDDEN_IN_CELL = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'quote', 'divider', 'image', 'code', 'table', 'calendar-table', 'math', 'drawing'] as const
+export const HIDDEN_IN_CELL = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'quote', 'divider', 'image', 'code', 'card', 'table', 'calendar-table', 'math', 'drawing'] as const
 export const HIDDEN_IN_HEADER = [...HIDDEN_IN_CELL, 'bullet-list', 'ordered-list', 'task-list'] as const
 
 /** Where the caret is for the rows: a header cell, another cell or a cell note, or neither. */
 export function cellKindAt(selection: Selection): 'header' | 'cell' | null {
   const { $from } = selection
-  if (!inCellOrNote($from)) return null
+  if (!inCellOrPage($from)) return null
   const cell = cellPosAround($from)
   return cell !== null && $from.doc.nodeAt(cell)!.type.spec.tableRole === 'header_cell' ? 'header' : 'cell'
 }
@@ -106,8 +114,8 @@ export function cellKindAt(selection: Selection): 'header' | 'cell' | null {
 export const CURRENT_TIME_KEYWORDS = ['current', 'now', 'clock', 'time']
 
 /** The time in the time format setting, then " - " (D22; YAZ-4163 D15): `9:05 am - ` by default. */
-export function formatCurrentTime(date: Date): string {
-  return `${formatTime(timeFormatSetting(), minutesOf(date))} - `
+export function formatCurrentTime(date: Date, at?: TableLookPlace): string {
+  return `${formatTime(timeFormatSetting(at), minutesOf(date))} - `
 }
 
 /** Crepe's own `isInList` (`utils/checker.ts`), the check the patch took out of `shouldShow`. */
@@ -137,11 +145,11 @@ export const currentTimeRow: SlashRow = {
   onRun: (ctx) => {
     ctx.get(commandsCtx).call(clearTextInCurrentBlockCommand.key)
     const view = ctx.get(editorViewCtx)
-    view.dispatch(view.state.tr.insertText(formatCurrentTime(new Date())))
+    view.dispatch(view.state.tr.insertText(formatCurrentTime(new Date(), view)))
   },
 }
 
-/** The Text row (YAZ-3806 T4): the stock clear of the `/query`, then T's command — Crepe's own row sets a paragraph, which a bullet already is. */
+/** The Text row (YAZ-3806 T4, YAZ-4369): the stock clear of the `/query`, then T's command, so the row and T keep one rule. */
 const textRowRun = (ctx: Ctx): void => {
   const commands = ctx.get(commandsCtx)
   commands.call(clearTextInCurrentBlockCommand.key)
@@ -195,11 +203,11 @@ function insertTable(ctx: Ctx, table: ProseNode): void {
   view.dispatch(tr.setSelection(TextSelection.near(tr.doc.resolve(at + 1))).scrollIntoView())
 }
 
-/** The "Table" row (D12, YAZ-3805): a 3×3 table; see the header. */
+/** The "Table" row (D12, YAZ-3805): a 3×3 table, plain or Super as Settings › Tables › New tables start as says (YAZ-4869 item 22); see the header. */
 export const tableRow: SlashRow = {
   label: 'Table',
   icon: tableIcon,
-  onRun: (ctx) => insertTable(ctx, createTable(ctx, 3, 3)),
+  onRun: (ctx) => insertTable(ctx, newTableNode(createTable(ctx, 3, 3), ctx.get(editorViewCtx))),
 }
 
 /** A calendar page, drawn to match the stock 24px items. */
@@ -224,7 +232,7 @@ export const calendarTableRow: SlashRow = {
   label: 'Calendar table',
   icon: calendarIcon,
   keywords: CALENDAR_TABLE_KEYWORDS,
-  onRun: (ctx) => insertTable(ctx, calendarTableNode(ctx.get(editorViewCtx).state.schema)),
+  onRun: (ctx) => insertTable(ctx, calendarTableNode(ctx.get(editorViewCtx).state.schema, undefined, ctx.get(editorViewCtx))),
 }
 
 /**
@@ -233,26 +241,40 @@ export const calendarTableRow: SlashRow = {
  * when the host gives a creator — then the list and cell rules) and the plugin that keeps the "in a list" and "in a
  * cell" flags current: one walk up the caret's depth.
  */
-export function createSlashMenu(extend?: (builder: SlashMenuGroups) => void): {
+export function createSlashMenu(
+  extend?: (builder: SlashMenuGroups) => void,
+  /** Rows this editor never shows (YAZ-4277 D4: a drawing text box). */
+  alwaysHidden: readonly string[] = [],
+  /** The "Card" row (YAZ-4961) and whether it shows now (a vault that gives IDs). Absent → no row. */
+  card?: { row: SlashRow; on: () => boolean },
+): {
   buildMenu: (builder: SlashMenuGroups) => void
   inListWatch: ReturnType<typeof $prose>
 } {
   const inList = shallowRef(false)
   const inCell = shallowRef<'header' | 'cell' | null>(null)
+  const cardsOn = shallowRef(false)
   const buildMenu = (builder: SlashMenuGroups) => {
     builder.getGroup('text').addItem('current-time', currentTimeRow)
     const text = builder.build().find((group) => group.key === 'text')?.items.find((item) => item.key === 'text')
     if (text !== undefined) text.onRun = textRowRun
+    if (card !== undefined) builder.getGroup('advanced').addItem('card', card.row)
     builder.getGroup('advanced').addItem('table', tableRow)
     builder.getGroup('advanced').addItem('calendar-table', calendarTableRow)
     extend?.(builder)
-    const hidden: readonly string[] = [...(inList.value ? HIDDEN_IN_LIST : []), ...(inCell.value === 'header' ? HIDDEN_IN_HEADER : inCell.value === 'cell' ? HIDDEN_IN_CELL : [])]
+    const hidden: readonly string[] = [...alwaysHidden, ...(card !== undefined && !cardsOn.value ? ['card'] : []), ...(inList.value ? HIDDEN_IN_LIST : []), ...(inCell.value === 'header' ? HIDDEN_IN_HEADER : inCell.value === 'cell' ? HIDDEN_IN_CELL : [])]
     if (hidden.length === 0) return
     for (const group of builder.build()) group.items = group.items.filter((item) => !hidden.includes(item.key))
+    // an editor that never shows a whole group (a box's Advanced) leaves no empty tab
+    if (alwaysHidden.length > 0) {
+      const groups = builder.build()
+      groups.splice(0, groups.length, ...groups.filter((group) => group.items.length > 0))
+    }
   }
   const watch = (selection: Selection) => {
     inList.value = isInListItem(selection)
     inCell.value = cellKindAt(selection)
+    cardsOn.value = card?.on() ?? false
   }
   const inListWatch = $prose(
     () =>

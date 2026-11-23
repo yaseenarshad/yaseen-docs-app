@@ -1,0 +1,321 @@
+/**
+ * SETTINGS › FOLDER PAGES (YAZ-4585, D34 of YAZ-4501): the global side of a folder page. Each setting has one home
+ * besides Settings, and no setting lives on both the page and a view.
+ *
+ * YAZ-5489 REPLACES D34's "global side": the view and page defaults (and Confirm changes, 27 parts in all) are the
+ * VAULT's, in its `.yaseendocs/folder-pages.json` (`shared/folderPages.ts`): each of those rows edits the picked vault's
+ * file (`ctx.folderPages`, with the Vault dropdown where the window has two or more), and the phone reads it too. The
+ * personal rows stay this Mac's: week start, row band, the page window's pin, Ask before deleting pages, and Preview on
+ * hover.
+ *
+ * - Personal, here only: the week start, the folder views' "Preview on hover" (moved from Files & Links, the same
+ *   `hoverPreviewIn.folderViews`), the table row band and the page window's pin. The last two follow the table block's
+ *   settings (`folderRowBandOn`, `folderWindowPinned`) until they are set. "Ask before deleting pages" (YAZ-4592 S26)
+ *   is the row menu's Delete page…, separate from the sidebar's Confirm before deleting.
+ * - View defaults: a view with no key of its own reads these (`views/viewDefaults.tsx`); its menus say "from Settings".
+ * - Page defaults: the sidebar's folder page file rows (D37) and the Other files tray (YAZ-4597, D43); a folder's ⚙ beats them.
+ *
+ * Every row writes one part of `settings.folderPages`. Every default is the look before the page existed.
+ */
+import { calLine, folderRowBandOn, folderWindowPinned, type FolderPagesSettings, writeColorStrength } from '@shared/types'
+import { FOLDER_PAGES_VAULT_PARTS } from '@shared/folderPages'
+import { calLineColor, calendarCardColorOf, monthLineColorOf, monthLineOf, monthShadeColorOf } from '../views/calendar'
+import { CalLineControls, CalendarCardColorPicker, MonthShadeColorPicker } from '../views/view/CalendarLineControls'
+import { Segmented, Select } from './controls'
+import { ON_OFF_OPTIONS, type Option } from './options'
+import type { SettingDef, SettingsCtx, SettingsSection } from './registry'
+import { unit } from './unitLabel'
+import type { UnitText } from '../vault/unitWord'
+
+/** YAZ-4713 C11: the column header's mark. */
+const COLUMN_MARKS_OPTIONS: readonly Option<FolderPagesSettings['columnMarks']>[] = [
+  { label: 'Icon', value: 'icon' },
+  { label: 'Icon and folder name', value: 'name' },
+  { label: 'Off', value: 'off' },
+]
+const WEEK_START_OPTIONS: readonly Option<FolderPagesSettings['weekStartsOn']>[] = [
+  { label: 'Sunday', value: 'sunday' },
+  { label: 'Monday', value: 'monday' },
+]
+const ROW_HEIGHT_OPTIONS: readonly Option<FolderPagesSettings['rowHeight']>[] = [
+  { label: 'Short', value: 'short' },
+  { label: 'Medium', value: 'medium' },
+  { label: 'Tall', value: 'tall' },
+]
+const TEXT_IN_CELLS_OPTIONS: readonly Option<FolderPagesSettings['textInCells']>[] = [
+  { label: 'By kind', value: 'kind' },
+  { label: 'Wrap', value: 'wrap' },
+  { label: 'Clip', value: 'clip' },
+]
+const GROUP_INDENT_OPTIONS: readonly Option<FolderPagesSettings['groupIndent']>[] = [
+  { label: 'Small', value: 'small' },
+  { label: 'Medium', value: 'medium' },
+  { label: 'Large', value: 'large' },
+]
+/**
+ * YAZ-4798: a grouped table's group lines, the three choices and meaning of Settings › Sidebar › Level lines, in the
+ * approved words (Off · On · On hover); and their look, plain lines or the thread to the row under the pointer.
+ */
+const GROUP_LINES_OPTIONS: readonly Option<FolderPagesSettings['groupLines']>[] = [
+  { label: 'On hover', value: 'hover' },
+  { label: 'On', value: 'always' },
+  { label: 'Off', value: 'off' },
+]
+const GROUP_LINE_STYLE_OPTIONS: readonly Option<FolderPagesSettings['groupLineStyle']>[] = [
+  { label: 'Lines', value: 'plain' },
+  { label: 'Thread', value: 'thread' },
+]
+const subfoldersOptions = (unit: UnitText): readonly Option<FolderPagesSettings['subfolders']>[] => [
+  { label: unit('Their pages'), value: 'pages' },
+  { label: 'As rows', value: 'rows' },
+  { label: 'Both', value: 'both' },
+  { label: 'Hide', value: 'hide' },
+]
+const CALENDAR_SCALE_OPTIONS: readonly Option<FolderPagesSettings['calendarScale']>[] = [
+  { label: 'Month', value: 'month' },
+  { label: 'Week', value: 'week' },
+  { label: 'Rolling', value: 'rolling' },
+]
+/** YAZ-5582: a plain click on a Calendar or Board card. */
+const CARD_CLICK_OPTIONS: readonly Option<FolderPagesSettings['cardClickOpens']>[] = [
+  { label: 'Mini window', value: 'window' },
+  { label: 'Background tab', value: 'background' },
+]
+const CARD_TITLES_OPTIONS: readonly Option<FolderPagesSettings['cardTitles']>[] = [
+  { label: 'Clip', value: 'clip' },
+  { label: 'Wrap', value: 'wrap' },
+]
+/** YAZ-6331: a Calendar's default card (pill) style. */
+const CALENDAR_CARD_STYLE_OPTIONS: readonly Option<FolderPagesSettings['calendarCardStyle']>[] = [
+  { label: 'Soft Accent', value: 'accent' },
+  { label: 'Soft Slate', value: 'slate' },
+  { label: 'White + Bar', value: 'bar' },
+  { label: 'White', value: 'plain' },
+]
+
+const WORDS = ['folder', 'folder page', 'views', 'table', 'board', 'calendar', 'cards', 'list']
+
+/**
+ * A vault part's row (YAZ-5489): reads and writes the picked vault's folder-pages.json (`ctx.folderPages`; the app's
+ * values until the vault has a file) through a ctx whose `settings.folderPages` carry those parts and whose `onChange`
+ * saves them into the vault. With no vault in the window, the app's settings, as before.
+ */
+const VAULT_PARTS: ReadonlySet<string> = new Set(FOLDER_PAGES_VAULT_PARTS)
+function folderPagesCtx(ctx: SettingsCtx, part: keyof FolderPagesSettings): SettingsCtx {
+  const vault = ctx.folderPages
+  if (vault === undefined || !VAULT_PARTS.has(part)) return ctx
+  return { ...ctx, settings: { ...ctx.settings, folderPages: { ...ctx.settings.folderPages, ...vault.value } }, onChange: (next) => vault.save(next.folderPages) }
+}
+
+/** One row that writes `folderPages[part]`; `shown` reads what the control shows, for the two that follow another setting. */
+function row<K extends keyof FolderPagesSettings>(
+  part: K,
+  label: string,
+  options: readonly Option<NonNullable<FolderPagesSettings[K]>>[] | ((unit: UnitText) => readonly Option<NonNullable<FolderPagesSettings[K]>>[]),
+  more: { hint?: string; keywords?: string[]; shown?: (ctx: SettingsCtx) => NonNullable<FolderPagesSettings[K]> } = {},
+): SettingDef {
+  return {
+    id: `folderPages.${part}`,
+    // Every row's label and options go through the vault's word (YAZ-4938): "Ask before deleting cards".
+    label: (ctx) => unit(ctx, label),
+    hint: more.hint,
+    keywords: [...WORDS, ...(more.keywords ?? [])],
+    render: (outer) => {
+      const ctx = folderPagesCtx(outer, part)
+      const { settings, onChange } = ctx
+      const value = more.shown?.(ctx) ?? (settings.folderPages[part] as NonNullable<FolderPagesSettings[K]>)
+      return <Segmented options={typeof options === 'function' ? options((text) => unit(ctx, text)) : options} value={value} onChange={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, [part]: next } })} ariaLabel={unit(ctx, label)} />
+    },
+  }
+}
+
+/** A calendar line's default (YAZ-4878): the View tab's two controls, writing the width and the colour parts. */
+function lineRow(widthPart: 'weekLine' | 'dayLine', colorPart: 'weekLineColor' | 'dayLineColor', label: string, hint: string): SettingDef {
+  return {
+    id: `folderPages.${widthPart}`,
+    label,
+    hint,
+    keywords: [...WORDS, 'calendar', 'lines', 'thickness', 'width', 'colour', 'color', 'px'],
+    render: (ctx) => {
+      const { settings, onChange } = folderPagesCtx(ctx, widthPart)
+      return (
+      <CalLineControls
+        label={label}
+        width={calLine(settings.folderPages[widthPart])}
+        color={calLineColor(settings.folderPages[colorPart])}
+        onWidth={(px) => onChange({ ...settings, folderPages: { ...settings.folderPages, [widthPart]: px } })}
+        onColor={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, [colorPart]: writeColorStrength(next) } })}
+      />
+      )
+    },
+  }
+}
+
+export const FOLDER_PAGES_SECTION: SettingsSection = {
+  id: 'folderPages',
+  title: 'Folder pages',
+  keywords: WORDS,
+  groups: [
+    {
+      title: 'Personal',
+      // Sub-headings (YAZ-5969).
+      subheadings: [
+        { title: 'On hover', rows: ['hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand'] },
+        { title: 'Mini window', rows: ['folderPages.keepWindowPinned'] },
+        { title: 'Asking first', rows: ['folderPages.askBeforeDelete', 'folderPages.confirmChanges'] },
+      ],
+      items: [
+        row('weekStartsOn', 'Week starts on', WEEK_START_OPTIONS, { hint: 'The first day of the calendar view.', keywords: ['week', 'monday', 'sunday'] }),
+        {
+          // Moved from Files & Links › Preview on hover (D34), the same key: that page's master switch still turns every place off.
+          // Two switches since demo 13D (YAZ-4601): the rows' keeps the old key; the links' is `folderLinks`.
+          id: 'hoverPreviewIn.folderViews',
+          label: 'Preview rows on hover',
+          hint: 'Rest the mouse on a row, a card or a line of Other files to see the file. The main Preview on hover switch turns every place off.',
+          keywords: [...WORDS, 'hover', 'preview', 'mouse', 'rows', 'cards'],
+          render: ({ settings, onChange }) => (
+            <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreviewIn.folderViews} onChange={(on) => onChange({ ...settings, hoverPreviewIn: { ...settings.hoverPreviewIn, folderViews: on } })} ariaLabel="Preview rows on hover: Folder pages" />
+          ),
+        },
+        {
+          id: 'hoverPreviewIn.folderLinks',
+          label: 'Preview links on hover',
+          hint: 'Rest the mouse on a link pill in a cell to see the linked page. The main Preview on hover switch turns every place off.',
+          keywords: [...WORDS, 'hover', 'preview', 'mouse', 'links', 'pill'],
+          render: ({ settings, onChange }) => (
+            <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreviewIn.folderLinks} onChange={(on) => onChange({ ...settings, hoverPreviewIn: { ...settings.hoverPreviewIn, folderLinks: on } })} ariaLabel="Preview links on hover: Folder pages" />
+          ),
+        },
+        // The hints' "›" stays with the word after it: a no-break space, so the arrow never ends a line (YAZ-4643 S7).
+        row('rowBand', 'Row band on hover', ON_OFF_OPTIONS, { hint: 'A band on the table row under the mouse. Until you set it, it follows Tables ›\u00a0All tables ›\u00a0Row band.', keywords: ['band', 'highlight', 'hover', 'row'], shown: ({ settings }) => folderRowBandOn(settings) }),
+        row('keepWindowPinned', 'Keep the mini window pinned', ON_OFF_OPTIONS, { hint: 'The mini window of a row stays open on a click outside it. Until you set it, it follows Tables ›\u00a0Cell notes ›\u00a0Keep cell notes open.', keywords: ['mini window', 'page window', 'pin', 'pinned'], shown: ({ settings }) => folderWindowPinned(settings) }),
+        // Its own switch (YAZ-4592 S26): the sidebar's Confirm before deleting does not turn it off.
+        row('askBeforeDelete', 'Ask before deleting pages', ON_OFF_OPTIONS, { hint: 'Delete page… in a row’s menu asks first. The page moves to the Trash. The sidebar’s Confirm before deleting does not change this.', keywords: ['delete', 'confirm', 'trash', 'ask'] }),
+        // YAZ-3746 13AN: on by default, so a stray key in a cell never changes a page unasked.
+        row('confirmChanges', 'Confirm changes', ON_OFF_OPTIONS, { hint: 'A change to a page from a folder page (a typed cell, Delete, Paste, a drag to another group or day, a rename) asks first. The ask can pause for a few minutes. A folder’s ⚙ can say otherwise.', keywords: ['confirm', 'changes', 'ask', 'edit', 'lock', 'accident', 'safe', 'double'] }),
+      ],
+    },
+    {
+      title: 'View defaults',
+      // Sub-headings (YAZ-5969).
+      subheadings: [
+        { title: 'Rows and columns', rows: ['folderPages.rowHeight', 'folderPages.rowNumbers', 'folderPages.columnTypeIcons', 'folderPages.showNewButtons', 'folderPages.textInCells'] },
+        { title: 'Groups', rows: ['folderPages.groupIndent', 'folderPages.stickyGroups', 'folderPages.groupLines', 'folderPages.groupLineStyle', 'folderPages.showEmptyGroups', 'folderPages.showEmptyColumns'] },
+        { title: 'Folders', rows: ['folderPages.subfolders', 'folderPages.foldersFirst', 'folderPages.folderIcons', 'folderPages.folderCounts'] },
+        { title: 'Cards', rows: ['folderPages.cardClickOpens'] },
+        { title: 'Calendar', rows: ['folderPages.calendarScale', 'folderPages.cardTitles', 'folderPages.calendarCardStyle', 'folderPages.hideWeekends', 'folderPages.weekLine', 'folderPages.dayLine', 'folderPages.monthShade', 'folderPages.monthLine'] },
+      ],
+      hint: 'A view with no choice of its own uses these. Its menus then say "from Settings", and Reset goes back to them. Saved in the vault\'s folder-pages.json, with the Page group and Confirm changes: each vault has its own, on this Mac and on the phone.',
+      items: [
+        {
+          // YAZ-5489: the vault whose folder-pages.json the vault rows edit.
+          id: 'folderPagesVault',
+          label: 'Vault',
+          keywords: [...WORDS, 'vault'],
+          available: (ctx) => (ctx.folderPages?.vaults.length ?? 0) > 1,
+          render: ({ folderPages }) => folderPages && <Select options={folderPages.vaults.map((v) => ({ label: v.name, value: v.root }))} value={folderPages.root} onChange={folderPages.choose} ariaLabel="Vault" />,
+        },
+        row('rowHeight', 'Row height', ROW_HEIGHT_OPTIONS, { keywords: ['row', 'height', 'short', 'tall'] }),
+        row('rowNumbers', 'Row numbers', ON_OFF_OPTIONS, { keywords: ['row numbers', 'gutter', '#'] }),
+        row('columnTypeIcons', 'Column type icons', ON_OFF_OPTIONS, { hint: "A table header shows each column's type icon before its name. A table's View settings can say otherwise.", keywords: ['icon', 'type', 'column', 'header', 'kind'] }),
+        // YAZ-3746 13BL: off leaves the right-click doors (New row below, New page in this group) and the group header "+".
+        row('showNewButtons', 'Show New buttons', ON_OFF_OPTIONS, { hint: 'The + New at the top right, the + New rows, + New card, and the + on group headers. Off: right-click a row for New row below, or a group header for New page in this group. An empty view still shows + New. A folder’s ⚙ can say otherwise.', keywords: ['new', 'add', 'plus', 'button', 'row', 'card', 'hide'] }),
+        row('textInCells', 'Text in cells', TEXT_IN_CELLS_OPTIONS, { hint: 'By kind: lists, links and selects wrap; text, numbers and dates are one line. A column can say otherwise.', keywords: ['wrap', 'clip', 'cells', 'text'] }),
+        row('groupIndent', 'Group indent', GROUP_INDENT_OPTIONS, { keywords: ['group', 'indent', 'nested'] }),
+        // YAZ-4798: where you are in a long grouped table, as the sidebar shows it (sticky folders, level lines, thread).
+        row('stickyGroups', 'Sticky group headers', ON_OFF_OPTIONS, { hint: "In a grouped table, the headers of the groups you are in stay at the top under the column header while the rows scroll. A click on one goes back to its group's top. A table's View settings can say otherwise.", keywords: ['sticky', 'group', 'header', 'pin', 'scroll', 'nested'] }),
+        row('groupLines', 'Group lines', GROUP_LINES_OPTIONS, { hint: "In a grouped table, a thin line from each open group's header down to its last row. On hover shows them while the mouse is over the table.", keywords: ['group', 'lines', 'guide', 'indent', 'nested', 'hover', 'tree'] }),
+        row('groupLineStyle', 'Group line style', GROUP_LINE_STYLE_OPTIONS, { hint: 'Thread colours the lines and the headers of the groups that hold the row under the mouse, as the sidebar’s Thread to the row.', keywords: ['group', 'thread', 'bullet threading', 'path', 'lines'] }),
+        // Two switches, not one (YAZ-4608 C2): a Table's empty groups and a Board's empty columns are separate things.
+        row('showEmptyGroups', 'Show empty groups', ON_OFF_OPTIONS, { hint: 'In a table: the options of the grouping column that no page has yet.', keywords: ['empty', 'groups', 'table'] }),
+        row('showEmptyColumns', 'Show empty columns', ON_OFF_OPTIONS, { hint: 'On a board: a column for each option that no page has yet.', keywords: ['empty', 'columns', 'board'] }),
+        row('subfolders', 'Subfolders', subfoldersOptions, { keywords: ['subfolders', 'rows', 'hide'] }),
+        row('foldersFirst', 'Folders first', ON_OFF_OPTIONS, { hint: 'Subfolder rows before the pages.', keywords: ['folders', 'first', 'sort'] }),
+        // YAZ-4848: what a subfolder's row shows beside its title, in every view.
+        row('folderIcons', 'Folder icon', ON_OFF_OPTIONS, { hint: "A subfolder's row shows the folder icon before its title. A view's settings can say otherwise.", keywords: ['folder', 'icon', 'subfolder', 'row'] }),
+        row('folderCounts', 'Pages inside count', ON_OFF_OPTIONS, { hint: 'A subfolder\'s row shows how many pages its page holds, as "2 inside". A view\'s settings can say otherwise.', keywords: ['folder', 'count', 'inside', 'pages', 'number', 'subfolder', 'row'] }),
+        // YAZ-5582: a Calendar's or Board's View settings can say otherwise ("Same as Settings" follows this).
+        row('cardClickOpens', 'Clicking a card opens', CARD_CLICK_OPTIONS, { hint: 'A click on a card in a Calendar or a Board. ⌘-click still opens a background tab, ⌥-click the right panel, ⇧↩ the mini window. A view’s settings can say otherwise.', keywords: ['click', 'card', 'open', 'mini window', 'background tab', 'tab', 'calendar', 'board'] }),
+        row('calendarScale', 'Calendar opens in', CALENDAR_SCALE_OPTIONS, { keywords: ['calendar', 'month', 'week', 'rolling', 'scroll'] }),
+        row('cardTitles', 'Calendar card titles', CARD_TITLES_OPTIONS, { keywords: ['calendar', 'card', 'titles', 'wrap', 'clip'] }),
+        {
+          id: 'folderPages.calendarCardStyle',
+          label: 'Calendar card style',
+          hint: 'The look and colour of uncoloured cards in a calendar. Cards with their own colour keep it. A calendar’s View tab can say otherwise.',
+          keywords: [...WORDS, 'calendar', 'card', 'pill', 'style', 'accent', 'slate', 'bar', 'white', 'colour', 'color'],
+          render: (outer) => {
+            const { settings, onChange } = folderPagesCtx(outer, 'calendarCardStyle')
+            const style = settings.folderPages.calendarCardStyle
+            return (
+              <span className="cal-line">
+                <Segmented options={CALENDAR_CARD_STYLE_OPTIONS} value={style} onChange={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, calendarCardStyle: next } })} ariaLabel="Calendar card style" />
+                {(style === 'accent' || style === 'bar') && (
+                  <CalendarCardColorPicker
+                    label="Calendar card style"
+                    color={calendarCardColorOf(settings.folderPages)}
+                    onColor={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, calendarCardColor: next === null ? '' : writeColorStrength(next) } })}
+                  />
+                )}
+              </span>
+            )
+          },
+        },
+        row('hideWeekends', 'Calendar hides weekends', ON_OFF_OPTIONS, { hint: 'Monday to Friday only. A weekend page shows on the Friday before.', keywords: ['calendar', 'weekends', 'saturday', 'sunday', 'hide'] }),
+        // YAZ-4878: the grid's lines, a thickness and a colour each; a calendar's View tab can say otherwise.
+        lineRow('weekLine', 'weekLineColor', 'Calendar line between weeks', 'Its thickness and colour. A calendar’s View tab can say otherwise.'),
+        lineRow('dayLine', 'dayLineColor', 'Calendar line between days', 'Its thickness and colour. A calendar’s View tab can say otherwise.'),
+        // YAZ-6331: Rolling alternating month shade and Between months line defaults.
+        {
+          id: 'folderPages.monthShade',
+          label: 'Shade every other month',
+          hint: 'Rolling calendar shades every second month so months are easy to tell apart. A calendar’s View tab can say otherwise.',
+          keywords: [...WORDS, 'calendar', 'rolling', 'month', 'shade', 'colour', 'color'],
+          render: (outer) => {
+            const { settings, onChange } = folderPagesCtx(outer, 'monthShade')
+            const on = settings.folderPages.monthShade !== false
+            return (
+              <span className="cal-line">
+                <Segmented options={ON_OFF_OPTIONS} value={on} onChange={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, monthShade: next } })} ariaLabel="Shade every other month" />
+                {on && (
+                  <MonthShadeColorPicker
+                    label="Shade every other month"
+                    color={monthShadeColorOf(settings.folderPages)}
+                    onColor={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, monthShadeColor: writeColorStrength(next) } })}
+                  />
+                )}
+              </span>
+            )
+          },
+        },
+        {
+          id: 'folderPages.monthLine',
+          label: 'Calendar line between months',
+          hint: 'A stepped line round each month in Month and Rolling calendars. A calendar’s View tab can say otherwise.',
+          keywords: [...WORDS, 'calendar', 'month', 'lines', 'thickness', 'width', 'colour', 'color', 'px'],
+          render: (outer) => {
+            const { settings, onChange } = folderPagesCtx(outer, 'monthLine')
+            return (
+              <CalLineControls
+                label="Calendar line between months"
+                offable
+                width={monthLineOf(settings.folderPages)}
+                color={monthLineColorOf(settings.folderPages)}
+                onWidth={(px) => onChange({ ...settings, folderPages: { ...settings.folderPages, monthLine: px } })}
+                onColor={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, monthLineColor: writeColorStrength(next) } })}
+              />
+            )
+          },
+        },
+      ],
+    },
+    {
+      title: 'Page',
+      items: [
+        row('showFolderPageFiles', 'Show folder page files', ON_OFF_OPTIONS, { hint: "Each folder's page file in the sidebar, first under its folder. A folder's ⚙ can say otherwise.", keywords: ['sidebar', 'page file', '.folder.md'] }),
+        row('showOtherFiles', 'Show Other files', ON_OFF_OPTIONS, { hint: "A tray at the foot of each folder page: the folder's files that are not pages, and the pages moved out of its views. A folder's ⚙ can say otherwise.", keywords: ['other files', 'tray', 'pdf', 'image', 'drawing'] }),
+        row('inheritColumns', "Show parent folders' columns", ON_OFF_OPTIONS, { hint: "A folder page shows the columns of the folders above it too. A folder's ⚙ can say otherwise.", keywords: ['columns', 'parent', 'inherit', 'properties', 'schema'] }),
+        row('columnMarks', 'Show where columns come from', COLUMN_MARKS_OPTIONS, { hint: "A tiny mark after a column's name: ↳ when a parent folder defines it, ↑ when a subfolder does, a lock when the folder keeps its own value, ◌ when it is only a field in the pages. A folder's ⚙ can say otherwise.", keywords: ['columns', 'icon', 'parent', 'subfolder', 'inherit', 'lock', 'separate'] }),
+      ],
+    },
+  ],
+}

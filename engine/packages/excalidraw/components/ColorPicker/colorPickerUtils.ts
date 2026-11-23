@@ -3,6 +3,8 @@ import {
   MAX_CUSTOM_COLORS_USED_IN_CANVAS,
 } from "@excalidraw/common";
 
+import { getIconRecipe, normalizeIconColor } from "@excalidraw/element";
+
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import type { ColorPickerColor, ColorPaletteCustom } from "@excalidraw/common";
@@ -56,6 +58,15 @@ export const SEMANTIC_COLOR_HOTKEYS = defineSemanticColorHotkeys({
   orange: "o",
   bronze: "n",
 } as const);
+
+/**
+ * YAZ-4348 demo: the ⇧ letters that keep their own action with a selection (⇧V Flip vertical, ⇧G the
+ * eyedropper), so they never color the fill (violet, green; YAZ-4277 D16: ⇧ is the fill).
+ */
+export const SHIFT_KEYS_KEPT_FROM_COLORS: ReadonlySet<string> = new Set([
+  "v",
+  "g",
+]);
 
 const semanticColorEntries = Object.entries(SEMANTIC_COLOR_HOTKEYS) as [
   ColorPickerColor,
@@ -153,42 +164,94 @@ export const isCustomColor = ({
   return !paletteValues.includes(color);
 };
 
+/**
+ * YAZ-4366: each color an element shows, for the two board color lists: `props` of the element, then, on an icon,
+ * its recipe's painted colors (colors, parts, outline). `icons: false` skips the recipe.
+ */
+const forEachElementColor = (
+  element: ExcalidrawElement,
+  props: readonly ("strokeColor" | "backgroundColor")[],
+  icons: boolean,
+  visit: (color: string | null | undefined) => void,
+) => {
+  for (const prop of props) {
+    visit(element[prop]);
+  }
+  const recipe = icons ? getIconRecipe(element) : null;
+  if (recipe) {
+    Object.values(recipe.colors).forEach(visit);
+    Object.values(recipe.parts ?? {}).forEach(visit);
+    visit(recipe.outline?.color);
+  }
+};
+
+/**
+ * The custom colors on the board, most used first. YAZ-4352 (extra 6): an icon's
+ * painted colors count in the stroke row too (its recipe: colors, parts, outline),
+ * so an icon palette starts with the colors on this board.
+ */
 export const getMostUsedCustomColors = (
   elements: readonly ExcalidrawElement[],
   type: "elementBackground" | "elementStroke",
   palette: ColorPaletteCustom,
 ) => {
-  const elementColorTypeMap = {
-    elementBackground: "backgroundColor",
-    elementStroke: "strokeColor",
-  };
-
-  const colors = elements.filter((element) => {
-    if (element.isDeleted) {
-      return false;
-    }
-
-    const color =
-      element[elementColorTypeMap[type] as "backgroundColor" | "strokeColor"];
-
-    return isCustomColor({ color, palette });
-  });
+  const property =
+    type === "elementBackground" ? "backgroundColor" : "strokeColor";
 
   const colorCountMap = new Map<string, number>();
-  colors.forEach((element) => {
-    const color =
-      element[elementColorTypeMap[type] as "backgroundColor" | "strokeColor"];
-    if (colorCountMap.has(color)) {
-      colorCountMap.set(color, colorCountMap.get(color)! + 1);
-    } else {
-      colorCountMap.set(color, 1);
+  const count = (color: string | null | undefined) => {
+    if (color && isCustomColor({ color, palette })) {
+      colorCountMap.set(color, (colorCountMap.get(color) ?? 0) + 1);
     }
-  });
+  };
+  for (const element of elements) {
+    if (element.isDeleted) {
+      continue;
+    }
+    forEachElementColor(element, [property], type === "elementStroke", count);
+  }
 
   return [...colorCountMap.entries()]
     .sort((a, b) => b[1] - a[1])
     .map((c) => c[0])
     .slice(0, MAX_CUSTOM_COLORS_USED_IN_CANVAS);
+};
+
+/** The most board colors "Match my board" reads. */
+const MAX_BOARD_COLORS = 32;
+
+/**
+ * YAZ-4348 demo ("Match my board"): every color on the board, most used first,
+ * as `#rrggbb`: each element's stroke and background, and each icon's painted
+ * colors (its recipe). The element `exceptId` (the icon being edited) does not
+ * count. Black, white and greys are in the list; the caller keeps what it needs.
+ */
+export const getBoardColors = (
+  elements: readonly ExcalidrawElement[],
+  exceptId?: string,
+) => {
+  const counts = new Map<string, number>();
+  const count = (value: string | null | undefined) => {
+    const color = normalizeIconColor(value);
+    if (color && color !== "currentColor") {
+      counts.set(color, (counts.get(color) ?? 0) + 1);
+    }
+  };
+  for (const element of elements) {
+    if (element.isDeleted || element.id === exceptId) {
+      continue;
+    }
+    forEachElementColor(
+      element,
+      ["strokeColor", "backgroundColor"],
+      true,
+      count,
+    );
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([color]) => color)
+    .slice(0, MAX_BOARD_COLORS);
 };
 
 export type ActiveColorPickerSectionAtomType =

@@ -27,7 +27,7 @@ const alreadyExists = () => new BridgeRequestError('ALREADY_EXISTS', 'path alrea
 
 /** A fixed clock so the name is asserted literally, not re-derived from the code under test. */
 const AT = new Date(2026, 8, 18, 14, 30, 5)
-const OPTS = { root: '/v', notePath: '/v/notes/My Note.md' }
+const OPTS = { root: '/v', pagePath: '/v/pages/My Page.md' }
 const PNG = new File([new Uint8Array([1, 2, 3])], 'clip.png', { type: 'image/png' })
 
 /** jsdom has no DataTransfer constructor; the two lists are all the code reads. */
@@ -88,9 +88,9 @@ describe('naming', () => {
     expect(extFor('image/tiff')).toBe('png')
     expect(extFor('')).toBe('png')
   })
-  it('names by note basename + local clock, second-granular, with a -N suffix on retry; spaces become -', () => {
-    expect(imageName('My Note', AT, 'png')).toBe('My-Note-20260918-143005.png')
-    expect(imageName('My Note', AT, 'jpg', 1)).toBe('My-Note-20260918-143005-2.jpg')
+  it('names by page basename + local clock, second-granular, with a -N suffix on retry; spaces become -', () => {
+    expect(imageName('My Page', AT, 'png')).toBe('My-Page-20260918-143005.png')
+    expect(imageName('My Page', AT, 'jpg', 1)).toBe('My-Page-20260918-143005-2.jpg')
     expect(imageName('n', new Date(2026, 0, 2, 3, 4, 5), 'png')).toBe('n-20260102-030405.png')
     expect(imageName('  a  b ', AT, 'png')).toBe('a-b-20260918-143005.png')
     expect(imageName('', AT, 'png')).toBe('image-20260918-143005.png')
@@ -99,16 +99,16 @@ describe('naming', () => {
 
 describe('insertPastedImage', () => {
   it('writes the bytes under assets/images with create:true and inserts the node at the selection', async () => {
-    writeAsset.mockResolvedValue(receipt('/v/assets/images/My-Note-20260918-143005.png'))
+    writeAsset.mockResolvedValue(receipt('/v/assets/images/My-Page-20260918-143005.png'))
     const { crepe, view } = await mount('before after\n')
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 8))) // after "before "
     await insertPastedImage(OPTS, view, PNG, AT)
     expect(writeAsset).toHaveBeenCalledTimes(1)
     const [req] = writeAsset.mock.calls[0]
-    expect(req).toMatchObject({ root: '/v', path: `${IMAGES_DIR}/My-Note-20260918-143005.png`, create: true })
+    expect(req).toMatchObject({ root: '/v', path: `${IMAGES_DIR}/My-Page-20260918-143005.png`, create: true })
     expect(req.content).toBeInstanceOf(Uint8Array)
     expect(Array.from(req.content as Uint8Array)).toEqual([1, 2, 3])
-    expect(getMarkdownForSave(crepe)).toBe('before ![My-Note-20260918-143005](assets/images/My-Note-20260918-143005.png)after\n')
+    expect(getMarkdownForSave(crepe)).toBe('before ![My-Page-20260918-143005](assets/images/My-Page-20260918-143005.png)after\n')
   })
 
   it('a wide image starts at PASTED_IMAGE_WIDTH via `|W`; a narrow one keeps its natural size; the bytes are untouched', async () => {
@@ -116,16 +116,16 @@ describe('insertPastedImage', () => {
     vi.stubGlobal('createImageBitmap', bitmap)
     try {
       bitmap.mockResolvedValueOnce({ width: 1600, close: () => undefined })
-      writeAsset.mockResolvedValue(receipt('/v/assets/images/My-Note-20260918-143005.png'))
+      writeAsset.mockResolvedValue(receipt('/v/assets/images/My-Page-20260918-143005.png'))
       const wide = await mount('')
       await insertPastedImage(OPTS, wide.view, PNG, AT)
-      expect(getMarkdownForSave(wide.crepe)).toContain(`![My-Note-20260918-143005|${PASTED_IMAGE_WIDTH}](assets/images/My-Note-20260918-143005.png)`)
+      expect(getMarkdownForSave(wide.crepe)).toContain(`![My-Page-20260918-143005|${PASTED_IMAGE_WIDTH}](assets/images/My-Page-20260918-143005.png)`)
       expect(Array.from(writeAsset.mock.calls[0][0].content as Uint8Array)).toEqual([1, 2, 3]) // full-res bytes, no re-encode
 
       bitmap.mockResolvedValueOnce({ width: 200, close: () => undefined })
       const narrow = await mount('')
       await insertPastedImage(OPTS, narrow.view, PNG, AT)
-      expect(getMarkdownForSave(narrow.crepe)).toContain('![My-Note-20260918-143005](assets/images/My-Note-20260918-143005.png)')
+      expect(getMarkdownForSave(narrow.crepe)).toContain('![My-Page-20260918-143005](assets/images/My-Page-20260918-143005.png)')
     } finally {
       vi.unstubAllGlobals()
     }
@@ -134,19 +134,19 @@ describe('insertPastedImage', () => {
   it('NEVER overwrites: ALREADY_EXISTS retries with -2, -3', async () => {
     writeAsset.mockRejectedValueOnce(alreadyExists())
     writeAsset.mockRejectedValueOnce(alreadyExists())
-    writeAsset.mockResolvedValue(receipt('/v/assets/images/My-Note-20260918-143005-3.png'))
+    writeAsset.mockResolvedValue(receipt('/v/assets/images/My-Page-20260918-143005-3.png'))
     const { crepe, view } = await mount('')
     await insertPastedImage(OPTS, view, PNG, AT)
     expect(writeAsset.mock.calls.map((c) => c[0].path)).toEqual([
-      `${IMAGES_DIR}/My-Note-20260918-143005.png`,
-      `${IMAGES_DIR}/My-Note-20260918-143005-2.png`,
-      `${IMAGES_DIR}/My-Note-20260918-143005-3.png`,
+      `${IMAGES_DIR}/My-Page-20260918-143005.png`,
+      `${IMAGES_DIR}/My-Page-20260918-143005-2.png`,
+      `${IMAGES_DIR}/My-Page-20260918-143005-3.png`,
     ])
-    expect(getMarkdownForSave(crepe)).toContain('![My-Note-20260918-143005-3](assets/images/My-Note-20260918-143005-3.png)')
+    expect(getMarkdownForSave(crepe)).toContain('![My-Page-20260918-143005-3](assets/images/My-Page-20260918-143005-3.png)')
   })
 
   it('a paste while an image is SELECTED inserts after it — the selected image is never replaced', async () => {
-    writeAsset.mockResolvedValue(receipt('/v/assets/images/My-Note-20260918-143005.png'))
+    writeAsset.mockResolvedValue(receipt('/v/assets/images/My-Page-20260918-143005.png'))
     const { crepe, view } = await mount('![first](images/first.png)\n')
     let pos = -1
     view.state.doc.descendants((node, p) => {
@@ -155,7 +155,7 @@ describe('insertPastedImage', () => {
     })
     view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)))
     await insertPastedImage(OPTS, view, PNG, AT)
-    expect(getMarkdownForSave(crepe)).toBe('![first](images/first.png)![My-Note-20260918-143005](assets/images/My-Note-20260918-143005.png)\n')
+    expect(getMarkdownForSave(crepe)).toBe('![first](images/first.png)![My-Page-20260918-143005](assets/images/My-Page-20260918-143005.png)\n')
     // The caret sits after the new image, ready for the next paste.
     expect(view.state.selection).toBeInstanceOf(TextSelection)
     expect(view.state.selection.from).toBe(pos + 2)

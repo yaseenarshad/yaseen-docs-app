@@ -39,7 +39,7 @@ import { atomicWrite, vaultFiles } from './fsUtils'
 import { landingFolder } from './picturesFolders'
 
 /**
- * Every `.excalidraw` in the vault outside the top-level `assets/`, in a stable order. Docs' note
+ * Every `.excalidraw` in the vault outside the top-level `assets/`, in a stable order. Docs' page
  * embeds live in `assets/drawings/` and keep their pictures inside on purpose (rule 28), so they are
  * never rewritten here.
  */

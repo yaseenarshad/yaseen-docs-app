@@ -35,7 +35,7 @@ import type {
   FontString,
 } from "@excalidraw/element/types";
 
-import type { HostLinkHit, HostTextEditor } from "../types";
+import type { HostLinkHit, HostTextEditorState } from "../types";
 
 /**
  * YAZ-4039 D7, D11: `[[inner]]` in a text box is a pill. Hover reports it,
@@ -62,7 +62,7 @@ const hostLinks = {
   onContextMenu: vi.fn<(hit: HostLinkHit, event: MouseEvent) => boolean>(),
   pasteLink: (text: string) =>
     text === "/vault/Growth plan.md" ? "[[YAS-1]]" : null,
-  onEditorChange: vi.fn<(editor: HostTextEditor | null) => void>(),
+  onEditorChange: vi.fn<(editor: HostTextEditorState | null) => void>(),
   onEditorKeyDown: vi.fn<(event: KeyboardEvent) => boolean>(),
 };
 
@@ -255,47 +255,34 @@ describe("links in the text editor", () => {
     expect(state.replaceLink("[[Gone]]", "[[X]]")).toBe(false);
   });
 
-  // YAZ-4071 7L: a script edit is not on the text box's undo stack, and it
-  // leaves the stack out of step with the text: ⌘Z after the swap could cut
-  // the wrong letters, or do nothing. jsdom has no undo: the fake
-  // `execCommand` edits as the browser does, and records each call.
-  it("YAZ-4071 7L: a new page's ID goes in through the browser's undoable edit, the caret stays, and it never takes the focus", async () => {
-    const calls: { text: string; at: number[] }[] = [];
-    Object.defineProperty(document, "execCommand", {
-      configurable: true,
-      value: (_command: string, _ui?: boolean, text = "") => {
-        const editor = document.activeElement as HTMLTextAreaElement;
-        const { selectionStart, selectionEnd } = editor;
-        calls.push({ text, at: [selectionStart, selectionEnd] });
-        editor.setRangeText(text, selectionStart, selectionEnd, "end");
-        editor.dispatchEvent(new Event("input"));
-        return true;
-      },
-    });
-    try {
-      const { text, editor } = await edit();
-      editor.focus();
-      moveCaret(editor, 2);
-      const state = hostLinks.onEditorChange.mock.calls.at(-1)![0]!;
-      expect(state.replaceLink("[[YAS-1]]", "[[Notes]]")).toBe(true);
-      expect(calls).toEqual([{ text: "[[Notes]]", at: [4, 13] }]);
-      expect(editor.value).toBe("see [[Notes]] now");
-      expect(textOf(text.id)).toBe("see [[Notes]] now");
-      expect(editor.selectionStart).toBe(2);
+  // YAZ-4277 1D: the editor's own edit (one ⌘Z step, in the box editor); it
+  // never takes the focus, also when a toolbar popup has it
+  it("a new page's ID goes in as one edit of the editor, the caret stays, and it never takes the focus", async () => {
+    const { text, editor } = await edit();
+    moveCaret(editor, 2);
+    const state = hostLinks.onEditorChange.mock.calls.at(-1)![0]!;
+    const focused = document.activeElement;
+    expect(state.replaceLink("[[YAS-1]]", "[[Notes]]")).toBe(true);
+    expect(editor.value).toBe("see [[Notes]] now");
+    expect(textOf(text.id)).toBe("see [[Notes]] now");
+    expect(editor.selectionStart).toBe(2);
+    expect(document.activeElement).toBe(focused);
+  });
 
-      // the editor without the focus (a toolbar popup has it): the old edit
-      Object.defineProperty(document, "activeElement", {
-        configurable: true,
-        get: () => document.body,
-      });
-      expect(state.replaceLink("[[Notes]]", "[[YAS-1]]")).toBe(true);
-      delete (document as { activeElement?: unknown }).activeElement;
-      expect(calls).toHaveLength(1);
-      expect(editor.value).toBe("see [[YAS-1]] now");
-      expect(document.activeElement).toBe(editor);
-    } finally {
-      delete (document as { execCommand?: unknown }).execCommand;
-    }
+  it("gives the link menu on a right-click on a pill in the editor", async () => {
+    const { text, editor } = await edit();
+    const shown = fireEvent.contextMenu(editor, {
+      button: 2,
+      clientX: PILL.x,
+      clientY: PILL.y,
+    });
+    expect(shown).toBe(false);
+    expect(hostLinks.onContextMenu.mock.calls[0][0]).toMatchObject({
+      elementId: text.id,
+      inner: "YAS-1",
+      start: 4,
+      end: 13,
+    });
   });
 
   it("lets the host's open picker take its keys", async () => {
@@ -381,10 +368,14 @@ describe("links in the text editor", () => {
     }
   });
 
-  it("draws the pill in the editor", async () => {
+  // YAZ-4277 D1: the canvas keeps drawing the box, its pill too
+  it("keeps the pill drawn by the canvas in the editor", async () => {
     await edit();
-    const pill = document.querySelector(".excalidraw-wysiwyg-link-pill");
-    expect(pill?.textContent).toBe("Growth plan");
+    expect(
+      (h.app as unknown as { hasRenderableElements: boolean })
+        .hasRenderableElements,
+    ).toBe(true);
+    expect(document.querySelector(".excalidraw-wysiwyg-link-pill")).toBeNull();
   });
 });
 
@@ -581,7 +572,7 @@ describe("YAZ-4110 5B: the pill's file icon", () => {
     expect(outline.querySelectorAll("g path[fill='none']")).toHaveLength(1);
   });
 
-  it("measures the pill without its icon when icons are off, and shows the icon in the editor", async () => {
+  it("measures the pill without its icon when icons are off, and with it when they are on", async () => {
     let look: { icon?: typeof icon | null } = { icon: null };
     await render(
       <Excalidraw
@@ -604,12 +595,8 @@ describe("YAZ-4110 5B: the pill's file icon", () => {
 
     look = { icon };
     act(() => notify());
-    API.setSelectedElements([text]);
-    Keyboard.keyPress(KEYS.ENTER);
-    await getTextEditor();
-    const pill = document.querySelector(".excalidraw-wysiwyg-link-pill");
-    expect(pill?.querySelector("img")?.getAttribute("src")).toBe(icon.url);
-    expect(pill?.querySelector("svg")).toBeNull();
+    // YAZ-4277 D1: the editor shows the box the canvas draws, icon and all
+    expect((h.elements[0] as ExcalidrawTextElement).width).toBeGreaterThan(120);
   });
 });
 

@@ -11,17 +11,17 @@ beforeAll(async () => ({ root, cleanup } = await makeFixture()))
 afterAll(() => cleanup())
 
 describe('readHeads (YAZ-2648 D6)', () => {
-  it('answers in the order asked with the top of each note, the frontmatter off; a path that fails, a folder and a file that is no note are null and fail nothing', async () => {
-    const note = path.join(root, 'head.md')
-    await writeFile(note, '---\ntitle: Head\n---\nFirst line\n\n- a bullet\n')
+  it('answers in the order asked with the top of each page, the frontmatter off; a path that fails, a folder and a file that is no page are null and fail nothing', async () => {
+    const page = path.join(root, 'head.md')
+    await writeFile(page, '---\ntitle: Head\n---\nFirst line\n\n- a bullet\n')
     await mkdir(path.join(root, 'Folder.md'))
-    const heads = await readHeads([path.join(root, 'A.md'), path.join(root, 'gone.md'), note, path.join(root, 'notes.txt'), path.join(root, 'Folder.md'), 'relative.md'])
+    const heads = await readHeads([path.join(root, 'A.md'), path.join(root, 'gone.md'), page, path.join(root, 'pages.txt'), path.join(root, 'Folder.md'), 'relative.md'])
     expect(heads.map((head) => head?.text ?? null)).toEqual(['# A\n', null, 'First line\n\n- a bullet\n', null, null, null])
-    expect(heads[2]).toMatchObject({ path: note })
+    expect(heads[2]).toMatchObject({ path: page })
     expect(heads[2]?.mtime).toBeGreaterThan(0)
     expect((await failure(readHeads('not a list'))).code).toBe('BAD_REQUEST')
 
-    // S55: an empty note, and a note of a properties block alone, have a head with no text: the page shows its title.
+    // S55: an empty page, and a page of a properties block alone, have a head with no text: the page shows its title.
     const empty = path.join(root, 'empty.md')
     const onlyBlock = path.join(root, 'only-block.md')
     await writeFile(empty, '')
@@ -29,7 +29,7 @@ describe('readHeads (YAZ-2648 D6)', () => {
     expect((await readHeads([empty, onlyBlock])).map((head) => head?.text ?? null)).toEqual(['', ''])
   })
 
-  it('reads only the head of a big note: the text is cut at HEAD_CHARS, never inside a character, and a frontmatter block still open where the read stops gives no text', async () => {
+  it('reads only the head of a big page: the text is cut at HEAD_CHARS, never inside a character, and a frontmatter block still open where the read stops gives no text', async () => {
     // The surrogate pair straddles the character limit of the answer.
     const big = path.join(root, 'big.md')
     await writeFile(big, `${'a'.repeat(HEAD_CHARS - 1)}😀${'€'.repeat(HEAD_READ_BYTES)}`)

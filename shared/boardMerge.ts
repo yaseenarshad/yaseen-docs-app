@@ -1,5 +1,5 @@
-import { BOARD_ID_KEY, BOARD_META_KEY, boardIdOf, FORMER_IDS_KEY, formerBoardIdsOf, HOVER_LINKS_KEY, PICTURES_FOLDER_KEY, PICTURES_KEY, SWITCHED_KEY } from './drawingAssets'
-import { canonicalNoteId, noteIdNumber } from './noteId'
+import { BOARD_ID_KEY, BOARD_META_KEY, boardIdOf, FOLD_ARROWS_KEY, FORMER_IDS_KEY, formerBoardIdsOf, HOVER_LINKS_KEY, HOVER_OUTLINE_KEY, PICTURES_FOLDER_KEY, PICTURES_KEY, SWITCHED_KEY } from './drawingAssets'
+import { canonicalPageId, pageIdNumber } from './pageId'
 import { READ_ONLY_KEY } from './readOnly'
 import { isFiniteNumber, isRecord } from './guards'
 
@@ -253,10 +253,11 @@ export function mergeBoards(baseText: string, theirsText: string, mineText: stri
 }
 
 /**
- * The switches of the block (YAZ-3943 1E): Read only, "pictures out" and the link preview on hover (demo 2). The default is
- * no key. A board's own pictures folder (`picturesFolder`, demo round 3) rides with "pictures out": one switch, one time.
+ * The switches of the block (YAZ-3943 1E): Read only, "pictures out", the link preview on hover (demo 2), the fold
+ * arrows (YAZ-4277 D5) and the hover outline (YAZ-4469 demo). The default is no key. A board's own pictures folder
+ * (`picturesFolder`, demo round 3) rides with "pictures out": one switch, one time.
  */
-const SWITCHES = [READ_ONLY_KEY, PICTURES_KEY, HOVER_LINKS_KEY]
+const SWITCHES = [READ_ONLY_KEY, PICTURES_KEY, HOVER_LINKS_KEY, FOLD_ARROWS_KEY, HOVER_OUTLINE_KEY]
 const RIDES_WITH: Readonly<Record<string, readonly string[]>> = { [PICTURES_KEY]: [PICTURES_FOLDER_KEY] }
 
 /** When the switch `key` of `block` last changed; a switch with no time is older than any change. */
@@ -290,7 +291,7 @@ function mergeMeta(theirs: unknown, mine: unknown): Record<string, unknown> | nu
   // other goes to `formerIds`, with every ID either side held before, so a link to any of them still opens the board.
   const [t, m] = [boardIdOf(theirs), boardIdOf(mine)]
   const former = new Set([...formerBoardIdsOf(theirs), ...formerBoardIdsOf(mine)])
-  if (t !== undefined && m !== undefined && canonicalNoteId(t) !== canonicalNoteId(m)) {
+  if (t !== undefined && m !== undefined && canonicalPageId(t) !== canonicalPageId(m)) {
     const [keep, lose] = idOrder(t, m) <= 0 ? [t, m] : [m, t]
     meta[BOARD_ID_KEY] = keep
     former.add(lose)
@@ -303,6 +304,6 @@ function mergeMeta(theirs: unknown, mine: unknown): Record<string, unknown> | nu
 
 /** The order of two board IDs: the lower number first; IDs with no number (another tool's), or one number, by their text. */
 function idOrder(a: string, b: string): number {
-  const [x, y] = [noteIdNumber(a) ?? Infinity, noteIdNumber(b) ?? Infinity]
+  const [x, y] = [pageIdNumber(a) ?? Infinity, pageIdNumber(b) ?? Infinity]
   return x !== y ? x - y : a < b ? -1 : a > b ? 1 : 0
 }

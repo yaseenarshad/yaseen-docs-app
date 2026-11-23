@@ -1,6 +1,6 @@
 /** S6 with a list in one body cell in five (YAZ-3818 D3): its own file, so a fresh worker (`tableSpeedKit.ts`). */
 import { afterEach, describe, expect, it } from 'vitest'
-import { median } from '../../test-perf'
+import { budgetMs, median } from '../../test-perf'
 import { BIG, LISTS, bulletText, cellText, closeAll, mount, typeInTurn } from './tableSpeedKit'
 
 afterEach(closeAll)
@@ -20,6 +20,6 @@ describe('S6: a 500 × 10 table with cell lists stays fast', () => {
     for (const t of tables) await t.close()
     const [table, lists] = [median(keys.table), median(keys.lists)]
     console.log(`S6 lists: type ms/key: table ${table.toFixed(2)}, cell bullet in a table with 1,000 cell lists ${lists.toFixed(2)} (medians of 48 keys, typed in turn; ratio ${(lists / table).toFixed(2)}, jsdom)`)
-    expect(lists).toBeLessThan(60)
+    expect(lists).toBeLessThan(budgetMs(60))
   }, 120_000)
 })

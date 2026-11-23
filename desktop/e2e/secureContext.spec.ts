@@ -18,7 +18,7 @@ import { SMALL_WIDTH, smallPng } from './imageFixtures'
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Secure.md'
+const PAGE = 'Secure.md'
 const ALLOWED = /^(app|data|blob):/
 
 let userData: string
@@ -32,7 +32,7 @@ test.beforeAll(async () => {
   vault = await mkdtemp(path.join(tmpdir(), 'secure-vault-'))
   await mkdir(path.join(vault, 'images'))
   await writeFile(path.join(vault, 'images', 'a.png'), smallPng(7))
-  await writeFile(path.join(vault, NOTE), '# Secure\n\nsecure-body\n\n![a](images/a.png)\n')
+  await writeFile(path.join(vault, PAGE), '# Secure\n\nsecure-body\n\n![a](images/a.png)\n')
 })
 
 test.afterAll(async () => {
@@ -41,7 +41,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — the window is a secure `app://yaseen` context with working crypto.subtle and same-origin fetch', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, NOTE)) })
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, PAGE)) })
   app.context().on('request', (request) => requested.push(request.url()))
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText('secure-body')

@@ -1,0 +1,181 @@
+/* A page's comments on the phone, read only, after the Mac's comment block (`client/src/comments/comments.css`),
+   and the inline box at their end. On the app's tokens (`styles.css`). */
+
+.page-comments {
+  clear: both;
+  margin: 32px 0 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.page-comments__head {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.page-comments__thread {
+  margin: 0 0 6px;
+}
+
+.page-comments__item {
+  padding: 8px 0;
+}
+
+/* Replies: one level in, as the Mac's thread. */
+.page-comments__item--reply {
+  margin-left: 18px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+
+.page-comments__item--resolved {
+  opacity: 0.7;
+}
+
+.page-comments__item--pending .page-comments__body {
+  color: var(--fg-muted);
+}
+
+.page-comments__item--refused {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg-side);
+}
+
+.page-comments__meta {
+  margin: 0 0 2px;
+  font-size: 13px;
+}
+
+.page-comments__n {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.page-comments__who {
+  font-weight: 600;
+}
+
+.page-comments__muted {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+.page-comments__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.page-comments__body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.page-comments__problem {
+  margin: 6px 0 0;
+  color: var(--danger);
+  font-size: 14px;
+}
+
+.page-comments__resolved {
+  margin-top: 4px;
+}
+
+/* The new comment, inline at the end of the comments (no floating button). Quiet at rest: one line on the
+   page's own background; it grows when it takes the focus, the comments still in view above. */
+.page-comments__new {
+  margin-top: 14px;
+}
+
+/* 16 px: iOS does not zoom into the box when it takes the focus. */
+.page-comments__box {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  /* A field border at 3:1 (the contrast check): quiet by its thin line and the page's own background. */
+  border: 1px solid var(--control-border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.35;
+  resize: none;
+}
+
+.page-comments__box::placeholder {
+  color: var(--fg-muted);
+}
+
+.page-comments__box:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.page-comments__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* "Approved": a pre-fill, a quiet chip at the left of the row; Comment at its right. */
+.page-comments__chip {
+  min-height: var(--tap);
+  margin-right: auto;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.page-comments__send {
+  min-height: var(--tap);
+}
+
+.page-comments__send:disabled {
+  opacity: 0.5;
+}
+
+/* The comment count near the title: a speech bubble and the open count, quiet, in the column (no float
+   over the page). A tap glides to the comments. 44 px tall for the tap; it looks small. */
+.comments-count {
+  float: right;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  margin: -6px -8px 0 8px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.comments-count__icon {
+  flex: none;
+}
+
+/* The card view hides its title (`reader__title--same`: the card's band says it), so the count floats beside
+   nothing, and the card box (`position: relative`, card.css) starts at the same height and paints over the float. In the
+   card view the count takes a row of its own above the card, at the right: seen, and a tap's own. */
+.card-view > .comments-count {
+  float: none;
+  display: flex;
+  width: fit-content;
+  margin: -6px -8px 0 auto;
+}

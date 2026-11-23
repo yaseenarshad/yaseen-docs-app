@@ -1,0 +1,31 @@
+/* YAZ-5696 round 2: the small eye by "Show card titles" and "Title in review", and its four lines. */
+.card-title-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted, currentColor);
+  vertical-align: middle;
+  cursor: help;
+}
+.card-title-help:hover,
+.card-title-help:focus-visible {
+  background: var(--hover, rgba(127, 127, 127, 0.15));
+  color: var(--fg);
+}
+.card-title-help__box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 340px;
+  white-space: normal;
+}
+.hover-tip:has(> .card-title-help__box) {
+  max-width: 360px;
+}

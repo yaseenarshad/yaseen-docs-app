@@ -1,14 +1,24 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { mergeBoards } from '@shared/boardMerge'
-import { isBoard, isDiagram, isDrawing } from '@shared/fileKind'
+import { mergePageComments, pageRest, type PageMerge } from '@shared/commentMerge'
+import { uniteCardLines } from '@shared/cardMerge'
+import { uniteInlineDrawings } from '@shared/inlineDrawingMerge'
+import { mergeConfigFile } from '@shared/configMerge'
+import { mergeLinesApart } from '@shared/lineMerge'
+import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { titleOf } from '@shared/pageName'
+import { isBoard, isDiagram, isDrawing, isMarkdown } from '@shared/fileKind'
+import { mergePeopleFile, PEOPLE_FILE } from '@shared/people'
 import { VAULT_CONFIG_DIR, type GithubSyncMerge } from '@shared/types'
-import { FAVORITES_FILE, mergeFavoritesFile } from '../favorites'
+import { FAVORITES_FILE, FAVORITES_WORKSPACE_FILE, mergeFavoritesFile } from '../favorites'
 import { ICONS_FILE, mergeIconsFile } from '@shared/vaultIcons'
 import { atomicWrite } from '../fs/fsUtils'
 import { mergeSharesFile, SHARES_FILE } from '../share/shareLinks'
 import { git, zList } from './exec'
+import { FRIENDS_LIST } from './friendsListRule'
 
 /**
  * A REBASE THAT STOPPED ON CONFLICTS, FINISHED INSTEAD OF ABANDONED — for DRAWINGS (🔒 YAZ-1897
@@ -23,14 +33,27 @@ import { git, zList } from './exec'
  *  - a DIAGRAM (`.drawio`) KEEPS BOTH (YAZ-1802 D8): the remote's version at the path, ours beside
  *    it as `<name> (conflict, YYYY-MM-DD).drawio`. So does a drawing that will not parse, or two
  *    unrelated new drawings at one path;
- *  - the vault's `shares.json`, `favorites.json` and `icons.json` (YAZ-3440 D8) merge per entry;
- *  - a board one side deleted and the other edited keeps the edit.
+ *  - the vault's `shares.json`, `favorites.json` (and `favorites-workspace.json`, YAZ-4450) and `icons.json` (YAZ-3440 D8) merge per entry;
+ *  - a board one side deleted and the other edited keeps the edit;
+ *  - a PAGE (YAZ-4615 D4, D9 — `shared/commentMerge.ts`): its comments merge by id, and a clashing
+ *    number goes to the local comment; when both sides changed the SAME lines of the REST of the page (edits on
+ *    different lines merge, next to each other too: git's merge, then `shared/lineMerge.ts`, YAZ-5515), the remote's stays at the path with every comment merged into
+ *    it, and ours goes beside it as `<name> (conflict, YYYY-MM-DD).md`, with no comments — so one
+ *    page never stops the whole vault's sync again. (This reverses YAZ-3028 D12's "a page never gets
+ *    a conflicted copy". A page still never gets a `<<<<<<<` marker.) A `.folder.md` is a page here.
+ *    Before all of that, a CARD both sides answered or marked takes the same line on both sides (YAZ-5089,
+ *    `shared/cardMerge.ts`): the union of its reviews, a three-way result for its marks — so a review clash makes no copy;
+ *  - the vault's `people.json` (YAZ-4615 D1) merges card by card, the newer card winning;
+ *  - every OTHER settings file straight in the vault's `.yaseendocs/` (YAZ-5483: `text-formatting.json`,
+ *    `link-pills.json`, `review.json`, `new-places.json`, `daily-pages.json`, …, and each one to come) merges KEY BY
+ *    KEY (`shared/configMerge.ts`): one side's change wins, a clash takes the remote's value and is logged, and a side
+ *    that is not valid JSON is dropped for the valid one. So no settings file stops the vault's sync. Not by key:
+ *    the files above with their own merge, and `NOT_BY_KEY` (page IDs, property declarations).
  *
- * DOCS IS THE FIRST-CLASS APP (YAZ-3028 D12). Everything else — a NOTE above all, any other file,
- * any other `.yaseendocs/` config — is NOT settled here: one such conflict at a stop aborts the
- * whole rebase before anything is written, exactly as Docs did before (`attention/conflict`, "the
- * same lines changed on two machines — nothing was lost, but this needs a human"). A note never
- * gets a conflicted copy and never gets a `<<<<<<<` marker.
+ * Everything else — any other file — is NOT settled here: one such
+ * conflict at a stop aborts the whole rebase before anything is written, exactly as Docs did before
+ * (`attention/conflict`, "the same lines changed on two machines — nothing was lost, but this needs
+ * a human").
  *
  * THE LOSSLESS RULE STILL HOLDS. Anything this cannot settle — a git step that fails, a stop that
  * is not a conflict — aborts the rebase exactly as before, and the caller reports `conflict`.
@@ -61,7 +84,30 @@ export const BOARD_MERGE_RULES = ['*.[eE][xX][cC][aA][lL][iI][dD][rR][aA][wW] -m
 
 const SHARES_PATH = `${VAULT_CONFIG_DIR}/${SHARES_FILE}`
 const FAVORITES_PATH = `${VAULT_CONFIG_DIR}/${FAVORITES_FILE}`
+/** The workspace Favorites (YAZ-4450 D1) merge by the same rule. */
+const FAVORITES_WORKSPACE_PATH = `${VAULT_CONFIG_DIR}/${FAVORITES_WORKSPACE_FILE}`
 const ICONS_PATH = `${VAULT_CONFIG_DIR}/${ICONS_FILE}`
+const PEOPLE_PATH = `${VAULT_CONFIG_DIR}/${PEOPLE_FILE}`
+
+/**
+ * The `.yaseendocs/` files that are not settings and must never merge key by key (YAZ-5483): a vault's ID letters
+ * (`letters`, `was` and `kept` hold together, and a page's ID depends on them), a backfill plan (each old ID to ONE
+ * number: a key-by-key merge could give two pages one number), and the property declarations (their own strict
+ * `version` rule: a newer file is never written by an older build).
+ */
+const NOT_BY_KEY: ReadonlySet<string> = new Set(['ids.json', 'ids-backfill.json', 'properties.json'])
+
+/**
+ * A settings file AutoSync merges key by key (YAZ-5483): a `<name>.json` straight in the vault's `.yaseendocs/`
+ * (the vault-config door's only shape), by RULE, so a file added later is covered too. Files in a subfolder (per-Mac
+ * ID counters) and the files with their own merge are not.
+ */
+export const mergesByKey = (rel: string): boolean => {
+  if (!rel.startsWith(`${VAULT_CONFIG_DIR}/`)) return false
+  const name = rel.slice(VAULT_CONFIG_DIR.length + 1)
+  if (name.includes('/') || !name.endsWith('.json') || name === '.json' || NOT_BY_KEY.has(name)) return false
+  return rel !== FRIENDS_LIST && rel !== SHARES_PATH && rel !== FAVORITES_PATH && rel !== FAVORITES_WORKSPACE_PATH && rel !== ICONS_PATH && rel !== PEOPLE_PATH
+}
 
 /**
  * The file's new contents with every entry of `entries` present, or null when it already has them
@@ -143,7 +189,7 @@ export async function rebaseStopped(bin: string, root: string): Promise<boolean>
  * and only a merge that LANDED moves "before the merge" — a failed one leaves the last one's pointer.
  *
  * A rebase that never STARTED is not ours to touch (YAZ-3044 A1): it answers null at once, before
- * anything is parked. Parking there would check the user's note out to the committed text and write
+ * anything is parked. Parking there would check the user's page out to the committed text and write
  * it back a moment later — two disk changes in one pass, which can reload a clean tab with old text.
  */
 export async function resolveRebase(bin: string, root: string, span: RebaseSpan): Promise<GithubSyncMerge[] | null> {
@@ -156,8 +202,8 @@ export async function resolveRebase(bin: string, root: string, span: RebaseSpan)
     for (;;) {
       const conflicted = [...new Set(zList(await git(bin, root, ['ls-files', '-z', '--unmerged'])).map((line) => line.slice(line.indexOf('\t') + 1)))]
       if (conflicted.length === 0) return null // stopped for something that is not a conflict
-      // YAZ-3028 D4/D12: a note (or any file sync does not merge) stops the pass as it always did —
-      // checked BEFORE anything is written, so the abort has nothing of ours to undo.
+      // YAZ-3028 D12: a file sync does not merge stops the pass as it always did — checked BEFORE
+      // anything is written, so the abort has nothing of ours to undo. (A page settles: YAZ-4615 D4, D9.)
       if (!conflicted.every(settles)) return null
       for (const rel of conflicted) {
         const settled = await settle(bin, root, rel, copies, () => authorOf(bin, root, span, rel))
@@ -207,13 +253,58 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
   const stages = await stagesOf(bin, root, rel)
   if (stages === null) return null
   const { base, theirs, mine } = stages
-  // A board deleted on one side, edited on the other: the edit stays (S11). Nothing to tell anyone.
-  // (`settles` already let only boards and the two list files through; a list file is never deleted by the app.)
+  // YAZ-5083 round 5: the friends list file has one writer (the phone, by GitHub's API): GitHub's side wins, always.
+  // No merge, no copy, nothing to tell anyone.
+  if (rel === FRIENDS_LIST) {
+    if (theirs === null) await rm(abs(root, rel), { force: true })
+    else await atomicWrite(abs(root, rel), theirs)
+    return { staged: [rel], report: null }
+  }
+  // A board or page deleted on one side, edited on the other: the edit stays (S11). Nothing to tell anyone.
+  // (`settles` already let only boards, pages and the list files through; a list file is never deleted by the app.)
   if (theirs === null || mine === null) {
     const kept = theirs ?? mine
     if (kept === null) return null
     await atomicWrite(abs(root, rel), kept)
     return { staged: [rel], report: null }
+  }
+  if (isMarkdown(rel)) {
+    // YAZ-4615 D4, D9: comments by id; the rest merged line by line, kept both ways only when the
+    // same lines changed on both sides.
+    const b = base?.toString('utf8') ?? null
+    let merged: PageMerge | null
+    try {
+      // YAZ-5089 (decision 5 on YAZ-5055): a card answered or marked on both sides is no clash. Each side takes the union
+      // of the card's reviews and the three-way result of its marks first (`shared/cardMerge.ts`); a card file too.
+      // YAZ-6142: an inline Excalidraw block edited on both sides merges shape by shape (`shared/inlineDrawingMerge.ts`).
+      const [t0, m0] = uniteCardLines(b, theirs.toString('utf8'), mine.toString('utf8'))
+      const [t, m] = uniteInlineDrawings(b, t0, m0)
+      merged = mergePageComments(b, t, m)
+      if (merged?.copy !== undefined && b !== null) {
+        const [restB, restT, restM] = [pageRest(b), pageRest(t), pageRest(m)]
+        // YAZ-5515 X2: git calls edits on NEIGHBOURING lines a conflict, so a phone tick, answer or comment next to a
+        // line the Mac changed made a copy. After git's merge, edits on different lines merge (`mergeLinesApart`);
+        // only the same line changed two ways is kept both ways.
+        const lined = (await lineMerge(bin, root, restB, restT, restM)) ?? mergeLinesApart(restB, restT, restM)
+        if (lined !== null) merged = mergePageComments(b, t, m, () => lined)
+      }
+    } catch (err) {
+      // YAZ-5512 X1: a throw here stopped the pass, and every pass after it on the same page, so the vault never
+      // pushed again. Whatever this page's merge cannot do keeps both whole pages (D9): nothing lost, sync goes on.
+      console.warn(`[git-sync] ${rel}: the page merge failed (${err instanceof Error ? err.message : String(err)}); both versions kept`)
+      merged = null
+    }
+    // Comments that are not ours to read (a value of the user's own, a block that does not parse):
+    // the whole page is kept both ways, as a board is (D9 — one page never stops the vault's sync).
+    if (merged === null) return keepBoth(root, rel, theirs, mine, copies, author)
+    await atomicWrite(abs(root, rel), merged.text)
+    const renumbered = merged.renumbered.length === 0 ? {} : { renumbered: merged.renumbered }
+    const page = { kind: 'page' as const, title: pageTitle(rel, merged.text), ...renumbered }
+    if (merged.copy === undefined) return { staged: [rel], report: { path: rel, author: await author(), clashes: 0, ...page } }
+    const copy = copies.get(rel) ?? freeCopyName(root, rel)
+    copies.set(rel, copy)
+    await atomicWrite(abs(root, copy), merged.copy)
+    return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy, ...page } }
   }
   const merged = mergeText(rel, base?.toString('utf8') ?? null, theirs.toString('utf8'), mine.toString('utf8'))
   if (merged !== null) {
@@ -222,16 +313,46 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
   }
   // A list file that will not parse has no second copy to keep: it is the vault's config, not a board.
   if (!isBoard(rel)) return null
-  // D3: keep both. The remote's at the path (it is already everywhere else); ours beside it.
+  return keepBoth(root, rel, theirs, mine, copies, author)
+}
+
+/** Git's own three-way line merge of three texts; null when the same lines changed, or git fails. */
+async function lineMerge(bin: string, root: string, base: string, theirs: string, mine: string): Promise<string | null> {
+  let dir: string | null = null
+  try {
+    dir = await mkdtemp(path.join(tmpdir(), 'yaseendocs-merge-'))
+    const [b, t, m] = ['base', 'theirs', 'mine'].map((name) => path.join(dir as string, name))
+    await Promise.all([writeFile(b, base), writeFile(t, theirs), writeFile(m, mine)])
+    const res = await git(bin, root, ['merge-file', '-p', '--quiet', t, b, m])
+    return res.code === 0 ? res.stdout : null
+  } catch {
+    // No temp folder, or git's answer too large: keep both versions (D9) rather than stop the pass.
+    return null
+  } finally {
+    if (dir !== null) await rm(dir, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+/** D3: keep both. The remote's at the path (it is already everywhere else); ours beside it. */
+async function keepBoth(root: string, rel: string, theirs: Buffer, mine: Buffer, copies: Map<string, string>, author: () => Promise<string>): Promise<Settled> {
   const copy = copies.get(rel) ?? freeCopyName(root, rel)
   copies.set(rel, copy)
   await atomicWrite(abs(root, rel), theirs)
   await atomicWrite(abs(root, copy), mine)
-  return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy } }
+  return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy, ...(isMarkdown(rel) ? { kind: 'page' as const, title: pageTitle(rel, theirs.toString('utf8')) } : {}) } }
 }
 
-/** Whether sync may settle a conflict on `rel` at all (YAZ-3028 D4): a board, or one of the two per-entry list files. Never a note. */
-const settles = (rel: string): boolean => isBoard(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === ICONS_PATH
+/** A page as the notice names it: its `title`, else its file name, and a folder page its folder's name. */
+function pageTitle(rel: string, text: string): string {
+  const name = path.posix.basename(rel)
+  const dir = path.posix.basename(path.posix.dirname(rel))
+  const fallback = name === '.folder.md' && dir !== '.' ? dir : path.posix.basename(name, path.posix.extname(name)).replace(/^\.+/, '')
+  return titleOf(parseFrontmatter(splitFrontmatter(text).frontmatter).properties, fallback)
+}
+
+/** Whether sync may settle a conflict on `rel` at all: a board, a page (YAZ-4615 D4, D9), or one of the per-entry list files. */
+const settles = (rel: string): boolean =>
+  rel === FRIENDS_LIST || isBoard(rel) || isMarkdown(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH || rel === ICONS_PATH || rel === PEOPLE_PATH || mergesByKey(rel)
 
 /**
  * The merge a file knows how to do, or null for keep-both. `clashes: null` marks a merge nobody
@@ -242,8 +363,16 @@ function mergeText(rel: string, base: string | null, theirs: string, mine: strin
   if (isDiagram(rel)) return null // 🔒 YAZ-1802 D8: no diagram merge (yet) — keep both, never a guessed XML splice
   const quiet = (json: string | null) => (json === null ? null : { json, clashes: null })
   if (rel === SHARES_PATH) return quiet(mergeSharesFile(base, theirs, mine))
-  if (rel === FAVORITES_PATH) return quiet(mergeFavoritesFile(base, theirs, mine))
+  if (rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH) return quiet(mergeFavoritesFile(base, theirs, mine))
   if (rel === ICONS_PATH) return quiet(mergeIconsFile(base, theirs, mine))
+  if (rel === PEOPLE_PATH) return quiet(mergePeopleFile(base, theirs, mine))
+  if (mergesByKey(rel)) {
+    const merged = mergeConfigFile(base, theirs, mine)
+    // Logged, not shown: a setting is not a page, and the remote's value is the one every other machine already has.
+    if (merged.clashes.length > 0) console.warn(`[git-sync] ${rel}: both machines changed ${merged.clashes.join(', ')}; the remote's value kept`)
+    if (merged.dropped !== null) console.warn(`[git-sync] ${rel}: ${merged.dropped === 'both' ? "neither side is" : `the ${merged.dropped === 'mine' ? 'local' : 'remote'} side is not`} valid JSON; ${merged.dropped === 'theirs' ? "the local side" : "the remote's side"} kept`)
+    return quiet(merged.text)
+  }
   return null
 }
 
@@ -251,7 +380,8 @@ function mergeText(rel: string, base: string | null, theirs: string, mine: strin
 function freeCopyName(root: string, rel: string): string {
   const dir = path.posix.dirname(rel)
   const ext = path.posix.extname(rel)
-  const stem = path.posix.basename(rel, ext)
+  // A hidden settings file (`.folder.md`, `.template.md`) gets a copy the sidebar shows: `folder (conflict, …).md`.
+  const stem = path.posix.basename(rel, ext).replace(/^\.+/, '')
   const now = new Date()
   const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   for (let n = 1; ; n += 1) {
@@ -295,7 +425,7 @@ async function authorOf(bin: string, root: string, span: RebaseSpan, rel?: strin
 /**
  * Dirty tracked files — a save that landed mid-rebase — held by copy and checked out, so nothing git
  * does next can reset them away. A still-UNMERGED path is not a save: it is git's own conflict text
- * (a note this pass will not settle, YAZ-3028 D4), so it is never parked — the abort puts it back.
+ * (a page this pass will not settle, YAZ-3028 D4), so it is never parked — the abort puts it back.
  */
 async function park(bin: string, root: string, parked: Map<string, Buffer | null>): Promise<void> {
   const unmerged = new Set(zList(await git(bin, root, ['ls-files', '-z', '--unmerged'])).map((line) => line.slice(line.indexOf('\t') + 1)))

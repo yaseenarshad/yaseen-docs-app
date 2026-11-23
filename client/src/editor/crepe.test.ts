@@ -27,7 +27,7 @@ function sourceFiles(dir: string): string[] {
 /** A value import, re-export, side-effect or dynamic import of the package ROOT (`import type` is fine). */
 const ROOT_VALUE_IMPORT = /^\s*(?:import|export)\s+(?!type\b)[^'"]*\bfrom\s+['"]@milkdown\/crepe['"]|\bimport\s*\(?\s*['"]@milkdown\/crepe['"]/m
 
-/** Every Crepe feature the document below exercises, in one note. */
+/** Every Crepe feature the document below exercises, in one page. */
 const DOC = [
   '# Heading',
   '',

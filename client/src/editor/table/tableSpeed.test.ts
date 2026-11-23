@@ -12,7 +12,8 @@
  * A calendar table (YAZ-4162) adds its now row and past rows: a key only maps that set too, and starts no clock work.
  * The row band (YAZ-4167) on the caret's row, the table zoom pills (YAZ-4091) and the folded rows (YAZ-4165): a key
  * only maps their sets. The calendar case has a folded run, and an Enter in a cell is one more key (YAZ-4176): it
- * moves neither the chips' watch (`generation`) nor a pill.
+ * moves neither the chips' watch (`generation`) nor a pill. Subheader rows (YAZ-4899), one collapsed: a key, also in
+ * the collapsed row's first cell beside its chevron and count widgets, only maps the subhead set.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
@@ -38,8 +39,8 @@ const ROWS = 500
 const head = Array.from({ length: COLS }, (_, c) => `H${c + 1}`)
 const body = Array.from({ length: ROWS }, (_, r) => head.map((_, c) => `r${r + 1}c${c + 1}`))
 const BIG = [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...body.map((cells) => `| ${cells.join(' | ')} |`)].join('\n') + '\n'
-/** S6's frozen, styled table, with a folded run away from the typed cells (YAZ-4165). */
-const STYLED = `${BIG}\n<!-- table: fill A2:B2 blue C5 green, fold 400-410, stripes, freeze 1 row 2 cols -->\n`
+/** S6's frozen, styled table, with a folded run away from the typed cells (YAZ-4165), and subheader rows, one collapsed (YAZ-4899). */
+const STYLED = `${BIG}\n<!-- table: fill A2:B2 blue C5 green, fold 400-501, subhead 200 399, stripes, freeze 1 row 2 cols -->\n`
 const KEYS = 'typing in a cell'
 /** A 3-bullet list, one bullet with a child, in one body cell in five: 1,000 lists, 4,000 bullets. */
 const CELL_LIST = '<ul><li>one</li><li>two<ul><li>kid</li></ul></li><li>three</li></ul>'
@@ -134,26 +135,29 @@ function followSets(): { work: string[]; seed: (sets: DecorationSet[]) => void; 
   return {
     work,
     seed: (sets) => {
-      mapped = new WeakSet(sets)
+      // `DecorationSet.empty` is one shared set: a plugin with nothing to draw holds it, and so may any other plugin.
+      mapped = new WeakSet(sets.filter((set) => set !== DecorationSet.empty))
       work.length = 0
     },
-    isMapped: (set) => mapped.has(set),
+    // An empty set that stays empty is no new set.
+    isMapped: (set) => set === DecorationSet.empty || mapped.has(set),
   }
 }
 
 describe('S6: a key in a frozen, styled 500 × 10 table adds no work (YAZ-3796)', () => {
   it('reads no layout, and the freeze and the styles only map their sets', async () => {
     const { view, scroller, block, flush } = await mount()
-    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style', band: 'mdapp-table-row-band', zoom: 'mdapp-table-zoom', fold: 'mdapp-table-fold' }
-    // The table is frozen and styled: both sets hold decorations.
+    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style', band: 'mdapp-table-row-band', zoom: 'mdapp-table-zoom', fold: 'mdapp-table-fold', subhead: 'mdapp-table-subhead' }
+    // The table is frozen and styled, with a collapsed section: the sets hold decorations.
     expect(pluginSet(view.state, plugins.freeze).find().length).toBeGreaterThan(ROWS)
     expect(pluginSet(view.state, plugins.style).find()).toHaveLength(1)
+    expect(pluginSet(view.state, plugins.subhead).find().length).toBeGreaterThan(ROWS / 2)
     const layout = countLayoutReads((el) => el === scroller || block.contains(el))
     const sets = followSets()
     const reads: number[] = []
     const work: string[][] = []
-    // A body cell, then a cell of a frozen column.
-    for (const [row, col] of [[250, 3], [120, 0]] as const) {
+    // A body cell, then a cell of a frozen column, then the collapsed subheader row's first cell (its chevron and count are widgets).
+    for (const [row, col] of [[250, 3], [120, 0], [398, 0]] as const) {
       view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, row, col) + 2)))
       for (const ch of KEYS) {
         const before = layout.reads
@@ -249,7 +253,7 @@ const CALENDAR = [
 describe('a key in a calendar table adds no work (YAZ-4162)', () => {
   it('reads no layout, and the calendar marks only map their set', async () => {
     const { view, scroller, block, flush } = await mount(CALENDAR)
-    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style', calendar: 'mdapp-table-calendar', band: 'mdapp-table-row-band', zoom: 'mdapp-table-zoom', fold: 'mdapp-table-fold' }
+    const plugins = { freeze: 'mdapp-table-freeze', style: 'mdapp-table-style', calendar: 'mdapp-table-calendar', band: 'mdapp-table-row-band', zoom: 'mdapp-table-zoom', fold: 'mdapp-table-fold', subhead: 'mdapp-table-subhead' }
     // The table shows a now row or past rows, and a fold bar: both sets hold decorations.
     expect(pluginSet(view.state, plugins.calendar).find().length).toBeGreaterThan(0)
     expect(pluginSet(view.state, plugins.fold).find().length).toBeGreaterThan(0)

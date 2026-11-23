@@ -57,8 +57,8 @@ function record(dir: string, opts: Parameters<typeof watchTree>[1] = {}) {
   let ready = false
   const w = watchTree(dir, opts)
   watchers.push(w)
-  const note = (type: string) => (p: string) => lines.push(`${type} ${path.relative(dir, p)}`)
-  w.on('add', note('add')).on('change', note('change')).on('unlink', note('unlink')).on('addDir', note('addDir')).on('unlinkDir', note('unlinkDir'))
+  const page = (type: string) => (p: string) => lines.push(`${type} ${path.relative(dir, p)}`)
+  w.on('add', page('add')).on('change', page('change')).on('unlink', page('unlink')).on('addDir', page('addDir')).on('unlinkDir', page('unlinkDir'))
   w.on('ready', () => (ready = true))
   const quiet = () => settled(() => lines.length, 500).then(() => [...lines].sort())
   return { lines, ready: () => until(() => ready, 10_000), quiet, watcher: w }
@@ -169,8 +169,8 @@ describe('treeWatcher (YAZ-2192)', { timeout: 20_000 }, () => {
     w = watchTree(dir, { ignored })
     watchers.push(w)
     const events: string[] = []
-    const note = (type: string) => () => void events.push(type)
-    w.on('add', note('add')).on('change', note('change')).on('unlink', note('unlink')).on('addDir', note('addDir')).on('unlinkDir', note('unlinkDir')).on('ready', note('ready'))
+    const page = (type: string) => () => void events.push(type)
+    w.on('add', page('add')).on('change', page('change')).on('unlink', page('unlink')).on('addDir', page('addDir')).on('unlinkDir', page('unlinkDir')).on('ready', page('ready'))
     await until(() => closedAt !== -1, 5000)
     await sleep(800)
     // At most the entry in hand when close() ran; before, the walk went on and a resync walked it all again.
@@ -223,20 +223,20 @@ describe('isNetworkMount (macOS `mount`)', () => {
   const TABLE = [
     '/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)',
     '/dev/disk3s5 on /System/Volumes/Data (apfs, local, journaled, nobrowse, protect)',
-    '//yasin@nas._smb._tcp.local/Notes on /Volumes/Notes (smbfs, nodev, nosuid, mounted by yasin)',
+    '//yasin@nas._smb._tcp.local/Pages on /Volumes/Pages (smbfs, nodev, nosuid, mounted by yasin)',
     'nas:/export/vaults on /Volumes/NFS Vaults (nfs, nodev, nosuid, mounted by yasin)',
     '/dev/disk5s1 on /Volumes/USB Stick (exfat, local, nodev, nosuid, noowners, mounted by yasin)',
   ].join('\n')
 
   it('a share (SMB, NFS) is network; the system volume and a USB stick are local; the longest mount point decides', () => {
-    expect(isNetworkMount(TABLE, '/Volumes/Notes/Team vault')).toBe(true)
+    expect(isNetworkMount(TABLE, '/Volumes/Pages/Team vault')).toBe(true)
     expect(isNetworkMount(TABLE, '/Volumes/NFS Vaults/mine')).toBe(true)
     expect(isNetworkMount(TABLE, '/Volumes/USB Stick/vault')).toBe(false)
     expect(isNetworkMount(TABLE, '/System/Volumes/Data/Users/me/vault')).toBe(false)
-    expect(isNetworkMount(TABLE, '/Volumes/NotesNot/vault')).toBe(false)
+    expect(isNetworkMount(TABLE, '/Volumes/PagesNot/vault')).toBe(false)
   })
 
   it('an unreadable table is local: the native watcher is the default', () => {
-    expect(isNetworkMount('', '/Volumes/Notes')).toBe(false)
+    expect(isNetworkMount('', '/Volumes/Pages')).toBe(false)
   })
 })

@@ -41,33 +41,35 @@
  *  - Links to the FOLDER ITSELF (YAZ-2290 D10 — a folder is a page, `links/folderLinks.ts`) follow
  *    the FILE rule: bare `[[Projects]]` becomes the new name, a pathed one the new path, and a
  *    bare one stays untouched while the name still reaches the folder (a move). A folder's own
- *    settings file (`folders`) is a referencing file like any note.
+ *    settings file (`folders`) is a referencing file like any page.
  *  - FILE move (and rename): a bare link stays bare only when the bare form still resolves
  *    to the moved file AFTERWARDS — decided through the resolver against a POST-move record
  *    set (the shallowest rule may hand the name to a duplicate); otherwise it escalates to
  *    the pathed form. A kept bare form is never spliced, so padding survives too.
- *  - ALIAS-form links (E2, GRO-2214): `[[CAC]]` pointing at a note through its frontmatter
+ *  - ALIAS-form links (E2, GRO-2214): `[[CAC]]` pointing at a page through its frontmatter
  *    `aliases` is NEVER rewritten — the alias travels with the file, so it still resolves
  *    afterwards. The referencing-set probe therefore resolves BY NAME ONLY (`makeResolves`).
  *  - ID-form links (YAZ-2293 D5): `[[YAZ-12]]` is NEVER rewritten either, for the same
  *    reason — the id travels in the file's own frontmatter.
- *  - TITLE-form links (YAZ-2420 D17): `[[UP-001 - Abdul]]` to the note whose `title:` that is, or
+ *  - TITLE-form links (YAZ-2420 D17): `[[UP-001 - Abdul]]` to the page whose `title:` that is, or
  *    to the folder whose `.folder.md` holds it — the same again. A page with no `title:` is
  *    linked by its name, and that is rewritten.
  *  - A TITLE EDIT (YAZ-2420 D16, `title`) is the one rename a title does not travel through: a
  *    link that spelled the old title is rewritten to the new one, and counted — to the page's id
  *    (YAZ-2478) when a link cannot spell the new title or another page answers to it. Links by
  *    name or by path follow the new file as in any rename; id links stay as written.
- *  - A PATH OF TITLES (YAZ-2478): `[[Candidates/Abdul]]`, the note titled Abdul in the folder
- *    titled Candidates, is rewritten to the note's id, since either title may be the one that changed.
+ *  - A PATH OF TITLES (YAZ-2478): `[[Candidates/Abdul]]`, the page titled Abdul in the folder
+ *    titled Candidates, is rewritten to the page's id, since either title may be the one that changed.
  */
 import { isViewOnly } from '@shared/fileKind'
-import { folderSettingsLinks } from '@shared/folderSettingsLinks'
-import { exactLinkTarget, rewriteNoteLinks, type NewTarget, type ResolvesToOld } from '@shared/linkRewrite'
-import { titleOf } from '@shared/noteName'
+import { referenceTargets } from '@shared/mentions'
+import { exactLinkTarget, rewritePageLinks, type NewTarget, type ResolvesToOld } from '@shared/linkRewrite'
+import { titleOf } from '@shared/pageName'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { resolverFor, targetBasename, targetKey } from '../views/engine'
+import { SAME_WORD, type UnitText } from '../vault/unitWord'
+import { targetBasename, targetKey } from '@shared/linkResolver'
+import { resolverFor } from '../views/engine'
 import { flushRenamedPath } from '../lib/renameContinuity'
 import { basename, dirname, relTo, stripExt } from '../lib/paths'
 import { folderResolver, linkResolver } from './folderLinks'
@@ -87,17 +89,9 @@ export function renamedTarget(target: string, opts: { newName: string; newRel: s
   return /\.(md|markdown)$/i.test(target) ? withExt : stripExt(withExt)
 }
 
-/** Every target a note links to: index links and embeds, then the nested settings leaves (lazily). */
-export function* referenceTargets(record: IndexRecord): Generator<string> {
-  yield* record.links
-  yield* record.embeds
-  for (const link of folderSettingsLinks(record.properties)) {
-    const target = exactLinkTarget(link)
-    if (target !== null) yield target
-  }
-}
+// Every target a page links to (`referenceTargets`) is in `@shared/mentions` (YAZ-4738): the reverse map reads it too.
 
-/** Does this note reference the renamed file AT ALL — index links/embeds, or a nested settings leaf? */
+/** Does this page reference the renamed file AT ALL — index links/embeds, or a nested settings leaf? */
 function makeReferences(resolves: ResolvesToOld): (record: IndexRecord) => boolean {
   return (record) => {
     for (const target of referenceTargets(record)) if (resolves(target)) return true
@@ -106,14 +100,21 @@ function makeReferences(resolves: ResolvesToOld): (record: IndexRecord) => boole
 }
 
 /**
- * The basenames (`basenameKey`) any note's links spell (YAZ-2241). `countLinkReferences` is 0 for a
+ * The basenames (`basenameKey`) any page's links spell (YAZ-2241). `countLinkReferences` is 0 for a
  * file whose basename is not in the set (`targetBasename`), so a caller counting many renames can skip
  * those without building a resolver for each: 230 renames in one snapshot were one 0.4 s task.
  * (A path of titles, YAZ-2478, spells no basename: a caller that skips by this set does not count it.)
  */
 export function linkedBasenames(records: readonly IndexRecord[]): Set<string> {
   const named = new Set<string>()
-  for (const record of records) for (const target of referenceTargets(record)) named.add(targetBasename(target))
+  for (const record of records) {
+    for (const target of referenceTargets(record)) {
+      named.add(targetBasename(target))
+      // A target that keeps both sides (`Covid pages|COVID-19`, YAZ-4954) can name either page: both basenames count.
+      const pipe = target.indexOf('|')
+      if (pipe > 0) named.add(targetBasename(target.slice(0, pipe)))
+    }
+  }
   return named
 }
 
@@ -125,8 +126,8 @@ export interface RenameRewriteSummary {
 }
 
 /** The ONE passive summary notice — shown only when the rename touched (or spared) anything. */
-export function renameNotice({ updated, skipped }: RenameRewriteSummary): string {
-  const head = `Updated links in ${updated} note${updated === 1 ? '' : 's'}`
+export function renameNotice({ updated, skipped }: RenameRewriteSummary, unit: UnitText = SAME_WORD): string {
+  const head = unit(`Updated links in ${updated} page${updated === 1 ? '' : 's'}`)
   return skipped > 0 ? `${head}; ${skipped} skipped (unsaved changes)` : head
 }
 
@@ -140,7 +141,7 @@ export interface UpdateLinksOptions {
   kind?: 'file' | 'dir'
   /** The PRE-rename index snapshot (fetched before `fs:rename` — see the module doc). */
   records: readonly IndexRecord[]
-  /** The same snapshot's folder settings records (YAZ-2290 D8): rewritten like notes, never resolved to. */
+  /** The same snapshot's folder settings records (YAZ-2290 D8): rewritten like pages, never resolved to. */
   folders?: readonly IndexRecord[]
   /** The PRE-rename folders (`vaultDirs`): what a link to a folder resolves over (YAZ-2290 D10). */
   dirs?: readonly string[]
@@ -152,14 +153,14 @@ export interface UpdateLinksOptions {
 
 /**
  * The referencing-set predicate shared by the rewrite and the E1c dry-run count — ONE
- * construction, so both agree on WHICH notes reference the old path.
+ * construction, so both agree on WHICH pages reference the old path.
  *
  * They do NOT always agree on how many get WRITTEN, and the F- audit (GRO-2197) pinned the gap
- * honestly rather than papering over it: `countLinkReferences` counts every note whose links
+ * honestly rather than papering over it: `countLinkReferences` counts every page whose links
  * RESOLVE to the old path, while `rewriteInner` writes nothing for a bare link that stays bare
  * (it returns null). In a pure MOVE — which `renameDetector.ts` deliberately admits as a valid
  * hypothesis — every bare link stays bare, so the banner can offer "update N links?" and the
- * summary then read "Updated links in 0 notes". Closing that needs N to become form-aware
+ * summary then read "Updated links in 0 pages". Closing that needs N to become form-aware
  * (share `newTarget`, not just `resolves`), which is a behaviour change, not a finishing-pass
  * fix — deferred with the rest of the E1c queue work.
  */
@@ -174,14 +175,14 @@ function makeResolves({ ids, root, oldPath, kind, records, folders = [], dirs = 
   // in that file's own frontmatter and travels with it, so it keeps pointing there. Building
   // the probe without the alias map keeps the dry-run count and the rewrite agreeing on that.
   // An ID-form link (`[[YAZ-12]]`, YAZ-2293) is the same story told by the id: it names
-  // the note, not its place, so it too must stay byte-identical — the probe resolves no ids.
+  // the page, not its place, so it too must stay byte-identical — the probe resolves no ids.
   const resolver = resolverFor(records, root, { aliases: false, ids: false, folders })
-  // A path of titles (YAZ-2478) is the target only the folders answer; it is rewritten to the note's id.
+  // A path of titles (YAZ-2478) is the target only the folders answer; it is rewritten to the page's id.
   const typedId = (t: string) => (resolverFor(records, root, { aliases: false, ids: false })(t) === null ? resolver(t)?.record.id : undefined)
   const settings = foldersByDir(folders)
   const spells = (t: string, page: IndexRecord | undefined): page is IndexRecord => page !== undefined && targetKey(t) === page.title.toLowerCase()
   // A link that spells a page's `title:` (YAZ-2420 🔒 D17) is the third of that kind: the title is in
-  // the note's own frontmatter, or the folder's `.folder.md`, so the link still reaches it afterwards.
+  // the page's own frontmatter, or the folder's `.folder.md`, so the link still reaches it afterwards.
   // A page with no `title:` is titled by its name, and a link spelling that is a name link, rewritten
   // as ever. The one title that does not travel is the one a title edit replaces (`title`, 🔒 D16).
   const travels = (t: string, page: IndexRecord | undefined, path: string): boolean =>
@@ -190,10 +191,10 @@ function makeResolves({ ids, root, oldPath, kind, records, folders = [], dirs = 
     const hit = resolver(t)?.record
     return hit === undefined || travels(t, hit, hit.path) ? undefined : hit.path
   }
-  // A FOLDER holds a name only when no note, path or ALIAS does (YAZ-2290 D10) — asked of the
+  // A FOLDER holds a name only when no page, path or ALIAS does (YAZ-2290 D10) — asked of the
   // full resolver, so a link an alias answers is never read as the folder's. It is found as every
   // link finds it, by its title too (`folderResolver`), but for its id: no folder ids either.
-  const anyNote = resolverFor(records, root)
+  const anyPage = resolverFor(records, root)
   const folder = folderResolver(root, dirs, folders, { ids: false })
   const prefix = `${oldPath}/`
   const isMoved = kind === 'dir' ? (p: string) => p === oldPath || p.startsWith(prefix) : (p: string) => p === oldPath
@@ -202,7 +203,7 @@ function makeResolves({ ids, root, oldPath, kind, records, folders = [], dirs = 
     const hit = targetPaths.get(t)
     if (hit !== undefined) return hit
     const dir = (): string | null => {
-      const found = anyNote(t) === null ? folder(t) : null
+      const found = anyPage(t) === null ? folder(t) : null
       return found !== null && travels(t, settings.get(found), found) ? null : found
     }
     // An explicit recognized non-Markdown extension belongs exclusively to the lightweight
@@ -224,23 +225,23 @@ function makeResolves({ ids, root, oldPath, kind, records, folders = [], dirs = 
 }
 
 /**
- * DRY-RUN (E1c, GRO-2242): how many notes the rewrite WOULD touch — the exact referencing-set
+ * DRY-RUN (E1c, GRO-2242): how many pages the rewrite WOULD touch — the exact referencing-set
  * filter `updateLinksAfterRename` runs (records whose `links`/`embeds` resolve to the moved
  * path through the same shared-resolver `resolves`), with no reads and no writes. This is the
  * banner's N; N === 0 → no banner, nothing happens at all (the locked ruling). For an external
  * rename pass a PRE-rename snapshot (`preRenameRecords` synthesises one).
  */
 export function countLinkReferences(opts: Omit<UpdateLinksOptions, 'newPath'>): number {
-  return linkingNotes(opts).length
+  return linkingPages(opts).length
 }
 
-/** The notes (and folder pages) whose links reach `oldPath`: the set `countLinkReferences` counts, by path — so a caller can join the sets of several items (YAZ-3254 D9B). */
-export function linkingNotes({ ids, root, oldPath, kind = 'file', records, folders = [], dirs, viewOnlyCatalog, title }: Omit<UpdateLinksOptions, 'newPath'>): string[] {
+/** The pages (and folder pages) whose links reach `oldPath`: the set `countLinkReferences` counts, by path — so a caller can join the sets of several items (YAZ-3254 D9B). */
+export function linkingPages({ ids, root, oldPath, kind = 'file', records, folders = [], dirs, viewOnlyCatalog, title }: Omit<UpdateLinksOptions, 'newPath'>): string[] {
   const { resolves } = makeResolves({ ids, root, oldPath, kind, records, folders, dirs, viewOnlyCatalog, title })
   return [...records, ...folders].filter(makeReferences(resolves)).map((record) => record.path)
 }
 
-/** Rewrite every referencing note on disk; see the module doc for the whole discipline. */
+/** Rewrite every referencing page on disk; see the module doc for the whole discipline. */
 export async function updateLinksAfterRename({ ids, root, oldPath, newPath, kind = 'file', records, folders = [], dirs = [], viewOnlyCatalog, title }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
   const prefix = `${oldPath}/`
   const mapMoved = kind === 'dir' ? (p: string) => (p === oldPath || p.startsWith(prefix) ? newPath + p.slice(oldPath.length) : p) : (p: string) => (p === oldPath ? newPath : p)
@@ -278,7 +279,7 @@ export async function updateLinksAfterRename({ ids, root, oldPath, newPath, kind
     // a link can spell it and it reaches the page; else the link goes by the page's id (YAZ-2478),
     // and by name, as below, only when it has none.
     if (title !== undefined && hit === oldPath && spellsTitle(target)) {
-      if (exactLinkTarget(`[[${title}]]`) === title && postLink(title) === moved) return title
+      if (exactLinkTarget(`[[${title}]]`, (page) => postLink(page) !== null) === title && postLink(title) === moved) return title
       if (id !== undefined) return id
     }
     const movedName = basename(moved)
@@ -307,19 +308,19 @@ export async function updateLinksAfterRename({ ids, root, oldPath, newPath, kind
   const summary: RenameRewriteSummary = { updated: 0, skipped: 0 }
   for (const record of [...records, ...folders]) {
     if (!references(record)) continue
-    // A self-link travels with the file: a moved note is read/written at its NEW path
+    // A self-link travels with the file: a moved page is read/written at its NEW path
     // (for a dir, every record under the old prefix relocated).
     const filePath = mapMoved(record.path)
     try {
-      // An own-window dirty editor of the referencing note flushes FIRST, so the read below
+      // An own-window dirty editor of the referencing page flushes FIRST, so the read below
       // sees its buffer and our write does not race it (the editor then auto-reloads clean).
       await flushRenamedPath(filePath)
       let file = await api.readFile(filePath)
       for (let attempt = 0; ; attempt++) {
-        const next = rewriteNoteLinks(file.content, resolves, newTarget)
+        const next = rewritePageLinks(file.content, resolves, newTarget)
         if (next === null) break
         try {
-          // Quiet (YAZ-3235 D1): a link rewrite is not an edit the user made, so Recents does not list this note.
+          // Quiet (YAZ-3235 D1): a link rewrite is not an edit the user made, so Recents does not list this page.
           await api.writeFile({ path: filePath, content: next, expectedMtime: file.mtime, quiet: true })
           summary.updated++
           break

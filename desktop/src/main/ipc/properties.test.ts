@@ -76,7 +76,7 @@ describe('registerPropertiesIpc', () => {
     expect(await registered(CONTRACT.properties.removeProperty.channel)({ sender }, vault, 'related')).toEqual(ok(undefined))
 
     expect(await registered(CONTRACT.properties.get.channel)({ sender }, 'rel')).toEqual(bad('NOT_ABSOLUTE'))
-    expect(await registered(CONTRACT.properties.setProperty.channel)({ sender }, vault, 'Bad Name', { kind: 'text' })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.properties.setProperty.channel)({ sender }, vault, ' Bad Name', { kind: 'text' })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.properties.setProperty.channel)({ sender }, vault, 'unit', { kind: 'nope' })).toEqual(bad('BAD_REQUEST'))
     await writeFile(path.join(vault, VAULT_CONFIG_DIR, 'properties.json'), '{broken')
     expect(await registered(CONTRACT.properties.setProperty.channel)({ sender }, vault, 'unit', { kind: 'text' })).toEqual(bad('INVALID_CONFIG'))

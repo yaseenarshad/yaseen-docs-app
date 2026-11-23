@@ -2,7 +2,7 @@
  * Pure debounced auto-save state machine (no DOM, no React) so the dirty /
  * debounce / conflict rules can be unit-tested.
  *
- * GENERIC OVER THE CONTENT KEY `C` (Draw's 🔒 YAZ-1775 D3, ported by YAZ-3028): a note hands it its
+ * GENERIC OVER THE CONTENT KEY `C` (Draw's 🔒 YAZ-1775 D3, ported by YAZ-3028): a page hands it its
  * markdown; a board hands it the engine's cheap scene VERSION (an integer) and serialises inside
  * `save()` only when the timer fires — the canvas reports a change per pointer move, and
  * serialising every one of them is precisely the cost the version exists to avoid. `===` is the
@@ -28,6 +28,8 @@ export class SaveConflict extends Error {
 export interface AutosaveOptions<C> {
   /** Baseline content KEY (what is on disk, as the editor serialises it — or a board's scene version). */
   content: C
+  /** Optional lazy baseline resolver (YAZ-6028): avoids serializing large documents on open until the first edit/flush. */
+  getBaseline?: () => C
   /** mtime of the baseline. */
   mtime: number
   /** Writes `content`; a board serialises the live scene here, since this runs once per save, not once per change. */
@@ -38,7 +40,8 @@ export interface AutosaveOptions<C> {
 }
 
 export class Autosave<C = string> {
-  private baseline: C
+  private baseline: C | undefined
+  private baselineReady: boolean
   private pending: C | null = null
   private timer: ReturnType<typeof setTimeout> | null = null
   private inflight: Promise<void> | null = null
@@ -49,8 +52,17 @@ export class Autosave<C = string> {
   mtime: number
 
   constructor(private readonly opts: AutosaveOptions<C>) {
-    this.baseline = opts.content
+    this.baselineReady = opts.getBaseline === undefined
+    this.baseline = opts.getBaseline === undefined ? opts.content : undefined
     this.mtime = opts.mtime
+  }
+
+  private resolveBaseline(): C {
+    if (!this.baselineReady) {
+      this.baseline = this.opts.getBaseline!()
+      this.baselineReady = true
+    }
+    return this.baseline as C
   }
 
   get dirty(): boolean {
@@ -79,7 +91,7 @@ export class Autosave<C = string> {
   update(content: C): void {
     if (this.disposed) return
     this.clearTimer()
-    if (content === this.baseline) {
+    if (content === this.resolveBaseline()) {
       this.pending = null
       if (this.inflight === null) this.setStatus('saved')
       return
@@ -114,6 +126,7 @@ export class Autosave<C = string> {
       (res) => {
         this.mtime = res.mtime
         this.baseline = content
+        this.baselineReady = true
         this.inflight = null
         if (this.pending === null) this.setStatus('saved')
       },
@@ -136,6 +149,7 @@ export class Autosave<C = string> {
   reset(content: C, mtime: number): void {
     this.clearTimer()
     this.baseline = content
+    this.baselineReady = true
     this.mtime = mtime
     this.pending = null
     this.blocked = false

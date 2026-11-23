@@ -1,12 +1,12 @@
 /**
- * watcher: file descriptors main holds with a 2k- and a 10k-note vault open, and on the 2k vault the
- * latency from an outside change to the app showing it: a new note's tree row, and a line appended
- * to the open note appearing in its editor. 5 of each per run, median.
+ * watcher: file descriptors main holds with a 2k- and a 10k-page vault open, and on the 2k vault the
+ * latency from an outside change to the app showing it: a new page's tree row, and a line appended
+ * to the open page appearing in its editor. 5 of each per run, median.
  */
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import { writeNote, writeVault } from '../genVault.mjs'
+import { writePageFile, writeVault } from '../genVault.mjs'
 import { sleep } from '../lib/app.mjs'
 import { ACTIVE, js, row, session } from '../lib/session.mjs'
 import { quantiles } from '../lib/stats.mjs'
@@ -16,7 +16,7 @@ const fds = (pid) => execFileSync('lsof', ['-p', String(pid), '-Ff'], { maxBuffe
 
 export function setup(dir) {
   const vaults = Object.fromEntries([['2k', 2000], ['10k', 10000]].map(([key, n]) => [key, writeVault(path.join(dir, `vault-${key}`), n)]))
-  return { dir, vaults, small: Object.fromEntries(Object.entries(vaults).map(([key, v]) => [key, writeNote(v, 'Small', 'bullets', 20)])) }
+  return { dir, vaults, small: Object.fromEntries(Object.entries(vaults).map(([key, v]) => [key, writePageFile(v, 'Small', 'bullets', 20)])) }
 }
 
 export async function run(app, { dir, vaults, small }) {
@@ -47,6 +47,6 @@ export async function run(app, { dir, vaults, small }) {
       out.changeToEditorMs = quantiles(change).p50
     })
   }
-  writeNote(vaults['2k'], 'Small', 'bullets', 20) // undo the appended lines for the next run
+  writePageFile(vaults['2k'], 'Small', 'bullets', 20) // undo the appended lines for the next run
   return out
 }

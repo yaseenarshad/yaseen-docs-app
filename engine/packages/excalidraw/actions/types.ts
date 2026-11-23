@@ -124,6 +124,7 @@ export type ActionName =
   | "alignRight"
   | "alignVerticallyCentered"
   | "alignHorizontallyCentered"
+  | "tidyUp"
   | "distributeHorizontally"
   | "distributeVertically"
   | "flipHorizontal"
@@ -147,6 +148,9 @@ export type ActionName =
   | "wrapTextInContainer"
   | "commandPalette"
   | "autoResize"
+  | "textShrinkToLines"
+  | "foldTextBoxes"
+  | "unfoldTextBoxes"
   | "elementStats"
   | "searchMenu"
   | "copyElementLink"
@@ -156,7 +160,10 @@ export type ActionName =
   | "wrapSelectionInFrame"
   | "toggleShapeSwitch"
   | "togglePolygon"
-  | "changeSmartShape";
+  | "changeSmartShape"
+  | "changeIconColors"
+  | "changeIconOutline"
+  | "colorEditor";
 
 export type PanelComponentProps = {
   elements: readonly ExcalidrawElement[];

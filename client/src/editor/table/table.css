@@ -6,128 +6,135 @@
  *
  * Order matters at equal weight: header, then stripes, then fills, so a filled cell keeps its fill.
  * Each sets the cell's `--table-cell-tint`; one rule paints it (a frozen cell, over the page colour).
+ * The colours, the header row's variables and the rules a card's table shares are in `cardTable.css`, which loads
+ * just before this file (`tableStyle.ts`).
  */
 
-/* The ten cell colours (YAZ-3817), each in light and dark. Fills are see-through washes, so the
-   text stays readable; in light, yellow, green, blue and pink are the highlight washes (YAZ-1480,
-   app.css `--mark-bg*`), as before. Text colours are darker shades in light and lighter in dark.
-   `clipboardCopyOut.ts` holds the light shades as they show over white (a copy to Docs).
-   `--table-fill-wash` is a custom fill's strength, in both themes: `colours.ts` `FILL_WASH` for a copy. */
-:root {
-  --table-fill-wash: 35%;
-  --table-fill-red: rgba(255, 90, 80, 0.35);
-  --table-fill-orange: rgba(255, 150, 50, 0.35);
-  --table-fill-yellow: var(--mark-bg);
-  --table-fill-green: var(--mark-bg-green);
-  --table-fill-teal: rgba(40, 190, 180, 0.35);
-  --table-fill-blue: var(--mark-bg-blue);
-  --table-fill-purple: rgba(160, 110, 255, 0.35);
-  --table-fill-pink: var(--mark-bg-pink);
-  --table-fill-grey: rgba(150, 150, 150, 0.35);
-  --table-fill-brown: rgba(170, 120, 70, 0.35);
-  --table-text-red: #c0392b;
-  --table-text-orange: #b45309;
-  --table-text-yellow: #a16207;
-  --table-text-green: #2e7d32;
-  --table-text-teal: #0f766e;
-  --table-text-blue: #1d5fbf;
-  --table-text-purple: #7b3fbf;
-  --table-text-pink: #c2185b;
-  --table-text-grey: #6b6b6b;
-  --table-text-brown: #8b5a2b;
+/* A narrow column (YAZ-4791, `data-narrow` under 56 px, `tableStyle.ts`): 4 px padding, so a column of numbers can be
+   dragged close to them. */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-narrow] {
+  padding-left: 4px;
+  padding-right: 4px;
 }
 
-/* The palette's fill swatches (YAZ-3803, decision 12): each colour at full strength, so a swatch
-   reads as its colour in light and dark. The cells keep the wash. */
-:root {
-  --table-fill-solid-red: rgb(255, 90, 80);
-  --table-fill-solid-orange: rgb(255, 150, 50);
-  --table-fill-solid-yellow: rgb(255, 213, 0);
-  --table-fill-solid-green: rgb(80, 200, 120);
-  --table-fill-solid-teal: rgb(40, 190, 180);
-  --table-fill-solid-blue: rgb(80, 160, 255);
-  --table-fill-solid-purple: rgb(160, 110, 255);
-  --table-fill-solid-pink: rgb(255, 120, 180);
-  --table-fill-solid-grey: rgb(150, 150, 150);
-  --table-fill-solid-brown: rgb(170, 120, 70);
+/* The header row's Align (YAZ-4794): the table's own, else Settings' (on `.app`, or the vault's on its surface,
+   YAZ-5487: `--table-header-aligned`, the nearest wins). `!important`, as GFM's column alignment and a cell's own are
+   inline `text-align` (`tableStyle.ts`); the row's choice is for every header cell. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-header-align]:not([data-table-header-align='follow']) th {
+  text-align: var(--table-header-align) !important;
+}
+@container style(--table-header-aligned: on) {
 }
 
-[data-theme='dark'] {
-  --table-fill-red: rgba(255, 90, 80, 0.3);
-  --table-fill-orange: rgba(255, 150, 50, 0.3);
-  --table-fill-yellow: rgba(255, 213, 0, 0.3);
-  --table-fill-green: rgba(80, 200, 120, 0.3);
-  --table-fill-teal: rgba(40, 190, 180, 0.3);
-  --table-fill-blue: rgba(80, 160, 255, 0.3);
-  --table-fill-purple: rgba(160, 110, 255, 0.3);
-  --table-fill-pink: rgba(255, 120, 180, 0.3);
-  --table-fill-grey: rgba(150, 150, 150, 0.3);
-  --table-fill-brown: rgba(170, 120, 70, 0.3);
-  --table-text-red: #ff7b72;
-  --table-text-orange: #f0a35e;
-  --table-text-yellow: #e3c04a;
-  --table-text-green: #6fd47f;
-  --table-text-teal: #4fd1c5;
-  --table-text-blue: #79b8ff;
-  --table-text-purple: #c39bff;
-  --table-text-pink: #ff8fc0;
-  --table-text-grey: #a0a0a0;
-  --table-text-brown: #c99a6e;
+/* A subheader cell: the tint, weight and text colour of the parts above (Medium, Bold, Full by default). Before the
+   stripes and the fills (Order matters): a cell's own fill and text colour still win. */
+.milkdown .ProseMirror .milkdown-table-block td[data-subhead] {
+  --table-cell-tint: color-mix(in srgb, var(--table-subheader-hue, var(--crepe-color-on-background)) calc(var(--table-subheader-strength, 12) * var(--table-subheader-scale, 1) * 1%), transparent);
+  font-weight: var(--table-subheader-weight, bold);
+  color: var(--table-subheader-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-subheader-mute, 0) * 100%), currentColor));
 }
 
-/* Border: Crepe's look (1px, 20% of the outline colour) unless the table sets its own. */
-.milkdown .ProseMirror .milkdown-table-block :is(th, td) {
-  border-width: var(--table-border-width, 1px);
-  border-color: color-mix(in srgb, var(--crepe-color-outline) var(--table-border-darkness, 20%), transparent);
+.milkdown .ProseMirror .milkdown-table-block[data-table-subheader-align]:not([data-table-subheader-align='follow']) td[data-subhead] {
+  text-align: var(--table-subheader-align) !important;
+}
+@container style(--table-subheader-aligned: on) {
+  .milkdown .ProseMirror .milkdown-table-block:not([data-table-subheader-align]) td[data-subhead] {
+    text-align: var(--table-subheader-align) !important;
+  }
 }
 
-/* Each cell's tint: the header shade, the stripes and the fills set `--table-cell-tint`, and this one
-   rule paints it. A frozen cell paints it over a solid page colour instead (below). The row band
-   (`--table-band`, YAZ-4167, below) is a layer over it, so the fill shows under the band. */
-.milkdown .ProseMirror .milkdown-table-block :is(th, td) {
-  background-color: var(--table-cell-tint, transparent);
-  background-image: var(--table-note-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none);
+/* A sticky subheader row (Settings' default on `.app`, the table's own `data-table-sticky-subheaders` first) paints its
+   tint over the page colour, as a frozen row does, so the rows it moves over do not show through; under the frozen
+   rows (z-index 2). Its `translateY` is a Web Animation on the row (`tableSubhead.ts`). */
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-row {
+  position: relative;
+  z-index: 1;
 }
 
-/* Header row: shaded by default, plain on request. */
-.milkdown .ProseMirror .milkdown-table-block th {
-  --table-cell-tint: color-mix(in srgb, var(--crepe-color-on-background) 6%, transparent);
+/* YAZ-5487: Settings' default is `--table-sticky-subheaders` on `.app`, or the vault's on its surface; the table's own
+   sets it on its block, nearer (the nearest wins). */
+.milkdown .ProseMirror .milkdown-table-block[data-table-sticky-subheaders='on'] { --table-sticky-subheaders: on; }
+.milkdown .ProseMirror .milkdown-table-block[data-table-sticky-subheaders='off'] { --table-sticky-subheaders: off; }
+@container style(--table-sticky-subheaders: on) {
+  .milkdown .ProseMirror .milkdown-table-block .table-subhead-row > td {
+    background-color: var(--bg);
+    background-image: var(--table-page-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none), linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
+  }
 }
 
-.milkdown .ProseMirror .milkdown-table-block[data-table-header='plain'] th {
-  --table-cell-tint: transparent;
+/* THE CHEVRON'S PLACE (the YAZ-4899 demo approved it): inside the subheader row's first cell, before its text, floated so
+   the text flows after it. This one rule and `chevronWidget` in `tableSubhead.ts` place it. Down when open, right when
+   the section is collapsed. The widget sits in the cell BEFORE its first paragraph, whose own 4 px top padding puts the
+   text's first line 4 px under the cell's content edge: the same 4 px on top, then as tall as one line of the cell's
+   text (`1lh`) with the glyph centred in it, so it sits on the middle of the text at any font size or zoom (the
+   YAZ-4820 checker: it sat 6 px high; measured 0 px off in the built app after this). */
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-chevron {
+  float: left;
+  display: flex;
+  align-items: center;
+  width: 16px;
+  height: 1lh;
+  margin: 4px 4px 0 -4px;
+  cursor: pointer;
+  color: var(--fg-muted);
+  user-select: none;
 }
 
-/* Stripes: every second body row. Row 1 of the tbody is the header row. */
-.milkdown .ProseMirror .milkdown-table-block[data-table-stripes] :where(tr:nth-child(2n + 3)) > td {
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-chevron > svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  transition: transform 120ms ease;
+}
+
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-chevron[data-collapsed] > svg {
+  transform: rotate(-90deg);
+}
+
+/* "· 12 rows" after the collapsed subheader row's text: quiet, never selected, never edited. */
+.milkdown .ProseMirror .milkdown-table-block .table-subhead-count {
+  color: var(--fg-muted);
+  font-weight: 400;
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Stripes: every second body row. Row 1 of the tbody is the header row. A table with subheader rows (`data-table-subheads`)
+   starts them again after each subheader row (YAZ-4899): `table-stripe-row` from `tableSubhead.ts` in place of `nth-child`.
+   YAZ-5938: the same weight as a fill (4 classes, 1 element; the rest in `:where`), so the fills after it win on a
+   striped row (`tableFillWinsCss.test.ts`). It was heavier, and a fill on row 3, 5, … did not show. */
+.milkdown .ProseMirror .milkdown-table-block[data-table-stripes]:where(:not([data-table-subheads])) :where(tr:nth-child(2n + 3)) > td,
+.milkdown .ProseMirror .milkdown-table-block[data-table-stripes]:where([data-table-subheads]) :where(.table-stripe-row) > td {
   --table-cell-tint: color-mix(in srgb, var(--crepe-color-on-background) 4%, transparent);
 }
 
 /* Fills and text colours: a name, or a custom `#rrggbb` from the cell's own `--table-fill-custom` /
-   `--table-text-custom` (YAZ-3817). A custom fill draws at `--table-fill-wash`, a custom text colour as picked. */
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='red'] { --table-cell-tint: var(--table-fill-red); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='orange'] { --table-cell-tint: var(--table-fill-orange); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='yellow'] { --table-cell-tint: var(--table-fill-yellow); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='green'] { --table-cell-tint: var(--table-fill-green); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='teal'] { --table-cell-tint: var(--table-fill-teal); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='blue'] { --table-cell-tint: var(--table-fill-blue); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='purple'] { --table-cell-tint: var(--table-fill-purple); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='pink'] { --table-cell-tint: var(--table-fill-pink); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='grey'] { --table-cell-tint: var(--table-fill-grey); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill='brown'] { --table-cell-tint: var(--table-fill-brown); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-fill^='#'] { --table-cell-tint: color-mix(in srgb, var(--table-fill-custom) var(--table-fill-wash), transparent); }
+   `--table-text-custom` (YAZ-3817). A custom fill draws at `--table-fill-wash`, a custom text colour as picked. A Super
+   table view's cells (`.super-view`, `super/superTable.css`) wear the same rules (YAZ-4834 P17). */
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='red'] { --table-cell-tint: var(--table-fill-red); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='orange'] { --table-cell-tint: var(--table-fill-orange); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='yellow'] { --table-cell-tint: var(--table-fill-yellow); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='green'] { --table-cell-tint: var(--table-fill-green); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='teal'] { --table-cell-tint: var(--table-fill-teal); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='blue'] { --table-cell-tint: var(--table-fill-blue); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='purple'] { --table-cell-tint: var(--table-fill-purple); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='pink'] { --table-cell-tint: var(--table-fill-pink); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='grey'] { --table-cell-tint: var(--table-fill-grey); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='brown'] { --table-cell-tint: var(--table-fill-brown); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill^='#'] { --table-cell-tint: color-mix(in srgb, var(--table-fill-custom) var(--table-fill-wash), transparent); }
 
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='red'] { color: var(--table-text-red); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='orange'] { color: var(--table-text-orange); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='yellow'] { color: var(--table-text-yellow); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='green'] { color: var(--table-text-green); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='teal'] { color: var(--table-text-teal); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='blue'] { color: var(--table-text-blue); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='purple'] { color: var(--table-text-purple); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='pink'] { color: var(--table-text-pink); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='grey'] { color: var(--table-text-grey); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color='brown'] { color: var(--table-text-brown); }
-.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-color^='#'] { color: var(--table-text-custom); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='red'] { color: var(--table-text-red); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='orange'] { color: var(--table-text-orange); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='yellow'] { color: var(--table-text-yellow); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='green'] { color: var(--table-text-green); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='teal'] { color: var(--table-text-teal); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='blue'] { color: var(--table-text-blue); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='purple'] { color: var(--table-text-purple); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='pink'] { color: var(--table-text-pink); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='grey'] { color: var(--table-text-grey); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='brown'] { color: var(--table-text-brown); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color^='#'] { color: var(--table-text-custom); }
 
 /* A table on a bullet's marker line (YAZ-3805, `slashMenu.ts`): the item's first child, after the fold
    arrow when there is one. No top margin, so the header row is level with the marker. The zoom pill's
@@ -137,7 +144,7 @@
 }
 
 /* Bullets in a cell and in an open cell note card are compact (the YAZ-3818 demo): space is short there. Each setting
-   moves one thing (Settings › Editor › Tables, set on `.app`): `--cell-bullet-indent` is the step from a level to its
+   moves one thing (Settings › Tables › All tables, set on `.app`): `--cell-bullet-indent` is the step from a level to its
    child (20px), `--cell-bullet-gap` the space from the dot's column to the text (4px); the dot's column is a fixed
    16px. bullets.css, guideLines.css and bulletThreading.css read `--list-indent`, `--list-label-gap` and
    `--list-gutter`, so the dots, the guide lines and the thread move together; Crepe's li gap is a fixed 10px, so it
@@ -171,11 +178,36 @@
   vertical-align: bottom;
 }
 
-/* No wrap: one line per cell paragraph, cut with an ellipsis. */
-.milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] :is(th, td) > p {
+/* Clip (YAZ-4900): one line per cell paragraph, cut with an ellipsis: plain lines, and bullet, sub-bullet and to-do
+   lines too (every `p` in the cell). Settings' default is on `.app` (`--table-text`; the vault's on its surface, YAZ-5487),
+   the table's own `data-table-nowrap` (Clip) / `data-table-wrap` (Wrap) wins over it, and a column's own `data-cell-text`
+   on its cells wins over both. A caret in a clipped cell keeps the one line and scrolls it sideways. A cut cell shows its
+   full text on hover as a card (`cellNotePreview.ts`, YAZ-4901). */
+/* YAZ-5487: the table's own Wrap or Clip sets `--table-text` on its block, nearer than Settings' (the nearest wins). */
+.milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] { --table-text: clip; }
+.milkdown .ProseMirror .milkdown-table-block[data-table-wrap] { --table-text: wrap; }
+@container style(--table-text: clip) {
+  .milkdown .ProseMirror .milkdown-table-block :is(th, td):not([data-cell-text='wrap']) p {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+.milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-cell-text='clip'] p {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding-right: var(--table-clip-pad, 0);
+}
+
+/* A clipped cell with a note keeps 10 px free at its right (YAZ-4901 item 11), so the "…" ends before the corner
+   triangle and never runs under it; the same for the cell under the pointer while the cell note button shows over its
+   corner (`cellNoteButton.ts`, the editor's `.milkdown` box). A wrapped cell's line has no padding to lose (`0`). */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td).has-cell-note,
+.milkdown:has(> .cell-note-button[data-show='true']) .ProseMirror .milkdown-table-block :is(th, td):hover {
+  --table-clip-pad: 10px;
 }
 
 /* Fill down (YAZ-3765, S4): the handle sits inside the corner of the bottom-right selected cell
@@ -194,7 +226,7 @@
   cursor: crosshair;
 }
 
-.milkdown .ProseMirror[contenteditable='false'] .table-fill-handle {
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .table-fill-handle {
   display: none;
 }
 
@@ -243,14 +275,6 @@
   border-left-width: var(--table-border-width, 1px);
 }
 
-/* The freeze line (YAZ-3804): a thicker border after the last frozen row and the last frozen column, the
-   border colour 40% darker. The cells draw their own bottom and right borders (above), so the line moves
-   with the frozen rows and sticks with the frozen columns. */
-.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] .table-frozen-row-end > * {
-  border-bottom-width: 3px;
-  border-bottom-color: color-mix(in srgb, var(--crepe-color-outline) min(100%, calc(var(--table-border-darkness, 20%) + 40%)), transparent);
-}
-
 .milkdown .ProseMirror .milkdown-table-block[data-table-frozen] :is(th, td).table-frozen-col-end {
   border-right-width: 3px;
   border-right-color: color-mix(in srgb, var(--crepe-color-outline) min(100%, calc(var(--table-border-darkness, 20%) + 40%)), transparent);
@@ -275,14 +299,14 @@
 
 .milkdown .ProseMirror .milkdown-table-block :is(.table-frozen-row > *, .table-frozen-col) {
   background-color: var(--bg);
-  background-image: var(--table-note-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none), linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
+  background-image: var(--table-page-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none), linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
 }
 
 /* Calendar tables (YAZ-4162 D2, D6, D14, `tableCalendar.ts`). The now row carries `--table-now` (0–1, how far
    down its slot now is). Its cells paint the mark as background layers, so no cell changes its `position` and a
    frozen cell stays sticky; `::after` is the selected-cell wash and `::before` the fill-down range. The line is 2px
    red with a dot in column A; the tint is a light red over the cell's own fill. `data-table-now` on `.app`
-   (Settings › Editor › Calendar tables) picks the line (the default), the tint or both: a change restyles, no decoration. */
+   (Settings › Tables › Calendar tables) picks the line (the default), the tint or both: a change restyles, no decoration. */
 .milkdown .ProseMirror .milkdown-table-block .table-now-row {
   --table-now-colour: var(--table-text-red);
   --table-now-at: calc(var(--table-now, 0) * 100%);
@@ -291,21 +315,26 @@
   --table-now-tint: none;
 }
 
-[data-table-now='tint'] .milkdown .ProseMirror .milkdown-table-block .table-now-row {
-  --table-now-line: none;
-  --table-now-dot: none;
+/* Mark the current time (D6): `--table-now-mark` on `.app`, or the vault's on its surface (YAZ-5487, nearest wins). */
+@container style(--table-now-mark: tint) {
+  .milkdown .ProseMirror .milkdown-table-block .table-now-row {
+    --table-now-line: none;
+    --table-now-dot: none;
+  }
 }
 
-:is([data-table-now='tint'], [data-table-now='both']) .milkdown .ProseMirror .milkdown-table-block .table-now-row {
-  --table-now-tint: linear-gradient(color-mix(in srgb, var(--table-now-colour) 12%, transparent), color-mix(in srgb, var(--table-now-colour) 12%, transparent));
+@container style(--table-now-mark: tint) or style(--table-now-mark: both) {
+  .milkdown .ProseMirror .milkdown-table-block .table-now-row {
+    --table-now-tint: linear-gradient(color-mix(in srgb, var(--table-now-colour) 12%, transparent), color-mix(in srgb, var(--table-now-colour) 12%, transparent));
+  }
 }
 
 .milkdown .ProseMirror .milkdown-table-block .table-now-row > * {
-  background-image: var(--table-note-mark, none), var(--table-open-ring, none), var(--table-now-line), var(--table-now-tint), var(--table-band, none), var(--table-now-under, none);
+  background-image: var(--table-page-mark, none), var(--table-open-ring, none), var(--table-now-line), var(--table-now-tint), var(--table-band, none), var(--table-now-under, none);
 }
 
 .milkdown .ProseMirror .milkdown-table-block .table-now-row > :first-child {
-  background-image: var(--table-note-mark, none), var(--table-open-ring, none), var(--table-now-dot), var(--table-now-line), var(--table-now-tint), var(--table-band, none), var(--table-now-under, none);
+  background-image: var(--table-page-mark, none), var(--table-open-ring, none), var(--table-now-dot), var(--table-now-line), var(--table-now-tint), var(--table-band, none), var(--table-now-under, none);
 }
 
 /* A frozen cell paints its tint as a layer over the page colour (above): it stays under the mark. */
@@ -313,15 +342,28 @@
   --table-now-under: linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
 }
 
-/* Past rows: grey text, over a cell's own text colour; marks keep theirs (D14, `data-table-dim-past`). `shade` also
-   lays a light shade (`--table-past-shade`, Settings › Calendar tables › Shade darkness, the YAZ-4163 demo) over the
-   cell's fill and under the row band: the `--table-past` layer of the two cell rules above. */
-:is([data-table-dim-past='text'], [data-table-dim-past='shade']) .milkdown .ProseMirror .milkdown-table-block .table-past-row > :is(th, td) {
-  color: var(--fg-muted);
+/* The next time slot (YAZ-5541, `tableCalendar.ts`'s `table-next-row`): Settings › Calendar tables › Shade the next time
+   slot (`--table-next-shade`, the vault's, nearest wins) tints it as the now tint does (12%), in `--table-next-colour`
+   (the now mark's red by default). The row is never past, so its tint takes the past shade's layer of the cell rules. */
+@container style(--table-next-shade: on) {
+  .milkdown .ProseMirror .milkdown-table-block .table-next-row > :is(th, td) {
+    --table-past: linear-gradient(color-mix(in srgb, var(--table-next-colour, var(--table-text-red)) 12%, transparent), color-mix(in srgb, var(--table-next-colour, var(--table-text-red)) 12%, transparent));
+  }
 }
 
-[data-table-dim-past='shade'] .milkdown .ProseMirror .milkdown-table-block .table-past-row > :is(th, td) {
-  --table-past: linear-gradient(color-mix(in srgb, var(--crepe-color-on-background) var(--table-past-shade, 6%), transparent), color-mix(in srgb, var(--crepe-color-on-background) var(--table-past-shade, 6%), transparent));
+/* Past rows: grey text, over a cell's own text colour; marks keep theirs (D14, `--table-dim-past`, YAZ-5487). `shade` also
+   lays a light shade (`--table-past-shade`, Settings › Calendar tables › Shade darkness, the YAZ-4163 demo) over the
+   cell's fill and under the row band: the `--table-past` layer of the two cell rules above. */
+@container style(--table-dim-past: text) or style(--table-dim-past: shade) {
+  .milkdown .ProseMirror .milkdown-table-block .table-past-row > :is(th, td) {
+    color: var(--fg-muted);
+  }
+}
+
+@container style(--table-dim-past: shade) {
+  .milkdown .ProseMirror .milkdown-table-block .table-past-row > :is(th, td) {
+    --table-past: linear-gradient(color-mix(in srgb, var(--crepe-color-on-background) var(--table-past-shade, 6%), transparent), color-mix(in srgb, var(--crepe-color-on-background) var(--table-past-shade, 6%), transparent));
+  }
 }
 
 /* The table zoom (YAZ-4091, D13, `tableZoomPill.tsx`). The table's own zoom is CSS `zoom` on the block's content
@@ -359,33 +401,72 @@
   transition-delay: 0s;
 }
 
-/* None in a read-only note, and none for a table that a folded bullet, a folded heading or the outline zoom hides. */
-.milkdown .ProseMirror[contenteditable='false'] .table-zoom-anchor,
+/* None in a read-only page, and none for a table that a folded bullet, a folded heading or the outline zoom hides. A
+   Super table keeps its anchor in a read-only page, without the pill: its tabs switch the views, which change no
+   file, and a view is all you see of the table (YAZ-4869, YAZ-4897). */
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .table-zoom-anchor:not([data-super]),
 .milkdown .ProseMirror .table-zoom-anchor:has(+ :is([data-outline-folded='true'], [data-heading-folded='true'], .outline-zoom-hidden)) {
+  display: none;
+}
+
+/* Super tables (YAZ-4869 S2, `super/superTables.ts`, `super/SuperTable.tsx`). While a view shows, a node decoration
+   hides the table block, and the anchor holds the view in the page's flow. The bar is the folder page's view bar
+   (`superTable.css`), in the flow above the table with room over it, the zoom pill at its right end, and it shows all
+   the time (the YAZ-4869 demo: "more margin at the top of the table … replicate the same line from folder pages"). */
+.milkdown .ProseMirror .milkdown-table-block.table-super-hidden {
+  display: none;
+}
+
+.milkdown .ProseMirror .table-zoom-anchor[data-super] {
+  height: auto;
+  margin-top: 12px;
+}
+
+.milkdown .ProseMirror .table-zoom-anchor > .table-super-bar {
+  position: relative;
+  /* Above the view's sticky column header (3) and group headers (2), which come later in the page (YAZ-4896). */
+  z-index: 4;
+  margin-bottom: 8px;
+}
+
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .table-zoom-anchor[data-super] .document-zoom {
   display: none;
 }
 
 /* The row band (YAZ-4167, D16, `tableRowBand.ts`): a light accent band across the body row under the caret
    (`table-band-row`, one decoration) or the mouse (`:hover`, never the header row), its first cell bold.
-   `data-table-row-band` on `.app` (Settings › Editor › Tables › Row band) picks all tables, calendar tables or
+   `--table-row-band` on `.app` (Settings › Tables › All tables › Row band; the vault's on its surface, YAZ-5487) picks all tables, calendar tables or
    none (`off` has no rule). The band is `--table-band`, a background layer each cell rule paints (above): a fill
    shows under it, a frozen cell stays sticky, and the now mark's line and tint paint over it on the same row.
    The YAZ-3818 demo: its colour (`--table-band-colour`, the accent by default) and strength (`--table-band-strength`,
    10%) are settings on `.app`, and `data-table-band-rows` there leaves out the caret's row (`mouse`) or the mouse's
    (`caret`). */
-[data-table-row-band='all']:not([data-table-band-rows='mouse']) .milkdown .ProseMirror .milkdown-table-block .table-band-row,
-[data-table-row-band='all']:not([data-table-band-rows='caret']) .milkdown .ProseMirror .milkdown-table-block tr:not(:first-child):hover,
-[data-table-row-band='calendar']:not([data-table-band-rows='mouse']) .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] .table-band-row,
-[data-table-row-band='calendar']:not([data-table-band-rows='caret']) .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] tr:not(:first-child):hover {
-  --table-band: linear-gradient(color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent), color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent));
+.milkdown .ProseMirror .milkdown-table-block { --table-band-on: linear-gradient(color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent), color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent)); }
+@container style(--table-row-band: all) {
+  .app:not([data-table-band-rows='mouse']) .milkdown .ProseMirror .milkdown-table-block .table-band-row,
+  .app:not([data-table-band-rows='caret']) .milkdown .ProseMirror .milkdown-table-block tr:not(:first-child):hover {
+    --table-band: var(--table-band-on);
+  }
+}
+@container style(--table-row-band: calendar) {
+  .app:not([data-table-band-rows='mouse']) .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] .table-band-row,
+  .app:not([data-table-band-rows='caret']) .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] tr:not(:first-child):hover {
+    --table-band: var(--table-band-on);
+  }
 }
 
-/* Bold first cell (the YAZ-3818 demo): off keeps the band, with no bold first cell. */
-[data-table-row-band='all']:not([data-table-band-rows='mouse']):not([data-table-band-bold='off']) .milkdown .ProseMirror .milkdown-table-block .table-band-row > :first-child,
-[data-table-row-band='all']:not([data-table-band-rows='caret']):not([data-table-band-bold='off']) .milkdown .ProseMirror .milkdown-table-block tr:not(:first-child):hover > :first-child,
-[data-table-row-band='calendar']:not([data-table-band-rows='mouse']):not([data-table-band-bold='off']) .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] .table-band-row > :first-child,
-[data-table-row-band='calendar']:not([data-table-band-rows='caret']):not([data-table-band-bold='off']) .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] tr:not(:first-child):hover > :first-child {
-  font-weight: 600;
+/* Bold first cell (the YAZ-3818 demo): only `on` bolds the first cell; off (the default, YAZ-5668) or unset keeps the band alone. */
+@container style(--table-row-band: all) and style(--table-band-bold: on) {
+  .app:not([data-table-band-rows='mouse']) .milkdown .ProseMirror .milkdown-table-block .table-band-row > :first-child,
+  .app:not([data-table-band-rows='caret']) .milkdown .ProseMirror .milkdown-table-block tr:not(:first-child):hover > :first-child {
+    font-weight: 600;
+  }
+}
+@container style(--table-row-band: calendar) and style(--table-band-bold: on) {
+  .app:not([data-table-band-rows='mouse']) .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] .table-band-row > :first-child,
+  .app:not([data-table-band-rows='caret']) .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] tr:not(:first-child):hover > :first-child {
+    font-weight: 600;
+  }
 }
 
 /* Fold rows (YAZ-4165, D3, `tableFold.ts`; the demo decides the look). A run's other rows are gone; its first row is
@@ -425,8 +506,10 @@
 /* The cell toolbar (YAZ-3768, D8, `cellToolbar.ts`): Crepe's selection toolbar look (toolbar.css),
    on its own class, so Crepe's rules for its own toolbar do not reach it. Crepe's variables follow
    light and dark. */
+/* Above the table's column and row handles (Crepe's `.cell-handle`, z-index 50), as the editor's menus are (app.css,
+   60): at 10 a column handle drew over the align buttons (YAZ-4789). */
 .milkdown .cell-toolbar {
-  z-index: 10;
+  z-index: 60;
   position: absolute;
   display: flex;
   align-items: center;
@@ -465,6 +548,13 @@
 
 .milkdown .cell-toolbar .toolbar-item:hover {
   background: var(--crepe-color-hover);
+}
+
+/* Merge cells (YAZ-4792) while the selection cannot merge: greyed, no hover, no hand. */
+.milkdown .cell-toolbar .toolbar-item:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: none;
 }
 
 .milkdown .cell-toolbar .toolbar-item:active {
@@ -507,18 +597,44 @@
   background: var(--crepe-color-selected);
 }
 
-/* The system colour picker's input (`colours.ts` `pickCustomColour`, on the page's body): hidden, but not
-   `display: none`, so its `click()` opens the picker. */
-.table-colour-input {
+/* "Custom colour…"'s colour box (YAZ-4366, `colours.ts`; the box's own rules are app.css `.colour-box`). In the cell
+   toolbar's palette: right under the item, as wide as the palette. From the table menu: on the page's body, fixed
+   under the target cells, in the highlight panel's look (app.css `.highlight-panel`). */
+.milkdown .cell-toolbar__palette .colour-box {
+  margin: 4px 5px 3px;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__custom[aria-expanded='true'] {
+  background: var(--bg-hover);
+}
+
+.table-colour-box {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  padding: 0;
-  border: 0;
-  opacity: 0;
-  pointer-events: none;
+  z-index: 1000;
+  width: 190px;
+  box-sizing: border-box;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  box-shadow:
+    0 0 1px 0 rgba(0, 0, 0, 0.17),
+    0 0 3px 0 rgba(0, 0, 0, 0.08),
+    0 7px 14px 0 rgba(0, 0, 0, 0.05);
+  font-family: var(--font);
+  color: var(--fg);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+[data-theme='dark'] .table-colour-box {
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 0 3px 0 rgba(0, 0, 0, 0.3),
+    0 7px 14px 0 rgba(0, 0, 0, 0.3);
+}
+
+.table-colour-box[hidden] {
+  display: none;
 }
 
 /* The palette: the app's menu look (`.ctx-menu`, app.css), hung under the split button. */
@@ -614,7 +730,7 @@
 
 /* The open cell note: a card just under its cell, right-aligned to it (the YAZ-3818 demo, `cellNoteCard.ts`). The note
    block itself, taken out of the flow, so nothing on the page moves; `cellNoteCard.ts` sets its place on the editor's
-   `.milkdown` box. The link hover card's look (`.cell-note-preview` below). */
+   `.milkdown` box. The link hover card's look (`.cell-note-preview`, `cellHoverCard.css`). */
 .milkdown .ProseMirror .cell-note.cell-note--open {
   display: block;
   position: absolute;
@@ -853,21 +969,172 @@
   outline-offset: 1px;
 }
 
-/* A cell note's mark (YAZ-3818 D8): a small triangle in the cell's top-right corner, as in Google Sheets. The label
-   never shows: the `sup` keeps its place in the line at font size 0, so the caret moves as before. The triangle is a
-   background on the cell itself (`has-cell-note`, from the cell note plugin's state, 5A-18): the same corner in every
-   cell, one that starts with a list too, at any padding. The cell's `::before` and `::after` are the fill handle's and
-   the selection's. It is ONE MORE LAYER of the cells' background lists (`--table-note-mark`, the top one in each rule
-   above), so the row band, past rows, the now mark and a frozen cell's tint still show under it (the YAZ-3818 demo):
-   a full-size gradient at 225° that paints only the corner's 8 px triangle (5.66 px = 8 / √2 along the gradient line),
-   so no rule needs a size or position list. A click on the corner opens the cell note (`cellNoteCard.ts`), a rest of
-   the pointer on the cell shows its first lines (`cellNotePreview.ts`). */
-:root {
-  --table-cell-note-mark: #e8a317;
+/* "All notes" of a calendar table (YAZ-4276, `cellNoteCard.ts`): IN the card (round 1 of the demo). The card is the live
+   time block's own note; the column's other blocks stand above and below it (`.cell-note-blocks`), each a time heading
+   and its lines; a click on a line makes that block live. A wider card by default: the head holds more. */
+.milkdown .ProseMirror .cell-note.cell-note--open.cell-note--calendar {
+  width: var(--cell-note-card-width, 440px);
 }
 
-[data-theme='dark'] {
-  --table-cell-note-mark: #f2c14e;
+/* The head: the title row (title, back to the card, pin, ×), then the tools row (columns, Now, Only filled, Copy all). */
+.milkdown .ProseMirror .cell-note--open > .cell-note-card__head.cell-note-all-head {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.cell-note-all-head__row,
+.cell-note-all-head__tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cell-note-all-head__tools {
+  flex-wrap: wrap;
+  padding-bottom: 1px;
+}
+
+/* The column buttons (A2): one frame, the shown column pressed. Each rule carries the editor's prefix: Crepe's
+   `.milkdown button` reset (no border, no background) would win over a bare class. */
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__columns {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__column,
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__now,
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__filled,
+.milkdown .ProseMirror .cell-note-all-head .cell-note-card__copy {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.milkdown .ProseMirror .cell-note-all-head :is(.cell-note-all-head__now, .cell-note-all-head__filled, .cell-note-card__copy) {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.milkdown .ProseMirror .cell-note-all-head .cell-note-all-head__column + .cell-note-all-head__column {
+  border-left: 1px solid var(--border);
+}
+
+.milkdown .ProseMirror .cell-note-all-head :is(.cell-note-all-head__column, .cell-note-all-head__now, .cell-note-all-head__filled):hover {
+  color: var(--fg);
+}
+
+.milkdown .ProseMirror .cell-note-all-head :is(.cell-note-all-head__column, .cell-note-all-head__filled)[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  color: var(--fg);
+}
+
+.milkdown .ProseMirror .cell-note-all-head button:focus-visible {
+  outline: 2px solid var(--crepe-color-primary);
+  outline-offset: 1px;
+}
+
+/* The blocks around the live note: a time heading, then the block's lines, read-only and quiet. */
+.milkdown .ProseMirror .cell-note-blocks {
+  font-size: 0.92em;
+  line-height: 1.45;
+  user-select: none;
+}
+
+.milkdown .ProseMirror .cell-note-block {
+  margin: 0 0 6px;
+}
+
+.milkdown .ProseMirror .cell-note-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 1px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* The live block's time: the accent, so you see where you type. */
+.milkdown .ProseMirror .cell-note-block--live .cell-note-time {
+  color: var(--accent);
+}
+
+.milkdown .ProseMirror .cell-note-time--now {
+  color: var(--fg);
+}
+
+.cell-note-time__now {
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--table-text-red);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+/* The dark theme's red is light (#ff7b72): dark text keeps the tag readable (white on it was 2.5:1). */
+[data-theme='dark'] .cell-note-time__now {
+  color: #1f1f1f;
+}
+
+/* A line of another block: a click there makes the block live, the caret on that line. */
+.milkdown .ProseMirror .cell-note-block__line {
+  min-height: 1.45em;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: color-mix(in srgb, var(--fg) 80%, transparent);
+  white-space: pre-wrap;
+  cursor: text;
+}
+
+.milkdown .ProseMirror .cell-note-block__line:hover {
+  background: var(--bg-hover);
+}
+
+/* Past blocks dim as the table's past rows do (A4), with Settings › Calendar tables › Dim past rows; the live note too. */
+@container style(--table-dim-past: text) or style(--table-dim-past: shade) {
+  .milkdown .ProseMirror :is(.cell-note-block--past:not(.cell-note-block--live), .cell-note--calendar.cell-note--past > :not(.cell-note-card__head, .cell-note-blocks)) {
+    opacity: 0.55;
+  }
+}
+
+/* An empty time block (B): a small, quiet line that a click turns into the block's note. */
+.milkdown .ProseMirror .cell-note-time-empty {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: color-mix(in srgb, var(--fg-muted) 75%, transparent);
+  font: inherit;
+  font-size: 12px;
+  font-style: italic;
+  text-align: left;
+  cursor: text;
+}
+
+.milkdown .ProseMirror .cell-note-time-empty:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+/* A read-only page: the block makes no note (`goLive` declines), so it shows no invitation. A note that keeps its caret
+   (`data-read-only`, YAZ-4433 D30) too. */
+.milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) :is(.cell-note-time-empty, .cell-note-block__line) {
+  cursor: default;
 }
 
 .milkdown .ProseMirror .milkdown-table-block :is(th, td) sup[data-type='footnote_reference'][data-label^='cell-'] {
@@ -877,11 +1144,11 @@
 /* Quiet at rest (round 3 of the demo): a 6px triangle (4.24px = 6 / √2) in the muted text colour at 35%; full, 8px and
    the mark colour, while the pointer is over the cell or its note is open. The click still takes the 10px corner. */
 .milkdown .ProseMirror .milkdown-table-block :is(th, td).has-cell-note {
-  --table-note-mark: linear-gradient(225deg, color-mix(in srgb, var(--fg-muted) 35%, transparent) 4.24px, transparent 4.24px);
+  --table-page-mark: linear-gradient(225deg, color-mix(in srgb, var(--fg-muted) 35%, transparent) 4.24px, transparent 4.24px);
 }
 
 .milkdown .ProseMirror .milkdown-table-block :is(th, td).has-cell-note:is(:hover, .cell-note-cell--open) {
-  --table-note-mark: linear-gradient(225deg, var(--table-cell-note-mark) 5.66px, transparent 5.66px);
+  --table-page-mark: linear-gradient(225deg, var(--table-cell-note-mark) 5.66px, transparent 5.66px);
 }
 
 /* The cell whose note is open as a card (round 2 of the demo, `cellNoteCard.ts`): a 2px ring in the accent colour. A
@@ -929,6 +1196,7 @@
   background: var(--crepe-color-surface);
 }
 
+/* A table that shows no button (YAZ-4790: its own Off, or Settings' Add button off) is `cellNoteButton.ts`'s `target`. */
 .milkdown > .cell-note-button[data-show='false'] {
   display: none;
 }
@@ -947,53 +1215,18 @@
   height: 12px;
 }
 
-/* A cell note's preview (D14, `cellNotePreview.ts`): the link hover card's look (`boardPreview.css` `.board-preview`),
-   on the page's body. Read-only: the pointer goes through it. */
-.cell-note-preview {
-  position: fixed;
-  z-index: 40;
-  width: 260px;
-  overflow: hidden;
-  pointer-events: none;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
-  color: var(--fg);
-  font-size: 12.5px;
-}
-
-.cell-note-preview__header {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cell-note-preview__hint {
-  padding: 4px 12px 0;
-  color: var(--fg-muted);
-  font-size: 11px;
-}
-
-.cell-note-preview__body {
-  padding: 6px 12px 8px;
-}
-
-.cell-note-preview__line {
-  min-height: 1.4em;
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: pre;
-}
-
 /* The row and column handles take a press 6px around them too (the YAZ-4163 demo): a drag along them selects rows or
    columns (`tableHandleSelect.ts`), and a press just off the small handle started a cell drag instead. */
 .milkdown .milkdown-table-block .cell-handle::before {
   content: '';
   position: absolute;
   inset: -6px;
+}
+
+/* Merged cells (YAZ-4792): the table block's column handle finds its column by the hovered cell's place in its row
+   (the vendored `@milkdown/components` table block), which a merged cell shifts, so it stood over the wrong column. A
+   table with a merged cell shows no column handle until the vendored block maps it through the grid; the cell's
+   right-click has the column's actions. The row handle is right (rows are not shifted). */
+.milkdown-table-block:has(:is(td, th)[colspan]:not([colspan='1']), :is(td, th)[rowspan]:not([rowspan='1'])) [data-role='col-drag-handle'] {
+  display: none;
 }

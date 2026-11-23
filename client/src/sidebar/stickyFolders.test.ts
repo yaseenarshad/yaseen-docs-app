@@ -22,4 +22,26 @@ describe('how many folder levels stick (YAZ-3440 D2)', () => {
     expect(body.hasAttribute('data-sticky-levels')).toBe(false)
     expect(body.style.getPropertyValue('--sticky-levels')).toBe('')
   })
+
+  it('Row spacing (YAZ-5885 D1): with no row to measure, the cap counts the setting\'s height times the zoom; a new height gives a new cap', () => {
+    const body = document.createElement('div')
+    body.getBoundingClientRect = () => ({ height: 400 }) as DOMRect // 40% = 160px
+    const capAt = (rowHeight: number, zoom = 1): string | null => {
+      const stop = stickyFolders(body, 7, zoom, rowHeight)
+      const cap = body.getAttribute('data-sticky-levels')
+      stop()
+      return cap
+    }
+    expect(capAt(22)).toBe('7') // Compact: 160 / 22 = 7.3
+    expect(capAt(TREE_ROW_H)).toBe('6') // Default: 160 / 25.5 = 6.3
+    expect(capAt(30)).toBe('5') // Roomy: 160 / 30 = 5.3
+    expect(capAt(40)).toBe('4')
+    expect(capAt(30, 2)).toBe('2') // the zoom stacks on top: 160 / 60
+    // A laid-out row wins over the setting: it is the real height, zoom and all.
+    const row = document.createElement('div')
+    row.className = 'tree__row'
+    row.getBoundingClientRect = () => ({ height: 20 }) as DOMRect
+    body.append(row)
+    expect(capAt(40)).toBe('7')
+  })
 })

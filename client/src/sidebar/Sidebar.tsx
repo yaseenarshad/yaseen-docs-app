@@ -1,66 +1,101 @@
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
+import { flushSync } from 'react-dom'
+import type { NavigationTarget } from '@shared/automationNavigation'
+import { AutomationFailure } from '@shared/automation'
+import { useAutomationSurface, waitForSurface } from '../automation/surfaces'
+import { Fragment, lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
+import { useAllPathIds, type IdsInFiles, type IdsInSearch, type PathIdsSource } from '../search/showIds'
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
+import { isReadOnlyProperties } from '@shared/readOnly'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api } from '../api'
 import { osVerbs } from '../lib/osVerbs'
-import { CalendarIcon, GridIcon, SidebarPanelIcon } from '../views/view/icons'
+import { CalendarIcon, GridIcon, InboxIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { embeddedCards, makeCardResolver } from '@shared/cardLinks'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { pageName, useAllPathTitles } from '../lib/pageLabel'
-import { absFrom, relTo } from '../lib/paths'
+import { absFrom, basename, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { countLinkReferences, linkingNotes } from '../links/renameLinks'
-import { addShortcut, removeShortcut, valuesLeftByShortcut, type LeftBehind, type Move } from '../links/shortcuts'
+import { countLinkReferences, linkingPages } from '../links/renameLinks'
+import { addShortcut, removeShortcut, type Move } from '../links/shortcuts'
 import type { MovedGesture } from '../lib/moveHistory'
-import { ancestorDirs, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
-import { SEARCH_CAP } from '../search/searchCandidates'
-import { filterOn, filterSection, NO_FILTER, type SearchFilter } from '../search/searchFilter'
+import { ancestorDirs, copyDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile, treeHasPath } from '../lib/treeState'
+import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
+import { landOnCard } from '../editor/card/cardOpen'
+import { inlineRowMenuSections } from './inlineRowMenu'
+import { ScopeConfirm } from './ScopeConfirm'
+import { filterOn, filterSection, NO_FILTER, typeChip, typeFlyout, type SearchFilter, type SearchType } from '../search/searchFilter'
+import { useReviewOnRoots } from '../review/useReviewSettings'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
-import { ConfirmMove } from './ConfirmMove'
 import { ContextMenu } from './ContextMenu'
 import { levelLinesHover } from './levelLinesHover'
+import { threadPath } from './threadPath'
 import { stickyFolders } from './stickyFolders'
 import { IconPicker } from './IconPicker'
 import type { VaultIconsHere } from './useVaultIcons'
-import { isIconRules, MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
+import { useFilesOrder } from './useFilesOrder'
+import { isIconRules, MAX_ICON_MATCH, MAX_ICON_RULES, type IconRule } from '@shared/vaultIcons'
 import { oneRule, rowIcon, ruleFor, withRule } from './rowIcons'
+import { IconsContext } from './FileIcon'
 import { PICKER_W, suggestIcons } from './iconSuggestions'
-import { keepsOrder, shownLabel, sortLevel, sortSections } from './treeSort'
+import { appRowsLast, keepsOrder, shownLabel, sortLevel, sortSections } from './treeSort'
+import { cardSkillFolder } from '@shared/cardSkillFolder'
+import { cardSkillPrompt } from '../vault/cardSkill'
 import { ACTIVE_TAB_SELECTOR, SidebarTabs } from './SidebarTabs'
 import { folderShortcuts } from './folderShortcuts'
+import { folderPageRows, showFolderPageFiles } from './folderPageRows'
+import { askPageTab } from '../views/pageTabRequest'
 import { datedSeed, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
+import { FILES_ONLY_GRACE_MS, inFolder } from './filesOnly'
 import { SettingsButton } from '../settings/SettingsButton'
 import { UpdatePill } from '../update/UpdatePill'
 import { ZoomMenu } from './ZoomMenu'
-import { buildMenuSections } from './menuSections'
+import { buildMenuSections, SCOPE_TIPS } from './menuSections'
+import { UnitContext, useVaultUnit, vaultUnit } from '../vault/unitWord'
 import type { ListFold } from './listFold'
-import { RecentList } from './RecentList'
+import { createPortal } from 'react-dom'
+import { FocusFolderList } from './FocusFolderList'
+import { foldersChangedHere, lastPlace, markFoldersChanged, readPlace } from './tabPlace'
+import { useTabPlace } from './hooks/useTabPlace'
+import { ConfirmSheet } from '../components/ConfirmSheet'
+import { resolveItem, vaultOfFolder } from '../lists/focusFolders'
+import { recentSections } from './recents'
 import { RowDateTip } from './RowDateTip'
-import { SearchFilterBar } from './SearchFilterBar'
+import { FilterChips, SearchFilterBar } from './SearchFilterBar'
 import { SessionList } from './SessionList'
 import { ShortcutPicker } from './ShortcutPicker'
 import type { NoticeKind, NoticeType } from '../lib/notice'
-import { dropOn, hasFiles, leftTarget, Tree, type TreeFileMove } from './Tree'
+import { dropOn, hasFiles, leftTarget, PlacedCreate, Tree, type CreatePlace, type ReorderOver, type TreeFileMove } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
+import { VaultLock } from './VaultLock'
+import type { VaultUnlockFor } from '../vault/readOnlyVault'
 import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
-import { useSameList, useVaultTree } from './hooks/useVaultTree'
-import type { VaultListsHere } from '../lists/useVaultListsHere'
+import { type FolderShare, useSameList, useVaultTree } from './hooks/useVaultTree'
+import type { ScopeState, VaultListsHere } from '../lists/useVaultListsHere'
 import { outermost, useFileClipboard, useInlineEdits, useSelection, useTreeDrag } from './hooks/rowGestures'
 import { flashTreeRows, revealMissingMessage, SIDEBAR_REVEAL_MS, type SidebarRevealRequest } from './revealRow'
 import { HoverPreviewHost, useHoverPreview } from './HoverPreviewHost'
 import type { PreviewPopup } from './previewPlacement'
 import { useShareBadges } from '../share/useShareBadges'
 import { pageHoldsKeys } from '../lib/readOnlyCaret'
+import { tourEvent } from '../course/tourBus'
 
 /** A board's Info popover body (YAZ-3028 D11), with its CSS: loaded on the first "Info". */
 const BoardInfo = lazy(() => import('./BoardInfo'))
+/** On-demand sidebar panels (YAZ-6008 D3): split out of the initial renderer chunk. */
+const RecentList = lazy(() => import('./RecentList').then((m) => ({ default: m.RecentList })))
 
 /** One vault of the window as the panel reads it (YAZ-2602 D1): its folder, what the app calls it, its watcher, its index snapshot and its review. */
 export interface SidebarVault {
   root: string
+  /**
+   * "A folder of" the vault (YAZ-4922 🔒 D3): this window shows that folder in the vault's place. Its tree, its
+   * Search and its Recents are the folder's; its index, IDs, links and lists are the vault's (`root`).
+   */
+  folder?: string
   /** Its display name, else its folder name (YAZ-1974 D4): the vault row's label. */
   name: string
   watch: WatchSource
@@ -70,10 +105,17 @@ export interface SidebarVault {
    * feed. `records` is `[]` until the first index lands.
    */
   index: WikilinkResolveSource
-  /** Whether this vault has upkeep review on (YAZ-2322 🔒 D7): off, it has no Inbox row and its folders no "Review this folder". */
-  upkeep: boolean
+  /** This vault's "Show IDs in search" (YAZ-4940), read when the search rows draw; absent → only on a row found by its ID. */
+  idsInSearch?: () => IdsInSearch
+  /** This vault's "Show IDs in the files list" (YAZ-4940): each page row of Files, Focus and Favorites ends with its ID's number ("#12") or the full ID. Absent → off. */
+  idsInFiles?: IdsInFiles
   /**
-   * Its Inbox row (YAZ-2322; one per vault with upkeep on, YAZ-2602 R5): how many notes are due, and
+   * Whether this vault has card review on (Settings › Review, YAZ-4967). Off — or a vault that gives no IDs, so
+   * has no cards (D8) — it has no Inbox row, and no "Review this folder" or "Review this page".
+   */
+  review: boolean
+  /**
+   * Its Inbox row (YAZ-4967; one per vault with review on, YAZ-2602 R5): how many cards are due, and
    * whether its review is open. App counts and owns the session — this component is unmounted
    * while collapsed, and the count has to be right the moment it comes back.
    */
@@ -81,6 +123,15 @@ export interface SidebarVault {
   reviewing: boolean
   /** YAZ-1801 D3 (YAZ-3039): vault-relative paths its last sync pass held back as over GitHub's limit (`GithubSyncStatus.tooLarge`). */
   tooLarge?: readonly string[]
+  /** Settings › This vault › Read only (YAZ-4939): the header shows the vault's lock (YAZ-4985). Absent: off. */
+  readOnly?: boolean
+  /** The vault's unlock (YAZ-5581): when it ends (Infinity: until Lock now), or null. The lock counts it down. */
+  unlockedUntil?: number | null
+  /**
+   * The app's own vault (the card skill, YAZ-5108), LAST in `vaults`: one row at the bottom with a lock, read only, never
+   * a vault of the person. It does not make the window "two vaults": blank space and the person's own tree are as before.
+   */
+  app?: true
 }
 
 interface SidebarProps {
@@ -101,8 +152,14 @@ interface SidebarProps {
   onRemoveVault: (root: string) => void
   /** A drag of a vault row (YAZ-2631 D5): the window's vaults in the new order, for App to store. */
   onReorderVaults: (next: string[]) => void
+  /** "Hide card skill" on the card skill's row (YAZ-5108): App sets the switch to Hide, closes its tabs and says where the switch is. */
+  onHideCardSkill?: () => void
+  /** "Duplicate into <vault>…" on the card skill's row (YAZ-5109): App copies the skill into that vault, and asks first when `Card skill` is there. */
+  onDuplicateCardSkill?: (vault: string) => void
   /** The width in px (YAZ-738), set on this aside alone (YAZ-2194). */
   width: number
+  /** True while the sidebar shell is animated shut (YAZ-6146): keeps global arrow-key listeners inactive while hidden. */
+  collapsed?: boolean
   /** This aside, for App's resize drag, which writes the live width to it between renders (YAZ-2239). */
   asideRef?: Ref<HTMLElement>
   /** Right-click → "Version history" on one board row (YAZ-1897 D4, YAZ-3039): App opens the board's versions. */
@@ -116,6 +173,10 @@ interface SidebarProps {
   onKeepFile: (path: string) => void
   /** ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open in a background tab; App passes the workspace's openBackground. */
   onOpenFileBackground: (path: string) => void
+  /** Opens an inline Excalidraw drawing inside a page in its own tab (YAZ-6143). */
+  onOpenInlineDrawingTab?: (path: string, index: number, background: boolean) => void
+  /** A tab behind the current one with no copy: a file already in a tab stays as it is (YAZ-4470, 17: "Open all in tabs"). Absent: `onOpenFileBackground`. */
+  onOpenFileTab?: (path: string) => void
   /**
    * A search row's menu item that draws into the tree was chosen (🔒 D2, YAZ-2050), or "Show in
    * sidebar" on a row of Search, Focus or Favorites (YAZ-2638 D1, D3): App flips the lens to Files
@@ -133,7 +194,7 @@ interface SidebarProps {
   onPreview: (path: string | null) => void
   /** The new tab page's Space panel shows (YAZ-2663 S39): no hover preview, as with the search's (YAZ-3403). */
   pagePreviewShown?: boolean
-  /** The text formatting of the vault that holds a path (YAZ-3067 D12): App's `textVarsFor`, which a note's hover preview wears (YAZ-3075 C20). */
+  /** The text formatting of the vault that holds a path (YAZ-3067 D12): App's `textVarsFor`, which a page's hover preview wears (YAZ-3075 C20). */
   textVarsFor: (path: string) => CSSProperties
   /** "Open folder…" — the last row of the header's vault switcher (YAZ-1767 D4) — runs App's picker; the picked vault opens beside (YAZ-1914). */
   onPickFolder: () => void
@@ -157,8 +218,17 @@ interface SidebarProps {
    * choice on every collapse/reopen and every root switch. Search is a tab too (YAZ-2638 D2): App's, and never stored.
    */
   lens: SidebarTab
+  /**
+   * The page tab on show (YAZ-5701): its id, `null` under the new tab page or the Inbox tab. With "Sidebar remembers"
+   * on "A place for each tab", each tab keeps its own place. Absent in a Files window, which has no page tabs.
+   */
+  activeTab?: string | null
   /** A tab was clicked; App writes a lens through to the window identity — never Search — and passes the new value back down. */
   onLensChange: (lens: SidebarTab) => void
+  /** Restore a tab's saved lens without writing to window storage (YAZ-6064). Falls back to `onLensChange`. */
+  onRestoreLens?: (lens: SidebarTab) => void
+  /** Restore a tab's saved folded vault rows in a multi-vault window (YAZ-6064). */
+  onRestoreClosedVaults?: (closed: readonly string[]) => void
   /** One reveal in Files; a request that arrives on another lens is dropped. */
   revealRequest: SidebarRevealRequest | null
   /** The request has been accepted into Sidebar-local work and must not replay after a remount. */
@@ -185,11 +255,13 @@ interface SidebarProps {
    * delete sheet's "Don't ask me again" (GRO-2272).
    */
   settings: SettingsState
+  /** Show folder page files of each vault (YAZ-5489: its folder-pages.json, else the app's); absent, the app's. */
+  pageFilesIn?: (root: string) => boolean
   onChangeSettings: (next: SettingsState) => void
   /** The footer cog: App mounts the settings dialog, so the cog only asks for it (YAZ-1679). */
   onOpenSettings: () => void
-  /** The footer's "Open today's daily note" (YAZ-3607 D7), a background tab on ⌘-click (YAZ-3776); absent while Daily notes is off. */
-  onOpenDailyNote?: (background: boolean) => void
+  /** The footer's "Open today's daily page" (YAZ-3607 D7), a background tab on ⌘-click (YAZ-3776); absent while Daily pages is off. */
+  onOpenDailyPage?: (background: boolean) => void
   /** The updater's state (YAZ-2976 D4): App reads it once for the window, and the footer shows its pill beside the cog. */
   update: UpdateState
   /** The pill's click: App mounts the "What's new" sheet (D5), as it does the settings dialog. */
@@ -222,6 +294,20 @@ interface SidebarProps {
   onZoomMenu?: (open: boolean) => void
   /** A Files window's hover preview (YAZ-3357 D9): its floating popup, or `'overlay'` where there is none. Absent: beside the sidebar. */
   previewFloat?: PreviewPopup | 'overlay'
+  /** A click on a focus folder's ghost (YAZ-4460 F6): the item of a vault the window does not show, by that vault's folder name. */
+  onAddVaultFor?: (vault: string, rel: string) => void
+  /** "Hide all others" (YAZ-4460 F8): App's, for the window's session — the one focus folder the Focus tab shows; null shows all. */
+  focusOnly?: string | null
+  onFocusOnly?: (id: string | null) => void
+  /** "Hide all others" in Files (YAZ-5790): App's, for the window's session — the one folder (a path) the Files tab shows; null shows all. */
+  filesOnly?: string | null
+  onFilesOnly?: (dir: string | null) => void
+  /** The Recents Type filter (YAZ-4450 demo): App's, for the window's session; 'all' for all types. */
+  recentType?: SearchType
+  onRecentType?: (type: SearchType) => void
+  /** The Recents tab's vault filter (YAZ-4450 D5, D6): App's, for the window's session; null is All vaults. */
+  recentVault?: string | null
+  onRecentVault?: (root: string | null) => void
   /** A save just made this session (YAZ-3147 D5): the Sessions tab opens its name field once; then `onSessionNameConsumed`. */
   sessionNameRequest: string | null
   onSessionNameConsumed: () => void
@@ -249,12 +335,14 @@ interface SidebarProps {
    * are never handed here.
    */
   onMoved: (gesture: MovedGesture, text: string, skipped: boolean) => void
+  /** A Manual reorder of Files, Focus or Favorites (YAZ-5917): App puts it on the window's undo list and says it with Undo. */
+  onReordered?: (step: { name: string; undo: () => void; redo: () => void; vault?: string }) => void
   /**
    * Rows dragged out to Finder, and the drag ended outside the window with no drop inside it
    * (YAZ-3254 D9B, S26): App's box asks whether the vault keeps them. A cancelled drag looks the same (S29).
    */
   onDraggedOut: (paths: string[]) => void
-  /** A title edit (YAZ-2420 🔒 D16), to the same door: the inline rename of a note or a folder. */
+  /** A title edit (YAZ-2420 🔒 D16), to the same door: the inline rename of a page or a folder. */
   onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>
   /**
    * Delete confirmed (GRO-2272) — by the menu or by ⌘⌫ (YAZ-3272 D20): App's ONE list delete door
@@ -262,7 +350,14 @@ interface SidebarProps {
    * sound (D21), and routes ANY failure to the passive notice — this promise never rejects, so the
    * sheet just closes. No link rewriting happens downstream (LOCKED decision C).
    */
-  onDeleteEntries: (paths: string[]) => Promise<void>
+  /** `asked`: the sidebar asked the read-only door already, before its delete sheet (YAZ-4985), so App does not ask again. */
+  onDeleteEntries: (paths: string[], asked?: boolean) => Promise<void>
+  /** A file action in a read-only vault asks first (YAZ-4939): App's sheet, true = go on. The sidebar's New … and Paste ask through it. */
+  onFileAction?: (root: string) => Promise<boolean>
+  /** The vault lock's "Unlock for 10 minutes" · "1 hour" · "Until I lock it" (YAZ-5581): the whole vault, the ask sheet's allowance too. Absent: no lock. */
+  onUnlockVault?: (root: string, choice: VaultUnlockFor) => void
+  /** The vault lock's "Lock now": each open page saves, then the vault locks. */
+  onLockVault?: (root: string) => void
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
   onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void
   /**
@@ -284,6 +379,12 @@ interface SidebarProps {
    */
   onLeaveToPage?: () => boolean
   /**
+   * Esc closes the sidebar, last of all (YAZ-4995): App's `useEscapeLast` does it. Then Esc in the search bar goes back
+   * to the last tab with the keyboard on its row (not into the page), and Esc on a row is left to App. Absent (a Files
+   * window, which IS the sidebar): Esc in the bar and on a row go to the page, as before.
+   */
+  escapeClosesSidebar?: boolean
+  /**
    * ⌘⇧C's read-only window onto the multi-selection (🔒 D4, YAZ-1338). The state stays HERE
    * (🔒 D1) — it is per root and dies with the panel — but the CHORD is App's: this component is
    * unmounted while the sidebar is collapsed, and a shortcut that stops existing when a panel is
@@ -300,16 +401,14 @@ interface SidebarProps {
    * input changes and emptied on unmount. Each verb answers whether it acted, so App knows what to swallow.
    */
   clipboardRef: { current: SidebarClipboard | null }
-  /** The folder row's "Review this folder" (YAZ-2322): App starts a review of what is due inside it. */
+  /** The folder row's "Review this folder" (YAZ-2322): App starts a review of the cards due inside it. */
   onReviewFolder: (dirPath: string) => void
-  /**
-   * The note row's review toggle (YAZ-2322): whether a path is in review — null for anything
-   * that is not a note in the index — and the write. Both App's: the sidebar has no index.
-   */
-  reviewState: (path: string) => boolean | null
-  onSetReview: (path: string, on: boolean) => void
+  /** The page row's "Review this page" (YAZ-4967, idea 4): App starts a review of that page's due cards. */
+  onReviewPage: (path: string) => void
   /** An Inbox row was clicked (YAZ-2602 R5): App opens the review of THAT vault, or closes it when it is the one open. */
   onInbox: (root: string) => void
+  /** An Inbox row's "Open in new window" (YAZ-5054): App opens that vault's Inbox in a new window. Absent: no such item. */
+  onInboxNewWindow?: (root: string) => void
 }
 
 /** One "open the row menu of this path at this point" gesture (YAZ-2663 D6): the reveal request's idiom. */
@@ -368,9 +467,17 @@ export interface MenuTargets {
   y: number
   /**
    * Where "New …" creates and Paste pastes: a dir row → itself, a file row → its parent, blank
-   * space → the root. Null where blank space is no one vault's (two or more vaults, YAZ-2602 S10).
+   * space → the root. Null where blank space is no one vault's (two or more vaults, YAZ-2602 S10) —
+   * but on the Focus and Favorites tabs, where blank space makes a new item in a vault's root (YAZ-4782, `vaultOfFolder`).
    */
   targetDir: string | null
+  /**
+   * Where a New … picked on the Focus or the Favorites tab puts its item in that tab's list, and its name field
+   * (YAZ-4782, `CreatePlace`): a pinned FILE row (a top row) → right after it, in its focus folder or at the top level;
+   * blank space → last, in the folder shown alone ("Hide all others") or at the top level. Null or absent everywhere
+   * else — Files, Search, a folder row, a row inside a pinned folder — where the field opens in `targetDir` as ever.
+   */
+  place?: CreatePlace | null
   /** The right-clicked row's kind; null for blank space. Drives the Rename input's mode. */
   rowKind: 'file' | 'dir' | null
   /**
@@ -382,8 +489,9 @@ export interface MenuTargets {
   copyPath: string | null
   /**
    * "Open folder page" — a FOLDER row outside a plural selection (YAZ-2290 D3, YAZ-3377 D2): the folder
-   * opens as a kept tab (YAZ-2648 R1). Null on a file row (its click opens it), on blank space, and inside a 2+ selection, where
-   * "Open N in new tabs" is the item. Its OWN field.
+   * opens as a kept tab (YAZ-2648 R1). Since YAZ-4921 the vault ROOT too: blank space of a window with one vault, and a
+   * vault row of a window with two or more (blank space is no one vault's there, YAZ-2602 S10). Null on a file row (its
+   * click opens it) and inside a 2+ selection, where "Open N in new tabs" is the item. Its OWN field.
    */
   openPath: string | null
   /**
@@ -414,7 +522,7 @@ export interface MenuTargets {
    * the vault root, and neither is what a Cut may name.
    */
   clipPaths: string[] | null
-  /** "Open in new window" — FILE rows only (D2, GRO-2168). */
+  /** "Open in new window" — a file row (D2, GRO-2168) or a folder row, its folder page (YAZ-4778). */
   newWindowPath: string | null
   /** "Rename" — a concrete row only, NEVER blank space: the vault root is not renameable (E1b, GRO-2241). */
   renamePath: string | null
@@ -443,6 +551,16 @@ export interface MenuTargets {
   focusPaths: string[] | null
   /** True only when EVERY `focusPaths` entry is already in the focus list — a mixed selection reads as Add (R9). */
   focusIsOn: boolean
+  /** The focus folders of the tab, for "Add to focus ▸" (YAZ-4460 F4); none or absent: the item has no flyout. */
+  focusFolders?: readonly { id: string; name: string }[]
+  /** The focus folder that holds the one right-clicked row, null at the top level (YAZ-4460 demo): its ✓ in the flyout. */
+  focusFolderOf?: string | null
+  /** The same two for the Favorites tab's folders (YAZ-4460 demo). */
+  favoriteFolders?: readonly { id: string; name: string }[]
+  favoriteFolderOf?: string | null
+  /** Each list's scopes for the rows, for the flyouts' "Workspace" / "Vault" checks (YAZ-4460 demo). */
+  focusScopes?: ScopeState | null
+  favoriteScopes?: ScopeState | null
   /**
    * "Add to favorites" / "Remove from favorites" (YAZ-1766 D3): the row, or the ordered 2+
    * selection holding it — files and folders alike, every lens; null on blank space. Its OWN field.
@@ -458,20 +576,31 @@ export interface MenuTargets {
   iconRuleSet: boolean
   /** True only when EVERY `favoritePaths` entry is already a favorite — a mixed selection reads as Add. */
   favoriteIsOn: boolean
-  /** "Review this folder" (YAZ-2322) — FOLDER rows only: a review is of the notes inside one. */
+  /** "Review this folder" (YAZ-2322) — FOLDER rows only: a review is of the pages inside one. */
   reviewDir: string | null
-  /** "Turn review off" / "Turn review on" (YAZ-2322) — a NOTE row only; null for every other row and blank space. */
-  reviewPath: string | null
-  /** That note's state when the menu opened; picks the label. */
-  reviewIsOn: boolean
+  /** "Review this page" (YAZ-4967) — a PAGE row that holds a card, outside a plural selection; null for every other row. */
+  reviewPage: string | null
+  /** The `reviewPage` row is a card file (YAZ-5037): the item reads "Review this card". */
+  reviewCard?: boolean
   /**
-   * "Add note shortcut" — a FOLDER row outside a plural selection (YAZ-2290 D2): the folder the
-   * picked note will also appear in. Null on a file row, on blank space and inside a 2+
+   * "New card" (YAZ-5037): the folder the card file is made in — `targetDir`, where its vault uses IDs and its Review is
+   * on; null (or absent) everywhere else.
+   */
+  cardDir?: string | null
+  /**
+   * "Add page shortcut" — a FOLDER row outside a plural selection (YAZ-2290 D2): the folder the
+   * picked page will also appear in. Null on a file row, on blank space and inside a 2+
    * selection. Equal to `openPath` today; its OWN field, per this split's doctrine.
    */
   shortcutDir: string | null
   /**
-   * "Remove shortcut" — a SHORTCUT row only (YAZ-2290 E5): the note and the folder it stands in.
+   * "Hide all others" on a folder row of the Files tab (YAZ-5790): the folder, and whether it is the one shown alone
+   * now (`on`: the item reads "Show all"). Null or absent on Search, Focus, Favorites, a vault row, a shortcut row,
+   * a folder page row, blank space and inside a 2+ selection.
+   */
+  hideOthers?: { dir: string; on: boolean } | null
+  /**
+   * "Remove shortcut" — a SHORTCUT row only (YAZ-2290 E5): the page and the folder it stands in.
    * Such a row has no `deletePaths` (it is deleted from where it lives), no `renamePath` (the inline
    * input is the real row's) and no `clipPaths` (it is not a file in this folder), whatever the
    * selection holds.
@@ -487,6 +616,15 @@ export interface MenuTargets {
   removeVault: string | null
   /** "Open by itself" (YAZ-2858 D4) — a VAULT row only: that vault's root. Equal to `removeVault` today; its OWN field. */
   openAlone: string | null
+  /**
+   * The card skill's row (YAZ-5108): the app's own vault's root. Its menu is its own (`cardSkillSections`): Copy path and
+   * Hide card skill, none of a vault's rows. Null or absent on every other row.
+   */
+  cardSkill?: string | null
+  /** "Duplicate into <vault>…" on the card skill's row (YAZ-5109): the vault it copies into, and its name. */
+  cardSkillInto?: { root: string; name: string } | null
+  /** "Copy prompt for your agent" on the card skill's row (YAZ-5109): the sentence, with the path of the skill that vault uses. */
+  cardSkillPrompt?: string | null
   /** A row of the new tab page's "Recently closed" (YAZ-3487 D14): its path, for "Remove from" and "Clear Recently closed". */
   forgetClosed: string | null
   /**
@@ -506,46 +644,38 @@ export interface MenuTargets {
   showPath: string | null
   /**
    * "Info" (YAZ-3028 D11, Draw's 🔒 YAZ-1835 D6) — ONE drawing or diagram row outside a plural
-   * selection: the board whose Info popover opens. Null on a note, a folder, a shortcut row, blank
+   * selection: the board whose Info popover opens. Null on a page, a folder, a shortcut row, blank
    * space and a 2+ selection. Its OWN field.
    */
   infoPath: string | null
 }
 
 /**
- * Notes and subfolders inside `dir`, counted RECURSIVELY from the already-loaded tree
+ * Pages and subfolders inside `dir`, counted RECURSIVELY from the already-loaded tree
  * (GRO-2272 `C3-`) — a delete takes the whole subtree, so a shallow count would understate
  * what the user is about to lose. No fetch: the sidebar already holds this tree.
  */
-export function countChildren(nodes: readonly TreeNode[], dir: string): { notes: number; folders: number } {
+export function countChildren(nodes: readonly TreeNode[], dir: string): { pages: number; folders: number } {
   const found = findDirNode(nodes, dir)
-  if (found?.type !== 'dir') return { notes: 0, folders: 0 }
-  let notes = 0
+  if (found?.type !== 'dir') return { pages: 0, folders: 0 }
+  let pages = 0
   let folders = 0
   const walk = (children: readonly TreeNode[]): void => {
     for (const child of children) {
       if (child.type === 'dir') {
         folders++
         walk(child.children)
-      } else notes++
+      } else pages++
     }
   }
   walk(found.children)
-  return { notes, folders }
+  return { pages, folders }
 }
 
-/** The keys of the search, as the empty Search tab lists them (YAZ-2662 D10, S59): the keycaps of a row, and what they do. */
-const SEARCH_KEYS: readonly (readonly [keys: readonly string[], does: string])[] = [
-  [['↑', '↓'], 'Move'],
-  [['↵'], 'Open'],
-  [['⌘↵'], 'Open in a background tab'],
-  [['⇧↵'], 'Show in Files'],
-  [['space'], 'Preview a file or open a folder, after ↑ or ↓'],
-  [['→', '←'], 'Open or close a folder, after ↑ or ↓'],
-  [['esc'], 'Back to the page'],
-]
+/** The first file of the empty Search tab's recents (YAZ-5777): ↓ from the bar lands here, not on its day heading, so Enter opens it. */
+const FIRST_RECENT_FILE = '[aria-label="Recents"] li[data-path] > .tree__row'
 
-/** Which note is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
+/** Which page is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
 
 /** The search tree's file move (S32, YAZ-2620): nothing there drags to disk, so every callback is a no-op and nothing is ever a drop target. */
@@ -557,11 +687,41 @@ const INERT_MOVE: TreeFileMove ={ accepts: () => false, start: () => undefined, 
 /** What the search cuts before the tree has loaded, and its shortcut rows — none (S7, YAZ-2620): one object each, so the memoised tree sees no change (YAZ-2194). */
 const NO_NODES: readonly TreeNode[] = []
 const NO_SHORTCUTS: ReadonlyMap<string, readonly TreeNode[]> = new Map()
+const NO_PAGE_ROWS: ReadonlySet<string> = new Set()
+/**
+ * A folder page row's menu (YAZ-4587, D37): the folder page's own items — open it, in a new tab, copy its path, reveal
+ * it, show it in the sidebar — and nothing that creates in, clips, renames, deletes, pins, marks or changes the folder.
+ */
+/**
+ * A row inside the app's own vault (the card skill, YAZ-5108): it opens, copies and shows in Finder like any row, and
+ * nothing of the menu writes into the skill or puts it in a list of the person — no create, paste, rename, delete,
+ * focus, favorite, icon, shortcut or review.
+ */
+const READ_ONLY_APP_ROW: Partial<MenuTargets> = { targetDir: null, cardDir: null, place: null, renamePath: null, deletePaths: null, focusPaths: null, favoritePaths: null, iconPaths: null, iconRule: null, shortcutDir: null, reviewDir: null, reviewPage: null, removeShortcut: null }
+const PAGE_ROW_MENU = {
+  targetDir: null,
+  clipPaths: null,
+  renamePath: null,
+  deletePaths: null,
+  focusPaths: null,
+  favoritePaths: null,
+  iconPaths: null,
+  iconRule: null,
+  reviewDir: null,
+  reviewPage: null,
+  shortcutDir: null,
+  folderPaths: [] as string[],
+}
+const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean => a.size === b.size && [...a].every((x) => b.has(x))
 /** The folders the Sessions tab unfolds — none: it has no file tree (YAZ-3147 D4), so it has no expand-all button. One array, so nothing reads a change. */
 const NO_DIRS: readonly string[] = []
 
+/** How long a CLI reveal waits for its row once the list is loaded (YAZ-4638): a target the list cannot show fails, not stalls. */
+export const REVEAL_WAIT_MS = 5000
+
 /** Mounted with `key={one vault of the window}` by App (YAZ-2631 D5), so all state below lives while that vault is in the window. */
 export function Sidebar({
+  pageFilesIn,
   vaults,
   lists,
   icons,
@@ -571,10 +731,14 @@ export function Sidebar({
   onPickVault,
   onRemoveVault,
   onReorderVaults,
+  onHideCardSkill,
+  onDuplicateCardSkill,
   activeFile,
   onOpenFile,
   onKeepFile,
   onOpenFileBackground,
+  onOpenInlineDrawingTab,
+  onOpenFileTab,
   onRevealInFiles,
   previewPath,
   pagePreviewShown = false,
@@ -586,7 +750,10 @@ export function Sidebar({
   onOpenVaultHere,
   onCollapse,
   lens,
+  activeTab,
   onLensChange,
+  onRestoreLens,
+  onRestoreClosedVaults,
   revealRequest,
   onRevealConsumed,
   menuRequest,
@@ -596,7 +763,7 @@ export function Sidebar({
   settings,
   onChangeSettings,
   onOpenSettings,
-  onOpenDailyNote,
+  onOpenDailyPage,
   update,
   onOpenWhatsNew,
   onRestoreSession,
@@ -610,27 +777,42 @@ export function Sidebar({
   onZoomMenu,
   previewFloat,
   sessionNameRequest,
+  recentVault = null,
+  onRecentVault,
+  onAddVaultFor,
+  focusOnly = null,
+  onFocusOnly,
+  filesOnly = null,
+  onFilesOnly,
+  recentType = 'all',
+  onRecentType,
   onSessionNameConsumed,
   onRootMissing,
   onFileMissing,
   onRenameFile,
   onMoveEntries,
   onMoved,
+  onReordered,
   onDraggedOut,
   onRetitle,
   onDeleteEntries,
+  onFileAction,
+  onUnlockVault,
+  onLockVault,
   onNotice,
   pendingSearchFocus,
   pendingSearchClear = false,
   onSearchFocusHandled,
   onLeaveToPage,
+  escapeClosesSidebar = false,
   selectionRef,
   clipboardRef,
   onReviewFolder,
-  reviewState,
-  onSetReview,
+  onReviewPage,
   onInbox,
+  onInboxNewWindow,
   width,
+  collapsed = false,
   asideRef,
   onHistoryFile,
   onShareFile,
@@ -639,8 +821,8 @@ export function Sidebar({
   const sortedTab: SortMenuTab | null = lens === 'files' || lens === 'focus' || lens === 'favorites' || lens === 'search' ? lens : null
   const stored = sortedTab === null ? undefined : sortedTab === 'search' ? settings.searchSort : settings.sidebarSort[sortedTab]
   // Each state broadcast hands over a new copy of the settings (YAZ-3237): the sort keeps its identity while its
-  // value stays, so the memoised levels (YAZ-2194) draw nothing again on a tab click or a window move.
-  const sort = useMemo<TabSort | undefined>(() => (stored === undefined ? undefined : { by: stored.by, reverse: stored.reverse }), [stored?.by, stored?.reverse])
+  // value stays, so the memoised levels (YAZ-2194) draw nothing again on a tab click or a window move. Kind first (YAZ-4614 D66) is part of the value.
+  const sort = useMemo<TabSort | undefined>(() => (stored === undefined ? undefined : { by: stored.by, reverse: stored.reverse, ...(stored.kinds === true ? { kinds: true } : {}) }), [stored?.by, stored?.reverse, stored?.kinds])
   // The Search sort on its own (YAZ-3511): the search tree and its ↑/↓ keep it whichever tab shows.
   const searchSort = useMemo<TabSort>(() => ({ by: settings.searchSort.by, reverse: settings.searchSort.reverse }), [settings.searchSort.by, settings.searchSort.reverse])
   // The Search tab's filters (YAZ-3511 D13 to D15): held here, never saved, so a time range keeps the file times live below.
@@ -648,20 +830,100 @@ export function Sidebar({
   // The file times stay live (D2) while something reads them: the tab's Last updated sort, any tab's dates (D10), or a
   // time filter (D14). Any tab's, not the shown one's: a tab change then reads no vault again (6 µs a save, not 42 ms a switch).
   const liveTimes = sort?.by === 'updated' || Object.values(settings.rowDates).some(Boolean) || searchFilter.time !== 'any'
-  const { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes)
+  // A place for each page tab (YAZ-5701): the window keeps its open folders to itself, and starts from the place of
+  // the tab on show (a New tab's own, YAZ-5757); with none, from the open folders the sidebar last showed. Only the
+  // folders in this window's vaults: a vault switch keeps the place of the tab on show.
+  const perTab = settings.sidebarPlace === 'tab' && activeTab !== undefined
+  /** File whose auto-`expandTo` in `useVaultTree` should be skipped after restoring a saved tab place (YAZ-6064). */
+  const skipExpandToRef = useRef<string | null>(null)
+  /** A `filesOnly` value just restored from a saved `TabPlace` (YAZ-6064): do not re-open it if the user had collapsed it. */
+  const restoredFilesOnly = useRef<string | null>(null)
+  /** The last non-search lens shown in this sidebar (YAZ-6064): used when leaving Search or saving `placeHere` on Search. */
+  const lastNonSearchLens = useRef<SidebarLens>(lens === 'search' ? storage.getSidebarLens() : lens)
+  if (lens !== 'search') lastNonSearchLens.current = lens
+  const folderShare: FolderShare = {
+    shared: !perTab,
+    start: (): string[] => {
+      const here = vaults.map((vault) => vault.root)
+      const saved = readPlace(activeTab ?? null)
+      if (saved !== undefined) return saved.expanded.filter((dir) => rootOfPath(here, dir) !== null)
+      // Unvisited page tab mounting after another tab existed (YAZ-6104): start with only its own file's parent folders.
+      if (activeTab !== null && activeTab !== undefined && activeFile !== null && lastPlace() !== undefined) {
+        const home = rootOfPath(here, activeFile)
+        return home === null ? [] : ancestorDirs(home, activeFile)
+      }
+      return []
+    },
+    touch: markFoldersChanged,
+    touched: foldersChangedHere,
+    skipExpandTo: (file: string): boolean => {
+      const match = skipExpandToRef.current === file
+      skipExpandToRef.current = null
+      return match
+    },
+  }
+  const { roots, appRoots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes, folderShare)
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
+  /** The person's own vaults: every vault of the window but the app's own (the card skill, YAZ-5108), which is last. */
+  const ownRoots = useSameList(roots.filter((vault) => !appRoots.includes(vault)))
+  const ownRootsRef = useRef(ownRoots)
+  ownRootsRef.current = ownRoots
+  const treesRef = useRef(trees)
+  treesRef.current = trees
+  const activeRef = useRef(activeFile)
+  activeRef.current = activeFile
+  /** The app's own vault rows (YAZ-5108), as `Tree` reads them: one Set while the vaults stay. */
+  const appRows = useMemo<ReadonlySet<string>>(() => new Set(appRoots.map(stripSlash)), [appRoots])
+  const places = useSameList(ownRoots.map((vault, i) => vaults[i]?.folder ?? vault))
+  /** The top of what a window with one vault shows: the vault, or the folder of it that the window is (YAZ-4922 D3). Blank space makes and drops there. */
+  const top = vaults[0]?.folder ?? root
+  // "Hide all others" in Files (YAZ-5790): the folder the Files tab shows alone, while the tree holds it.
+  const filesAlone = useMemo(() => (filesOnly === null || forest === null ? null : findDirNode(forest, filesOnly)), [filesOnly, forest])
+  // A folder shown alone that belongs to no current vault clears immediately (YAZ-6064). One inside a current vault that
+  // the tree does not hold (deleted or moved outside the app) waits briefly so `file:renamed` can follow an in-app move.
+  const filesOutsideRoots = filesOnly !== null && rootOfPath(roots, filesOnly) === null
+  const aloneGone = filesOnly !== null && loaded && forest !== null && filesAlone === null
+  useEffect(() => {
+    if (filesOutsideRoots) {
+      onFilesOnly?.(null)
+      return
+    }
+    if (!aloneGone) return
+    const id = window.setTimeout(() => onFilesOnly?.(null), FILES_ONLY_GRACE_MS)
+    return () => window.clearTimeout(id)
+  }, [filesOutsideRoots, aloneGone, filesOnly, onFilesOnly])
+  // The folder shown alone is open: the folders above it too, and its vault's row (`openTo`'s synthetic child).
+  // Skip when `filesOnly` was just restored from a saved tab place so a folder the user collapsed stays collapsed (YAZ-6064).
+  useEffect(() => {
+    if (filesOnly === null) {
+      restoredFilesOnly.current = null
+      return
+    }
+    if (restoredFilesOnly.current === filesOnly) return
+    restoredFilesOnly.current = null
+    openTo(`${filesOnly}/x`)
+  }, [filesOnly, openTo])
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
-  const multi = roots.length > 1
+  const multi = ownRoots.length > 1
   // The vaults' own icons (YAZ-3440 D8, D9): `.yaseendocs/icons.json` of each vault of the window, for the tree's rows. App's (D11).
   const { rowIcons, pick: pickIcons } = icons
+  // The window's card files (YAZ-5037): App's, from the vaults' index (`useCardFiles`), so a card file's row shows the card icon.
+  const cardFiles = useContext(IconsContext)?.cards
   // The two "Change icon" items (YAZ-3440 D8): the picker, right of the sidebar at the row, for the rows' picks or for one name rule.
   const [iconPicker, setIconPicker] = useState<IconPickerAt | null>(null)
   // What the "Change icon ▸" flyout reads as the menu opens (D8), through a ref so the menu's callback keeps its identity.
-  const iconLive = useRef({ rowIcons, rules: settings.sidebarIconRules })
-  iconLive.current = { rowIcons, rules: settings.sidebarIconRules }
+  /**
+   * YAZ-5488: the name rules a row reads, and where "Change icon ▸ All …" writes them: the row's vault's own (its
+   * icons.json `rules`), else the app's (the fallback; the first change writes the vault's file from them).
+   */
+  const rulesAt = (path: string): readonly IconRule[] => icons.lookOf(rootOf(path)).rules ?? settings.sidebarIconRules
+  const setRulesAt = (path: string, next: IconRule[]): void => icons.saveLook(rootOf(path), { rules: next })
+  const iconLive = useRef({ rowIcons, rulesAt })
+  iconLive.current = { rowIcons, rulesAt }
   const iconTargets = useCallback((paths: string[] | null, rule: { match: string; kind: 'file' | 'folder' } | null): { iconHasPick: boolean; iconRuleSet: boolean } => {
-    const { rowIcons: now, rules } = iconLive.current
+    const { rowIcons: now, rulesAt: rulesNow } = iconLive.current
+    const rules = paths?.[0] === undefined ? [] : rulesNow(paths[0])
     return { iconHasPick: paths?.some((path) => now.paths.has(path)) ?? false, iconRuleSet: rule !== null && rules.some((r) => r.kind === rule.kind && r.match.toLowerCase() === rule.match.toLowerCase()) }
   }, [])
   /**
@@ -678,8 +940,25 @@ export function Sidebar({
   }
   const vaultsRef = useRef(vaults)
   vaultsRef.current = vaults
-  /** The vaults that have an Inbox row (YAZ-2602 R5): the ones with upkeep on. */
-  const inboxes = vaults.filter((vault) => vault.upkeep)
+  // The Recents tab's button (YAZ-4450 D5): its vault filter, in a window with two or more vaults only. Its menu stands where
+  // a sort menu would: one menu at a time.
+  // Since the Type filter (YAZ-4450 demo) Recents has its button in every window; the vault rows stay a workspace's.
+  const menuTab: SortMenuTab | 'recents' | null = sortedTab ?? (lens === 'recents' ? 'recents' : null)
+  const recentChip = typeChip(recentType)
+  // Each day split by vault while all vaults show (D7, D8). Kept by value: the vaults' array is new on each App render, and
+  // RecentList is a memo.
+  const vaultNames = vaults.map((vault) => vault.name).join('\0')
+  // The empty Search tab's recents (YAZ-5774) take no filter of the Recents tab: by vault as its setting says.
+  const searchRecentGroups = useMemo(
+    () => (multi && settings.recentsByVault ? { nameOf: (at: string) => vaultsRef.current.find((vault) => vault.root === at)?.name ?? at } : undefined),
+    [multi, settings.recentsByVault, vaultNames], // eslint-disable-line react-hooks/exhaustive-deps -- a renamed vault draws the headings again
+  )
+  const recentGroups = useMemo(
+    () => (multi && recentVault === null && settings.recentsByVault ? { nameOf: (at: string) => vaultsRef.current.find((vault) => vault.root === at)?.name ?? at } : undefined),
+    [multi, recentVault, settings.recentsByVault, vaultNames], // eslint-disable-line react-hooks/exhaustive-deps -- a renamed vault draws the headings again
+  )
+  /** The vaults that have an Inbox row (YAZ-2602 R5): the ones with review on that give IDs, so can have cards (D8). */
+  const inboxes = vaults.filter((vault) => vault.review && vault.index.ids)
   /**
    * The vault that holds `path` — the most specific one, else the first (YAZ-2602): every rule
    * about "the vault of this row" asks it. Ref-backed, so the callbacks that ask keep their identity.
@@ -687,7 +966,28 @@ export function Sidebar({
   const vaultOf = useCallback((path: string): SidebarVault => vaultsRef.current.find((vault) => vault.root === rootOf(path)) ?? vaultsRef.current[0], [rootOf])
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   /** The sort menu (YAZ-3227 D4): the tab it sorts and where its button is, while it is open. */
-  const [sortMenu, setSortMenu] = useState<{ tab: SortMenuTab; x: number; y: number } | null>(null)
+  const [sortMenu, setSortMenu] = useState<{ tab: SortMenuTab | 'recents'; x: number; y: number } | null>(null)
+  /** An Inbox row's own menu (YAZ-5054): the vault whose row was right-clicked, and where. */
+  const [inboxMenu, setInboxMenu] = useState<{ root: string; x: number; y: number } | null>(null)
+  const [inlineRowMenu, setInlineRowMenu] = useState<{ card: SearchCandidate; x: number; y: number } | null>(null)
+  const openInlineRowMenu = useCallback((e: React.MouseEvent, card: SearchCandidate) => setInlineRowMenu({ card, x: e.clientX, y: e.clientY }), [])
+  // The open sort menu's tab, while it is the tab that shows (a tab switch leaves it unmounted).
+  const sortTab = sortMenu !== null && sortMenu.tab !== 'recents' && sortMenu.tab === sortedTab ? sortMenu.tab : null
+  /** The focus folder whose name field is open (YAZ-4460 F3): "+ Folder" opens a new one's at once. */
+  const [editingFolder, setEditingFolder] = useState<string | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
+  // A "Show it in" check, off, that takes rows out of the list on screen (YAZ-4460 demo): a box asks first.
+  const [askScope, setAskScope] = useState<{ kind: 'focus' | 'favorites'; paths: string[]; scope: 'vault' | 'workspace' } | null>(null)
+  // The folders of the tab that shows (YAZ-4460; Favorites' since the demo): the Focus tab's, or the Favorites tab's.
+  const shownTab = lens === 'favorites' ? lists.favoritesTab : lists.focusTab
+  // "Hide all others" (F8): the folder shown alone, while it still exists in the tab that shows (folder ids are unique).
+  const onlyFolder = focusOnly === null ? undefined : shownTab.folders.find((folder) => folder.id === focusOnly)
+  const newFolder = (): void => {
+    const id = shownTab.addTo([], null)
+    if (id !== null) setEditingFolder(id)
+  }
+  /** One list's "Separate list for workspaces" row in its sort menu (YAZ-4450 D4): a click is one settings write. */
+  const workspaceRow = (tab: 'focus' | 'favorites') => ({ on: settings.workspaceLists[tab], set: (on: boolean) => onChangeSettings({ ...settings, workspaceLists: { ...settings.workspaceLists, [tab]: on } }) })
   /**
    * The Files window chip, clicked once (YAZ-3357 D13: "a two click … kinda how in mission control we have for closing
    * a tab"): red "Make full window" until the second click converts, or a move off, Esc or a press elsewhere lets it go.
@@ -714,21 +1014,32 @@ export function Sidebar({
   const infoPath = infoPopover?.path ?? null
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
-  // The "Remove shortcut" that would clear values, waiting on its sheet (D21); null when it is closed.
-  const [confirmingShortcut, setConfirmingShortcut] = useState<{ path: string; dir: string; lost: LeftBehind } | null>(null)
-  // The folder "Add note shortcut" is picking a note for (YAZ-2290 D2); null when the picker is closed.
+  // The folder "Add page shortcut" is picking a page for (YAZ-2290 D2); null when the picker is closed.
   const [pickingShortcut, setPickingShortcut] = useState<string | null>(null)
   const seenRevealId = useRef<number | null>(null)
   const handledFilesRevealId = useRef<number | null>(null)
   const focusedRevealId = useRef<number | null>(null)
   const [pendingReveal, setPendingReveal] = useState<SidebarRevealRequest | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  // Esc in the search bar (YAZ-4995): the keyboard lands on a row of the tab that came back, once it is drawn — the open
+  // page's row, else the selected one, else the first. With no row the focus is nowhere, and the next Esc still closes.
+  const rowAfterSearch = useRef(false)
+  useEffect(() => {
+    if (!rowAfterSearch.current || lens === 'search') return
+    rowAfterSearch.current = false
+    const body = bodyRef.current
+    const row = body?.querySelector<HTMLElement>('.tree__row--active') ?? body?.querySelector<HTMLElement>('.tree__row--selected') ?? body?.querySelector<HTMLElement>('.tree__row[data-path]')
+    row?.focus()
+  }, [lens])
   /** The root header: it lights for a drop on the blank space too (YAZ-3247 D12). */
   const headerRef = useRef<HTMLDivElement>(null)
   // "On hover" of the level lines (YAZ-3309 D3, bug YAZ-3329): two attributes on the list, written on the
   // node and not through state, so no level of the tree renders again. Other choices write nothing.
   const sidebarLines = settings.sidebarLines
   useEffect(() => (sidebarLines === 'hover' && bodyRef.current !== null ? levelLinesHover(bodyRef.current) : undefined), [sidebarLines])
+  // The thread's path of open folder rows (YAZ-4474): an attribute on each, so a sticky row's arrow copy takes the colour.
+  const threading = settings.sidebarLineStyle === 'thread' && sidebarLines !== 'off'
+  useEffect(() => (threading && bodyRef.current !== null ? threadPath(bodyRef.current) : undefined), [threading])
   // The folders' shortcut rows (YAZ-2290 D2), rebuilt once per index snapshot. A snapshot that moved
   // no shortcut keeps the Map it had, so a save elsewhere in the vault re-renders no tree level (YAZ-2194).
   // Each vault's folders by its OWN index (YAZ-2602 S30); the paths of two vaults never meet, so the
@@ -758,17 +1069,62 @@ export function Sidebar({
     const offs = indexes.map((index) => index.subscribe(read))
     return () => offs.forEach((off) => off())
   }, [readShortcuts, indexes])
+  // The folder page rows (YAZ-4587, D37): one pass over each vault's folder records when a vault's folder records or
+  // the switch change; a snapshot that moved no folder record reads nothing, and a set that names the same folders
+  // keeps its identity, so a save elsewhere re-renders no tree level.
+  // YAZ-5489: each vault's own switch (its folder-pages.json), as one key, so the effect runs only when one changes.
+  const appPagesOn = showFolderPageFiles(settings)
+  const pagesOnKey = roots.map((vault) => (pageFilesIn?.(vault) ?? appPagesOn ? '1' : '0')).join('')
+  const [pageRows, setPageRows] = useState<ReadonlySet<string>>(NO_PAGE_ROWS)
+  useEffect(() => {
+    let seen: (readonly IndexRecord[])[] | null = null
+    const read = () => {
+      const folders = indexes.map((index) => index.folders)
+      if (seen !== null && folders.every((one, i) => one === seen![i])) return
+      seen = folders
+      const next = new Set<string>()
+      roots.forEach((vault, i) => {
+        for (const dir of folderPageRows(vault, folders[i], pagesOnKey[i] === '1')) next.add(dir)
+      })
+      setPageRows((prev) => (sameSet(prev, next) ? prev : next))
+    }
+    read()
+    const offs = indexes.map((index) => index.subscribe(read))
+    return () => offs.forEach((off) => off())
+  }, [roots, indexes, pagesOnKey])
   // The rows' labels (YAZ-2420 🔒 D15), by the same rule: a snapshot that changed no title keeps its Map.
   const titles = useAllPathTitles(indexes)
+  // The rows' IDs (YAZ-4940 "In the files list"), off the indexes of the vaults that chose it alone: none chose it, no map and no read.
+  const idSources = useMemo(
+    () => vaults.flatMap((vault): PathIdsSource[] => (vault.idsInFiles === 'number' || vault.idsInFiles === 'full' ? [{ index: vault.index, form: vault.idsInFiles }] : [])),
+    [vaults],
+  )
+  const ids = useAllPathIds(idSources)
   /** A path as the notices name it: its title (YAZ-2420 🔒 D14). */
   const nameOf = useCallback((path: string) => pageName(rootOf(path), path, titles), [rootOf, titles])
 
+  // The real folders inside the stack folders of Focus or Favorites (YAZ-5664), as their copies fold: a shut stack
+  // folder's too, so one Expand all opens both kinds. With a folder shown alone, its folders only.
+  const stackFolders = lens === 'focus' || lens === 'favorites' ? shownTab.folders : null
+  const stackDirs = useMemo(() => {
+    const shownStacks = stackFolders === null ? [] : onlyFolder === undefined ? stackFolders : [onlyFolder]
+    if (forest === null || shownStacks.length === 0) return NO_DIRS
+    const paths = shownStacks.flatMap((folder) => folder.items.flatMap((item) => {
+      const at = resolveItem(item, roots)
+      return 'path' in at ? [at.path] : []
+    }))
+    return copyDirs(favoriteRoots(forest, paths))
+  }, [forest, stackFolders, onlyFolder, roots])
+  const tabDirs = lens === 'favorites' ? favoriteDirs : focusDirs
+  const listDirs = useMemo(() => (stackDirs.length === 0 ? tabDirs : [...new Set([...tabDirs, ...stackDirs])]), [tabDirs, stackDirs])
   // What the chevrons button unfolds on the active lens: the folders that tab shows (YAZ-2619 R10).
-  const bodyDirs = lens === 'favorites' ? favoriteDirs : lens === 'focus' ? focusDirs : lens === 'sessions' || lens === 'recents' ? NO_DIRS : dirs
+  // With a folder shown alone in Files (YAZ-5790), only the folders in it.
+  const filesDirs = useMemo(() => (filesOnly === null ? dirs : dirs.filter((dir) => inFolder(filesOnly, dir))), [dirs, filesOnly])
+  const bodyDirs = lens === 'favorites' || lens === 'focus' ? listDirs : lens === 'sessions' || lens === 'recents' ? NO_DIRS : filesDirs
   // Enter in the search bar, on a file: the highlighted row's page opens as a tab.
   // The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the bar, so ↑/↓ carry
   // on — and a second on the page already open is the deliberate "take me in". A CLICK is the tree
-  // row's own (YAZ-2620 🔒 D1): it opens a note the same way, and folds a folder.
+  // row's own (YAZ-2620 🔒 D1): it opens a page the same way, and folds a folder.
   // The row is the search tree's own: a match, or a row of a folder that shows all (YAZ-2662 S52).
   const activate = (row: TreeNode, background: boolean, reveal: boolean) => {
     // Enter on a folder, and Shift+Enter on any row, show the row in Files with the keyboard focus on
@@ -784,10 +1140,41 @@ export function Sidebar({
       if (row.path === activeFile) focusOpenDocument()
     }
   }
+  /**
+   * A card inside a page, from Search (YAZ-5037): its page opens landed on the card (`landOnCard`, as a card link's
+   * ⌘-click does); ⌘ is a background tab, and Shift shows the page in Files.
+   */
+  const openSearchCard = (row: SearchCandidate, background: boolean, reveal = false) => {
+    const page = row.page ?? row.path
+    if (!background && reveal) return onRevealInFiles(page, true)
+    if (row.inlineDrawing === true && row.index !== undefined && onOpenInlineDrawingTab !== undefined) {
+      onOpenInlineDrawingTab(page, row.index, background)
+      return
+    }
+    if (row.id !== undefined) landOnCard(page, row.id)
+    if (background) onOpenFileBackground(page)
+    else onOpenFile(page)
+  }
+  // The search tree's door to it, the same function for the tree's life (YAZ-2194: a render that changes nothing for the search re-renders no row).
+  const searchCardNow = useRef(openSearchCard)
+  searchCardNow.current = openSearchCard
+  const openTreeCard = useCallback((row: SearchCandidate, background: boolean) => searchCardNow.current(row, background), [])
   // The search covers every vault of the window (YAZ-2602 R2): each one's index, read by its own
-  // watcher, its own folders and its own files that are no notes. The tree it cuts is the one Files
+  // watcher, its own folders and its own files that are no pages. The tree it cuts is the one Files
   // draws — the forest, with two or more vaults (A9).
-  const searchVaults = useMemo(() => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i] })), [roots, watches, dirsByVault, filesByVault])
+  // Each vault's "Show IDs in search" getter rides with its search feed (YAZ-4940), read when the rows draw. Through a
+  // ref: `vaults` is a new array each render of App, and the feed's list must stay the same object while nothing in
+  // it changed (YAZ-2194: a render that changes nothing for the search re-renders no row).
+  const vaultsNow = useRef(vaults)
+  vaultsNow.current = vaults
+  // A folder of a vault (YAZ-4922 D3): the search reads the vault's index and finds the folder's pages only.
+  const searchFolders = useSameList(vaults.map((vault) => vault.folder))
+  // The vaults whose Review is on (YAZ-5037): their cards are search rows, and the Type menu offers Cards.
+  const reviewRoots = useReviewOnRoots(roots)
+  const searchVaults = useMemo(
+    () => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i], idsInSearch: () => vaultsNow.current.find((v) => v.root === vault)?.idsInSearch?.() ?? 'match', ...(searchFolders[i] !== undefined && { folder: searchFolders[i] }), ...(reviewRoots.has(vault) && { cards: true }) })),
+    [roots, watches, dirsByVault, filesByVault, searchFolders, reviewRoots],
+  )
   // The Search tab (YAZ-2638 D2): its body is the search, and the query stays while another tab shows.
   const searching = lens === 'search'
   // The hover preview (YAZ-3028 D11): a menu or the Info popover owns the pointer while it stands. A search
@@ -827,10 +1214,14 @@ export function Sidebar({
   const toPage = useCallback(() => focusOpenDocument() || onLeaveToPage?.() === true, [onLeaveToPage])
   // The way out of the Search tab, for the search's Esc (`searchEsc`): back to the lens the window
   // last showed, and the keyboard goes to the page on show.
+  // With Esc closing the sidebar last (YAZ-4995, Yaseen: "esc that closes search and takes you to files, ok and then
+  // hitting esc again should close the side bar"), the keyboard stays in the sidebar, on the row of the tab that comes
+  // back (`rowAfterSearch`): the next Esc closes the sidebar, and Esc in the page text never does.
   const leaveSearch = useCallback(() => {
-    onLensChange(storage.getSidebarLens())
-    toPage()
-  }, [onLensChange, toPage])
+    onLensChange(lastNonSearchLens.current)
+    if (escapeClosesSidebar) rowAfterSearch.current = true
+    else toPage()
+  }, [onLensChange, toPage, escapeClosesSidebar])
   // The preview panel from a row of Files, Focus or Favorites (YAZ-2663 D11): Space on a FILE row
   // shows App's panel on it — the panel of the search (YAZ-2662 D5), by the same door — and no tab
   // opens. Space looks, Enter opens, on every surface. With the panel on show it follows the
@@ -850,7 +1241,7 @@ export function Sidebar({
   const treePreview = useRef({ on: treePreviewing, stop: stopTreePreview })
   useEffect(() => {
     treePreview.current = { on: treePreviewing, stop: stopTreePreview }
-  })
+  }, [treePreviewing, stopTreePreview])
   useEffect(
     () => () => {
       if (treePreview.current.on) treePreview.current.stop()
@@ -880,14 +1271,14 @@ export function Sidebar({
   // On the Search tab the bar is the walk (D12): ↓ or ↑ from nowhere puts the caret in it.
   const menuOpen = menu !== null
   useEffect(() => {
-    if (menuOpen) return
+    if (menuOpen || collapsed) return
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'ArrowRight') return
       // Where the key was pressed: nowhere is the body, or a part of the panel that is no row and no field.
       const on = e.target instanceof Element ? e.target : null
       const nowhere = on === null || on === document.body || on === document.documentElement || (on.closest('.sidebar') !== null && !on.matches('.tree__row, input, textarea, select, [contenteditable]'))
-      // A page holds the keys (YAZ-3127, YAZ-3140): the reader's selection in a note page is not "nowhere".
+      // A page holds the keys (YAZ-3127, YAZ-3140): the reader's selection in a page page is not "nowhere".
       if (!nowhere || pageHoldsKeys(on) || document.querySelector('[aria-modal="true"]') !== null) return
       if (e.key === 'ArrowRight') {
         if (onLeaveToPage?.() === true) e.preventDefault()
@@ -901,17 +1292,25 @@ export function Sidebar({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [searching, menuOpen, onLeaveToPage])
+  }, [searching, menuOpen, collapsed, onLeaveToPage])
   // The pinned items (YAZ-2662 D3): the rows of the Focus tab, then those of the Favorites tab. Their matches are the search's top group.
   const pinned = useMemo(() => pinnedRoots([...focusNodes, ...favoriteNodes]), [focusNodes, favoriteNodes])
   // A level of the search tree as `Tree` draws it (YAZ-3511 D4), by the one rule (`keepsOrder`): ↑/↓ walk these, so the
   // highlight moves to the row below on screen.
   const searchLevel = useCallback(
     (nodes: readonly TreeNode[], depth: number, top: boolean, scores: ReadonlyMap<string, number>) =>
-      keepsOrder(depth, searchSort, { keepTop: top, vaults: vaultRows.size > 0 }) ? nodes : sortLevel(nodes, searchSort, shownLabel(titles), scores),
-    [vaultRows, searchSort, titles],
+      appRowsLast(nodes, depth, appRows, (level) => (keepsOrder(depth, searchSort, { keepTop: top, vaults: vaultRows.size > appRows.size }) ? level : sortLevel(level, searchSort, shownLabel(titles), scores))),
+    [vaultRows, appRows, searchSort, titles],
   )
-  const { searchInput, query, results, typed, found, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear)
+  const { searchInput, query, results, typed, found, cardRows, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear, openSearchCard, settings.searchIncludeInline)
+  /** ↑ on the first recent file of the empty Search tab, or on the day heading above it, goes back to the bar (YAZ-5774, YAZ-5777). */
+  const recentUp = useCallback((e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key !== 'ArrowUp' || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+    const at = e.currentTarget
+    if (e.target !== at.querySelector('.tree__row') && e.target !== at.querySelector(FIRST_RECENT_FILE)) return
+    searchInput.current?.focus()
+    e.preventDefault()
+  }, [])
   // A new query moves the results under a still pointer: the panel of the row that was there goes (YAZ-3403).
   useEffect(() => closePreview(), [query, closePreview])
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
@@ -927,6 +1326,40 @@ export function Sidebar({
     row?.scrollIntoView?.({ block: 'nearest' })
   }, [searchCursor.paths])
 
+  // A place for each page tab (YAZ-5701, YAZ-6064, "Sidebar remembers"): declared before the reveal below, so
+  // "Reveal the open file" skips when a saved place restores.
+  const revealActive = settings.sidebarRevealActive
+  const filesShows = lens === 'files'
+  const rootsNow = useRef(roots)
+  rootsNow.current = roots
+  const followed = useRef<{ path: string | null | undefined; files: boolean; id: number }>({ path: undefined, files: false, id: 0 })
+  const { skipQuietReveal, placeSelected, placeSelection } = useTabPlace({
+    perTab,
+    activeTab,
+    lens,
+    expanded,
+    filesOnly,
+    focusOnly,
+    closedVaults,
+    revealRequest,
+    revealActive,
+    loaded,
+    roots,
+    rootOf,
+    activeRef,
+    bodyRef,
+    followed,
+    lastNonSearchLens,
+    skipExpandToRef,
+    restoredFilesOnly,
+    dispatch,
+    onLensChange,
+    onRestoreLens,
+    onFilesOnly,
+    onFocusOnly,
+    onRestoreClosedVaults,
+  })
+
   // Files follows the open tab (YAZ-3440 D13, `sidebarRevealActive`): a new active tab, or Files that shows
   // again, is a QUIET request on the one reveal path below (no flash, no focus, no notice). It is asked one
   // time for each change — turning the setting on reveals nothing — and only while Files shows: on another
@@ -935,16 +1368,19 @@ export function Sidebar({
   // window asks nothing. A path in a vault row the user closed opens that row (`openTo`, Yaseen's change to D13):
   // with the setting on, the open tab wins over YAZ-2602 R9; with it off, `useVaultTree`'s own opening of a new
   // tab's folders still leaves that row closed (R9). Declared before App's requests, so an App request in the same commit wins.
-  const revealActive = settings.sidebarRevealActive
-  const filesShows = lens === 'files'
-  const rootsNow = useRef(roots)
-  rootsNow.current = roots
-  const followed = useRef<{ path: string | null | undefined; files: boolean; id: number }>({ path: undefined, files: false, id: 0 })
   useEffect(() => {
     const last = followed.current
     const moved = last.path !== activeFile || (filesShows && !last.files)
     followed.current = { ...last, path: activeFile, files: filesShows }
-    if (!revealActive || !filesShows || !moved || activeFile === null) return
+    if (!revealActive) {
+      skipQuietReveal.current = false
+      return
+    }
+    if (!filesShows || !moved || activeFile === null) return
+    if (skipQuietReveal.current) {
+      skipQuietReveal.current = false
+      return
+    }
     if (rootOfPath(rootsNow.current, activeFile) === null) return
     // Its own ids, below zero: App's count up from one, and each id is handled one time (`handledFilesRevealId`).
     followed.current.id -= 1
@@ -969,31 +1405,36 @@ export function Sidebar({
   // Expand / collapse the whole tree (⚡ YAZ-862). "Any open" is
   // measured against what the CURRENT tree can actually unfold (`dirs`, above), never the raw
   // persisted list, which would leave the button offering to collapse nothing.
-  // On Files with two or more vaults, the vault rows fold with the rest (YAZ-2631 D6).
-  const foldVaults = multi && lens === 'files'
-  const anyExpanded = bodyDirs.some((d) => expanded.includes(d)) || (foldVaults && roots.some((vault) => !closedVaults.includes(vault)))
+  // On Files with two or more vaults, the vault rows fold with the rest (YAZ-2631 D6) — unless Hide all others shows one folder alone (YAZ-6064).
+  const foldVaults = multi && lens === 'files' && filesOnly === null
+  // The stack folders of Focus and Favorites fold with the real folders (YAZ-5664): one open of either kind reads "Collapse all".
+  const [stackFold, setStackFold] = useState<ListFold | null>(null)
+  const stacks = lens === 'focus' || lens === 'favorites' ? stackFold : null
+  const anyExpanded = bodyDirs.some((d) => expandedSet.has(d)) || (foldVaults && roots.some((vault) => !closedVaults.includes(vault))) || stacks?.open === true
   // The button is on every tab (YAZ-3511 D19): Search folds its own tree, Sessions and Recents their rows (`ListFold`).
   const [listFold, setListFold] = useState<ListFold | null>(null)
   const ownFold = searching ? searchFold : lens === 'sessions' || lens === 'recents' ? listFold : null
   const foldOpen = ownFold === null ? anyExpanded : ownFold.open
-  const foldDisabled = ownFold === null ? bodyDirs.length === 0 && !foldVaults : !ownFold.any
+  const foldDisabled = ownFold === null ? bodyDirs.length === 0 && !foldVaults && stacks?.any !== true : !ownFold.any
   const allLabel = foldOpen ? 'Collapse all' : 'Expand all'
   // The tab row (YAZ-3273 D8): like the sort, it keeps its identity while its value stays, so the memoised row draws nothing again on a broadcast.
   const storedTabs = settings.sidebarTabs
   const tabPrefs = useMemo(() => storedTabs, [storedTabs.order.join(), storedTabs.hidden.join(), storedTabs.hiddenButtons.join()])
   // The row's doors to the sort menu and the fold (YAZ-3227 D4, YAZ-862; YAZ-3273 S15): stable, read through refs, so the row stays drawn.
-  const sortedTabRef = useRef(sortedTab)
-  sortedTabRef.current = sortedTab
+  const menuTabRef = useRef(menuTab)
+  menuTabRef.current = menuTab
   const openSort = useCallback((at: { x: number; y: number } | null) => {
-    const tab = sortedTabRef.current
+    const tab = menuTabRef.current
     setSortMenu(at === null || tab === null ? null : { tab, ...at })
   }, [])
   const foldRef = useRef(() => {})
   foldRef.current = () => {
     if (ownFold !== null) return ownFold.setAll(!ownFold.open)
     if (foldVaults) for (const vault of roots) onSetVaultOpen(vault, !anyExpanded)
+    stacks?.setAll(!anyExpanded)
     // Only the active lens' dirs move (YAZ-1605): a fold the tab does not show is exactly as it was.
-    dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !bodyDirs.includes(d)) : [...new Set([...expanded, ...bodyDirs])] })
+    const moving = new Set(bodyDirs)
+    dispatch({ type: 'setAll', dirs: anyExpanded ? expanded.filter((d) => !moving.has(d)) : [...new Set([...expanded, ...bodyDirs])] })
   }
   const foldAll = useCallback(() => foldRef.current(), [])
   // A new tab row (YAZ-3279): one write, over the settings of the moment.
@@ -1010,6 +1451,11 @@ export function Sidebar({
     const { settings: now, onChangeSettings: write } = settingsRef.current
     if (appZoom !== now.appZoom) write({ ...now, appZoom })
   }, [])
+  // Explore size (YAZ-5881 D1): one setting per Mac, as the App size; the same value writes nothing.
+  const changeExploreSize = useCallback((exploreSize: number) => {
+    const { settings: now, onChangeSettings: write } = settingsRef.current
+    if (exploreSize !== now.exploreSize) write({ ...now, exploreSize })
+  }, [])
   // A Files window zooms its own list only (YAZ-3389 D13); a full window shares `settings.sidebarZoom`.
   const ownZoom = onFilesZoom !== undefined && filesZoom !== undefined
   const zoomValue = ownZoom ? filesZoom : settings.sidebarZoom
@@ -1017,9 +1463,24 @@ export function Sidebar({
   // Sticky folders (YAZ-3440 D2): how many levels stick, cut to 40% of the list, as one attribute on the list written
   // on the node and not through state, so a resize renders no level of the tree. A zoom change resizes the rows alone.
   const stickyLevels = settings.sidebarStickyLevels
-  useEffect(() => (bodyRef.current !== null ? stickyFolders(bodyRef.current, stickyLevels, zoomValue / 100) : undefined), [stickyLevels, zoomValue])
+  // Row spacing (YAZ-5885 D1): a new height resizes the rows and not the list, as a zoom change does, so the cap runs again.
+  const rowHeight = settings.sidebarRowHeight
+  useEffect(() => (bodyRef.current !== null ? stickyFolders(bodyRef.current, stickyLevels, zoomValue / 100, rowHeight) : undefined), [stickyLevels, zoomValue, rowHeight])
 
   const { selectedPaths, dispatchSelection, orderedSelectedPaths, selection } = useSelection(lens, loaded ? forest : null, roots, selectionRef, bodyRef)
+  placeSelected.current = selectedPaths
+  // A folder shown alone in Files (YAZ-5790): a selected row outside it is off screen, so it leaves the selection.
+  useEffect(() => {
+    if (filesOnly !== null && lens === 'files') dispatchSelection({ type: 'prune', exists: (path) => inFolder(filesOnly, path) })
+  }, [filesOnly, lens, dispatchSelection])
+  // A tab's own selected rows come back with its place (YAZ-5769), once its sidebar tab shows and every tree has landed:
+  // after `useSelection`'s clear on a tab change, and before its prune drops a row the vault no longer has.
+  useEffect(() => {
+    const wanted = placeSelection.current
+    if (wanted === null || wanted.lens !== lens || !loaded || forest === null) return
+    placeSelection.current = null
+    dispatchSelection({ type: 'replace', paths: wanted.paths.filter((path) => treeHasPath(forest, path)) })
+  })
   // The copy the open page lights in (YAZ-3131 Decision 3, S12, S13): where it was clicked, else the
   // first copy that shows it. Files and Search draw each row once, so they light every row of it, as before.
   const copyTops = lens === 'focus' ? focusNodes : lens === 'favorites' ? favoriteNodes : null
@@ -1044,6 +1505,14 @@ export function Sidebar({
     },
     [onKeepFile],
   )
+  // A folder page row's click (YAZ-4587, D37): the Page tab is asked for, then the folder page opens by the "Open folder page" door.
+  const openPageFromTree = useCallback(
+    (dir: string, top?: string) => {
+      askPageTab(dir)
+      keepFromTree(dir, top)
+    },
+    [keepFromTree],
+  )
   const clickedTop = openCopy !== null && openCopy.path === activeFile && copyTops?.some((t) => t.path === openCopy.top) === true ? openCopy.top : null
   const activeTop = useMemo(
     () => (activeFile === null || copyTops === null ? null : (clickedTop ?? firstCopy(copyTops, activeFile, expandedSet))),
@@ -1054,6 +1523,14 @@ export function Sidebar({
   // (YAZ-2662 D1), a DIR of the tree. Both questions are asked once here and read by the two steps
   // below — of the tree of the vault that holds the target (YAZ-2602 S17). A vault's row is a dir
   // of the tree too: the cut tree of a search draws it, with its menu (A9).
+  // A reveal in Files of a row outside the folder shown alone (YAZ-5790): all shows again, so the row is on screen. A quiet
+  // reveal (YAZ-3440 D13) is no request of the user's, so it changes nothing.
+  const filesOnlyNow = useRef(filesOnly)
+  filesOnlyNow.current = filesOnly
+  useEffect(() => {
+    const only = filesOnlyNow.current
+    if (pendingReveal !== null && pendingReveal.quiet !== true && only !== null && !inFolder(only, pendingReveal.path)) onFilesOnly?.(null)
+  }, [pendingReveal, onFilesOnly])
   const revealRoot = pendingReveal === null ? root : rootOf(pendingReveal.path)
   const revealTree = trees.get(revealRoot) ?? null
   const revealIsDir = pendingReveal !== null && (dirs.includes(pendingReveal.path) || vaultRows.has(pendingReveal.path))
@@ -1091,16 +1568,81 @@ export function Sidebar({
     }
     return flashed
   }, [filesRevealReady, pendingReveal])
+  // CLI navigation (YAZ-4502): reveal and expand a target, or a Favorites/Focus group, in the list on show; only on request.
+  const automationFlash = useRef<(() => void) | null>(null)
+  useEffect(() => () => { automationFlash.current?.() }, [])
+  const [automationReveal, setAutomationReveal] = useState<NavigationTarget | null>(null)
+  const revealedByAutomation = () => {
+    if (automationReveal === null || bodyRef.current === null) return null
+    const { path, group } = automationReveal
+    const pathShows = path === undefined || bodyRef.current.querySelector(`.tree__row[data-path="${CSS.escape(path)}"]`) !== null
+    const groupShows = group === undefined || bodyRef.current.querySelector(`[data-focus-folder="${CSS.escape(group)}"][aria-expanded="true"]`) !== null
+    return pathShows && groupShows ? group ?? path ?? null : null
+  }
+  useAutomationSurface('sidebar', {
+    ready: loaded,
+    inspect: () => ({ lens, revealed: revealedByAutomation() }),
+    reveal: async (target) => {
+      flushSync(() => {
+        setAutomationReveal(target)
+        if (onlyFolder !== undefined) onFocusOnly?.(null)
+        if (target.path !== undefined) {
+          const path = target.path
+          // A folder opens itself too, as a reveal in Files does.
+          const reveal = dirs.includes(path) || vaultRows.has(path) ? `${path}/x` : path
+          openTo(reveal)
+          if (lens === 'favorites' || lens === 'focus') {
+            const paths = lens === 'favorites' ? favoritePaths : focusList
+            const groupPaths = shownTab.folders.flatMap((folder) => folder.items.flatMap((item) => {
+              const resolved = resolveItem(item, roots)
+              return 'path' in resolved ? [resolved.path] : []
+            }))
+            for (const top of [...paths, ...groupPaths]) if (path === top || path.startsWith(`${top}/`)) openTo(reveal, top)
+          }
+        }
+      })
+      if ((lens === 'favorites' || lens === 'focus') && shownTab.folders.length > 0) {
+        const groups = await waitForSurface(`groups:${lens}`)
+        flushSync(() => { void groups.reveal?.(target) })
+      }
+      // The tree is loaded, the folders are open: the row shows within a few commits, or it is not in this list.
+      await waitForSurface('sidebar', (surface) => surface.inspect().revealed === (target.group ?? target.path), REVEAL_WAIT_MS).catch(() => {
+        throw new AutomationFailure('NOT_SHOWN', 'The target has no row in this sidebar list.')
+      })
+      automationFlash.current?.()
+      automationFlash.current = null
+      if (bodyRef.current && target.path) automationFlash.current = flashTreeRows(bodyRef.current, target.path, false) ?? null
+      else if (target.group) bodyRef.current?.querySelector(`[data-focus-folder="${CSS.escape(target.group)}"]`)?.scrollIntoView({ block: 'nearest' })
+    },
+  })
   /** A rename that a tab's menu started (YAZ-4248): its field flashes as the row did (below, once `renaming` is known). */
   const renameFlash = useRef(false)
 
-  // ---- New note / new folder (GRO-2022): right-click menu → inline name input ----
+  // ---- New page / new folder (GRO-2022): right-click menu → inline name input ----
 
   // The ONE builder of the row menu, by the row and the point: a right-click in the panel
   // (`openMenu`) and a menu request (YAZ-2663 D6). `outside` is a row that is not the panel's — a
   // row of the new tab page. It is a row like a search row: a disk row, with "Show in sidebar"
   // first, whose tree-drawing items show it in Files first (S27, S30). It is no pick and no
   // highlight of the panel, and its menu is the menu of one row (S32).
+  // The lists as they are at the right-click (YAZ-4475): through a ref, so a folder made or a scope changed a moment
+  // ago is in the menu, and the callback stays the same — the tree's rows do not draw again on each list change.
+  const listsNow = useRef(lists)
+  listsNow.current = lists
+  /**
+   * The card skill's row (YAZ-5109): the vault "Duplicate into" copies into — the vault of the page on show, else the
+   * window's first — and the prompt with the path of the skill that vault uses: its own `Card skill` folder when its tree
+   * holds one at the top (`cardSkillFolder`), else the app's copy. Read at the right-click.
+   */
+  const cardSkillTargets = useCallback((skill: string): { cardSkillInto: { root: string; name: string } | null; cardSkillPrompt: string } => {
+    const own = ownRootsRef.current
+    const front = activeRef.current === null ? null : rootOf(activeRef.current)
+    const into = front !== null && own.includes(front) ? front : (own[0] ?? null)
+    const top = into === null ? [] : (treesRef.current.get(into)?.tree ?? [])
+    const folder = cardSkillFolder(into, stripSlash(skill), (path) => top.some((node) => node.type === 'dir' && node.path === path))
+    const name = into === null ? '' : (vaultsRef.current.find((vault) => vault.root === into)?.name || storage.vaultName(into))
+    return { cardSkillInto: into === null ? null : { root: into, name }, cardSkillPrompt: cardSkillPrompt(folder) }
+  }, [rootOf])
   const openMenuAt = useCallback(
     (node: MenuRow | null, x: number, y: number, outside = false, closed = false) => {
       const filePath = node?.type === 'file' ? node.path : null
@@ -1110,33 +1652,56 @@ export function Sidebar({
       // BLANK SPACE is not a row and never touches it (YAZ-1337): its menu is about the vault
       // root, and a right-click into the empty space below the tree must not throw a selection away.
       // Nor is a SHORTCUT row a pick (YAZ-2290 D2): the selection is what ⌘C / ⌘X act on.
-      if (!outside && node !== null && node.shortcutIn === undefined && !selectedPaths.has(node.path)) selection.set(node.path, lens === 'focus' || lens === 'favorites' ? (node.top ?? undefined) : undefined)
+      if (!outside && node !== null && node.shortcutIn === undefined && node.pageOf === undefined && !selectedPaths.has(node.path)) selection.set(node.path, lens === 'focus' || lens === 'favorites' ? (node.top ?? undefined) : undefined)
       // On a search row the highlight follows the right-click too, as it follows a click (YAZ-803; S26 on YAZ-2620).
       if (!outside && searching && node !== null) searchCursor.set(node.path)
       // The plural gesture exists only when the right-clicked row — file or folder (YAZ-1578) — is
       // ITSELF in a selection of two or more (🔒 D5): a selection of one already IS the singular
       // menu, and a row outside the selection just ended it above. Read once, here, like every
       // other target this menu pins.
-      const plural = !outside && node !== null && selectedPaths.has(node.path) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
+      const plural = !outside && node !== null && node.pageOf === undefined && selectedPaths.has(node.path) && selectedPaths.size >= 2 ? orderedSelectedPaths() : null
       // A VAULT row (YAZ-2602 D3) is its own kind: a folder that is a vault, with that vault's root.
       // It creates and pastes like a folder; it is not opened, clipped, renamed, deleted, favorited,
       // reviewed or put in the focus list (S13, A2). A selection that holds one has no plural item (A3).
       const vaultRow = node !== null && vaultRows.has(node.path) ? rootOf(node.path) : null
+      // The app's own vault (the card skill, YAZ-5108): its row has a menu of its own, and a row inside it reads only.
+      const skillRow = vaultRow !== null && appRoots.includes(vaultRow) ? vaultRow : null
+      const inSkill = node !== null && skillRow === null && appRoots.includes(rootOf(node.path)) && (plural ?? [node.path]).every((path) => appRoots.includes(rootOf(path)))
       const holdsVault = plural !== null && plural.some((path) => vaultRows.has(path))
       const pluralRows = holdsVault ? null : plural
       const home = node === null ? vaultsRef.current[0] : vaultOf(node.path)
       // Blank space is the vault ROOT (GRO-2273) — of a window with one vault. With two or more it is no one vault's (S10).
       const blank = multi ? null : root.replace(/\/+$/, '')
-      // App's answer for the row (YAZ-2322), asked ONCE here like every other target this menu pins.
-      const inReview = filePath === null ? null : reviewState(filePath)
+      // "Review this page" (YAZ-4967): a page row whose index record holds a card, or embeds one (YAZ-5037), read ONCE
+      // here like every other target this menu pins. The card resolver is made only for a page with embeds.
+      const cardsOn = home.review && home.index.ids
+      const pageRecord = cardsOn && plural === null && filePath !== null && vaultRow === null ? home.index.records.find((r) => r.path === filePath) : undefined
+      const reviewPage = pageRecord !== undefined && ((pageRecord.cards?.length ?? 0) > 0 || (pageRecord.embeds.length > 0 && embeddedCards(pageRecord.embeds, makeCardResolver(home.index.records, home.index.letters)).length > 0)) ? pageRecord.path : null
       // Only a ROW opens a menu on the Search tab (blank space there offers none), and a search row is a disk row.
       const asSearch = searching || outside
       const menuLens: SidebarLens = asSearch ? 'files' : lens
-      // A shortcut row (YAZ-2290 E5): `node.path` is the note where it LIVES, this the folder the row stands in.
+      // A shortcut row (YAZ-2290 E5): `node.path` is the page where it LIVES, this the folder the row stands in.
       const shortcutIn = node?.shortcutIn ?? null
       // "Change icon ▸" (YAZ-3440 D8, D9): the row or its selection (never a vault row, a shortcut row or blank space), and the one name rule its rows want.
       const iconPaths = node === null || vaultRow !== null || shortcutIn !== null || holdsVault ? null : plural ?? [node.path]
       const iconRule = iconPaths === null ? null : oneRule(iconPaths.map((path) => ruleFor(path.slice(path.lastIndexOf('/') + 1), (path === node?.path ? node.type === 'dir' : dirs.includes(path)) ? 'folder' : 'file')))
+      // A New … on the Focus or the Favorites tab stays there (YAZ-4782): a pinned file row's — its folder holds the new
+      // item on disk, and it goes right after the row in the list — or blank space's: the vault's root, last in the list,
+      // or in the one folder "Hide all others" shows. A folder row, and a row inside a pinned folder, create in that folder, as ever.
+      const listLens = !asSearch && (lens === 'focus' || lens === 'favorites') ? lens : null
+      const listTab = listLens === 'focus' ? listsNow.current.focusTab : listsNow.current.favoritesTab
+      const shownAlone = listLens === null ? undefined : listTab.folders.find((folder) => folder.id === focusOnly)
+      // The folder Files shows alone (YAZ-5790): its blank space is that folder, in a window with one vault or more.
+      const filesAloneDir = !asSearch && lens === 'files' ? filesOnly : null
+      // Blank space of a window with two or more vaults is a vault's root on Focus and Favorites alone (YAZ-4782).
+      const targetDir = node === null && filesAloneDir !== null ? filesAloneDir : node === null && multi ? (listLens === null ? null : vaultOfFolder(shownAlone, roots)) : targetDirFor(node, top)
+      const place: CreatePlace | null =
+        listLens === null ? null
+        : node === null ? { list: listLens, folder: shownAlone?.id ?? null, after: null }
+        : node.type === 'file' && node.shortcutIn === undefined && node.pageOf === undefined && node.top === node.path ? { list: listLens, folder: listTab.folderOf(node.path)?.id ?? null, after: node.path }
+        : null
+      // The course's guided tour (YAZ-5123): a folder's menu opened (the tour checks which folder).
+      if (node?.type === 'dir' && node.pageOf === undefined) tourEvent('folder-menu-open', node.path)
       setMenu({
         x,
         y,
@@ -1144,7 +1709,10 @@ export function Sidebar({
         leaveSearchTo: asSearch ? (node?.path ?? null) : null,
         // Any row that is not the Files tree's own (YAZ-2638 D1, D3): Search, Focus, Favorites. One row, never a selection.
         showPath: (outside || lens !== 'files') && plural === null ? (node?.path ?? null) : null,
-        targetDir: node === null && multi ? null : targetDirFor(node, root),
+        targetDir,
+        // "New card" (YAZ-5037): where the folder's vault makes cards — it uses IDs, and its Review is on.
+        cardDir: targetDir !== null && vaultOf(targetDir).review && vaultOf(targetDir).index.ids ? targetDir : null,
+        place,
         rowKind: node?.type ?? null,
         top: asSearch ? null : (node?.top ?? null),
         // ONE field per item, each resolved on its own (GRO-2296). Several are the same
@@ -1152,17 +1720,20 @@ export function Sidebar({
         // below is exactly the divergence the split exists for.
         //
         // Blank space copies the vault ROOT (GRO-2273): the blank area already means "the
-        // root" everywhere else here (`targetDirFor` sends "New note" there), and VS Code's
+        // root" everywhere else here (`targetDirFor` sends "New page" there), and VS Code's
         // empty-Explorer menu does the same. Trailing separators are stripped so the copied
         // bytes match the root the rest of the app uses.
         copyPath: node?.path ?? blank,
-        openPath: plural === null && node?.type === 'dir' && vaultRow === null ? node.path : null,
+        // The vault root's page (YAZ-4921): blank space of a window with one vault, and a vault row's own root.
+        openPath: plural === null && node?.type === 'dir' ? (vaultRow ?? node.path) : node === null ? blank : null,
         // Both plural fields read the ONE ordered list above and stay separate fields, as the
         // doctrine asks. A folder is a tab too (YAZ-2290 D3), so the open item counts every row.
         copyPaths: pluralRows,
-        openTabPaths: pluralRows,
+        // One row too (YAZ-4470): a file or folder row; not a vault row, a shortcut row or blank space.
+        openTabPaths: pluralRows ?? (node === null || vaultRow !== null || shortcutIn !== null ? null : [node.path]),
         clipPaths: shortcutIn !== null || vaultRow !== null || holdsVault ? null : plural ?? (node === null ? null : [node.path]),
-        newWindowPath: filePath,
+        // A file, or a folder (YAZ-4778: its folder page in a new window); not a vault row, a shortcut row or a selection.
+        newWindowPath: filePath ?? (plural === null && node?.type === 'dir' && vaultRow === null && shortcutIn === null ? node.path : null),
         renamePath: shortcutIn !== null || vaultRow !== null ? null : node?.path ?? null,
         deletePaths: node === null || shortcutIn !== null || vaultRow !== null || holdsVault ? null : outermost(plural ?? [node.path]),
         revealPath: node?.path ?? blank,
@@ -1171,20 +1742,28 @@ export function Sidebar({
         // Focus (YAZ-2619 D3): the row or its ordered selection, any kind, any lens, any vault of the
         // window — the favorites rule below. A vault row is no item of the list (YAZ-2602 A2, A3).
         focusPaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
-        focusIsOn: node !== null && (plural ?? [node.path]).every((p) => focusList.includes(p)),
+        focusIsOn: node !== null && (plural ?? [node.path]).every((p) => focusList.includes(p) || listsNow.current.focusTab.folderOf(p) !== undefined),
+        focusFolders: listsNow.current.focusTab.folders,
+        focusFolderOf: node === null || plural !== null ? null : (listsNow.current.focusTab.folderOf(node.path)?.id ?? null),
+        favoriteFolders: listsNow.current.favoritesTab.folders,
+        favoriteFolderOf: node === null || plural !== null ? null : (listsNow.current.favoritesTab.folderOf(node.path)?.id ?? null),
+        focusScopes: node === null ? null : listsNow.current.scopesOf('focus', plural ?? [node.path]),
+        favoriteScopes: node === null ? null : listsNow.current.scopesOf('favorites', plural ?? [node.path]),
         // Favorites (YAZ-1766 D3): the row or its ordered selection, any kind, any lens; blank space has nothing to pin.
         favoritePaths: node === null || vaultRow !== null || holdsVault ? null : plural ?? [node.path],
         iconPaths,
         iconRule,
         ...iconTargets(iconPaths, iconRule),
         // Each row by the list of the vault that holds it (YAZ-2631 D1).
-        favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favoritesByRoot[rootOf(p)]?.includes(p) === true),
-        // By the upkeep of the vault that holds the folder (R5).
-        reviewDir: home.upkeep && node?.type === 'dir' && vaultRow === null ? node.path : null,
-        reviewPath: inReview === null ? null : filePath,
-        reviewIsOn: inReview === true,
-        // A shortcut is a folder's ID on a note: offered only where the vault uses IDs (YAZ-2523 🔒 V5).
+        favoriteIsOn: node !== null && (plural ?? [node.path]).every((p) => favoritesByRoot[rootOf(p)]?.includes(p) === true || listsNow.current.favoritesTab.folderOf(p) !== undefined),
+        // By the review setting of the vault that holds the folder (R5).
+        reviewDir: cardsOn && node?.type === 'dir' && vaultRow === null ? node.path : null,
+        reviewPage,
+        reviewCard: pageRecord?.kind === 'card',
+        // A shortcut is a folder's ID on a page: offered only where the vault uses IDs (YAZ-2523 🔒 V5).
         shortcutDir: home.index.ids && plural === null && node?.type === 'dir' && vaultRow === null ? node.path : null,
+        // "Hide all others" (YAZ-5790): a folder row of the Files tree itself, outside a 2+ selection; "Show all" on the one shown alone.
+        hideOthers: !asSearch && lens === 'files' && plural === null && node?.type === 'dir' && vaultRow === null && shortcutIn === null && node.pageOf === undefined ? { dir: node.path, on: node.path === filesOnly } : null,
         removeShortcut: node === null || shortcutIn === null ? null : { path: node.path, dir: shortcutIn },
         // The known vaults that are not in this window (YAZ-2602 D2), in the order of the ⌘O list, read as the menu opens.
         addVaults: node !== null ? null : storage.listVaults().flatMap(({ path, name }) => (roots.includes(path) ? [] : [{ path, name }])),
@@ -1193,9 +1772,11 @@ export function Sidebar({
         forgetClosed: closed && node !== null ? node.path : null,
         infoPath: plural === null && shortcutIn === null && filePath !== null && isBoard(filePath) ? filePath : null,
         folderPaths: node === null ? [] : (plural ?? [node.path]).filter((path) => (path === node.path ? node.type === 'dir' : dirs.includes(path))),
+        ...(node?.pageOf !== undefined ? PAGE_ROW_MENU : {}),
+        ...(skillRow !== null ? { cardSkill: skillRow, ...cardSkillTargets(skillRow) } : inSkill ? READ_ONLY_APP_ROW : {}),
       })
     },
-    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, reviewState, dirs, iconTargets],
+    [root, roots, appRoots, cardSkillTargets, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, dirs, iconTargets, focusOnly, filesOnly],
   )
   // A right-click on a Recents row (YAZ-3235 D7, S20): the one-row file menu, "Show in sidebar" first,
   // as a row of the new tab page. Through a ref, so the memo list does not draw again on each selection.
@@ -1239,23 +1820,22 @@ export function Sidebar({
    * Both come from data already in hand — the loaded tree and the vault index — so the delete
    * path makes no extra fetch. When the index is unavailable the backlink line is simply
    * omitted (`backlinks: undefined`): a missing count must never block a delete. For two or more
-   * items the count is of the notes outside them whose links reach any of them, each note once
-   * (`linkingNotes`, as the drag-out box counts, YAZ-3254 D9B).
+   * items the count is of the pages outside them whose links reach any of them, each page once
+   * (`linkingPages`, as the drag-out box counts, YAZ-3254 D9B).
    */
-  const askDelete = useCallback(
-    (picked: string[]) => {
-      const paths = outermost(picked)
+  const openDelete = useCallback(
+    (paths: string[], asked: boolean) => {
       const first = paths[0]
       if (first === undefined) return
       // The setting finally gates the sheet (YAZ-857 — it existed end-to-end but nothing read
       // it): off → delete directly, exactly what "Don't ask me again" promised (S71).
       if (!settings.confirmDelete) {
-        void onDeleteEntries(paths)
+        void (asked ? onDeleteEntries(paths, true) : onDeleteEntries(paths))
         return
       }
       // The row's kind from the tree: ⌘⌫ has no menu to read it from.
       const kindOf = (path: string): 'file' | 'dir' => findNode(forest ?? [], path)?.type ?? (menu?.rowKind === 'file' ? 'file' : 'dir')
-      const target: DeleteTarget = paths.length === 1 ? { path: first, kind: kindOf(first) } : { path: first, kind: kindOf(first), paths }
+      const target: DeleteTarget = paths.length === 1 ? { path: first, kind: kindOf(first), asked } : { path: first, kind: kindOf(first), paths, asked }
       if (paths.length === 1 && target.kind === 'dir') target.children = countChildren(forest ?? [], first)
       setConfirmingDelete(target)
       // The index is only needed for the count, so it rides in asynchronously and the sheet
@@ -1270,14 +1850,33 @@ export function Sidebar({
             const { records, folders, ids } = indexes.get(vault)!
             return { ids, root: vault, oldPath: path, kind: kindOf(path), records, folders, dirs: dirsOf(vault) }
           }
-          const inside = (note: string) => paths.some((item) => note === item || note.startsWith(`${item}/`))
-          const n = paths.length === 1 ? countLinkReferences(about(first)) : new Set(paths.flatMap((path) => linkingNotes(about(path)).filter((note) => !inside(note)))).size
+          const inside = (page: string) => paths.some((item) => page === item || page.startsWith(`${item}/`))
+          const n = paths.length === 1 ? countLinkReferences(about(first)) : new Set(paths.flatMap((path) => linkingPages(about(path)).filter((page) => !inside(page)))).size
           setConfirmingDelete((current) => (current === target ? { ...current, backlinks: n } : current))
         },
         () => undefined,
       )
     },
     [menu, rootOf, forest, dirsOf, settings.confirmDelete, onDeleteEntries],
+  )
+
+  const askDelete = useCallback(
+    (picked: string[]) => {
+      const paths = outermost(picked)
+      const first = paths[0]
+      if (first === undefined) return
+      // A read-only vault asks FIRST (YAZ-4985: Yaseen saw the plain delete sheet in one): once for each vault of the
+      // list, then the delete sheet, which App's door then does not ask again.
+      if (onFileAction !== undefined) {
+        void (async () => {
+          for (const vault of new Set(paths.map((path) => vaultOf(path).root))) if (!(await onFileAction(vault))) return
+          openDelete(paths, true)
+        })()
+        return
+      }
+      openDelete(paths, false)
+    },
+    [onFileAction, vaultOf, openDelete],
   )
 
   const confirmDelete = useCallback(
@@ -1287,12 +1886,12 @@ export function Sidebar({
       if (target === null) return
       if (dontAskAgain) onChangeSettings({ ...settings, confirmDelete: false })
       // Fire and forget: App owns the result and routes every failure to the passive notice.
-      void onDeleteEntries(target.paths ?? [target.path])
+      void (target.asked === true ? onDeleteEntries(target.paths ?? [target.path], true) : onDeleteEntries(target.paths ?? [target.path]))
     },
     [confirmingDelete, onDeleteEntries, onChangeSettings, settings],
   )
 
-  const { clip, clipTo, pasteInto, pendingPaste, confirmPaste, cancelPaste, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved, askDelete)
+  const { clip, clipTo, pasteInto, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved, askDelete, onFileAction)
 
   /**
    * Context menu "Open N in new tabs" (🔒 D5, YAZ-1337): the SAME background opener ⌘-click
@@ -1331,7 +1930,24 @@ export function Sidebar({
     )
   }, [onOpenSetHere, onOpenVaultHere, onNotice])
 
-  const { setRenamingEntry, startCreate, startCreateAt, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo)
+  // A placed create's item joins the Focus or the Favorites list where its New … was picked (YAZ-4782).
+  const addAt = lists.addAt
+  const placeMade = useCallback((place: CreatePlace, path: string) => addAt(place.list, path, place.folder, place.after), [addAt])
+  const { setRenamingEntry, startCreate, startCreateAt, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo, placeMade, onFileAction)
+  /** A New … on a focus or favorite folder's menu (YAZ-4782): the field first in that folder; the item in a vault's root (`vaultOfFolder`), then in the folder. */
+  const newInFolder = (list: 'focus' | 'favorites') => (id: string, kind: EntryKind) => {
+    const folder = (list === 'focus' ? lists.focusTab : lists.favoritesTab).folders.find((f) => f.id === id)
+    startCreateAt(kind, '', { targetDir: vaultOfFolder(folder, roots), lens: list, top: null, place: { list, folder: id, after: null } })
+  }
+  /** A New … on blank space of the tab (YAZ-4782), with no folder shown alone: the field after the top level's last row, where the item goes. */
+  const listEndField = (list: 'focus' | 'favorites') =>
+    pending?.place?.list === list && pending.place.folder === null && pending.place.after === null && (
+      <ul className="tree">
+        <li>
+          <PlacedCreate pending={pending} level={0} />
+        </li>
+      </ul>
+    )
   // "Rename file" from a tab's menu (YAZ-4248): the rename field takes the row's place, so it flashes as the row did.
   useEffect(() => {
     if (!renameFlash.current || renaming === null || bodyRef.current === null) return
@@ -1353,17 +1969,78 @@ export function Sidebar({
   }, [createRequest, lens, forest, trees, rootOf, onCreateConsumed, startCreateAt])
 
   // The row goes when the index says so, as it came; only a refusal is said.
-  const removeShortcutRow = (path: string, dir: string): void =>
-    void removeShortcut(dir, path, vaultOf(dir).index.folders, rootOf(dir)).catch((err: unknown) => onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+  // YAZ-5989: check the page's own `readonly: true` and the vault's read-only door before rewriting `also_in`.
+  const isPageReadOnly = (path: string): boolean => {
+    const record = vaultOf(path).index.records.find((r) => r.path === path)
+    return record !== undefined && isReadOnlyProperties(record.properties)
+  }
+  const removeShortcutRow = (path: string, dir: string): void => {
+    void (async () => {
+      if (isPageReadOnly(path)) return onNotice(`Can't remove the shortcut: "${nameOf(path)}" is read only`, 'error')
+      if (onFileAction !== undefined && !(await onFileAction(rootOf(dir)))) return
+      try {
+        await removeShortcut(dir, path, vaultOf(dir).index.folders)
+      } catch (err: unknown) {
+        onNotice(`Can't remove the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      }
+    })()
+  }
 
   // The one list the shown tab's top rows reorder, and its writer (YAZ-2631 D3): every favorite of the
   // window in the tab's order (D1), every focus item of the window by the same rule (YAZ-2702 Decision 3), or the vault rows of Files (D5).
   // The Sessions and Recents tabs draw no tree, so nothing drags there (YAZ-3147: no drag reorder; YAZ-3235: no drag); they keep the Files default.
   const orderRef = useRef<readonly string[]>([])
-  orderRef.current = lens === 'favorites' ? favoritePaths : lens === 'focus' ? focusList : roots.map(stripSlash)
+  orderRef.current = lens === 'favorites' ? favoritePaths : lens === 'focus' ? focusList : ownRoots.map(stripSlash)
   const saveOrder = lens === 'favorites' ? saveFavoriteOrder : lens === 'focus' ? reorderFocus : onReorderVaults
   const finderDrag = useMemo(() => ({ nameOf, onImport: importFiles, onDraggedOut }), [nameOf, importFiles, onDraggedOut])
-  const { fileMove, reorder } = useTreeDrag(onRenameFile, onMoveEntries, orderRef, saveOrder, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finderDrag)
+  /**
+   * The Focus and Favorites tabs' drag with their folders (YAZ-4460 F5; Favorites since the demo): a drop on a folder row puts the item in it; a folder's item
+   * dropped on a row of its folder reorders the folder, on another folder's row joins that folder, and on a top row
+   * goes back to the top level; a top item dropped on a folder's item joins that folder. Anything else is the tab's
+   * own reorder. An item is in one place only.
+   */
+  const folderDrop =
+    lens !== 'focus' && lens !== 'favorites'
+      ? undefined
+      : (from: string, over: ReorderOver | null, folder: string | null): boolean => {
+          const tab = shownTab
+          const top = lens === 'favorites' ? favoritePaths : focusList
+          const src = tab.folderOf(from)
+          if (folder !== null) {
+            if (src?.id !== folder) tab.addTo([from], folder)
+            return true
+          }
+          const dst = over === null ? undefined : tab.folderOf(over.path)
+          if (src === undefined) {
+            if (dst === undefined) return false
+            tab.addTo([from], dst.id)
+            return true
+          }
+          if (over === null || over.path === from) return true
+          if (dst === undefined) {
+            if (top.includes(over.path)) tab.moveOut(from)
+            return true
+          }
+          if (dst.id !== src.id) {
+            tab.addTo([from], dst.id)
+            return true
+          }
+          const shown = src.items.map((item) => resolveItem(item, roots)).flatMap((r) => ('path' in r ? [r.path] : []))
+          const without = shown.filter((p) => p !== from)
+          const i = without.indexOf(over.path)
+          if (i < 0) return true
+          const next = [...without.slice(0, over.edge === 'before' ? i : i + 1), from, ...without.slice(over.edge === 'before' ? i : i + 1)]
+          if (next.every((p, at) => p === shown[at])) return true
+          tab.reorder(src.id, next)
+          // A reorder inside a focus or favorite folder is a step of the undo list too (YAZ-5917).
+          onReordered?.({ name: nameOf(from), undo: () => tab.reorder(src.id, shown), redo: () => tab.reorder(src.id, next) })
+          return true
+        }
+  // Files under Manual (YAZ-5916): each folder's order, kept in the vault; read only while Files sorts by hand.
+  const filesManual = settings.sidebarSort.files.by === 'manual'
+  const filesOrder = useFilesOrder(ownRoots, filesManual, onNotice)
+  const reordered = useCallback((name: string, undo: () => void, redo: () => void, vault?: string) => onReordered?.(vault === undefined ? { name, undo, redo } : { name, undo, redo, vault }), [onReordered])
+  const { fileMove, reorder, manual } = useTreeDrag(onRenameFile, onMoveEntries, orderRef, saveOrder, rootOf, onNotice, selection, orderedSelectedPaths, dirs, vaultRows, finderDrag, folderDrop, filesOrder.save, reordered, onFileAction)
 
   // YAZ-1801 D3 (YAZ-3039): every vault's held-back files as tree paths, one Set that keeps its
   // identity until a list really changes — the memoised levels compare it by identity.
@@ -1396,9 +2073,11 @@ export function Sidebar({
     tooLarge,
     shareBadges,
     icons: rowIcons,
+    cardFiles,
     // Above the vault rows no one directory stands (YAZ-2602 D3).
     dirPath: multi ? '' : root,
     vaultRows,
+    appRows,
     expanded: expandedSet,
     activeFile,
     activeTop,
@@ -1412,14 +2091,17 @@ export function Sidebar({
     renaming,
     selection,
     shortcuts,
+    pageRows,
+    onOpenPage: openPageFromTree,
     titles,
+    ids,
     onLeaveToPage,
     onHoverFile: hoverFile,
     // The tab's own date switch (YAZ-3511 D10); the search tree reads Search's.
     dates: sortedTab !== null && settings.rowDates[sortedTab],
   }
-  // A search tree's own (YAZ-2620): its folds, its highlight and its marks; nothing in it creates, renames or drags.
-  const searchTreeProps = { ...treeProps, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, marks, sort: searchSort, dates: settings.rowDates.search, scores }
+  // A search tree's own (YAZ-2620): its folds, its highlight and its marks; nothing in it creates, renames or drags. Its IDs are "Show IDs in search"'s (`marks`), not the files list's.
+  const searchTreeProps = { ...treeProps, ids: undefined, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, pageRows: NO_PAGE_ROWS, marks, cardRows, onOpenCard: openTreeCard, onCardContextMenu: openInlineRowMenu, sort: searchSort, dates: settings.rowDates.search, scores }
 
   // A vault that could not be read says so on every tab: one line per vault, its own (YAZ-2602).
   const errorLines = errors.map((message, at) => (
@@ -1440,9 +2122,18 @@ export function Sidebar({
     }
 
   // Blank space is one vault's root only in a window with one vault, and only on a tab that has a tree of it (YAZ-3247 D12).
-  const blankDrop = !multi && !searching && lens !== 'sessions' && lens !== 'recents'
+  // With a folder shown alone in Files (YAZ-5790), blank space is that folder, and its row lights.
+  const blankAlone = lens === 'files' && !searching ? filesOnly : null
+  const blankDrop = (blankAlone !== null || !multi) && !searching && lens !== 'sessions' && lens !== 'recents'
+  const blankDir = blankAlone ?? top
+  const blankLight = (): HTMLElement | null => (blankAlone === null ? headerRef.current : (bodyRef.current?.querySelector<HTMLElement>(`.tree__row[data-path="${CSS.escape(blankAlone)}"]`) ?? null))
 
+  // The active vault's word for a page (YAZ-4938), for the panel's own words; a row's menu and its delete ask read the row's vault.
+  const unit = useVaultUnit(root)
+  /** The empty Search tab's line, shown only when it has no recent file (YAZ-5774). */
+  const searchHint = useMemo(() => ({ none: <p className="sidebar__msg">{unit('Type to search every page and folder.')}</p> }), [unit])
   return (
+    <UnitContext.Provider value={unit}>
     <aside ref={setAside} className="sidebar" style={{ width }}>
       {/* The root header doubles as the "move to the vault root" drop target (E1b) — of a window
           with one vault. With two or more each vault's own row is that target (YAZ-2602 S14). It
@@ -1457,29 +2148,43 @@ export function Sidebar({
           fileMove.hover(root, e.currentTarget)
         }}
         onDragLeave={(e) => {
-          if (!multi && leftTarget(e)) fileMove.leave(root)
+          if (!multi && leftTarget(e)) fileMove.leave(top)
         }}
         onDrop={(e) => {
           e.preventDefault()
-          if (!multi) dropOn(fileMove, e, root)
+          if (!multi) dropOn(fileMove, e, top)
         }}
       >
         {/* The vault switcher (YAZ-1767): the trigger is the header's top-left button (name + chevron,
             D6); its panel hangs off this header's rect (D5). "Open folder…" is its last row (D4). */}
         <VaultSwitcher
-          roots={roots}
+          // The window's places (YAZ-4922 D3): its row in the panel is the folder of a vault it shows, and that row is current.
+          roots={places}
           onPickFolder={onPickFolder}
           pickDisabled={pickDisabled}
           openRequest={switcherOpenRequest}
           // The right-click menu (YAZ-1798): the file menu's own OS verbs and notice, App's in-place switch — and its add (YAZ-2602 S8).
           onOpenHere={onOpenVaultHere}
           onAddHere={onAddVault}
+          // "Open folder page" on a vault of this window (YAZ-4921): the root's page as a kept tab, the folder row's door.
+          onOpenFolderPage={keepFromTree}
           onReveal={reveal}
           onOpenVsCode={openVsCode}
           onNotice={onNotice}
           onOpenSetHere={onOpenSetHere}
           hotkeys={settings.hotkeys}
         />
+        {/* The lock of each read-only vault (YAZ-4985), beside the vault's name: the page chip's box and countdown. */}
+        {onUnlockVault !== undefined && vaults.filter((vault) => vault.readOnly === true && vault.app !== true).map((vault) => (
+          <VaultLock
+            key={vault.root}
+            root={vault.root}
+            name={multi ? vault.name : undefined}
+            until={vault.unlockedUntil ?? null}
+            onAllow={(choice) => onUnlockVault(vault.root, choice)}
+            onLock={() => onLockVault?.(vault.root)}
+          />
+        ))}
         {onShowAllTabs !== undefined ? (
           // A Files window is only the sidebar (YAZ-3357 D8): there is nothing to hide it for, and the board is its way to the tabs.
           <button type="button" className="sidebar__collapse" onClick={onShowAllTabs} title={titleWithKey('Show all tabs', 'tabOverview', settings.hotkeys)} aria-label="Show all tabs">
@@ -1491,8 +2196,10 @@ export function Sidebar({
           </button>
         )}
       </div>
-      {/* The Inbox (YAZ-2322), with upkeep on: above the tabs, so it shows on every tab — the Search tab too.
-          One row per vault that has upkeep on (YAZ-2602 R5), in vault order; two or more say whose each is. */}
+      {/* The Inbox (YAZ-4967), with card review on: above the tabs, so it shows on every tab — the Search tab too.
+          One row per vault that has it (YAZ-2602 R5), in vault order; two or more say whose each is. Silent with no card due.
+          YAZ-5131 (Yaseen: "polish around [it] so it actually stands out"): a place, not a line — the tray icon, then
+          the name, and with cards left for today the count as a filled accent pill, the row's one mark. */}
       {inboxes.map((vault) => {
         const label = inboxes.length > 1 ? `Inbox · ${vault.name}` : 'Inbox'
         return (
@@ -1500,12 +2207,20 @@ export function Sidebar({
             key={vault.root}
             type="button"
             className={`sidebar__inbox${vault.reviewing ? ' sidebar__inbox--active' : ''}`}
+            data-tour="sidebar-inbox"
             aria-pressed={vault.reviewing}
             aria-label={vault.dueCount > 0 ? `${label}, ${vault.dueCount} due` : label}
             onClick={() => onInbox(vault.root)}
+            // Its own menu (YAZ-5054), as a page row's "Open in new tab" / "Open in new window" — never the text menu.
+            onContextMenu={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setInboxMenu({ root: vault.root, x: e.clientX, y: e.clientY })
+            }}
           >
-            {label}
-            {vault.dueCount > 0 && <span className="tree__count">{vault.dueCount}</span>}
+            <InboxIcon className="sidebar__inbox-icon" />
+            <span className="sidebar__inbox-name">{label}</span>
+            {vault.dueCount > 0 && <span className="tree__count sidebar__inbox-count">{vault.dueCount}</span>}
           </button>
         )
       })}
@@ -1517,9 +2232,10 @@ export function Sidebar({
         onLensChange={onLensChange}
         prefs={tabPrefs}
         onChangePrefs={changeTabs}
-        sortShows={sortedTab !== null}
-        sortOpen={sortMenu !== null && sortMenu.tab === sortedTab}
-        sortFiltered={searching && filterOn(searchFilter)}
+        sortShows={menuTab !== null}
+        sortOpen={sortMenu !== null && sortMenu.tab === menuTab}
+        sortFiltered={(searching && filterOn(searchFilter)) || (menuTab === 'recents' && (recentVault !== null || recentType !== 'all'))}
+        sortLabel={menuTab === 'recents' ? 'Filter' : undefined}
         onSort={openSort}
         foldShows
         foldDisabled={foldDisabled}
@@ -1538,7 +2254,7 @@ export function Sidebar({
             type="text"
             placeholder="Search"
             title={titleWithKey('Search', 'search', settings.hotkeys)}
-            aria-label="Search notes"
+            aria-label={unit('Search pages')}
             spellCheck={false} // a search is names, not prose: no red line under `yaseen` (YAZ-3748 B2)
             value={query}
             onChange={changeQuery}
@@ -1548,7 +2264,12 @@ export function Sidebar({
             onKeyDown={(e) => {
               const plain = !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)
               const out = query === '' && (e.key === 'ArrowRight' || e.key === 'ArrowDown') && plain
-              if (out && onLeaveToPage?.() === true) e.preventDefault()
+              // ↓ with no text goes to the first recent row first (YAZ-5774); with none, to the new tab page as before.
+              const recent = !typed && e.key === 'ArrowDown' && plain ? bodyRef.current?.querySelector<HTMLElement>(FIRST_RECENT_FILE) : null
+              if (recent != null) {
+                recent.focus()
+                e.preventDefault()
+              } else if (out && onLeaveToPage?.() === true) e.preventDefault()
               // ↑ with no row above the highlight goes to the tab button of Search (D12): from there ← and → reach Files, Focus and Favorites.
               else if (e.key === 'ArrowUp' && plain && atTop) {
                 e.currentTarget.closest('.sidebar')?.querySelector<HTMLElement>(ACTIVE_TAB_SELECTOR)?.focus()
@@ -1567,7 +2288,14 @@ export function Sidebar({
         </div>
       )}
       {searching && <SearchFilterBar filter={searchFilter} onFilter={setSearchFilter} />}
-      {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the
+      {menuTab === 'recents' && (
+        <FilterChips
+          chips={[...(recentVault === null ? [] : [{ key: 'vault', label: vaultOf(recentVault).name }]), ...(recentChip === null ? [] : [{ key: 'type', ...recentChip }])]}
+          onRemove={(key) => (key === 'vault' ? onRecentVault?.(null) : onRecentType?.('all'))}
+          onClear={() => (onRecentVault?.(null), onRecentType?.('all'))}
+        />
+      )}
+      {/* The blank-space menu is the TREE's ("New page" here creates in the vault root); the
           Search tab has no such target, so right-clicking its blank space offers nothing (YAZ-803)
           — not even Electron's text menu, which leaked through until YAZ-2050. Its ROWS get the
           full menu. Blank space means the same thing in every lens: the vault ROOT. */}
@@ -1575,24 +2303,25 @@ export function Sidebar({
         ref={bodyRef}
         className="sidebar__body"
         // The sidebar zoom (YAZ-3389): only the lists scale; the header, the tab row and the footer never do.
-        style={{ '--sidebar-zoom': zoomValue / 100 } as CSSProperties}
+        // Row spacing (YAZ-5885 D1): every row of the lists is `--tree-row-h` tall, before the zoom (app.css `.tree__row`).
+        style={{ '--sidebar-zoom': zoomValue / 100, '--tree-row-h': `${rowHeight}px` } as CSSProperties}
         // The Sessions and Recents tabs have no vault behind their blank space either (YAZ-3147 D4, YAZ-3235 S20): their rows have their own menus.
         onContextMenu={(e) => (searching || lens === 'sessions' || lens === 'recents' ? e.preventDefault() : openMenu(null, e))}
         // Blank space takes a drop for the vault ROOT, as its paste does, and the header lights (YAZ-3247 D12) — one
         // vault only (YAZ-2602 S10). A row handles its own drop: a drag over a row reaches here only when the row refused it.
         onDragOver={(e) => {
-          if (!blankDrop || onRow(e) || !fileMove.accepts(root, hasFiles(e))) return
+          if (!blankDrop || onRow(e) || !fileMove.accepts(blankAlone ?? root, hasFiles(e))) return
           e.preventDefault()
           if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-          fileMove.hover(root, headerRef.current)
+          fileMove.hover(blankAlone ?? root, blankLight())
         }}
         onDragLeave={(e) => {
-          if (blankDrop && leftTarget(e)) fileMove.leave(root)
+          if (blankDrop && leftTarget(e)) fileMove.leave(blankDir)
         }}
         onDrop={(e) => {
           if (!blankDrop || onRow(e)) return
           e.preventDefault()
-          dropOn(fileMove, e, root)
+          dropOn(fileMove, e, blankDir)
         }}
         // Escape drops the multi-select (YAZ-1336) — and ONLY when there is one: with nothing
         // selected the key still belongs to everyone else listening for it, so this must neither
@@ -1629,10 +2358,10 @@ export function Sidebar({
             stopTreePreview()
             return
           }
-          // With no selection, Esc on a row goes to the page on show (YAZ-2663 D10), as Esc in the
-          // search bar does. A rename box and a create box are no rows: their Esc is their own.
+          // With no selection, Esc on a row closes the sidebar (YAZ-4995, App's `useEscapeLast`: the key goes on to it), or,
+          // in a Files window, goes to the page on show (YAZ-2663 D10). A rename box and a create box are no rows: their Esc is their own.
           if (selectedPaths.size === 0) {
-            if (e.target instanceof Element && e.target.matches('.tree__row') && toPage()) e.preventDefault()
+            if (!escapeClosesSidebar && e.target instanceof Element && e.target.matches('.tree__row') && toPage()) e.preventDefault()
             return
           }
           e.preventDefault()
@@ -1666,28 +2395,21 @@ export function Sidebar({
         }}
       >
         {searching && !typed ? (
-          // The Search tab with an empty bar (YAZ-2638 D2): one line, the keys of the search below it
-          // (YAZ-2662 D10), and no tree.
+          // The Search tab with an empty bar (YAZ-2638 D2): the files saved Today and Yesterday (YAZ-5774), the Recents
+          // tab's own list with no filter, "Today" right under the bar; with none, one line. ↓ in the bar goes to its first
+          // row, ↑ on that row back to the bar.
           <>
-            <p className="sidebar__msg">Type to search every note and folder.</p>
-            <dl className="sidebar__keys">
-              {SEARCH_KEYS.map(([keys, does]) => (
-                <Fragment key={does}>
-                  <dt>
-                    {keys.map((cap) => (
-                      <kbd key={cap}>{cap}</kbd>
-                    ))}
-                  </dt>
-                  <dd>{does}</dd>
-                </Fragment>
-              ))}
-            </dl>
+            <div className="sidebar__search-recents" onKeyDown={recentUp}>
+              <Suspense fallback={null}>
+                <RecentList recentOnly={searchHint} trees={shown} roots={ownRoots} groups={searchRecentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+              </Suspense>
+            </div>
           </>
         ) : searching ? (
           // The Search tab with text typed (YAZ-2638 D2): its body is the Files tree cut down to
           // the matches and their parents (YAZ-2620 🔒 D1): full tree rows,
           // each with its own menu. The folds and the highlight are the search's own; nothing here
-          // creates, renames or drags, and a note shows once, where it lives (S7). Only this tree
+          // creates, renames or drags, and a page shows once, where it lives (S7). Only this tree
           // gets `marks` (🔒 D5): the typed text bold in a match, every other row dim. With two or
           // more vaults each match stands under its vault's row, a parent like any folder (YAZ-2602 A9).
           // The matches of the pinned items are a group of their own, first and under its label
@@ -1715,7 +2437,9 @@ export function Sidebar({
           <SessionList onFold={setListFold} titles={titles} onOpenFile={onOpenFile} onRestore={onRestoreSession} onSave={onSaveSession} onUpdate={onUpdateSession} renameRequest={sessionNameRequest} onRenameConsumed={onSessionNameConsumed} />
         ) : lens === 'recents' ? (
           // The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window, by day.
-          <RecentList onFold={setListFold} trees={trees} roots={roots} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+          <Suspense fallback={null}>
+            <RecentList onFold={setListFold} trees={shown} roots={ownRoots} only={recentVault} type={recentType} groups={recentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+          </Suspense>
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and
@@ -1725,8 +2449,44 @@ export function Sidebar({
           <>
             {errorLines}
             {!loaded && favoriteNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
-            {loaded && favoriteNodes.length === 0 && <p className="sidebar__msg">No favorites yet. Right-click a file or folder → Add to favorites.</p>}
-            {favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
+            {loaded && (
+              // Favorite folders (YAZ-4460 demo), by the Focus tab's rules: the bar with "+ Folder" — or, while one folder
+              // shows alone, its name and "Show all".
+              <div className="sidebar__focus-bar">
+                {/* No count (YAZ-4470, 10): which list shows, and on hover what that means. */}
+                <span title={onlyFolder !== undefined ? undefined : lists.favoritesScope === 'workspace' ? SCOPE_TIPS.barWorkspace : SCOPE_TIPS.barVault}>{onlyFolder !== undefined ? `Only ${onlyFolder.name}` : lists.favoritesScope === 'workspace' ? 'Workspace list' : 'Vault list'}</span>
+                <button type="button" className="sidebar__focus-clear" onClick={onlyFolder !== undefined ? () => onFocusOnly?.(null) : newFolder}>
+                  {onlyFolder !== undefined ? 'Show all' : '+ Folder'}
+                </button>
+              </div>
+            )}
+            {loaded && onlyFolder === undefined && favoriteNodes.length === 0 && lists.favoritesTab.folders.length === 0 && <p className="sidebar__msg">{lists.favoritesScope === 'workspace' ? 'No favorites in this workspace yet.' : 'No favorites yet.'} Right-click a file or folder → Add to favorites.</p>}
+            {lists.favoritesTab.folders.length > 0 && forest !== null && (
+              <FocusFolderList
+                kind="favorites"
+                onFold={setStackFold}
+                folders={onlyFolder === undefined ? lists.favoritesTab.folders : [onlyFolder]}
+                only={onlyFolder?.id ?? null}
+                onHideOthers={(id) => onFocusOnly?.(id)}
+                roots={roots}
+                renderItems={(_folder, paths) => <Tree {...treeProps} nodes={favoriteRoots(forest, paths)} move={fileMove} reorder={reorder} sort={sort} copies shift={1} />}
+                editing={editingFolder}
+                onEdit={setEditingFolder}
+                onRename={lists.favoritesTab.rename}
+                onDelete={lists.favoritesTab.remove}
+                scopesOf={lists.favoritesTab.scopesOfFolder}
+                onSetScope={lists.favoritesTab.setFolderScope}
+                onReorderFolders={lists.favoritesTab.reorderFolders}
+                scope={lists.favoritesScope}
+                onNew={newInFolder('favorites')}
+                pending={pending}
+                openableOf={(paths) => paths.filter((path) => findNode(forest ?? [], path) !== null)}
+                onOpenAll={(paths) => paths.forEach((path) => (onOpenFileTab ?? onOpenFileBackground)(path))}
+                onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
+              />
+            )}
+            {onlyFolder === undefined && favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
+            {listEndField('favorites')}
           </>
         ) : lens === 'focus' ? (
           // The Focus tab (YAZ-2619 D2, D4): the focus lists of the window's vaults (kept in the vault, YAZ-2702) in their own order, each a full
@@ -1737,28 +2497,102 @@ export function Sidebar({
           <>
             {errorLines}
             {!loaded && focusNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
-            {loaded && focusNodes.length === 0 && <p className="sidebar__msg">Nothing in focus. Right-click a file or folder → Add to focus.</p>}
-            {focusNodes.length > 0 && (
-              <>
-                <div className="sidebar__focus-bar">
-                  <span>{focusNodes.length} in focus</span>
-                  <button type="button" className="sidebar__focus-clear" onClick={clearFocus}>
-                    Clear
-                  </button>
-                </div>
-                <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />
-              </>
+            {loaded && onlyFolder !== undefined && (
+              // "Hide all others" (YAZ-4460 F8): the one folder, and the way back.
+              <div className="sidebar__focus-bar">
+                <span>Only {onlyFolder.name}</span>
+                <button type="button" className="sidebar__focus-clear" onClick={() => onFocusOnly?.(null)}>
+                  Show all
+                </button>
+              </div>
             )}
+            {loaded && onlyFolder === undefined && (
+              // The bar stands whenever the tab can make a focus folder (YAZ-4460 F3). No count (YAZ-4470, 10): which list shows.
+              <div className="sidebar__focus-bar">
+                <span title={lists.focusScope === 'workspace' ? SCOPE_TIPS.barWorkspace : SCOPE_TIPS.barVault}>{lists.focusScope === 'workspace' ? 'Workspace list' : 'Vault list'}</span>
+                <span className="sidebar__focus-actions">
+                  <button type="button" className="sidebar__focus-clear" onClick={newFolder}>
+                    + Folder
+                  </button>
+                  {focusNodes.length > 0 && (
+                    // "Clear" asks first (YAZ-4460 demo): two clicks, so a good list is not lost by one.
+                    <button type="button" className="sidebar__focus-clear" onClick={() => setConfirmClear(true)}>
+                      Clear
+                    </button>
+                  )}
+                </span>
+              </div>
+            )}
+            {loaded && onlyFolder === undefined && focusNodes.length === 0 && lists.focusTab.folders.length === 0 && <p className="sidebar__msg">{lists.focusScope === 'workspace' ? 'Nothing in focus in this workspace.' : 'Nothing in focus.'} Right-click a file or folder → Add to focus.</p>}
+            {lists.focusTab.folders.length > 0 && forest !== null && (
+              <FocusFolderList
+                kind="focus"
+                onFold={setStackFold}
+                folders={onlyFolder === undefined ? lists.focusTab.folders : [onlyFolder]}
+                only={onlyFolder?.id ?? null}
+                onHideOthers={(id) => onFocusOnly?.(id)}
+                roots={roots}
+                renderItems={(_folder, paths) => <Tree {...treeProps} nodes={favoriteRoots(forest, paths)} move={fileMove} reorder={reorder} sort={sort} copies shift={1} />}
+                editing={editingFolder}
+                onEdit={setEditingFolder}
+                onRename={lists.focusTab.rename}
+                onDelete={lists.focusTab.remove}
+                scopesOf={lists.focusTab.scopesOfFolder}
+                onSetScope={lists.focusTab.setFolderScope}
+                onReorderFolders={lists.focusTab.reorderFolders}
+                scope={lists.focusScope}
+                onNew={newInFolder('focus')}
+                pending={pending}
+                openableOf={(paths) => paths.filter((path) => findNode(forest ?? [], path) !== null)}
+                onOpenAll={(paths) => paths.forEach((path) => (onOpenFileTab ?? onOpenFileBackground)(path))}
+                onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
+              />
+            )}
+            {confirmClear &&
+              createPortal(
+                <ConfirmSheet
+                  labelId="confirm-clear-focus-text"
+                  text={
+                    <>
+                      <strong>Clear the top level of Focus?</strong>
+                      <br />
+                      {focusNodes.length === 1 ? 'One item leaves' : `${focusNodes.length} items leave`} focus. Your focus folders and your files do not change.
+                    </>
+                  }
+                  confirmLabel="Clear"
+                  danger
+                  onConfirm={() => {
+                    setConfirmClear(false)
+                    clearFocus()
+                  }}
+                  onCancel={() => setConfirmClear(false)}
+                />,
+                document.body,
+              )}
+            {onlyFolder === undefined && focusNodes.length > 0 && <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
+            {listEndField('focus')}
           </>
         ) : (
           <>
             {errorLines}
             {forest === null && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
-            {forest !== null && forest.length === 0 && pending === null && (
-              <p className="sidebar__msg">No notes here.</p>
+            {filesOnly !== null && forest !== null && (
+              // "Hide all others" (YAZ-5790): the one folder, and the way back — the Focus tab's bar (YAZ-4460 F8).
+              <div className="sidebar__focus-bar">
+                <span>Only {filesAlone === null ? basename(filesOnly) : nameOf(filesAlone.path)}</span>
+                <button type="button" className="sidebar__focus-clear" onClick={() => onFilesOnly?.(null)}>
+                  Show all
+                </button>
+              </div>
             )}
-            {/* One vault → its tree. Two or more → one row per vault (YAZ-2602 D3), and a vault row drags to reorder (YAZ-2631 D5). */}
-            {forest !== null && <Tree {...treeProps} nodes={forest} move={fileMove} reorder={multi ? reorder : undefined} sort={sort} />}
+            {filesOnly === null && forest !== null && forest.length === 0 && pending === null && (
+              <p className="sidebar__msg">{unit('No pages here.')}</p>
+            )}
+            {/* One vault → its tree. Two or more → one row per vault (YAZ-2602 D3), and a vault row drags to reorder (YAZ-2631 D5).
+                A folder shown alone (YAZ-5790): that folder's row alone, at the top; other vaults hide too. */}
+            {/* Under Manual (YAZ-5916) every row reorders its own folder, and ⌘ moves it into one. */}
+            {forest !== null && filesOnly === null && <Tree {...treeProps} nodes={forest} move={fileMove} reorder={multi ? reorder : undefined} sort={sort} manual={filesManual ? manual : undefined} manualOrder={filesManual ? filesOrder.orders : undefined} />}
+            {filesAlone !== null && <Tree {...treeProps} nodes={[filesAlone]} move={fileMove} sort={sort} manual={filesManual ? manual : undefined} manualOrder={filesManual ? filesOrder.orders : undefined} />}
           </>
         )}
       </div>
@@ -1766,10 +2600,10 @@ export function Sidebar({
         <SettingsButton onClick={onOpenSettings} hotkeys={settings.hotkeys} />
         {/* The zoom chip (YAZ-3432): its menu zooms the lists above (YAZ-3389: one value for every full window, a Files
             window's own, D13) and sets the App size of every window. */}
-        <ZoomMenu sidebar={zoomValue} onSidebar={onZoom} app={settings.appZoom} onApp={changeAppZoom} onOpenChange={onZoomMenu} />
-        {onOpenDailyNote !== undefined && (
-          // YAZ-3607 D7: today's daily note in one click, the same as ⌘D on "Today's daily note".
-          <button type="button" className="sidebar__daily" title="Open today's daily note (⌘-click: background tab)" aria-label="Open today's daily note" onClick={(e) => onOpenDailyNote(e.metaKey)}>
+        <ZoomMenu sidebar={zoomValue} onSidebar={onZoom} app={settings.appZoom} onApp={changeAppZoom} explore={settings.exploreSize} onExplore={changeExploreSize} onOpenChange={onZoomMenu} />
+        {onOpenDailyPage !== undefined && (
+          // YAZ-3607 D7: today's daily page in one click, the same as ⌘D on "Today's daily page".
+          <button type="button" className="sidebar__daily" title="Open today's daily page (⌘-click: background tab)" aria-label="Open today's daily page" onClick={(e) => onOpenDailyPage(e.metaKey)}>
             <CalendarIcon />
           </button>
         )}
@@ -1796,19 +2630,64 @@ export function Sidebar({
         <UpdatePill update={update} onOpen={onOpenWhatsNew} />
       </div>
       <RowDateTip body={bodyRef} />
+      {askScope !== null && (
+        <ScopeConfirm
+          kind={askScope.kind}
+          paths={askScope.paths}
+          scope={askScope.scope}
+          staysInOther={lists.scopesOf(askScope.kind, askScope.paths)[askScope.scope === 'workspace' ? 'vault' : 'workspace']}
+          onConfirm={() => {
+            setAskScope(null)
+            lists.setScope(askScope.kind, askScope.paths, askScope.scope, false)
+          }}
+          onCancel={() => setAskScope(null)}
+        />
+      )}
+      {/* An Inbox row's menu (YAZ-5054): "Open in new tab" goes to the window's Inbox (one per window), or opens it. */}
+      {inboxMenu !== null && (
+        <ContextMenu
+          x={inboxMenu.x}
+          y={inboxMenu.y}
+          sections={[[{ id: 'open-tabs', label: 'Open in new tab', onSelect: () => onInbox(inboxMenu.root) }, ...(onInboxNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', onSelect: () => onInboxNewWindow(inboxMenu.root) }])]]}
+          onClose={() => setInboxMenu(null)}
+        />
+      )}
+      {inlineRowMenu !== null && (
+        <ContextMenu
+          x={inlineRowMenu.x}
+          y={inlineRowMenu.y}
+          sections={inlineRowMenuSections(inlineRowMenu.card, { openSearchCard, onOpenFile, onOpenFileBackground, unit })}
+          onClose={() => setInlineRowMenu(null)}
+        />
+      )}
       {/* The sort menu (YAZ-3227 D4): it sorts the tab it opened on, and a tab switch leaves it unmounted. */}
-      {sortMenu !== null && sortMenu.tab === sortedTab && sort !== undefined && (
+      {sortMenu !== null && sortTab !== null && sort !== undefined && (
         <ContextMenu
           x={sortMenu.x}
           y={sortMenu.y}
           sections={sortSections(
-            sortMenu.tab,
+            sortTab,
             sort,
-            (next) => onChangeSettings(sortMenu.tab === 'search' ? { ...settings, searchSort: next } : { ...settings, sidebarSort: { ...settings.sidebarSort, [sortMenu.tab]: next } }),
+            (next) => {
+              onChangeSettings(sortTab === 'search' ? { ...settings, searchSort: next } : { ...settings, sidebarSort: { ...settings.sidebarSort, [sortTab]: next } })
+              // The vault keeps this Mac's Files sort (YAZ-5916 Q4): the phone sorts its tree by it.
+              if (sortTab === 'files' && next.by !== 'best' && (next.by !== sort.by || next.reverse !== sort.reverse)) filesOrder.setSort({ by: next.by, reverse: next.reverse })
+            },
             // The tab's date switch (YAZ-3511 D7, D10), and on Search its filters (D13, D14).
-            { on: settings.rowDates[sortMenu.tab], set: (on) => onChangeSettings({ ...settings, rowDates: { ...settings.rowDates, [sortMenu.tab]: on } }) },
-            sortMenu.tab === 'search' ? filterSection(searchFilter, setSearchFilter) : undefined,
+            { on: settings.rowDates[sortTab], set: (on) => onChangeSettings({ ...settings, rowDates: { ...settings.rowDates, [sortTab]: on } }) },
+            sortTab === 'search' ? filterSection(searchFilter.includeInline !== undefined || settings.searchIncludeInline ? searchFilter : { ...searchFilter, includeInline: false }, setSearchFilter, reviewRoots.size > 0, unit) : undefined,
+            // YAZ-4450 D4: each list's own switch, in a window with two or more vaults only.
+            multi && (sortTab === 'focus' || sortTab === 'favorites') ? workspaceRow(sortTab) : undefined,
           )}
+          onClose={() => setSortMenu(null)}
+        />
+      )}
+      {/* The Recents menu (YAZ-4450 D5, D7): the vault filter, then "Group by vault". */}
+      {sortMenu !== null && sortMenu.tab === 'recents' && menuTab === 'recents' && (
+        <ContextMenu
+          x={sortMenu.x}
+          y={sortMenu.y}
+          sections={recentSections(vaults, recentVault, (pick) => onRecentVault?.(pick), { on: settings.recentsByVault, set: (on) => onChangeSettings({ ...settings, recentsByVault: on }) }, typeFlyout(recentType, (next) => onRecentType?.(next), ['folders']))}
           onClose={() => setSortMenu(null)}
         />
       )}
@@ -1819,7 +2698,7 @@ export function Sidebar({
           // Items as data (🔒 D8, YAZ-1674): every gating rule lives in `menuSections`. `clip` is read
           // at RENDER time, so "Paste N items" follows the app-wide clipboard while the menu stands.
           sections={buildMenuSections(
-            { ...menu, clip, hotkeys: settings.hotkeys },
+            { ...menu, clip, hotkeys: settings.hotkeys, unit: vaultUnit(rootOf(menu.targetDir ?? menu.copyPath ?? root)) },
             {
               onOpen: (path) => keepFromTree(path, menu.lens === 'focus' || menu.lens === 'favorites' ? (menu.top ?? undefined) : undefined),
               onOpenInNewTabs: openFilesInTabs,
@@ -1828,41 +2707,60 @@ export function Sidebar({
               onOpenVsCode: openVsCode,
               onOpenDefault: openDefault,
               onReveal: reveal,
-              // An add shows the Focus tab (YAZ-2619 D3) — not from the Search tab, which stays
-              // (YAZ-2638 D2); a remove keeps the tab (R5). This is not a `viaTree` item.
+              // An add keeps the tab that shows (YAZ-4460 demo: "it doesnt automatically snap you to focus", which replaces
+              // YAZ-2619 D3's jump to the Focus tab); the toast confirms. This is not a `viaTree` item.
               onToggleFocus: (paths, isOn) => {
                 toggleFocus(paths, isOn)
-                if (!isOn && !searching && lens !== 'focus') onLensChange('focus')
               },
+              // YAZ-4460 F4: into a focus folder. Only a NEW folder shows the Focus tab: its name field opens there.
+              onFocusInFolder: (paths, id) => {
+                const into = lists.focusTab.moveIn(paths, id)
+                if (into === null || id !== null) return
+                setEditingFolder(into)
+                if (!searching && lens !== 'focus') onLensChange('focus')
+              },
+              // YAZ-4460 demo: the same for the Favorites tab's folders; a new one opens its name field on the Favorites tab.
+              onFavoriteInFolder: (paths, id) => {
+                const into = lists.favoritesTab.moveIn(paths, id)
+                if (into === null) return
+                if (id === null) {
+                  setEditingFolder(into)
+                  if (!searching && lens !== 'favorites') onLensChange('favorites')
+                }
+              },
+              onSetScope: (kind, paths, scope, on) => lists.setScope(kind, paths, scope, on),
+              shownScope: (kind) => (menu.lens !== kind ? null : kind === 'focus' ? lists.focusScope : lists.favoritesScope),
+              onAskScope: (kind, paths, scope) => setAskScope({ kind, paths, scope }),
               onCut: (paths) => clipTo(paths, 'cut'),
               onCopy: (paths) => clipTo(paths, 'copy'),
               onPaste: () => {
                 if (menu.targetDir !== null) void pasteInto(menu.targetDir, menu.lens === 'files' ? undefined : (menu.top ?? undefined))
               },
               onNotice,
-              onNewNote: viaTree(() => startCreate('file')),
-              onNewDatedNote: viaTree(() => startCreate('file', datedSeed())),
+              onNewPage: viaTree(() => startCreate('file')),
+              onNewDatedPage: viaTree(() => startCreate('file', datedSeed())),
               onNewFolder: viaTree(() => startCreate('dir')),
               onNewDatedFolder: viaTree(() => startCreate('dir', datedSeed())),
               // The boards (YAZ-3028 D9): name first, then the empty board, then its tab.
               onNewDrawing: viaTree(() => startCreate('drawing')),
               onNewDatedDrawing: viaTree(() => startCreate('drawing', datedSeed())),
               onNewDiagram: viaTree(() => startCreate('diagram')),
+              // A card file (YAZ-5101): the name box first, as New page's; the menu's folder is the card's (`cardDir`).
+              onNewCard: viaTree(() => startCreate('card')),
               onToggleFavorite: toggleFavorite,
               onReviewFolder,
-              onSetReview,
+              onReviewPage,
               onAddShortcut: setPickingShortcut,
-              // A removal that would clear a folder's values asks first (D21), by the window's own snapshot.
-              onRemoveShortcut: (path, dir) => {
-                const { index } = vaultOf(dir)
-                const lost = valuesLeftByShortcut(dir, path, index.records, index.folders)
-                if (lost.folders.length === 0) removeShortcutRow(path, dir)
-                else setConfirmingShortcut({ path, dir, lost })
-              },
+              onHideOthers: onFilesOnly,
+              // A removal clears no value (YAZ-4713 C9): it runs at once, with no sheet.
+              onRemoveShortcut: (path, dir) => removeShortcutRow(path, dir),
               onRename: viaTree((path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir', top: menu.top })),
               onChangeIcon: (paths) => setIconPicker({ ...pickerAt(paths[0], menu), path: paths[0], kind: menu.rowKind === 'dir' ? 'folder' : 'file', scope: { paths } }),
               onResetIcon: (paths) => pickIcons(paths, null),
-              onResetIconRule: (rule) => onChangeSettings({ ...settings, sidebarIconRules: withRule(settings.sidebarIconRules, rule.match, rule.kind, null) }),
+              onResetIconRule: (rule) => {
+                const path = menu.iconPaths?.[0]
+                if (path !== undefined) setRulesAt(path, withRule(rulesAt(path), rule.match, rule.kind, null))
+              },
               onChangeIconRule: (rule) => {
                 const path = menu.iconPaths?.[0] ?? ''
                 setIconPicker({ ...pickerAt(path, menu), path, kind: rule.kind, scope: { rule } })
@@ -1877,6 +2775,8 @@ export function Sidebar({
               onInfo: (path) => setInfoPopover({ x: menu.x, y: menu.y, path, now: Date.now(), info: null }),
               onHistory: (path) => onHistoryFile?.(path),
               onShare: (path) => onShareFile?.(path),
+              onHideCardSkill,
+              onDuplicateCardSkill,
             },
           )}
           onClose={() => setMenu(null)}
@@ -1887,7 +2787,7 @@ export function Sidebar({
         const name = path.slice(path.lastIndexOf('/') + 1)
         // What the row shows now (its pick, the rule or Material's), first among the suggestions.
         const shown = rowIcon(rowIcons, path, name, kind).id
-        const rule = 'rule' in scope ? settings.sidebarIconRules.find((r) => r.kind === scope.rule.kind && r.match.toLowerCase() === scope.rule.match.toLowerCase()) : undefined
+        const rule = 'rule' in scope ? rulesAt(path).find((r) => r.kind === scope.rule.kind && r.match.toLowerCase() === scope.rule.match.toLowerCase()) : undefined
         return (
           <IconPicker
             x={iconPicker.x}
@@ -1900,8 +2800,8 @@ export function Sidebar({
               if ('paths' in scope) pickIcons(scope.paths, id)
               else {
                 // A list the settings check refuses (more than MAX_ICON_RULES, or a pattern too long) would refuse every setting with it: say so instead.
-                const next = withRule(settings.sidebarIconRules, scope.rule.match, scope.rule.kind, id)
-                if (isIconRules(next)) onChangeSettings({ ...settings, sidebarIconRules: next })
+                const next = withRule(rulesAt(path), scope.rule.match, scope.rule.kind, id)
+                if (isIconRules(next)) setRulesAt(path, next)
                 else onNotice(`Can't add the rule: the list holds ${MAX_ICON_RULES} rules at most, each up to ${MAX_ICON_MATCH} characters`, 'error')
               }
             }}
@@ -1917,32 +2817,30 @@ export function Sidebar({
         </ContextMenuSurface>
       )}
       <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} wikilinksOf={(path) => vaultOf(path).index} nameOf={nameOf} textVarsOf={textVarsFor} enabled={hoverHere} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} float={previewFloat} onClose={closePreview} />
-      {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
-      {pendingPaste !== null && <ConfirmMove moves={pendingPaste.moves} copy={pendingPaste.copy} lost={pendingPaste.lost} titles={titles} onConfirm={confirmPaste} onCancel={cancelPaste} />}
-      {confirmingShortcut !== null && (
-        <ConfirmMove
-          shortcut={confirmingShortcut}
-          lost={confirmingShortcut.lost}
-          titles={titles}
-          onConfirm={() => {
-            setConfirmingShortcut(null)
-            removeShortcutRow(confirmingShortcut.path, confirmingShortcut.dir)
-          }}
-          onCancel={() => setConfirmingShortcut(null)}
-        />
-      )}
+      {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} unit={vaultUnit(rootOf(confirmingDelete.path))} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
       {pickingShortcut !== null && (
         <ShortcutPicker
           folder={relTo(rootOf(pickingShortcut), pickingShortcut)}
           source={vaultOf(pickingShortcut).index}
           onPick={(path) => {
+            const dir = pickingShortcut
             setPickingShortcut(null)
             // The row follows the index, as every other write's do; only a refusal is said.
-            addShortcut(pickingShortcut, path).catch((err: unknown) => onNotice(`Can't add the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+            // YAZ-5989: check the page's own `readonly: true` and the vault's read-only door before rewriting `also_in`.
+            void (async () => {
+              if (isPageReadOnly(path)) return onNotice(`Can't add the shortcut: "${nameOf(path)}" is read only`, 'error')
+              if (onFileAction !== undefined && !(await onFileAction(rootOf(dir)))) return
+              try {
+                await addShortcut(dir, path)
+              } catch (err: unknown) {
+                onNotice(`Can't add the shortcut: ${err instanceof Error ? err.message : String(err)}`, 'error')
+              }
+            })()
           }}
           onClose={() => setPickingShortcut(null)}
         />
       )}
     </aside>
+    </UnitContext.Provider>
   )
 }

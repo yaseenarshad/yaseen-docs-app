@@ -20,7 +20,7 @@ import { AllSelection, Plugin, PluginKey, TextSelection, type EditorState } from
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { markdownLinkKey } from '../markdownLink'
-import { WIKILINK_CLASS, wikilinkKey } from './wikilinkPlugin'
+import { WIKILINK_CLASS, WIKILINK_GROUP_CLASS, wikilinkKey } from './wikilinkPlugin'
 
 export const PILL_SELECTED_CLASS = 'wikilink--selected'
 
@@ -52,9 +52,12 @@ function selectedWidgets(view: EditorView): Set<Element> {
     if (!node.isTextblock) return true
     const dom = view.nodeDOM(pos)
     if (!(dom instanceof HTMLElement)) return false
-    for (const el of dom.querySelectorAll(`.ProseMirror-widget.${WIKILINK_CLASS}`)) {
+    for (const el of dom.querySelectorAll(`.ProseMirror-widget.${WIKILINK_CLASS}, .ProseMirror-widget.${WIKILINK_GROUP_CLASS}`)) {
       const at = view.posAtDOM(el, 0)
-      if (at > range.from && at <= range.to) out.add(el)
+      if (!(at > range.from && at <= range.to)) continue
+      // A card pill (YAZ-5792, `cardPill`) is a group that draws nothing: its pieces are what lights.
+      if (el.classList.contains(WIKILINK_GROUP_CLASS)) for (const piece of el.querySelectorAll(`:scope > .${WIKILINK_CLASS}`)) out.add(piece)
+      else out.add(el)
     }
     return false
   })

@@ -9,16 +9,14 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { afterEach, describe, expect, it, test } from 'vitest'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
-import { isBulletsOnly, lockToBullets, outlineFeatures } from './outline/bulletsOnly'
 
 const mounted: Array<{ crepe: ReturnType<typeof createCrepe>; root: HTMLElement }> = []
 
 /** Mounts `markdown` with the caret at the end of the text `at`. */
-async function mount(markdown: string, at: string, outline = false) {
+async function mount(markdown: string, at: string) {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, ...(outline ? { features: outlineFeatures } : {}) })
-  if (outline) lockToBullets(crepe)
+  const crepe = createCrepe({ root, defaultValue: markdown })
   await crepe.create()
   mounted.push({ crepe, root })
   const view = crepe.editor.ctx.get(editorViewCtx)
@@ -167,14 +165,6 @@ describe('inside a list item the marker stays text (YAZ-3727 D8)', () => {
     press(view, 'Enter')
     type(view, typed)
     expect(saved(crepe)).toBe(file)
-  })
-
-  it.each(['- ', '* ', '1. '])('in the folder outline %j at a bullet\'s start stays text', async (typed) => {
-    const { view } = await mount('- a\n', 'a', true)
-    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.from - 1)))
-    type(view, typed)
-    expect(view.state.selection.$from.parent.textContent).toBe(`${typed}a`)
-    expect(isBulletsOnly(view.state.doc)).toBe(true)
   })
 
   it('"* " typed at the start of a bullet stays as typed (it used to vanish)', async () => {

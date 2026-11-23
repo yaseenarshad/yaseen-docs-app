@@ -1,9 +1,8 @@
-import { createHash } from 'node:crypto'
-import { mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
+import { createHash, randomBytes } from 'node:crypto'
+import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { IndexCacheStatus, IndexRecord } from '@shared/types'
 import { isStringArray } from '@shared/guards'
-import { atomicWrite } from '../fs/fsUtils'
 
 /**
  * Persistent vault-index cache (GRO-2223 D1-D4, write side GRO-2228, load side GRO-2229):
@@ -23,7 +22,14 @@ import { atomicWrite } from '../fs/fsUtils'
  * Discard IS the migration: a version mismatch degrades to one full rescan, never a converter.
  * The fingerprint pin in `cache.test.ts` fails on such changes until the bump lands here.
  */
-export const CACHE_VERSION = 8
+/**
+ * 20 (YAZ-5512 S1): an empty block (`---\n---`) ends at its own second fence, not at a later `---` line. 21 (YAZ-5512
+ * C1): a page that starts with a BOM has its block read (its properties were body text). 22 (YAZ-5673): a card line's
+ * review time without seconds or milliseconds, or with an offset, is read (those cards were cached as New). 23 (YAZ-6143):
+ * inline Excalidraw drawings (`inlineDrawings`) are indexed on `IndexRecord`. 24 (YAZ-6165): frontmatter `created` and
+ * card-file card `created` override `record.ctime`.
+ */
+export const CACHE_VERSION = 24
 /** Trailing debounce per root; bursts (a big paste, a sync tool landing) coalesce into one write. */
 const PERSIST_DEBOUNCE_MS = 5000
 /**
@@ -86,7 +92,8 @@ async function gc(dir: string): Promise<void> {
   )
 }
 
-function cacheFile(dir: string, root: string): string {
+/** The cache file of the vault at `root` in the cache folder `dir`. YAZ-5390: the friends count reads it too (`friends/scanVault.ts`). */
+export function cacheFile(dir: string, root: string): string {
   return path.join(dir, `${createHash('sha256').update(root).digest('hex').slice(0, 16)}.json`)
 }
 
@@ -119,8 +126,7 @@ function isCachedRecord(v: unknown): v is IndexRecord {
     isStringArray(r.tags) &&
     isStringArray(r.links) &&
     isStringArray(r.embeds) &&
-    (r.reviews === undefined || Array.isArray(r.reviews)) &&
-    (r.text === undefined || typeof r.text === 'string')
+    (r.cards === undefined || Array.isArray(r.cards))
   )
 }
 
@@ -180,6 +186,33 @@ function cannotRoundTrip(v: unknown, stack = new Set<object>()): boolean {
   return bad
 }
 
+/** Memoize per-properties-object JSON round-trip check so 10k unchanged records are not recursively walked every 5 s (YAZ-6008). */
+const roundTripBad = new WeakMap<object, boolean>()
+
+function isBadProperties(props: Record<string, unknown>): boolean {
+  const cached = roundTripBad.get(props)
+  if (cached !== undefined) return cached
+  const bad = cannotRoundTrip(props)
+  roundTripBad.set(props, bad)
+  return bad
+}
+
+/**
+ * Atomic tmp+rename write WITHOUT `F_FULLFSYNC` for derived self-healing index caches (YAZ-6008 🔒 D10):
+ * avoids full macOS SSD barrier stalls every 5 s during autosave bursts; a torn cache on sudden power
+ * loss degrades cleanly to a rescan on next launch. User notes and `yaseendocs.json` keep `atomicWrite`.
+ */
+async function writeDerivedCache(file: string, body: string): Promise<void> {
+  const tmp = `${file}.tmp-${process.pid}-${randomBytes(4).toString('hex')}`
+  try {
+    await writeFile(tmp, body, 'utf8')
+    await rename(tmp, file)
+  } catch (err) {
+    await unlink(tmp).catch(() => undefined)
+    throw err
+  }
+}
+
 /** Serialises + atomically writes `records` for `root` NOW, appended to the root's write chain. Errors log, never throw. */
 function write(root: string, records: Map<string, IndexRecord>): Promise<void> {
   const dir = cacheDir
@@ -189,12 +222,15 @@ function write(root: string, records: Map<string, IndexRecord>): Promise<void> {
       // Serialise inside the chain: the map is live, so the freshest state wins. Records whose
       // frontmatter cannot round-trip through JSON (non-finite numbers, alias cycles) are left
       // out — they just rescan on the next start; the rest of the vault still caches.
-      const body = JSON.stringify({ version: CACHE_VERSION, root, records: [...records.values()].filter((r) => !cannotRoundTrip(r.properties)) })
+      const body = JSON.stringify({ version: CACHE_VERSION, root, records: [...records.values()].filter((r) => !isBadProperties(r.properties)) })
       await mkdir(dir, { recursive: true })
-      await atomicWrite(cacheFile(dir, root), body)
+      await writeDerivedCache(cacheFile(dir, root), body)
     })
     .catch((err: unknown) => console.error(`[index-cache] failed to write cache for ${root}: ${String(err)}`))
   chains.set(root, chain)
+  void chain.finally(() => {
+    if (chains.get(root) === chain) chains.delete(root)
+  })
   return chain
 }
 

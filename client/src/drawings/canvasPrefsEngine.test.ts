@@ -5,7 +5,7 @@
  * colour silently resetting to red at the IPC guard.
  */
 import { describe, expect, it } from 'vitest'
-import { prefsToAppState } from '@shared/canvasPrefs'
+import { foldArrowsOf, prefsToAppState } from '@shared/canvasPrefs'
 import { DEFAULT_CANVAS_PREFS, FONT_FAMILY_OPTIONS, LASER_COLORS, LASER_SIZES, LASER_TRAIL_MODES } from '@shared/types'
 
 describe('laser canvas prefs vs the vendored engine', () => {
@@ -37,5 +37,12 @@ describe('Settings › Drawings "New text size" vs the vendored engine (YAZ-4247
     const engine = await import('@excalidraw/excalidraw')
     expect(DEFAULT_CANVAS_PREFS.newTextScreenSize).toBe(14)
     expect(engine.DEFAULT_NEW_TEXT_SCREEN_SIZE).toBe(DEFAULT_CANVAS_PREFS.newTextScreenSize)
+  })
+})
+
+describe('Settings › Drawings "Fold arrows" vs the vendored engine (YAZ-4277 D5, D7)', () => {
+  it('the engine’s own fold arrows, before the app passes its prefs, are the app’s defaults', async () => {
+    const engine = await import('@excalidraw/excalidraw')
+    expect(foldArrowsOf(DEFAULT_CANVAS_PREFS, undefined)).toEqual(engine.DEFAULT_FOLD_ARROW_PREFS)
   })
 })

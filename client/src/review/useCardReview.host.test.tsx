@@ -1,0 +1,286 @@
+/**
+ * YAZ-5067 (decision 3, "One review logic for both apps"): `useCardReview` takes its host as a parameter. With an
+ * in-memory host (`memoryReviewHost`) the hook runs the same session as on the desktop — a forgotten card comes back,
+ * Undo takes back the last answer, the daily limits hold — and it never reaches the desktop's files, app state or
+ * bridge: `api` is not mocked here, and `storage` must stay untouched.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { cardBlock, cardRecords, cardReviewsOf, cardTime, pageCards, parseCardLine, type CardRating } from '@shared/cardLine'
+import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
+import type { IndexRecord } from '@shared/types'
+import { useCardReview, type CardReviewApi } from './useCardReview'
+import { memoryReviewHost, type MemoryReviewHost } from './memoryReviewHost'
+import { storage } from '../lib/storage'
+
+const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, dueTodayOrder: 'in-order' }
+const NOW = new Date(2026, 10, 12, 9, 0).getTime()
+const ROOT = '/phone'
+
+let host: MemoryReviewHost
+let records: IndexRecord[] = []
+let listeners: Array<() => void> = []
+const source = {
+  get records() {
+    return records
+  },
+  folders: [] as IndexRecord[],
+  subscribe(l: () => void) {
+    listeners.push(l)
+    return () => (listeners = listeners.filter((x) => x !== l))
+  },
+}
+
+/** The index of a file: a CARD FILE (`kind: card`) is a record of kind `card`, titled by its card line (YAZ-5308). */
+function scan(path: string, content: string): IndexRecord {
+  const name = path.slice(path.lastIndexOf('/') + 1)
+  const folder = path.slice(ROOT.length + 1, Math.max(ROOT.length + 1, path.lastIndexOf('/')))
+  const title = /^---\n[^]*?^title: (.*)$/m.exec(content)?.[1]
+  const file = /^---\nkind: card\n/.test(content)
+  return { path, name, basename: name.replace(/\.md$/, ''), title: (file ? cardRecords(content)[0]?.title : title) ?? name.replace(/\.md$/, ''), folder, ext: 'md', size: content.length, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: cardRecords(content), ...(file && { kind: 'card' as const }) }
+}
+function reindex(): void {
+  records = [...host.files].map(([path, content]) => scan(path, content))
+  listeners.forEach((l) => l())
+}
+const page = (path: string, ...cards: [string, string][]): void => {
+  host.files.set(`${ROOT}/${path}`, `# ${path}\n\n${cards.map(([text, l]) => cardBlock(text, parseCardLine(`<!-- card: ${l} -->`)!)).join('\n')}`)
+}
+const reviewsOn = (path: string, id: string) => cardReviewsOf(pageCards(host.files.get(`${ROOT}/${path}`)!).find((c) => c.line.parts.some((p) => p.kind === 'id' && p.id === id))!.line)
+
+;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+let root: Root | null = null
+let review: CardReviewApi
+const notices: string[] = []
+
+function Probe({ settings }: { settings: ReviewSettings }) {
+  review = useCardReview(ROOT, source, settings, (text) => void notices.push(text), undefined, host)
+  return null
+}
+async function mount(settings: ReviewSettings = S): Promise<void> {
+  reindex()
+  root = createRoot(document.createElement('div'))
+  await act(async () => root?.render(<Probe settings={settings} />))
+}
+const step = async (run: () => unknown): Promise<void> => {
+  await act(async () => void (await run()))
+  await act(async () => reindex())
+}
+// After the due cards' first pass the Mac's session stops (YAZ-5043, `end`); the test goes on as the phone does (YAZ-5465).
+const shown = async (id: string) => {
+  if (review.session?.end != null) act(() => review.goOn())
+  await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id, page: { id } }))
+}
+const answer = async (id: string, rating: 'again' | 'good'): Promise<void> => {
+  await shown(id)
+  vi.setSystemTime(Date.now() + 20_000)
+  await step(() => review.answer(rating))
+}
+
+/** The desktop's doors: the hook with a host must use none of them. */
+const desktop = () => [
+  vi.spyOn(storage, 'vaultName'),
+  vi.spyOn(storage, 'getUpNextTaken'),
+  vi.spyOn(storage, 'setUpNextTaken'),
+  vi.spyOn(storage, 'getCardsAdded'),
+  vi.spyOn(storage, 'setCardsAdded'),
+]
+let doors: ReturnType<typeof desktop>
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(NOW)
+  host = memoryReviewHost(new Map(), 'Phone vault')
+  notices.length = 0
+  doors = desktop()
+  // A known card, due, and a new card.
+  page('K.md', ['Known {{a}}?', 'WIKI-5, 2026-09-01T09:00:00.000Z good, 2026-09-01T09:01:00.000Z good'], ['New {{b}}?', 'WIKI-6'])
+})
+
+afterEach(() => {
+  act(() => root?.unmount())
+  root = null
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
+
+describe('useCardReview with a host of its own (YAZ-5067)', () => {
+  it('the same session: a forgotten card comes back at the end, Undo takes the last answer back byte for byte; the host is the only door', async () => {
+    await mount()
+    expect(review.dueCount).toBe(2)
+    await act(async () => review.start())
+    const before = host.files.get(`${ROOT}/K.md`)
+    await answer('WIKI-5', 'again')
+    expect(reviewsOn('K.md', 'WIKI-5').map((r) => r.rating)).toEqual(['good', 'good', 'again'])
+    // All cards is one run (YAZ-5707): no stop, the new card next.
+    await shown('WIKI-6')
+    // Undo: the review out, the file the same bytes, the card back at its place.
+    await step(() => review.undo())
+    expect(host.files.get(`${ROOT}/K.md`)).toBe(before)
+    await shown('WIKI-5')
+    expect([review.session?.progress.done, review.session?.progress.total, review.session?.canUndo]).toEqual([0, 2, false])
+    // Forgot again; the new card twice Remembered, then the missed card at the end of the run.
+    await answer('WIKI-5', 'again')
+    await answer('WIKI-6', 'good')
+    await answer('WIKI-6', 'good')
+    await answer('WIKI-5', 'good')
+    expect(review.session?.card).toBeNull()
+    expect(review.dueCount).toBe(0)
+    // The breadcrumb's vault is the host's name.
+    expect(notices).toEqual([])
+    expect(host.writes()).toBe(6)
+    for (const door of doors) expect(door).not.toHaveBeenCalled()
+  })
+
+  it('the daily limits hold: new cards a day, and "Add more for today" counts in the host, never in the app state; Up next a day uses the host`s day list', async () => {
+    page('New.md', ...[10, 11, 12].map((n): [string, string] => [`New {{${n}}}`, `WIKI-${n}`]))
+    // Two marked cards, known and not due (begun on another day, so neither takes a new card of today).
+    const known = '2026-11-11T07:00:00.000Z good, 2026-11-11T07:01:00.000Z good, 2026-11-12T08:00:00.000Z good'
+    page('Next.md', ['Marked {{x}}?', `WIKI-20, next, ${known}`], ['Marked {{y}}?', `WIKI-21, next, ${known}`])
+    await mount({ ...S, newPerDay: 1, upNextPerDay: 1 })
+    // Known WIKI-5 due, ONE new card (WIKI-6), ONE Up next (WIKI-20).
+    expect(review.dueCount).toBe(3)
+    await act(async () => review.start())
+    expect(review.session).toMatchObject({ counts: { new: 1, next: 1 }, more: { new: 3, next: 1 } })
+    act(() => review.addCards('new', 2))
+    expect(host.cardsAddedToday(ROOT)).toEqual({ newCards: 2, upNext: 0 })
+    expect(review.session).toMatchObject({ counts: { new: 3 }, more: { new: 1 } })
+    // The Up next card first; its answer takes a place of the day in the host's list, and its undo gives it back.
+    await shown('WIKI-20')
+    await answer('WIKI-20', 'good')
+    expect(host.upNextTakenToday(ROOT)).toEqual(['WIKI-20'])
+    expect(review.dueCount).toBe(4) // WIKI-21 waits for another day: the day's one place is used
+    await step(() => review.undo())
+    expect(host.upNextTakenToday(ROOT)).toEqual([])
+    for (const door of doors) expect(door).not.toHaveBeenCalled()
+  })
+
+  it('a card FILE`s card and a page`s card: both review; the card file`s title is on its card line (YAZ-5308), as on the Mac', async () => {
+    host.files.clear()
+    host.files.set(`${ROOT}/Bio/Mitosis.md`, `---\nkind: card\n---\n${cardBlock('Cells {{split}}', parseCardLine('<!-- card: WIKI-30, title "Mitosis" -->')!)}`)
+    page('Bio/Cells.md', ['What is a {{cell}}?', 'WIKI-31'])
+    await mount()
+    expect(review.dueCount).toBe(2)
+    await act(async () => review.start())
+    await shown('WIKI-30')
+    expect(review.session?.card?.page).toMatchObject({ title: 'Mitosis', text: 'Cells {{split}}' })
+    expect(review.session?.place.map((p) => [p.kind, p.label])).toEqual([
+      ['folder', 'Bio'],
+    ])
+    await answer('WIKI-30', 'good')
+    expect(cardReviewsOf(pageCards(host.files.get(`${ROOT}/Bio/Mitosis.md`)!)[0].line).map((r) => r.rating)).toEqual(['good'])
+    // The card file's properties stay byte for byte.
+    expect(host.files.get(`${ROOT}/Bio/Mitosis.md`)).toMatch(/^---\nkind: card\n---\n/)
+    expect(host.files.get(`${ROOT}/Bio/Mitosis.md`)).toContain('<!-- card: WIKI-30, title "Mitosis", 2')
+    await shown('WIKI-31')
+    expect(review.session?.card?.page).toMatchObject({ text: 'What is a {{cell}}?', title: '' })
+    expect(review.session?.place.map((p) => [p.kind, p.label])).toEqual([
+      ['folder', 'Bio'],
+      ['page', 'Cells'],
+    ])
+    for (const door of doors) expect(door).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * YAZ-5622 (audit item 6): a card answered on the OTHER device (the phone's answer synced into the file, or the Mac's
+ * into the phone's) leaves the open session as soon as the index has it: its counts, "N / M", → never shows it, so it
+ * never gets a second review. A Forgot there leaves it due here: it stays. A session started later never takes it.
+ */
+describe('a card answered on the other device (YAZ-5622)', () => {
+  const KNOWN = '2026-09-01T09:00:00.000Z good, 2026-09-01T09:01:00.000Z good'
+  // Rule 5 (Review rules v1): the most overdue day first, then random. WIKI-7 and WIKI-8 are months more overdue than WIKI-5, a month apart.
+  const OLDER = (month: number) => `2026-0${month}-01T09:00:00.000Z good, 2026-0${month}-01T09:01:00.000Z good`
+  /** The other device's answer: the file changes on disk, then the index has it (AutoSync, the phone's pull). */
+  const elsewhere = async (path: string, id: string, rating: CardRating) => {
+    await host.writeCardAnswer(`${ROOT}/${path}`, id, { at: cardTime(Date.now()), rating })
+    await act(async () => reindex())
+  }
+  const ids = () => review.session?.counts
+  beforeEach(() => page('D.md', ['Due {{c}}?', `WIKI-7, ${OLDER(5)}`], ['Due {{d}}?', `WIKI-8, ${OLDER(6)}`]))
+
+  it('mid-session, a card further on: out of the counts and "done / total" at once, and → passes it by', async () => {
+    await mount()
+    await act(async () => review.start())
+    await shown('WIKI-7')
+    expect(ids()).toMatchObject({ all: 4, due: 3, new: 1 })
+    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([0, 4])
+    await elsewhere('D.md', 'WIKI-8', 'good')
+    expect(ids()).toMatchObject({ all: 3, due: 2, new: 1 })
+    // YAZ-6018: WIKI-8 answered on the other device counts as 1 done / 4 total.
+    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([1, 4])
+    expect(review.dueCount).toBe(3)
+    act(() => review.move(1))
+    await shown('WIKI-5')
+    // The rest of the session: never WIKI-8 again.
+    const seen: string[] = []
+    while (review.session?.card != null) {
+      const id = review.session.card.id
+      seen.push(id)
+      await answer(id, 'good')
+    }
+    expect(seen).not.toContain('WIKI-8')
+    expect(reviewsOn('D.md', 'WIKI-8').map((r) => r.rating)).toEqual(['good', 'good', 'good'])
+  })
+
+  it('mid-session, the card on show: the next card shows in its place, and its answer here is never written', async () => {
+    await mount()
+    await act(async () => review.start())
+    await shown('WIKI-7')
+    await elsewhere('D.md', 'WIKI-7', 'good')
+    await shown('WIKI-8')
+    expect(ids()).toMatchObject({ all: 3, due: 2 })
+    expect(reviewsOn('D.md', 'WIKI-7')).toHaveLength(3)
+  })
+
+  it('a card passed over with → and answered there: ← never finds it again', async () => {
+    await mount()
+    await act(async () => review.start())
+    await shown('WIKI-7')
+    act(() => review.move(1))
+    await shown('WIKI-8')
+    await elsewhere('D.md', 'WIKI-7', 'good')
+    // YAZ-6018: WIKI-7 done elsewhere counts as 1 done / 4 total.
+    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([1, 4])
+    // YAZ-6019 (default Stop at the ends): WIKI-8 is now the first card, so ← is disabled and never finds WIKI-7.
+    expect(review.session?.canBack).toBe(false)
+    act(() => review.move(-1))
+    expect(review.session?.card?.id).toBe('WIKI-8')
+    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([1, 4])
+  })
+
+  it('a Forgot on the other device: the card is still due today, so it stays', async () => {
+    await mount()
+    await act(async () => review.start())
+    await shown('WIKI-7')
+    await elsewhere('D.md', 'WIKI-8', 'again')
+    expect(ids()).toMatchObject({ all: 4, due: 3 })
+  })
+
+  it('between sessions: the Inbox count and the next session leave it out', async () => {
+    await mount()
+    expect(review.dueCount).toBe(4)
+    await elsewhere('D.md', 'WIKI-8', 'good')
+    expect(review.dueCount).toBe(3)
+    await act(async () => review.start())
+    expect(ids()).toMatchObject({ all: 3, due: 2 })
+  })
+
+  it("this device's own answer, when the index has it before the write returns: the answer still counts (bar, Undo)", async () => {
+    const write = host.writeCardAnswer
+    host.writeCardAnswer = async (...args) => {
+      const next = await write(...args)
+      await act(async () => reindex())
+      return next
+    }
+    await mount()
+    await act(async () => review.start())
+    await answer('WIKI-7', 'good')
+    await shown('WIKI-8')
+    expect(review.session?.canUndo).toBe(true)
+    expect(review.session?.answered).toEqual(['good'])
+    expect([review.session?.progress.done, review.session?.progress.total]).toEqual([1, 4])
+  })
+})

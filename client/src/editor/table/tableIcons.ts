@@ -6,7 +6,6 @@
 const TABLER = {
   arrowDown: '<path d="M12 5l0 14"/><path d="M18 13l-6 6"/><path d="M6 13l6 6"/>',
   arrowUp: '<path d="M12 5l0 14"/><path d="M18 11l-6 -6"/><path d="M6 11l6 -6"/>',
-  tableRow: '<path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14z"/><path d="M9 3l-6 6"/><path d="M14 3l-7 7"/><path d="M19 3l-7 7"/><path d="M21 6l-4 4"/><path d="M3 10h18"/><path d="M10 10v11"/>',
   baselineDensityMedium: '<path d="M4 20h16"/><path d="M4 12h16"/><path d="M4 4h16"/>',
   arrowsHorizontal: '<path d="M7 8l-4 4l4 4"/><path d="M17 8l4 4l-4 4"/><path d="M3 12l18 0"/>',
   alignLeft: '<path d="M4 6l16 0"/><path d="M4 12l10 0"/><path d="M4 18l14 0"/>',

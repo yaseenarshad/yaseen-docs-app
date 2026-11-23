@@ -18,7 +18,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { sentinel, writeCode, writeDrawing, writeGifDrawing, writeNote, writeVault } from '../genVault.mjs'
+import { sentinel, writeCode, writeDrawing, writeGifDrawing, writePageFile, writeVault } from '../genVault.mjs'
 import { footprints, helpers, sleep, usage } from '../lib/app.mjs'
 import { ACTIVE, js, painted, row, session, tab } from '../lib/session.mjs'
 import { slope } from '../lib/stats.mjs'
@@ -30,7 +30,7 @@ export const optIn = true
 export const runs = 1
 export const warmup = 0
 
-const VAULT_NOTES = 2000
+const VAULT_PAGES = 2000
 const OPEN_TIMEOUT_MS = 90_000
 const MB = 1024 * 1024
 const mb = (bytes) => Math.round((bytes / MB) * 10) / 10
@@ -42,26 +42,26 @@ const LAYER = '.tabstack__layer:not(.tabstack__layer--hidden)'
 export const SETTINGS = { memoryReload: false }
 
 /**
- * The 21 files a cycle opens, in open order: 1k and 5k bullet notes, a 5k prose note, twelve 200-line notes, a
+ * The 21 files a cycle opens, in open order: 1k and 5k bullet pages, a 5k prose page, twelve 200-line pages, a
  * `.drawio` (30 boxes), an `.excalidraw` with three pictures in `files` (D14), a board of `GIFS` animated GIFs
  * (YAZ-3944 D4, YAZ-4071 7K), small `.ts` and `.py`, and the 5 MB `.ts`. Each is `[name, kind, write(vault) → path]`.
  */
 /** The GIF board's GIFs (YAZ-4071 7K): each one plays, so each holds a decoder while the board is in front. */
 export const GIFS = 4
 export const OPENS = (() => {
-  const short = (i) => [`Short ${i}`, 'note', (v) => writeNote(v, `Short ${i}`, i % 2 ? 'bullets' : 'prose', 200)]
+  const short = (i) => [`Short ${i}`, 'page', (v) => writePageFile(v, `Short ${i}`, i % 2 ? 'bullets' : 'prose', 200)]
   const list = [
-    ['Bullets 1k', 'note', (v) => writeNote(v, 'Bullets 1k', 'bullets', 1000)],
+    ['Bullets 1k', 'page', (v) => writePageFile(v, 'Bullets 1k', 'bullets', 1000)],
     ['Flow', 'diagram', (v) => writeFile(path.join(v, 'Flow.drawio'), flowDiagram(30))],
-    ['Bullets 5k', 'note', (v) => writeNote(v, 'Bullets 5k', 'bullets', 5000)],
+    ['Bullets 5k', 'page', (v) => writePageFile(v, 'Bullets 5k', 'bullets', 5000)],
     ['Sketch', 'drawing', (v) => writeDrawing(v, 'Sketch')],
     ['GIFs', 'gifs', (v) => writeGifDrawing(v, 'GIFs', GIFS)],
     ['Small TS', 'code', (v) => writeCode(v, 'Small TS', 'ts')],
-    ['Prose 5k', 'note', (v) => writeNote(v, 'Prose 5k', 'prose', 5000)],
+    ['Prose 5k', 'page', (v) => writePageFile(v, 'Prose 5k', 'prose', 5000)],
     ['Small PY', 'code', (v) => writeCode(v, 'Small PY', 'py')],
     ['big-5mb', 'bigCode', (v) => writeBigCode(v)],
   ]
-  // A 200-line note after each of the first eight, then the last four in a row; the GIF board comes with no note after it.
+  // A 200-line page after each of the first eight, then the last four in a row; the GIF board comes with no page after it.
   return [...list.flatMap((f, i) => (f[1] === 'gifs' ? [f] : [f, short(i + 1 - (i > 4 ? 1 : 0))])), ...[9, 10, 11, 12].map(short)]
 })()
 
@@ -72,7 +72,7 @@ function writeFile(file, text) {
 }
 
 export function setup(dir, { cycles = 10, snapshots = null } = {}) {
-  const vault = writeVault(path.join(dir, 'vault'), VAULT_NOTES)
+  const vault = writeVault(path.join(dir, 'vault'), VAULT_PAGES)
   const emptyVault = path.join(dir, 'empty-vault')
   fs.mkdirSync(emptyVault, { recursive: true })
   if (snapshots !== null) fs.mkdirSync(snapshots, { recursive: true })
@@ -80,7 +80,7 @@ export function setup(dir, { cycles = 10, snapshots = null } = {}) {
     dir,
     vault,
     emptyVault,
-    home: writeNote(vault, 'Home', 'bullets', 20),
+    home: writePageFile(vault, 'Home', 'bullets', 20),
     files: OPENS.map(([name, kind, write]) => ({ name, kind, file: write(vault) })),
     cycles,
     snapshots,
@@ -105,7 +105,7 @@ export function leakMetrics(heapsMb) {
 
 /** In the page: true once `f` is on screen in the tab in front. */
 function shown({ name, kind }) {
-  if (kind === 'note') return painted(name)
+  if (kind === 'page') return painted(name)
   if (kind === 'code') return `(document.querySelector('${LAYER} .editor--code .view-lines')?.textContent.includes(${js(sentinel(name))}) ?? false)`
   if (kind === 'bigCode') return CODE_SHOWN
   if (kind === 'diagram') return 'window.__drawioLoad !== undefined'
@@ -125,13 +125,13 @@ async function open(page, f) {
   if (f.kind === 'gifs') await page.waitFor(`window.__gifDecoders.open >= ${GIFS}`, 10_000).catch(() => undefined)
 }
 
-/** Clicks the tab of note `f` and waits until it is painted. */
+/** Clicks the tab of page `f` and waits until it is painted. */
 async function switchTo(page, f) {
   await page.ev(`document.querySelector(${js(tab(f.file))}).click()`)
   await page.waitFor(shown(f), OPEN_TIMEOUT_MS)
 }
 
-/** Types `text` at the end of the note in front, one `insertText` per character (each its own edit and undo step). */
+/** Types `text` at the end of the page in front, one `insertText` per character (each its own edit and undo step). */
 async function typeInto(page, text) {
   const landed = await page.ev(`(async () => {
     const pm = document.querySelector('${ACTIVE}')
@@ -147,7 +147,7 @@ async function typeInto(page, text) {
     }
     return pm.textContent.includes(${js(text)})
   })()`)
-  if (!landed) throw new Error(`long-day: typing "${text}" did not land in the note`)
+  if (!landed) throw new Error(`long-day: typing "${text}" did not land in the page`)
 }
 
 /** Shows the right panel, then hides it again. */
@@ -175,12 +175,12 @@ async function cycle(page, files, n) {
   for (const [i, f] of files.entries()) {
     await open(page, f)
     if (i === 3) await typeInto(page, `typed${n}x`) // into Short 2
-    // Every fifth open, back to a note opened earlier: the middle one of those open so far.
-    const opened = files.slice(0, i + 1).filter((o) => o.kind === 'note')
+    // Every fifth open, back to a page opened earlier: the middle one of those open so far.
+    const opened = files.slice(0, i + 1).filter((o) => o.kind === 'page')
     if (i % 5 === 4) await switchTo(page, opened[Math.floor(opened.length / 2)])
     if (i === 9 || i === 19) await rightPanel(page)
   }
-  for (const f of files.filter((o) => o.kind === 'note').slice(0, 6)) await switchTo(page, f)
+  for (const f of files.filter((o) => o.kind === 'page').slice(0, 6)) await switchTo(page, f)
   await closeAll(page, files)
 }
 

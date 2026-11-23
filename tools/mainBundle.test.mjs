@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { resolveConfig } from 'electron-vite'
 import { build } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { FRIENDS_ENABLED } from '../shared/features.ts'
 
 /**
  * THE PACKAGED APP SHIPS NO node_modules (GRO-2151, YAZ-2185). electron-builder copies
@@ -66,5 +67,34 @@ describe('the main-process bundle', () => {
     const code = await readFile(path.join(out, name), 'utf8')
     expect(code.includes('requireDirectives')).toBe(false)
     expect(Buffer.byteLength(code)).toBeLessThan(40_000)
+  })
+})
+
+// YAZ-5086 / YAZ-5277: the Mac's card count runs on a worker thread. It is built and loaded as the Settings › Storage
+// worker is: a file of its own next to `index.js` in `out/main`, found by `__dirname` at run time, and packed into
+// `app.asar` by `files: ["out/**"]`. So the packaged app loads it from the same place as the storage worker.
+// YAZ-5652: with Friends off (`shared/features.ts`), main never imports the sender, so the build has no count worker.
+describe('the count worker of the friends send (YAZ-5086)', () => {
+  it.runIf(FRIENDS_ENABLED)('is built next to index.js, which loads it by __dirname; the packaged file list takes it', async () => {
+    const files = await readdir(path.join(out, 'main'))
+    const name = files.find((f) => /^countWorker-[\w-]+\.js$/.test(f))
+    expect(name).toBeDefined()
+    const mainJsFiles = (await readdir(path.join(out, 'main'), { recursive: true })).filter((f) => /\.js$/.test(f) && f !== name)
+    const mainSources = await Promise.all(mainJsFiles.map((f) => readFile(path.join(out, 'main', f), 'utf8')))
+    const escaped = name.replace(/[.-]/g, '\\$&')
+    expect(mainSources.some((src) => new RegExp(`\\.join\\(__dirname,\\s*"\\.\\.?/${escaped}"\\)`).test(src))).toBe(true)
+    const worker = await readFile(path.join(out, 'main', name), 'utf8')
+    expect(worker).toMatch(/worker_threads/)
+    expect(worker).not.toMatch(/require\("electron"\)/)
+    const pkg = JSON.parse(await readFile(path.join(DESKTOP, 'package.json'), 'utf8'))
+    expect(pkg.build.files).toContain('out/**')
+    expect(pkg.build.files.filter((f) => f.startsWith('!')).some((f) => /out\/main|countWorker/.test(f))).toBe(false)
+  })
+
+  it.runIf(!FRIENDS_ENABLED)('with Friends off, the build has no count worker and no friends sender', async () => {
+    const files = await readdir(out, { recursive: true })
+    expect(files.filter((f) => /countWorker/.test(f))).toEqual([])
+    const code = await Promise.all(files.filter((f) => /\.[cm]?js$/.test(f)).map((f) => readFile(path.join(out, f), 'utf8')))
+    expect(code.some((c) => c.includes('startFriendsSend'))).toBe(false)
   })
 })

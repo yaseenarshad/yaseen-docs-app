@@ -3,6 +3,7 @@
  * it safe to outlive the panel — a page is never asked for twice, and a response that lands after a
  * newer search started (even one started by a later mount) is dropped — and the pause before the web is asked.
  */
+import { DEFAULT_MEDIA_FILTERS } from '@shared/iconPacks'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MediaSearchResponse, StudioItem } from '@shared/types'
 
@@ -37,7 +38,7 @@ describe('a fresh search', () => {
     imageStudioSession.set({ query: '  mountain ', chip: 'icons' })
     search.mockResolvedValue(page(['a', 'b'], 'PAGE2'))
     await runSearch()
-    expect(search).toHaveBeenCalledWith({ q: 'mountain', source: 'iconify', cursor: null })
+    expect(search).toHaveBeenCalledWith({ q: 'mountain', source: 'iconify', cursor: null, filters: DEFAULT_MEDIA_FILTERS })
     expect(state()).toMatchObject({ searchedQuery: 'mountain', cursor: 'PAGE2', isSearching: false })
     expect(state().results.map(({ title }) => title)).toEqual(['a', 'b'])
   })
@@ -133,7 +134,7 @@ describe('typing (YAZ-4157 D3): the web is asked on a pause, Enter asks at once'
     expect(search).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(60)
     expect(search).toHaveBeenCalledTimes(1)
-    expect(search).toHaveBeenCalledWith({ q: 'rocket', source: 'all', cursor: null })
+    expect(search).toHaveBeenCalledWith({ q: 'rocket', source: 'all', cursor: null, filters: DEFAULT_MEDIA_FILTERS })
   })
 
   it('a pause on two letters asks nothing and drops the old results; Enter on them still asks (demo 6E, polish)', async () => {
@@ -148,7 +149,7 @@ describe('typing (YAZ-4157 D3): the web is asked on a pause, Enter asks at once'
     await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS * 2)
     expect(search).not.toHaveBeenCalled()
     searchNow()
-    expect(search).toHaveBeenCalledWith({ q: 'ro', source: 'all', cursor: null })
+    expect(search).toHaveBeenCalledWith({ q: 'ro', source: 'all', cursor: null, filters: DEFAULT_MEDIA_FILTERS })
   })
 
   it('is `waiting` for the pause only: from the key until the search starts', async () => {

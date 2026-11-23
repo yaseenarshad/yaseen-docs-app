@@ -1,7 +1,7 @@
 /**
- * The keyboard VIEW actions of a read-only note (YAZ-3125, S25): ProseMirror runs no keymap in a
+ * The keyboard VIEW actions of a read-only page (YAZ-3125, S25): ProseMirror runs no keymap in a
  * view that is not editable, and a click in a read-only body leaves the focus on `<body>`. So a
- * read-only note answers its view-action chords itself — fold all / unfold all, fold / unfold at the
+ * read-only page answers its view-action chords itself — fold all / unfold all, fold / unfold at the
  * caret, zoom in / out, the view-action ⌘Z — through its own keymaps, with every document change
  * dropped. Real editors (`createCrepe`); the keys are dispatched on `document.body`, where a real
  * press lands after a click in a read-only body.
@@ -11,12 +11,13 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { focusReadOnlyBody } from './readOnlyKeys'
+import { READ_ONLY_EDIT } from './readOnlyEdit'
 import { pageHoldsKeys } from '../lib/readOnlyCaret'
 import { createCrepe, focusEditor, getMarkdownForSave, getZoomKeyOf } from './createCrepe'
 import { OUTLINE_FOLDED_ATTR } from './outline/outlineFolding'
 import { headingFoldHidden } from './outline/headingFoldTestKit'
 
-const NOTE = `# Head
+const PAGE = `# Head
 
 * L1 a
   * L2 a
@@ -31,7 +32,7 @@ const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 async function mount(parent: HTMLElement = document.body) {
   const root = document.createElement('div')
   parent.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: NOTE, readOnlyKeys: true })
+  const crepe = createCrepe({ root, defaultValue: PAGE, readOnlyKeys: true })
   await crepe.create()
   mounted.push({ crepe, root })
   return { crepe, root }
@@ -81,7 +82,7 @@ function clickIn(root: HTMLElement, text: string, offset = 1): void {
 const folded = (root: HTMLElement) => root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`).length
 const headingFolded = (root: HTMLElement) => headingFoldHidden(root).length
 
-describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
+describe('a read-only page answers its view-action keys (YAZ-3125)', () => {
   it('⌘⇧U folds every bullet and heading, ⌘⇧I unfolds them; the text never changes', async () => {
     const { crepe, root } = await mount()
     crepe.setReadonly(true)
@@ -92,7 +93,7 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     press('i', { shift: true })
     expect(folded(root)).toBe(0)
     expect(headingFolded(root)).toBe(0)
-    expect(getMarkdownForSave(crepe)).toBe(NOTE)
+    expect(getMarkdownForSave(crepe)).toBe(PAGE)
   })
 
   it('⌘↑ / ⌘↓ fold and unfold the item at the clicked spot, and ⌘Z puts back the last fold', async () => {
@@ -106,6 +107,32 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     press('ArrowUp')
     press('z')
     expect(folded(root)).toBe(0)
+  })
+
+  // YAZ-4939: a table section's collapse is a view change, the one document change the locked keys let through.
+  it('in a table with subheader rows: ⌘↑ / ⌘↓ collapse and open the clicked section, ⌘⇧U / ⌘⇧I every section; Enter still edits nothing', async () => {
+    const TABLE = '| Name | Page |\n| ---- | ---- |\n| r1   | n1   |\n| S1   | n2   |\n| r3   | n3   |\n| r4   | n4   |\n\n<!-- table: subhead 3 -->\n'
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: TABLE, readOnlyKeys: true })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    crepe.setReadonly(true)
+    const collapsed = () => root.querySelectorAll('.table-subhead-collapsed').length
+    clickIn(root, 'r3')
+    expect(press('ArrowUp').defaultPrevented).toBe(true)
+    expect(collapsed()).toBe(1)
+    expect(getMarkdownForSave(crepe)).toContain('fold 4-5')
+    press('ArrowDown')
+    expect(collapsed()).toBe(0)
+    press('u', { shift: true })
+    expect(collapsed()).toBe(1)
+    press('i', { shift: true })
+    expect(collapsed()).toBe(0)
+    expect(getMarkdownForSave(crepe)).toBe(TABLE)
+    clickIn(root, 'r4')
+    press('Enter')
+    expect(getMarkdownForSave(crepe)).toBe(TABLE)
   })
 
   it('⌘. zooms into the clicked bullet and ⌘⇧. zooms out', async () => {
@@ -125,7 +152,7 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
       view.dispatch(view.state.tr.insertText('X', 3))
     })
     const edited = getMarkdownForSave(crepe)
-    expect(edited).not.toBe(NOTE)
+    expect(edited).not.toBe(PAGE)
     crepe.setReadonly(true)
     clickIn(root, 'L2 a')
     press('Enter')
@@ -133,7 +160,7 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     expect(getMarkdownForSave(crepe)).toBe(edited)
   })
 
-  it('only the note the reader clicked answers — not a hidden tab, and not an editable note', async () => {
+  it('only the page the reader clicked answers — not a hidden tab, and not an editable page', async () => {
     const hidden = document.createElement('div')
     hidden.dataset.hiddenLayer = ''
     hidden.style.visibility = 'hidden'
@@ -149,17 +176,19 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     expect(folded(editable.root)).toBe(0) // its own keymap answers only with the focus in it
   })
 
-  it('⌘A selects the note\u2019s text, nothing else (YAZ-3127)', async () => {
+  it('⌘A selects the page\u2019s text, nothing else (YAZ-3127)', async () => {
     const { crepe, root } = await mount()
     crepe.setReadonly(true)
     clickIn(root, 'L2 a')
+    // On a bullet the first ⌘A selects its line (YAZ-4348 demo round 2); the second the page.
+    expect(press('a').defaultPrevented).toBe(true)
     expect(press('a').defaultPrevented).toBe(true)
     const selection = crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.selection)
     expect(selection.from).toBe(0)
     expect(selection.to).toBe(crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.doc.content.size))
   })
 
-  it('a read-only note editor takes the focus (tabindex -1) while it is not editable, and gives it back when it is', async () => {
+  it('a read-only page editor takes the focus (tabindex -1) while it is not editable, and gives it back when it is', async () => {
     const { crepe, root } = await mount()
     const dom = root.querySelector('.ProseMirror')!
     expect(dom.hasAttribute('tabindex')).toBe(false)
@@ -172,7 +201,7 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
   it('a preview (no `readOnlyKeys`) neither takes the focus nor answers the keys', async () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
-    const crepe = createCrepe({ root, defaultValue: NOTE })
+    const crepe = createCrepe({ root, defaultValue: PAGE })
     await crepe.create()
     mounted.push({ crepe, root })
     crepe.setReadonly(true)
@@ -197,7 +226,7 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     expect(view.posAtDOM(sel.anchorNode!, sel.anchorOffset)).toBe(view.state.selection.anchor)
   })
 
-  it('an editable note focuses exactly as before', async () => {
+  it('an editable page focuses exactly as before', async () => {
     const { crepe, root } = await mount()
     ;(document.activeElement as HTMLElement | null)?.blur()
     focusEditor(crepe)
@@ -224,14 +253,14 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     expect(document.activeElement).not.toBe(view.dom)
   })
 
-  /** A note page around the editor, as `Editor.tsx` draws it: `section.editor`, then the page with its title block first. */
-  function notePage(): { page: HTMLElement; title: Text } {
+  /** A page page around the editor, as `Editor.tsx` draws it: `section.editor`, then the page with its title block first. */
+  function mountedPage(): { page: HTMLElement; title: Text } {
     const section = document.createElement('section')
     section.className = 'editor'
     document.body.append(section)
     const page = document.createElement('div')
     page.className = 'editor-host'
-    page.dataset.page = 'note'
+    page.dataset.page = 'page'
     const title = document.createElement('div')
     title.className = 'page-title'
     title.textContent = 'RO doc'
@@ -241,7 +270,7 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
   }
 
   it('YAZ-3140: with the selection in the read-only page’s TITLE, ⌘⇧U / ⌘⇧I still fold and unfold, and the focus moves into the body', async () => {
-    const { page, title } = notePage()
+    const { page, title } = mountedPage()
     const { crepe, root } = await mount(page)
     crepe.setReadonly(true)
     title.parentElement!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
@@ -252,12 +281,30 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     expect(document.activeElement).toBe(root.querySelector('.ProseMirror'))
     press('i', { shift: true })
     expect(folded(root)).toBe(0)
-    expect(getMarkdownForSave(crepe)).toBe(NOTE)
+    expect(getMarkdownForSave(crepe)).toBe(PAGE)
     page.parentElement?.remove()
   })
 
-  it('YAZ-3140: ⌘A from the title selects the note’s text only, never the page around it', async () => {
-    const { page, title } = notePage()
+  it('YAZ-5141: a click on the read-only TITLE gives it the focus; ⌘⇧U / ⌘⇧I still fold and unfold the page', async () => {
+    const { page, title } = mountedPage()
+    const { crepe, root } = await mount(page)
+    crepe.setReadonly(true)
+    const heading = title.parentElement!
+    heading.tabIndex = 0
+    heading.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    heading.focus()
+    document.getSelection()!.setBaseAndExtent(title, 0, title, 2)
+    expect(document.activeElement).toBe(heading)
+    expect(press('u', { shift: true }).defaultPrevented).toBe(true)
+    expect(folded(root)).toBe(3)
+    press('i', { shift: true })
+    expect(folded(root)).toBe(0)
+    expect(getMarkdownForSave(crepe)).toBe(PAGE)
+    page.parentElement?.remove()
+  })
+
+  it('YAZ-3140: ⌘A from the title selects the page’s text only, never the page around it', async () => {
+    const { page, title } = mountedPage()
     const { crepe, root } = await mount(page)
     crepe.setReadonly(true)
     title.parentElement!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
@@ -272,9 +319,27 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
     page.parentElement?.remove()
   })
 
-  it('a selection in ANOTHER page, or in the chrome, is not this note’s: no key is taken', async () => {
-    const other = notePage()
-    const { page } = notePage()
+  it('YAZ-5141: ⌘A from the FOCUSED title selects the page’s text only, as from a title with no focus', async () => {
+    const { page, title } = mountedPage()
+    const { crepe, root } = await mount(page)
+    crepe.setReadonly(true)
+    const heading = title.parentElement!
+    heading.tabIndex = 0
+    heading.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    heading.focus()
+    document.getSelection()!.collapse(title, 1)
+    expect(press('a').defaultPrevented).toBe(true)
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    expect(view.state.selection.from).toBe(0)
+    expect(view.state.selection.to).toBe(view.state.doc.content.size)
+    const sel = document.getSelection()!
+    expect(root.contains(sel.anchorNode) && root.contains(sel.focusNode)).toBe(true)
+    page.parentElement?.remove()
+  })
+
+  it('a selection in ANOTHER page, or in the chrome, is not this page’s: no key is taken', async () => {
+    const other = mountedPage()
+    const { page } = mountedPage()
     const { crepe, root } = await mount(page)
     crepe.setReadonly(true)
     document.getSelection()!.setBaseAndExtent(other.title, 0, other.title, 2)
@@ -287,7 +352,7 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
 
   it('YAZ-3145: `focusEditor` (first launch, a tab open, Esc from the table of contents) claims its page for the keys, editable or read only, after a click elsewhere ended the claim', async () => {
     for (const locked of [false, true]) {
-      const { page } = notePage()
+      const { page } = mountedPage()
       const { crepe, root } = await mount(page)
       if (locked) crepe.setReadonly(true)
       document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
@@ -299,5 +364,305 @@ describe('a read-only note answers its view-action keys (YAZ-3125)', () => {
       expect(pageHoldsKeys(document.body), `locked ${locked}`).toBe(false)
       page.parentElement?.remove()
     }
+  })
+})
+
+/**
+ * YAZ-4433 (D30 of YAZ-4278): a read-only PAGE EDITOR keeps its caret — "the caret to work as normal, just can't type
+ * or change anything". The view stays not editable for ProseMirror (so the toolbar, the `/` menu, the block handle and
+ * the task boxes stay off); only its DOM is `contenteditable="true"`. jsdom moves no native caret, so these tests pin
+ * the parts the app owns: the body the browser can put a caret in, the caret keys through the page's own keymaps, and
+ * every path that could change the page. The keys land IN the focused body, where a real press lands now.
+ */
+describe('a read-only page keeps its caret and keys (YAZ-4433)', () => {
+  /** A locked page editor with the focus in its body and the DOM caret at `offset` in `text`; `saves` counts Markdown updates. */
+  async function locked(text = 'L1 a', offset = 0) {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const saves: string[] = []
+    const crepe = createCrepe({ root, defaultValue: PAGE, readOnlyKeys: true, onMarkdownUpdated: (md) => saves.push(md) })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    crepe.setReadonly(true)
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    // A click: the focus in the body, the DOM caret and the editor's selection at the spot.
+    view.dom.focus()
+    let at = -1
+    view.state.doc.descendants((node, pos) => {
+      if (at < 0 && node.isText && node.text === text) at = pos + offset
+    })
+    const { node, offset: domOffset } = view.domAtPos(at)
+    document.getSelection()!.setBaseAndExtent(node, domOffset, node, domOffset)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at)))
+    expect(view.state.selection.head).toBe(at)
+    return { crepe, root, view, saves }
+  }
+
+  /** One key press in the focused body. */
+  function key(view: { dom: HTMLElement }, k: string, mods: { mod?: boolean; shift?: boolean; alt?: boolean } = {}): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', {
+      key: k,
+      keyCode: KEY_CODES[k] ?? (k.length === 1 ? k.toUpperCase().charCodeAt(0) : 0),
+      ...(mods.mod === true ? (IS_MAC ? { metaKey: true } : { ctrlKey: true }) : {}),
+      shiftKey: mods.shift === true,
+      altKey: mods.alt === true,
+      bubbles: true,
+      cancelable: true,
+    } as KeyboardEventInit)
+    view.dom.dispatchEvent(event)
+    return event
+  }
+
+  it('the locked body has a caret: `contenteditable="true"` with `data-read-only` and no spellcheck, while ProseMirror keeps it not editable; unlocked, it is a plain body again', async () => {
+    const { crepe, view } = await locked()
+    expect(view.editable).toBe(false)
+    expect(view.dom.getAttribute('contenteditable')).toBe('true')
+    expect(view.dom.getAttribute('data-read-only')).toBe('true')
+    expect(view.dom.getAttribute('spellcheck')).toBe('false')
+    expect(document.activeElement).toBe(view.dom)
+    // A rebuild of the view's attributes (any update) keeps the caret.
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 3)))
+    expect(view.dom.getAttribute('contenteditable')).toBe('true')
+    crepe.setReadonly(false)
+    expect(view.editable).toBe(true)
+    expect(view.dom.getAttribute('contenteditable')).toBe('true')
+    for (const name of ['data-read-only', 'spellcheck', 'tabindex']) expect(view.dom.hasAttribute(name), name).toBe(false)
+    crepe.setReadonly(true)
+    expect(view.dom.getAttribute('contenteditable')).toBe('true')
+    expect(view.dom.getAttribute('data-read-only')).toBe('true')
+  })
+
+  it('a read-only preview (no `readOnlyKeys`) keeps no caret: `contenteditable="false"`, and the window still sees a read-only body', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: PAGE })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    crepe.setReadonly(true)
+    const dom = root.querySelector('.ProseMirror')!
+    expect(dom.getAttribute('contenteditable')).toBe('false')
+    expect(dom.hasAttribute('data-read-only')).toBe(false)
+    expect(pageHoldsKeys(dom)).toBe(true)
+  })
+
+  it('the window key rules still see the locked page editor body as read only (`data-read-only`)', async () => {
+    const { view } = await locked()
+    expect(pageHoldsKeys(view.dom)).toBe(true)
+  })
+
+  it('⇧↓ / ⇧↑ go through the page’s own keymaps: they select by line from the caret, and change nothing', async () => {
+    const { crepe, view, saves } = await locked('L1 a', 0)
+    const start = view.state.selection.head
+    expect(key(view, 'ArrowDown', { shift: true }).defaultPrevented).toBe(true)
+    expect(view.state.selection.anchor).toBe(start)
+    expect(view.state.doc.textBetween(view.state.selection.head, view.state.selection.head + 4)).toBe('L2 a')
+    key(view, 'ArrowUp', { shift: true })
+    expect(view.state.selection.head).toBe(start)
+    expect(getMarkdownForSave(crepe)).toBe(PAGE)
+    expect(saves).toEqual([])
+  })
+
+  it('the other caret keys are left to the browser’s own caret: not cancelled, nothing changes', async () => {
+    const { crepe, view, saves } = await locked('L2 a', 1)
+    const keys: Array<[string, { mod?: boolean; shift?: boolean; alt?: boolean }]> = [
+      ['ArrowDown', {}], ['ArrowUp', {}], ['ArrowLeft', {}], ['ArrowRight', {}],
+      ['ArrowLeft', { mod: true }], ['ArrowRight', { mod: true }], ['ArrowLeft', { alt: true }], ['ArrowRight', { alt: true, shift: true }],
+      ['Home', {}], ['End', { shift: true }], ['PageDown', {}], ['PageUp', {}],
+    ]
+    for (const [k, mods] of keys) expect(key(view, k, mods).defaultPrevented, `${k} ${JSON.stringify(mods)}`).toBe(false)
+    expect(getMarkdownForSave(crepe)).toBe(PAGE)
+    expect(saves).toEqual([])
+  })
+
+  it('⌘↑ / ⌘↓ fold and unfold at the caret the keys moved, with the focus in the body', async () => {
+    const { crepe, root, view, saves } = await locked('L1 a', 0)
+    key(view, 'ArrowDown', { shift: true })
+    const head = view.state.selection.head
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, head)))
+    expect(key(view, 'ArrowUp', { mod: true }).defaultPrevented).toBe(true)
+    // L2 a folds: the folded list is its child L3 a, not L1 a's children (L2 b stays out of it).
+    expect(folded(root)).toBe(1)
+    expect(root.querySelector(`[${OUTLINE_FOLDED_ATTR}="true"]`)?.textContent).toContain('L3 a')
+    expect(root.querySelector(`[${OUTLINE_FOLDED_ATTR}="true"]`)?.textContent).not.toContain('L2 b')
+    key(view, 'ArrowDown', { mod: true })
+    expect(folded(root)).toBe(0)
+    expect(getMarkdownForSave(crepe)).toBe(PAGE)
+    expect(saves).toEqual([])
+  })
+
+  /** A clipboard event with a DataTransfer the test can read back. */
+  function clipboard(type: 'copy' | 'cut' | 'paste', data: Record<string, string> = {}): { event: Event; data: Record<string, string> } {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', {
+      value: {
+        get types() { return Object.keys(data) },
+        getData: (t: string) => data[t] ?? '',
+        setData: (t: string, v: string) => { data[t] = v },
+        clearData: () => { for (const t of Object.keys(data)) delete data[t] },
+        files: [],
+        items: [],
+      },
+    })
+    return { event, data }
+  }
+
+  it('⌘A then ⌘C copies the page’s text; ⌘X copies nothing and cuts nothing', async () => {
+    const { crepe, view, saves } = await locked('L2 a', 1)
+    // On a bullet the first ⌘A selects its line, the second the page (YAZ-4387, YAZ-4348 demo round 2): read only too.
+    expect(key(view, 'a', { mod: true }).defaultPrevented).toBe(true)
+    expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to)).toBe('L2 a')
+    expect(key(view, 'a', { mod: true }).defaultPrevented).toBe(true)
+    expect(view.state.selection.from).toBe(0)
+    const copy = clipboard('copy')
+    view.dom.dispatchEvent(copy.event)
+    expect(copy.data['text/plain']).toContain('L1 a')
+    expect(copy.data['text/plain']).toContain('L3 a')
+    const cut = clipboard('cut')
+    view.dom.dispatchEvent(cut.event)
+    expect(cut.event.defaultPrevented).toBe(true)
+    expect(cut.data).toEqual({})
+    expect(getMarkdownForSave(crepe)).toBe(PAGE)
+    expect(saves).toEqual([])
+  })
+
+  it('`beforeinput` is cancelled for every input type — typing, Enter, delete, paste, drop, cut, spell replace, the native styles and undo — and nothing changes', async () => {
+    const { crepe, view, saves } = await locked('L2 a', 2)
+    const types = [
+      'insertText', 'insertReplacementText', 'insertParagraph', 'insertLineBreak', 'insertFromPaste', 'insertFromPasteAsQuotation', 'insertFromDrop',
+      'insertTranspose', 'insertOrderedList', 'insertUnorderedList', 'insertLink',
+      'deleteContentBackward', 'deleteContentForward', 'deleteWordBackward', 'deleteWordForward', 'deleteSoftLineBackward', 'deleteHardLineForward',
+      'deleteByCut', 'deleteByDrag', 'historyUndo', 'historyRedo', 'formatBold', 'formatItalic', 'formatUnderline', 'formatStrikeThrough', 'formatRemove', 'formatIndent',
+    ]
+    for (const inputType of types) {
+      const event = new InputEvent('beforeinput', { inputType, data: inputType.startsWith('insert') ? 'X' : null, bubbles: true, cancelable: true })
+      view.dom.dispatchEvent(event)
+      expect(event.defaultPrevented, inputType).toBe(true)
+    }
+    expect(getMarkdownForSave(crepe)).toBe(PAGE)
+    expect(saves).toEqual([])
+  })
+
+  it('a paste and a drop change nothing', async () => {
+    const { crepe, view, saves } = await locked('L2 a', 2)
+    const paste = clipboard('paste', { 'text/plain': 'PASTED', 'text/html': '<p>PASTED</p>' })
+    view.dom.dispatchEvent(paste.event)
+    expect(paste.event.defaultPrevented).toBe(true)
+    const drop = clipboard('paste', { 'text/plain': 'DROPPED' }).event
+    const dropEvent = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(dropEvent, 'dataTransfer', { value: (drop as unknown as { clipboardData: unknown }).clipboardData })
+    Object.assign(dropEvent, { clientX: 5, clientY: 5 })
+    view.dom.dispatchEvent(dropEvent)
+    // The drop indicator hides itself 30 ms after a drop: let it, before the editor goes.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(getMarkdownForSave(crepe)).toBe(PAGE)
+    expect(view.dom.textContent).not.toContain('PASTED')
+    expect(view.dom.textContent).not.toContain('DROPPED')
+    expect(saves).toEqual([])
+  })
+
+  it('the keys that edit change nothing: letters, Enter, Backspace, Delete, ⌘B, ⌘\\, ⌘], ⌘⏎, ⌘⇧Z; Tab keeps the focus in the body', async () => {
+    const { crepe, view, saves } = await locked('L2 a', 2)
+    const keys: Array<[string, { mod?: boolean; shift?: boolean; alt?: boolean }]> = [
+      ['x', {}], ['Enter', {}], ['Enter', { shift: true }], ['Backspace', {}], ['Delete', {}], ['Backspace', { mod: true }],
+      ['b', { mod: true }], ['i', { mod: true }], ['\\', { mod: true }], [']', { mod: true }], ['[', { mod: true }], ['Enter', { mod: true }],
+      ['z', { mod: true, shift: true }], ['8', { mod: true, alt: true }],
+    ]
+    for (const [k, mods] of keys) key(view, k, mods)
+    expect(key(view, 'Tab').defaultPrevented).toBe(true)
+    expect(key(view, 'Tab', { shift: true }).defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(view.dom)
+    expect(view.state.storedMarks).toBeNull()
+    expect(getMarkdownForSave(crepe)).toBe(PAGE)
+    expect(saves).toEqual([])
+  })
+
+  it('a DOM change the browser makes anyway (an IME composition) is drawn again from the page at its `input` event', async () => {
+    const { crepe, root, view, saves } = await locked('L2 a', 2)
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    let text: Text | null = null
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) if (node.textContent === 'L2 a') text = node as Text
+    text!.textContent = 'L2 éa'
+    const stray = document.createElement('p')
+    stray.textContent = 'STRAY'
+    view.dom.appendChild(stray)
+    view.dom.dispatchEvent(new InputEvent('input', { inputType: 'insertCompositionText', data: 'é', bubbles: true }))
+    expect(view.dom.textContent).not.toContain('éa')
+    expect(view.dom.textContent).not.toContain('STRAY')
+    expect(view.dom.textContent).toContain('L2 a')
+    expect(view.dom.getAttribute('contenteditable')).toBe('true')
+    expect(getMarkdownForSave(crepe)).toBe(PAGE)
+    expect(saves).toEqual([])
+  })
+
+  it('the pop-up toolbar stays off for a selection in the focused locked body', async () => {
+    const { view } = await locked('L2 a', 0)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.selection.from, view.state.selection.from + 4)))
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(document.querySelector('.milkdown-toolbar[data-show="true"]')).toBeNull()
+  })
+
+  it('a change from disk still lands in a locked page (no transaction filter): the read-only tab shows an agent’s edit', async () => {
+    const { crepe, view } = await locked()
+    let at = -1
+    view.state.doc.descendants((node, pos) => {
+      if (at < 0 && node.isText && node.text === 'L1 a') at = pos
+    })
+    view.dispatch(view.state.tr.insertText('Agent ', at))
+    expect(getMarkdownForSave(crepe)).toContain('Agent L1 a')
+  })
+
+  /** The edit attempts the guard tells its pane (YAZ-4446): what each `READ_ONLY_EDIT` said, from where. */
+  function heard(): Array<{ what: unknown; from: EventTarget | null }> {
+    const told: Array<{ what: unknown; from: EventTarget | null }> = []
+    const listen = (event: Event) => told.push({ what: (event as CustomEvent).detail, from: event.target })
+    document.addEventListener(READ_ONLY_EDIT, listen)
+    listening.push(() => document.removeEventListener(READ_ONLY_EDIT, listen))
+    return told
+  }
+  const listening: Array<() => void> = []
+  afterEach(() => listening.splice(0).forEach((stop) => stop()))
+
+  it('YAZ-4446: typing, Enter, Backspace, IME and the letter styles tell the pane "a page is Read only", from the body', async () => {
+    const { view } = await locked('L2 a', 2)
+    const told = heard()
+    for (const inputType of ['insertText', 'insertParagraph', 'deleteContentBackward', 'insertCompositionText', 'formatBold', 'insertFromDrop']) {
+      view.dom.dispatchEvent(new InputEvent('beforeinput', { inputType, data: inputType.startsWith('insert') ? 'X' : null, bubbles: true, cancelable: true }))
+    }
+    expect(told).toHaveLength(6)
+    expect(told.every((t) => t.what === 'page' && t.from === view.dom)).toBe(true)
+  })
+
+  it('YAZ-4446: a paste and a cut tell it too', async () => {
+    const { view } = await locked('L2 a', 2)
+    const told = heard()
+    view.dom.dispatchEvent(clipboard('paste', { 'text/plain': 'PASTED' }).event)
+    view.dom.dispatchEvent(clipboard('cut').event)
+    expect(told.map((t) => t.what)).toEqual(['page', 'page'])
+  })
+
+  it('YAZ-4446: the caret keys, ⇧ + arrows, ⌘A, ⌘C, the fold keys and native undo / redo tell nothing', async () => {
+    const { view } = await locked('L2 a', 2)
+    const told = heard()
+    for (const k of ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageDown']) {
+      key(view, k)
+      key(view, k, { shift: true })
+      key(view, k, { mod: true })
+    }
+    key(view, 'a', { mod: true })
+    key(view, 'c', { mod: true })
+    view.dom.dispatchEvent(clipboard('copy').event)
+    key(view, 'u', { mod: true, shift: true })
+    key(view, 'Tab')
+    for (const inputType of ['historyUndo', 'historyRedo']) view.dom.dispatchEvent(new InputEvent('beforeinput', { inputType, bubbles: true, cancelable: true }))
+    expect(told).toEqual([])
+  })
+
+  it('YAZ-4446: an editable page tells nothing', async () => {
+    const { crepe, view } = await locked('L2 a', 2)
+    crepe.setReadonly(false)
+    const told = heard()
+    view.dom.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: 'X', bubbles: true, cancelable: true }))
+    view.dom.dispatchEvent(clipboard('paste', { 'text/plain': 'PASTED' }).event)
+    expect(told).toEqual([])
   })
 })

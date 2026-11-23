@@ -4,6 +4,7 @@ import {
   BOARD_META_HEAD_BYTES,
   BOARD_META_KEY,
   assetFileName,
+  boardHoverOutlineOf,
   extForMime,
   fileIdOfAssetName,
   isValidFileId,
@@ -17,6 +18,7 @@ import {
   stampBoardMeta,
   stripEmbeddedScene,
   unpersistedFiles,
+  withBoardHoverOutline,
   type DrawingFileData,
 } from '@shared/drawingAssets'
 
@@ -176,10 +178,10 @@ describe('stampBoardMeta (🔒 YAZ-1834 D3/D5/D7)', () => {
   })
 
   it('keeps an existing createdAt and every unknown key, bumps only updatedAt — the backfill contract', () => {
-    const backfilled = lean({ [BOARD_META_KEY]: { createdAt: 1600000000000, updatedAt: 1600000000001, cloudId: 'abc', note: 'has a } brace' } })
+    const backfilled = lean({ [BOARD_META_KEY]: { createdAt: 1600000000000, updatedAt: 1600000000001, cloudId: 'abc', page: 'has a } brace' } })
     const out = stampBoardMeta(backfilled, at)
-    expect(block(out)).toEqual({ createdAt: 1600000000000, updatedAt: 2000, cloudId: 'abc', note: 'has a } brace' })
-    expect(parseBoardMetaBlock(out)).toEqual({ createdAt: 1600000000000, updatedAt: 2000, cloudId: 'abc', note: 'has a } brace' })
+    expect(block(out)).toEqual({ createdAt: 1600000000000, updatedAt: 2000, cloudId: 'abc', page: 'has a } brace' })
+    expect(parseBoardMetaBlock(out)).toEqual({ createdAt: 1600000000000, updatedAt: 2000, cloudId: 'abc', page: 'has a } brace' })
   })
 
   it('takes the block the FILE holds (`prior`) over one inside the text — the disk is the block`s truth on save', () => {
@@ -226,8 +228,8 @@ describe('parseBoardMetaBlock (🔒 YAZ-1834 D6/D7)', () => {
   })
 
   it('carries extra keys in the block back, even one whose value holds a brace', () => {
-    expect(parseBoardMetaBlock(head({ [BOARD_META_KEY]: { createdAt: 1, updatedAt: 2, note: 'a } b', cloudId: 'x' } }))).toEqual({ createdAt: 1, updatedAt: 2, note: 'a } b', cloudId: 'x' })
-    expect(parseBoardMetaBlock(head({ [BOARD_META_KEY]: { createdAt: 1, updatedAt: 2, note: 'esc \\" } q' } }))).toEqual({ createdAt: 1, updatedAt: 2, note: 'esc \\" } q' })
+    expect(parseBoardMetaBlock(head({ [BOARD_META_KEY]: { createdAt: 1, updatedAt: 2, page: 'a } b', cloudId: 'x' } }))).toEqual({ createdAt: 1, updatedAt: 2, page: 'a } b', cloudId: 'x' })
+    expect(parseBoardMetaBlock(head({ [BOARD_META_KEY]: { createdAt: 1, updatedAt: 2, page: 'esc \\" } q' } }))).toEqual({ createdAt: 1, updatedAt: 2, page: 'esc \\" } q' })
   })
 
   it('is null when the block is missing, not first, malformed, non-finite, or cut short', () => {
@@ -272,5 +274,21 @@ describe('newBoardScene (YAZ-3943 demo 2 and round 3, one rule: YAZ-4074 6A item
     expect(block('assets', 'Pics')).toEqual({ createdAt: 7, updatedAt: 7, pictures: 'assets', switched: { pictures: 7 } })
     expect(block('folder', 'Pics')).toMatchObject({ pictures: 'assets', picturesFolder: 'Pics' })
     expect(block('folder', '../out')).not.toHaveProperty('picturesFolder')
+  })
+})
+
+describe('the board\'s own "Hover outline" (YAZ-4469 4B)', () => {
+  it('reads true or false, else null (the app setting); a write keeps the other keys and stamps its time, the same value gives back the SAME scene, and App removes the key', () => {
+    expect([undefined, 7, {}, { hoverOutline: 'off' }, { hoverOutline: true }, { hoverOutline: false }].map(boardHoverOutlineOf)).toEqual([null, null, null, null, true, false])
+    const scene = { [BOARD_META_KEY]: { createdAt: 1, updatedAt: 2, cloudId: 'x' }, elements: [] }
+    expect(withBoardHoverOutline(scene, null, 9, 50)).toBe(scene)
+    const off = withBoardHoverOutline(scene, false, 9, 50)
+    expect(off).toEqual({ [BOARD_META_KEY]: { createdAt: 1, updatedAt: 2, cloudId: 'x', hoverOutline: false, switched: { hoverOutline: 50 } }, elements: [] })
+    expect(Object.keys(off)[0]).toBe(BOARD_META_KEY)
+    expect(withBoardHoverOutline(off, false, 9, 60)).toBe(off)
+    expect(withBoardHoverOutline(off, true, 9, 60)[BOARD_META_KEY]).toEqual({ createdAt: 1, updatedAt: 2, cloudId: 'x', hoverOutline: true, switched: { hoverOutline: 60 } })
+    expect(withBoardHoverOutline(off, null, 9, 70)[BOARD_META_KEY]).toEqual({ createdAt: 1, updatedAt: 2, cloudId: 'x', switched: { hoverOutline: 70 } })
+    // a board with no block gets one, dated at its birth
+    expect(withBoardHoverOutline({ elements: [] }, true, 9, 80)).toEqual({ [BOARD_META_KEY]: { createdAt: 9, updatedAt: 9, hoverOutline: true, switched: { hoverOutline: 80 } }, elements: [] })
   })
 })

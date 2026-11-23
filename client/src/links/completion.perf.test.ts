@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { linkCandidates, matchLinkCandidates } from './completion'
-import { timeMedian } from '../test-perf'
+import { budgetMs, timeMedian } from '../test-perf'
 
 const rec = (path: string, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -27,10 +27,10 @@ const rec = (path: string, aliases: string[] = []): IndexRecord => {
 
 describe('linkCandidates', () => {
   it('perf smoke: 5,000 records derive and match well under a keystroke budget', () => {
-    const records = Array.from({ length: 5000 }, (_, i) => rec(`/vault/folder${i % 50}/Note ${i}.md`, [`N${i}`]))
+    const records = Array.from({ length: 5000 }, (_, i) => rec(`/vault/folder${i % 50}/Page ${i}.md`, [`N${i}`]))
     const derive = () => {
       const candidates = linkCandidates(records)
-      for (let i = 0; i < 10; i++) matchLinkCandidates(candidates, `Note 49`)
+      for (let i = 0; i < 10; i++) matchLinkCandidates(candidates, `Page 49`)
       return candidates
     }
     derive() // warm-up (JIT)
@@ -40,6 +40,6 @@ describe('linkCandidates', () => {
     // only ever prints on failure hides the drift that walks up to it.
     console.log(`completion perf: 5000 records, median ${elapsed.toFixed(1)} ms of 5 (${candidates.length} candidates)`)
     // Alone on an idle pool this is a real budget: ~27 ms measured, 100 ms allowed.
-    expect(elapsed).toBeLessThan(100)
+    expect(elapsed).toBeLessThan(budgetMs(100))
   })
 })

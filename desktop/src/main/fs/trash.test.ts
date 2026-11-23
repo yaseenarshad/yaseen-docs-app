@@ -45,10 +45,10 @@ describe('putBack (YAZ-3268 D16)', () => {
   })
 
   it('a folder goes back with what is inside it', async () => {
-    const trashed = path.join(trash, 'Notes')
+    const trashed = path.join(trash, 'Pages')
     await mkdir(path.join(trashed, 'inner'), { recursive: true })
     await writeFile(path.join(trashed, 'inner', 'n.md'), 'n')
-    const to = path.join(vault, 'Notes')
+    const to = path.join(vault, 'Pages')
     expect(await putBack({ trashed, path: to })).toEqual({ path: to, kind: 'dir' })
     expect(await readFile(path.join(to, 'inner', 'n.md'), 'utf8')).toBe('n')
   })
@@ -90,13 +90,13 @@ describe('putBack (YAZ-3268 D16)', () => {
 
   it('never overwrites a broken link with the old name: ALREADY_EXISTS, and the link and the entry stay (YAZ-3271, S60)', async () => {
     const trashed = path.join(trash, 'L.md')
-    await writeFile(trashed, 'the deleted note')
+    await writeFile(trashed, 'the deleted page')
     const to = path.join(vault, 'L.md')
     await symlink(path.join(vault, 'nowhere.md'), to)
     const err = await failure(putBack({ trashed, path: to }))
     expect([err.code, err.path]).toEqual(['ALREADY_EXISTS', to])
     expect((await lstat(to)).isSymbolicLink()).toBe(true)
-    expect(await readFile(trashed, 'utf8')).toBe('the deleted note')
+    expect(await readFile(trashed, 'utf8')).toBe('the deleted page')
   })
 
   it('moves only an entry of the Trash of the old place\'s disk: a `.Trashes/<uid>` folder anywhere else is BAD_REQUEST, and nothing moves (YAZ-3268 nit 1)', async () => {

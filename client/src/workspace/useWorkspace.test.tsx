@@ -193,9 +193,6 @@ describe('tabsReducer', () => {
       expect(tabsReducer(blank(), { type: 'open-current', path: '/v/a.md' })).toEqual(two())
       expect(tabsReducer(blank(), { type: 'activate', path: '/v/b.md' })).toMatchObject({ active: '/v/b.md', blank: false })
       expect(tabsReducer(blank(), { type: 'activate', path: '/v/a.md' })).toEqual(two())
-      // ⌃Tab from the blank tab, which stands last: on to the first tab, back to the last.
-      expect(tabsReducer(blank(), { type: 'cycle', dir: 1 })).toMatchObject({ active: '/v/a.md', blank: false })
-      expect(tabsReducer(blank(), { type: 'cycle', dir: -1 })).toMatchObject({ active: '/v/b.md', blank: false })
     })
 
     it('S75: close-blank closes the blank tab only: the tab that was active before is active again', () => {
@@ -335,23 +332,6 @@ describe('tabsReducer', () => {
     })
   })
 
-  describe('cycle (rule 9: wraparound, plain left→right order)', () => {
-    const abc = state(['/v/a.md', '/v/b.md', '/v/c.md'], '/v/c.md')
-
-    it('next wraps from the last tab to the first; prev wraps back', () => {
-      const next = tabsReducer(abc, { type: 'cycle', dir: 1 })
-      expect(next.active).toBe('/v/a.md')
-      expect(tabsReducer(next, { type: 'cycle', dir: -1 }).active).toBe('/v/c.md')
-    })
-
-    it('is a no-op with fewer than two tabs', () => {
-      const one = state(['/v/a.md'], '/v/a.md')
-      expect(tabsReducer(one, { type: 'cycle', dir: 1 })).toBe(one)
-      const none = state([], null)
-      expect(tabsReducer(none, { type: 'cycle', dir: -1 })).toBe(none)
-    })
-  })
-
   describe('reset', () => {
     it('keeps each stored copy (YAZ-3057) and PREPENDS an active file missing from the list (main\'s order)', () => {
       expect(tabsReducer(state([], null), { type: 'reset', tabs: plain('/v/a.md', '/v/a.md', '/v/b.md'), active: '/v/c.md' })).toEqual(
@@ -475,7 +455,7 @@ function installBridge(app: AppState, identity: IdentityFixture) {
         sidebarLens: identity.sidebarLens ?? 'files',
       })),
       setIdentity: vi.fn(async () => undefined),
-      noteClosed: vi.fn(async () => undefined),
+      pageClosed: vi.fn(async () => undefined),
     },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
@@ -526,7 +506,7 @@ describe('bootTabs (rules 12/15)', () => {
     expect(byPath(bootTabs(null))).toEqual(state([], null))
   })
 
-  it('YAZ-3487 D15: with "Open on: Its last note" a fresh window falls back to the folder lastFile again; a window opened empty on purpose stays empty', async () => {
+  it('YAZ-3487 D15: with "Open on: Its last page" a fresh window falls back to the folder lastFile again; a window opened empty on purpose stays empty', async () => {
     const last: AppState = { ...seeded, settings: { ...seeded.settings, vaultOpensOn: 'last' } }
     installBridge(last, { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     await storage.init()
@@ -593,7 +573,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     act(() => latest.openBackground('/v/b.md'))
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md', '/v/b.md'], '/v/a.md'))
 
-    act(() => latest.next())
+    act(() => latest.activate(idOf('/v/b.md')))
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md', '/v/b.md'], '/v/b.md'))
 
     act(() => latest.close(idOf('/v/a.md')))
@@ -608,7 +588,6 @@ describe('useWorkspace legacy main-tab mirror', () => {
     act(() => latest.openCurrent('/v/a.md')) // the page already open: its sidebar row asks for it again (YAZ-2648 S46)
     act(() => latest.openKept('/v/a.md'))
     act(() => latest.openBackground('/v/a.md')) // already open
-    act(() => latest.prev()) // one tab: nothing to cycle
     act(() => latest.close(idOf('/v/zzz.md'))) // unknown
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
     // A ⌘-click's background open of an open page is no no-op (YAZ-3943 5B): a copy opens, with one write.
@@ -673,19 +652,19 @@ describe('useWorkspace legacy main-tab mirror', () => {
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/d.md'], '/v/d.md'))
   })
 
-  it('YAZ-3487 D10 (S31, S32, S43): close, closeMany and closeActive send the closed tabs\' notes to main, one call each; the blank tab sends nothing', () => {
+  it('YAZ-3487 D10 (S31, S32, S43): close, closeMany and closeActive send the closed tabs\' pages to main, one call each; the blank tab sends nothing', () => {
     for (const path of ['/v/a.md', '/v/b.md', '/v/c.md', '/v/d.md']) act(() => latest.openBackground(path))
     act(() => latest.close(idOf('/v/a.md')))
-    expect(bridge.window.noteClosed).toHaveBeenLastCalledWith(['/v/a.md'])
+    expect(bridge.window.pageClosed).toHaveBeenLastCalledWith(['/v/a.md'])
     act(() => latest.closeMany(['/v/b.md', '/v/c.md'].map(idOf)))
-    expect(bridge.window.noteClosed).toHaveBeenLastCalledWith(['/v/b.md', '/v/c.md'])
+    expect(bridge.window.pageClosed).toHaveBeenLastCalledWith(['/v/b.md', '/v/c.md'])
     act(() => latest.activate(idOf('/v/d.md')))
     act(() => void latest.closeActive())
-    expect(bridge.window.noteClosed).toHaveBeenLastCalledWith(['/v/d.md'])
-    expect(bridge.window.noteClosed).toHaveBeenCalledTimes(3)
+    expect(bridge.window.pageClosed).toHaveBeenLastCalledWith(['/v/d.md'])
+    expect(bridge.window.pageClosed).toHaveBeenCalledTimes(3)
     act(() => latest.newTab())
     act(() => void latest.closeActive())
-    expect(bridge.window.noteClosed).toHaveBeenCalledTimes(3)
+    expect(bridge.window.pageClosed).toHaveBeenCalledTimes(3)
   })
 
   it('"Close duplicate tabs" (YAZ-3943 5A): three copies of a and two of b leave one of each, the active copy kept, the leftmost otherwise; the copies go to "Recently closed" in ONE close; no copy, no change', () => {
@@ -701,7 +680,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     expect(latest.tabs.map((t) => t.id)).toEqual([tabs[1], tabs[4], tabs[5]])
     expect(latest.active).toBe(tabs[4])
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
-    expect(bridge.window.noteClosed).toHaveBeenLastCalledWith(['/v/a.md', '/v/a.md', '/v/b.md'])
+    expect(bridge.window.pageClosed).toHaveBeenLastCalledWith(['/v/a.md', '/v/a.md', '/v/b.md'])
     expect(duplicateTabIds(latest)).toEqual([])
     // A tab zoomed into a bullet shows another view of the page: no copy of the whole page.
     expect(duplicateTabIds({ tabs: [{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/a.md', zoom: 'k' }, { id: 't3', path: '/v/a.md', zoom: 'k' }], active: null })).toEqual(['t3'])
@@ -968,7 +947,7 @@ describe('workspaceReducer right-panel ownership', () => {
 
 /**
  * Delete (GRO-2272 `B2-`): deleting a tab IS closing it. These assertions exist to keep the
- * two in step — divergence would show up as "deleting the active note picks a different tab
+ * two in step — divergence would show up as "deleting the active page picks a different tab
  * than ⌘W does", which nobody reports and everybody feels.
  */
 describe('delete / delete-dir (GRO-2272)', () => {
@@ -1462,11 +1441,11 @@ describe('copies in the hook (YAZ-2940): the mirror stores every copy in the str
     act(() => void latest.duplicate(latest.tabs[1].id)) // a · b · b′ (active): the source b saves before its copy reads the file
     expect(flushed).toEqual(['b'])
     act(() => latest.activate(latest.tabs[1].id)) // b′ → b
-    act(() => latest.next()) // ⌃Tab: b → b′
+    act(() => latest.activate(latest.tabs[2].id)) // ⌃Tab (an activate, YAZ-5373): b → b′
     expect(flushed).toEqual(['b', 'b', 'b'])
     act(() => latest.activate(latest.tabs[0].id)) // b′ → a: another file
     act(() => latest.activate(latest.tabs[2].id)) // a → b′
-    act(() => latest.prev()) // ⌃⇧Tab: b′ → b
+    act(() => latest.activate(latest.tabs[1].id)) // ⌃⇧Tab: b′ → b
     expect(flushed).toEqual(['b', 'b', 'b', 'b'])
     act(() => latest.closeActive()) // b closes; its heir is b′
     expect(latest.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md'])
@@ -1533,7 +1512,7 @@ describe('display name (YAZ-2949 D2): a name on one tab', () => {
     const s = named(two())
     const linked = reduceTabs(s, { type: 'navigate', path: '/v/c.md' })
     expect(linked.tabs[0]).toEqual({ id: 't1', path: '/v/c.md' })
-    const back = reduceTabs({ ...named(linked, 't1', 'C notes'), history: { steps: [step(1, 't1', A), step(2, 't1', '/v/c.md')], index: 1 } }, { type: 'back' })
+    const back = reduceTabs({ ...named(linked, 't1', 'C pages'), history: { steps: [step(1, 't1', A), step(2, 't1', '/v/c.md')], index: 1 } }, { type: 'back' })
     expect(back.tabs[0]).toEqual({ id: 't1', path: A })
     // The preview tab that is named is kept, so a sidebar click opens a new preview tab and the name stays.
     const kept = reduceTabs(named(two({ preview: 't1' })), { type: 'open-current', path: '/v/c.md' })
@@ -1651,6 +1630,22 @@ describe('where a new tab opens (YAZ-3808 D2, D3, D4)', () => {
     const moved = workspaceReducer(base, { type: 'transfer-right-to-main', path: '/v/r.md', at: 3 })
     expect(moved.chain).toBeUndefined()
     expect(workspaceReducer(moved, { type: 'open-background', path: '/v/y.md', next: true }).tabs).toEqual(['/v/a.md', '/v/x1.md', '/v/b.md', '/v/r.md', '/v/y.md', '/v/c.md'])
+  })
+
+  it('YAZ-5023: the Inbox\'s ⌘↵ opens each page right after the Inbox tab, in order; an open page does not move', () => {
+    // a · b (active) · [Inbox] · c · d: the Inbox tab stands at slot 2, in the middle of the strip.
+    const strip = state(['/v/a.md', '/v/b.md', '/v/c.md', '/v/d.md'], '/v/b.md')
+    const inbox = (s: TabsState, path: string, fresh = false) => tabsReducer(s, { type: 'open-background', path, at: 2, ...(fresh ? { fresh: true as const } : {}) })
+    const two = inbox(inbox(strip, '/v/x.md', true), '/v/y.md')
+    expect(two).toMatchObject({ tabs: ['/v/a.md', '/v/b.md', '/v/x.md', '/v/y.md', '/v/c.md', '/v/d.md'], active: '/v/b.md', atChain: '/v/y.md' })
+    // A page that is open already: its tab, where it stands; the chain stays.
+    expect(inbox(two, '/v/d.md')).toBe(two)
+    expect(inbox(inbox(two, '/v/d.md'), '/v/z.md').tabs).toEqual(['/v/a.md', '/v/b.md', '/v/x.md', '/v/y.md', '/v/z.md', '/v/c.md', '/v/d.md'])
+    // The Inbox tab came to the front again (`fresh`), or a trip to another tab: right after the Inbox tab again.
+    expect(inbox(two, '/v/z.md', true).tabs).toEqual(['/v/a.md', '/v/b.md', '/v/z.md', '/v/x.md', '/v/y.md', '/v/c.md', '/v/d.md'])
+    expect(inbox(tabsReducer(two, { type: 'activate', path: '/v/a.md' }), '/v/z.md').tabs).toEqual(['/v/a.md', '/v/b.md', '/v/z.md', '/v/x.md', '/v/y.md', '/v/c.md', '/v/d.md'])
+    // Other new tabs keep their place: a ⌘-click's tab next to the current one, or at the end.
+    expect(tabsReducer(two, { type: 'open-background', path: '/v/n.md' }).tabs.at(-1)).toBe('/v/n.md')
   })
 
   it('the chain is never stored: the window\'s strip names pages, copies and names only', () => {

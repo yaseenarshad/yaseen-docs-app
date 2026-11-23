@@ -1,0 +1,190 @@
+/* The sync status dot (decision 12). The five states and the pulse of GitHub AutoSync and the phone mockup
+   (version 9). Green, amber and red are the Mac's tokens; blue is the mockup's. Each dot is 3:1 or more against the
+   top bar, light and dark (`look.test.ts`). The light amber is the mockup's: the Mac's `--warn` is 2.94:1 on white. */
+:root {
+  --dot-synced: var(--ok);
+  --dot-pending: #b7791f;
+  --dot-syncing: #2f7de1;
+  --dot-off: var(--fg-muted);
+  --dot-attention: var(--danger);
+}
+
+:root:where([data-scheme='dark']) {
+  --dot-pending: var(--warn);
+  --dot-syncing: #5aa2f5;
+}
+
+/* One line in the top bar. It never wraps, so the bar keeps its height. The box is at least as wide as "Syncing…",
+   so the flip between green and blue moves nothing; longer words take room from the vault's name, not from the gear
+   and not from the words. */
+.sync-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  min-width: 7.2em;
+  min-height: var(--tap);
+  padding: 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Green, blue and grey are the dot only, in a 44 pt box: a tap syncs now. */
+.sync-status--dot {
+  min-width: var(--tap);
+  justify-content: center;
+}
+
+/* The words are never cut. The box takes the room it needs; the vault's name gives room, down to 4 letters.
+   Under 380 px (iPhone SE, mini) the short form shows: the same facts, 20 characters at most (`dot.ts`). */
+.topbar .topbar__title {
+  min-width: 4em;
+}
+
+.sync-status__words--short {
+  display: none;
+}
+
+@media (max-width: 379px) {
+  .sync-status__words--full {
+    display: none;
+  }
+
+  .sync-status__words--short {
+    display: inline;
+  }
+}
+
+/* With a page's ID chip in the bar, the amber dot says its number alone ("2", "1"): the words
+   pushed the ⚙ off the screen. The full words are in the sheet and the button's VoiceOver name. */
+.sync-status__words--count {
+  display: none;
+}
+
+.topbar:has(.page-id) .sync-status:has(.sync-status__words--count) {
+  min-width: var(--tap);
+  justify-content: center;
+}
+
+.topbar:has(.page-id) .sync-status:has(.sync-status__words--count) .sync-status__words {
+  display: none;
+}
+
+.topbar:has(.page-id) .sync-status:has(.sync-status__words--count) .sync-status__words--count {
+  display: inline;
+}
+
+/* The form the bar has room for (`useFitWords`): the short words, the count alone, the dot alone.
+   Any bar, with or without a page's ID chip: the ⚙ and the dot never leave the screen. */
+.sync-status[data-fit='short'] .sync-status__words--full {
+  display: none;
+}
+
+.sync-status[data-fit='short'] .sync-status__words--short {
+  display: inline;
+}
+
+.sync-status[data-fit='count'],
+.sync-status[data-fit='dot'] {
+  min-width: var(--tap);
+  justify-content: center;
+}
+
+.sync-status[data-fit='count'] .sync-status__words,
+.sync-status[data-fit='dot'] .sync-status__words {
+  display: none;
+}
+
+.sync-status[data-fit='count'] .sync-status__words--count {
+  display: inline;
+}
+
+.sync-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--dot-synced);
+}
+
+.sync-dot--synced {
+  background: var(--dot-synced);
+}
+
+.sync-dot--pending {
+  background: var(--dot-pending);
+}
+
+.sync-dot--syncing {
+  background: var(--dot-syncing);
+  animation: sync-pulse 1s ease-in-out infinite;
+}
+
+.sync-dot--attention {
+  background: var(--dot-attention);
+}
+
+.sync-dot--off {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--dot-off);
+}
+
+@keyframes sync-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* "Reduce motion": the blue dot stays still. The words still say "Syncing…". */
+@media (prefers-reduced-motion: reduce) {
+  .sync-dot--syncing {
+    animation: none;
+  }
+}
+
+/* ---- The sheet behind a tap: at the bottom, near the thumb ---- */
+
+.status-sheet__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.status-sheet {
+  width: 100%;
+  max-height: 80%;
+  overflow: auto;
+  padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+  border-top: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  background: var(--bg-side);
+  font-size: 15px;
+}
+
+.status-sheet p {
+  margin: 0 0 10px;
+}
+
+.status-sheet__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 17px;
+}
+
+.status-sheet .rows {
+  margin-bottom: 12px;
+}
+
+.status-sheet .stack {
+  margin-bottom: 14px;
+}

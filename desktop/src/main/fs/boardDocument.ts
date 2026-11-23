@@ -4,11 +4,12 @@
  * guard and stamp a save through here, and keep only what their format needs. `createBoard.ts`
  * resolves the new board's path through `resolveBoard` too.
  */
-import { MAX_DIAGRAM_BYTES, MAX_DRAWING_BYTES, type BoardKind } from '@shared/types'
+import { MAX_DIAGRAM_BYTES, MAX_DRAWING_BYTES, type BoardKind, type BoardReadOnlyResponse } from '@shared/types'
 import type { BoardMetaBlock } from '@shared/drawingAssets'
 import { isDiagram, isDrawing } from '@shared/fileKind'
 import { readBoardHead, type BoardHead } from './boardHead'
-import { BridgeFailure, fsCall, requireAbsPath, resolveUnderRoot } from './fsUtils'
+import { readBoundedRegularFile } from './boundedRead'
+import { atomicWrite, BridgeFailure, fsCall, requireAbsPath, requireDir, resolveUnderRoot } from './fsUtils'
 import { requireRequest } from './validate'
 
 /** Each kind's extension test, the words its failures use, and its read/write ceiling. */
@@ -53,4 +54,27 @@ export async function guardedStamp(file: string, kind: BoardKind, expectedMtime:
     throw new BridgeFailure('CONFLICT', `${BOARDS[kind].noun} changed on disk since last read`, { path: file, mtime: prior.mtime })
   }
   return stamped
+}
+
+/**
+ * Shared read-validate-transform-atomicWrite pipeline for board flag mutators
+ * (`boardReadOnly`, `boardHoverLinks`, `boardFoldArrows`, `boardHoverOutline`; YAZ-6025 D13).
+ */
+export async function mutateBoardFile(
+  dir: string,
+  file: string,
+  kind: BoardKind,
+  expectedMtime: unknown,
+  transform: (text: string, mtime: number) => string,
+): Promise<BoardReadOnlyResponse> {
+  if (typeof expectedMtime !== 'number') throw new BridgeFailure('BAD_REQUEST', "'expectedMtime' must be a number", { path: file })
+  await requireDir(dir)
+  const snap = await readBoundedRegularFile(file, BOARDS[kind].max, BOARDS[kind].tooLarge)
+  if (snap.mtime !== expectedMtime) throw new BridgeFailure('CONFLICT', `${BOARDS[kind].noun} changed on disk since last read`, { path: file, mtime: snap.mtime })
+  const text = snap.data.toString('utf8')
+  const next = transform(text, snap.mtime)
+  if (next === text) return { path: file, mtime: snap.mtime, size: snap.size }
+  if (Buffer.byteLength(next, 'utf8') > BOARDS[kind].max) throw new BridgeFailure('TOO_LARGE', BOARDS[kind].tooLarge, { path: file })
+  const { mtime, size } = await fsCall(file, () => atomicWrite(file, next))
+  return { path: file, mtime, size }
 }

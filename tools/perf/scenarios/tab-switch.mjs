@@ -1,5 +1,5 @@
 /**
- * tab-switch: click a tab → its note painted plus a frame. First visit mounts a new editor (the
+ * tab-switch: click a tab → its page painted plus a frame. First visit mounts a new editor (the
  * second tab); revisits flip between three mounted editors, 10 switches.
  */
 import { clickUntilPainted, session, tab } from '../lib/session.mjs'

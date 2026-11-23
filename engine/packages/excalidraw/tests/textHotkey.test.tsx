@@ -57,7 +57,8 @@ describe("direct T text entry", () => {
     expect(editor).toBe(document.activeElement);
     expect(text).toMatchObject({
       type: "text",
-      fontSize: 51,
+      // YAZ-4247: the new text size on screen (14 px) over the zoom (2)
+      fontSize: 7,
       strokeColor: "#e03131",
       textAlign: "center",
       containerId: null,
@@ -80,7 +81,8 @@ describe("direct T text entry", () => {
     await getTextEditor();
     expect(h.state.editingTextElement).toMatchObject({
       type: "text",
-      fontSize: 51,
+      // YAZ-4247: the new text size on screen (14 px) over the zoom (2)
+      fontSize: 7,
       textAlign: "center",
       containerId: null,
     });

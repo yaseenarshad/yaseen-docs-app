@@ -1,30 +1,28 @@
 /**
- * THE FREE-FORM OUTLINE, end to end (YAZ-904; the surface landed in YAZ-900→903, and YAZ-2290
- * made it what it is now): a folder's outline view is ONE markdown bullet list the user types
- * into — a second Milkdown instance (`OutlineEditor`) holding `views[i].outline` in the folder's
- * hidden `.folder.md` — and it is a plain document and nothing more.
+ * A FOLDER'S OWN DOCUMENT, end to end (YAZ-904; YAZ-2290 made it what it is; YAZ-4584 D38 moved it to the Page tab):
+ * a folder's Page tab is the body of its hidden `.folder.md`, in the page editor, and it is a plain document and
+ * nothing more. It replaced the Outline view, and keeps that view's tab and its name.
  *
  * WHAT IS PROVEN HERE, and nowhere else: that the document is text. A `[[link]]` in it is just a
  * link (YAZ-2290 D5) — it adds nobody to the folder and touches nobody's file — and what the
  * folder holds is decided by what lives in it, which the Table answers independently of every
  * line typed here. Everything is asserted ON DISK through the shared frontmatter helpers
- * (`folderColumns.spec.ts`'s idiom): the outline is a string inside `folder_settings`, and
- * a `toContain` over the whole file would pass on a block that had lost half of it.
+ * (`folderColumns.spec.ts`'s idiom): the document is the body under `folder_settings`, and an edit
+ * to it leaves the settings block byte for byte as it was.
  *
  * Driven through the REAL app over the committed encyclopedia fixture (`fixtures/bible-vault`), on
- * `Funnel Stages` — the folder whose settings file SHIPS an outline document, three lines of
- * prose. Everything this file types happens on top of that text.
+ * `Funnel Stages` — the folder whose `.folder.md` SHIPS a document, three lines of prose. Everything
+ * this file types happens on top of that text.
  *
  * The arc, in order (serial by design — each step continues the previous state):
- *   1 first open: the document is exactly what the settings file ships, opening wrote NOTHING,
- *     and a TEXT line typed under it lands as one settings write (and the Table has not moved)
+ *   1 first open: the document is exactly what the file ships, opening wrote NOTHING, and a TEXT
+ *     line typed under it lands in the body, the settings untouched (and the Table has not moved)
  *   2 `[[` opens the picker; picking a page turns the line into a wikilink in the document — and
  *     that is ALL it does: the picked page's own file is byte-identical and the Table has not moved
- *   3 Tab indents: the nesting is in the document on disk and in the editor's own DOM (step 5
+ *   3 Tab indents: the nesting is in the document on disk and in the editor's own DOM (step 4
  *     reads it back after a relaunch)
- *   4 bullets-only (🔒 F3): `# heading` typed in a bullet stays nine literal characters
- *   5 quit → relaunch: the text, the nesting and the link are all in the settings file, not in
- *     the session — byte for byte — and the folder's rows read back off the Table
+ *   4 quit → relaunch: the text, the nesting and the link are all in the file, not in the
+ *     session — byte for byte — and the folder's rows read back off the Table
  *
  * DRIVING A PROSEMIRROR FROM PLAYWRIGHT is its own small craft — macOS caret keys, a wikilink's
  * hidden brackets, and ProseMirror's deferred read of the browser's selection all bite — so the
@@ -32,13 +30,10 @@
  * `writeOutlineLine` / `pickOutlineLink`), shared with every spec that types into an outline. Read
  * its docblock before changing a keystroke here.
  *
- * Nothing here sleeps: every debounced commit (500 ms, `OutlineEditor`'s own) is gated on the
- * disk state or on the UI consequence it causes.
+ * Nothing here sleeps: every debounced save is gated on the disk state or on the UI consequence it causes.
  *
  * The harness: a temp `--user-data-dir`, a COPY of the fixture, `outline-` step screenshots.
  */
-// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
-// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -53,7 +48,6 @@ import {
   indentOutlineLine,
   launchApp,
   openFolder,
-  outlineEditor,
   outlineLineIndex,
   outlineLines,
   outlineNested,
@@ -73,23 +67,23 @@ test.describe.configure({ mode: 'serial' })
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 const FOLDER = 'Funnel Stages'
 const SETTINGS_FILE = path.join(FOLDER, '.folder.md')
-/** The notes that live in the folder — its rows, whatever the outline says. */
+/** The pages that live in the folder — its rows, whatever the outline says. */
 const MEMBERS = ['Lead Gen', 'Lead Nurture', 'Sales-Conversion']
 /** The page this spec links to from the outline: a kpi, so it lives in ANOTHER folder. */
 const SUBJECT = 'CAC'
 const SUBJECT_FILE = path.join('KPIs', 'CAC.md')
 
-/** The document the settings file ships, as the editor RENDERS it — one bullet per line. */
+/** The document the file ships, as the editor RENDERS it — one bullet per line. */
 const BODY = [
   'Funnel Stages',
-  'The stages a deal walks through, from first touch to closed-won. Every note in this',
+  'The stages a deal walks through, from first touch to closed-won. Every page in this',
   'folder is one of them — there is no list to maintain.',
 ]
-/** …and as the EDITOR re-serialises it, once the document has been typed into at all (Milkdown's own `* `). */
+/** …and as the file holds it once typed into, its bullets read as `* ` whichever mark the editor writes. */
 const BODY_COMMITTED = BODY.map((line) => `* ${line}`)
 
 /** The two text lines the document grows; neither is a link. */
-const NOTE = 'Only the notes in the folder are its rows'
+const PAGE = 'Only the pages in the folder are its rows'
 const CHILD = 'and this one is nested under it'
 
 let userData: string
@@ -97,27 +91,25 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-/** The name cell shows the page TITLE: for a fixture note, which has no `title:`, its file name without `.md` (YAZ-2420 🔒 D14). */
+/** The name cell shows the page TITLE: for a fixture page, which has no `title:`, its file name without `.md` (YAZ-2420 🔒 D14). */
 const rowNames = (scope: Locator) => scope.locator('.view-table__name')
 
 const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
 
-/** One outline view, as the folder's settings hold it. */
-interface OnDiskView {
-  type?: string
-  name?: string
-  outline?: string
+/** The folder's `.folder.md`, split: its settings block as written, and its body — the Page tab's document. */
+async function folderFile(): Promise<{ frontmatter: string; body: string }> {
+  const { frontmatter, body } = splitFrontmatter(await read(SETTINGS_FILE))
+  return { frontmatter: frontmatter ?? '', body }
 }
 
-/** The folder's outline VIEW as written — parsed, never string-matched (folderColumns.spec.ts's rule). */
-async function outlineViewOnDisk(): Promise<OnDiskView> {
-  const { frontmatter } = splitFrontmatter(await read(SETTINGS_FILE))
-  const settings = (parseFrontmatter(frontmatter).properties.folder_settings ?? {}) as { views?: OnDiskView[] }
-  return settings.views?.find((v) => v.type === 'outline') ?? {}
+/** The page view the settings hold — the Outline view of old, by its name. */
+async function pageViewOnDisk(): Promise<{ type?: string; name?: string; outline?: string }> {
+  const settings = (parseFrontmatter((await folderFile()).frontmatter).properties.folder_settings ?? {}) as { views?: Array<{ type?: string; name?: string; outline?: string }> }
+  return settings.views?.find((v) => v.name === 'Outline') ?? {}
 }
 
-/** The stored document itself. */
-const outlineOnDisk = async (): Promise<string> => (await outlineViewOnDisk()).outline ?? ''
+/** The stored document, each bullet spelled `* ` (the editor's mark is its own business). */
+const outlineOnDisk = async (): Promise<string> => (await folderFile()).body.replace(/^(\s*)[-*] /gm, '$1* ')
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'outline-userdata-'))
@@ -129,34 +121,36 @@ test.afterAll(async () => {
   await Promise.all([userData, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — first open: the document is what the settings ship, opening writes nothing, and a typed line is one settings write', async () => {
+test('step 1 — first open: the document is what the file ships, opening writes nothing, and a typed line lands in the body alone', async () => {
   const shipped = await read(SETTINGS_FILE)
+  const settings = (await folderFile()).frontmatter
 
   app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
   await openFolder(win, path.join(vault, FOLDER))
   await expect(activeTab(win)).toHaveText(FOLDER)
 
-  // THE FIRST OPEN: the outline is the folder's first view, and what it shows is the stored
-  // document — three lines of prose, and not one line for a note (YAZ-2290 D5). A mere look
-  // is not an edit: the settings file is byte-identical once the editor has mounted.
+  // THE FIRST OPEN: the Page tab is the folder's first view, and what it shows is the stored
+  // document — three lines of prose, and not one line for a page (YAZ-2290 D5). A mere look
+  // is not an edit: the file is byte-identical once the editor has mounted.
   await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table', 'Board'])
   await expect(outlineLines(contents(win))).toHaveText(BODY)
   expect(await read(SETTINGS_FILE)).toBe(shipped)
   await shoot(win, 'outline-01-shipped-document')
 
   // The user's own text lives in the very same document, under the prose.
-  await typeOutlineLine(win, contents(win), BODY.length - 1, NOTE)
+  await typeOutlineLine(win, contents(win), BODY.length - 1, PAGE)
 
-  // ONE `folder_settings` write, debounced 500ms — and the editor re-serialises the WHOLE
-  // document, so this is where a shipped line could have been lost: every one of them is still
-  // here, in Milkdown's own `* ` spelling, with the typed line after them.
-  await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain(NOTE)
-  const view = await outlineViewOnDisk()
-  expect(view.name).toBe('Outline') // the view itself is untouched — only its content key moved
-  expect(view.outline?.split('\n').filter((l) => l.trim() !== '')).toEqual([...BODY_COMMITTED, `* ${NOTE}`])
+  // The editor writes the WHOLE body again, so this is where a shipped line could have been lost: every one of them is
+  // still here, with the typed line after them. The settings block above it did not move by a byte.
+  await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain(PAGE)
+  expect((await outlineOnDisk()).split('\n').filter((l) => l.trim() !== '')).toEqual([...BODY_COMMITTED, `* ${PAGE}`])
+  expect((await folderFile()).frontmatter).toBe(settings)
+  const view = await pageViewOnDisk()
+  expect(view.type).toBe('page')
+  expect(view.outline).toBeUndefined()
 
-  // TEXT MEANS NOTHING to what the folder holds: its rows are the notes in it, as before.
+  // TEXT MEANS NOTHING to what the folder holds: its rows are the pages in it, as before.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(rowNames(contents(win))).toHaveText(MEMBERS)
   await viewTabs(contents(win)).filter({ hasText: 'Outline' }).click()
@@ -167,12 +161,12 @@ test('step 1 — first open: the document is what the settings ship, opening wri
 test('step 2 — `[[` picks a page, and the link line is JUST a link: the picked page and the folder’s rows do not move', async () => {
   const before = await read(SUBJECT_FILE)
 
-  await bulletAfterLine(win, contents(win), await outlineLineIndex(contents(win), NOTE))
+  await bulletAfterLine(win, contents(win), await outlineLineIndex(contents(win), PAGE))
   await pickOutlineLink(win, SUBJECT, 'outline-03-picker')
 
   // The picker inserts PLAIN TEXT `[[CAC]]`, and the document — the ONE thing that moved — holds
-  // it, typed in by hand under the note line.
-  await expect.poll(() => outlineSaid(contents(win))).toEqual([...BODY, NOTE, `[[${SUBJECT}]]`])
+  // it, typed in by hand under the page line.
+  await expect.poll(() => outlineSaid(contents(win))).toEqual([...BODY, PAGE, `[[${SUBJECT}]]`])
   await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain(`* [[${SUBJECT}]]`)
   // A link in an outline says nothing about what the folder holds (YAZ-2290 D5): the picked page's
   // own file is byte for byte what it was, and no sheet asked about anything.
@@ -187,31 +181,19 @@ test('step 2 — `[[` picks a page, and the link line is JUST a link: the picked
 })
 
 test('step 3 — Tab indents, and the nesting is in the document itself', async () => {
-  await typeOutlineLine(win, contents(win), await outlineLineIndex(contents(win), NOTE), CHILD)
+  await typeOutlineLine(win, contents(win), await outlineLineIndex(contents(win), PAGE), CHILD)
   await indentOutlineLine(win, contents(win), CHILD)
 
-  // The editor's own DOM says it: a bullet list inside a bullet list, which is the only shape the
-  // bullets-only lock allows to nest at all.
+  // The editor's own DOM says it: a bullet list inside a bullet list.
   await expect(outlineNested(contents(win))).toHaveText([CHILD])
   // And so does the document on disk — two spaces deeper than the line it hangs from.
-  await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain(`* ${NOTE}\n  * ${CHILD}`)
+  await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain(`* ${PAGE}\n  * ${CHILD}`)
   // The link line is a SIBLING of the text, not a casualty of it: still depth 0.
   expect(await outlineOnDisk()).toContain(`\n* [[${SUBJECT}]]`)
   await shoot(win, 'outline-05-nested')
 })
 
-test('step 4 — bullets-only: `# heading` typed in a bullet is nine literal characters', async () => {
-  await typeOutlineLine(win, contents(win), await outlineLineIndex(contents(win), CHILD), '# heading')
-
-  // 🔒 F3: the narrowed `list_item` schema makes the markdown input rule DECLINE rather than fire,
-  // so the characters stay standing as list text and no heading node is ever created.
-  await expect(outlineEditor(contents(win)).locator('h1, h2, h3, h4, h5, h6')).toHaveCount(0)
-  await expect(outlineLines(contents(win)).filter({ hasText: '# heading' })).toHaveCount(1)
-  await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain('# heading')
-  await shoot(win, 'outline-06-bullets-only')
-})
-
-test('step 5 — the document lives in the settings file, not in the session: it survives quit → relaunch', async () => {
+test('step 4 — the document lives in the folder\'s file, not in the session: it survives quit → relaunch', async () => {
   const document = await outlineOnDisk()
   await quitApp(app) // the REAL quit path: the pending settings write is flushed before exit
 
@@ -223,14 +205,14 @@ test('step 5 — the document lives in the settings file, not in the session: it
 
   // The text, the nesting, the shipped prose and the link, read back out of the one place they
   // live — BYTE FOR BYTE the document the quit flushed: a mount that types nothing writes nothing.
-  await expect(outlineLines(contents(win)).filter({ hasText: NOTE })).toHaveCount(1)
+  await expect(outlineLines(contents(win)).filter({ hasText: PAGE })).toHaveCount(1)
   await expect(outlineNested(contents(win)).filter({ hasText: CHILD })).toHaveCount(1)
   await expect(outlineLines(contents(win)).first()).toHaveText(BODY[0])
   await expect(outlineLines(contents(win)).last()).toHaveText(`[[${SUBJECT}]]`)
   expect(await outlineOnDisk()).toBe(document)
 
   // What the folder holds was never the document's to say: the Table answers it, and it is the
-  // three notes that have lived there all along.
+  // three pages that have lived there all along.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(rowNames(contents(win))).toHaveText(MEMBERS)
   await shoot(win, 'outline-07-survives-relaunch')

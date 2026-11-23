@@ -17,7 +17,7 @@ export { copiesOf }
 
 /**
  * Every length is in px at zoom 1. A page is a short, wide CARD (D15): its title, a "Page: …" line when named, and
- * two lines of the note; the preview panel is for reading (D18).
+ * two lines of the page; the preview panel is for reading (D18).
  */
 export const BOARD = {
   pageW: 220,
@@ -727,7 +727,7 @@ export function nearest(boxes: readonly Box[], from: number, way: Way): number {
   return best
 }
 
-/** A note's first lines without a first line that only repeats its title (a daily note headed with its own date). */
+/** A page's first lines without a first line that only repeats its title (a daily page headed with its own date). */
 export function withoutTitle(lines: string, title: string): string {
   const end = lines.indexOf('\n')
   const first = end === -1 ? lines : lines.slice(0, end)

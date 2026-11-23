@@ -81,6 +81,18 @@ describe("YAZ-3944 D2: a GIF on the board", () => {
     const rect = API.createElement({ type: "rectangle", x: 100, y: 0 });
     API.setElements([gif, rect]);
 
+    // The GIF plays from its own decoder, before the board's image cache has
+    // its picture. When the picture lands, the board drops the element's
+    // canvas once (`addNewImagesToImageCache`). Under load that came after the
+    // first frames, and the canvas below was the one before it: so wait for it.
+    await waitFor(
+      () => {
+        const cached = h.app.imageCache.get("gif" as FileId)?.image;
+        expect(cached).toBeDefined();
+        expect(cached).not.toBeInstanceOf(Promise);
+      },
+      { timeout: 5000 },
+    );
     await waitFor(() =>
       expect(elementWithCanvasCache.get(gif)?.gifFrame).toBeGreaterThan(0),
     );

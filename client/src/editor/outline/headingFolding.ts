@@ -22,7 +22,7 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
-import type { Mapping } from '@milkdown/kit/prose/transform'
+import { ReplaceStep, type Mapping } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
 import { innermostItemPos, LIST_NODE_NAMES } from './listNodes'
 import { getOutlineFoldKey } from './outlineFoldKeys'
@@ -75,12 +75,12 @@ export const HEADING_TOGGLE_CLASS = 'heading-toggle'
  * reads the places off the DOM after each update and rewrites its `<style data-heading-folds>` only when one moved.
  * No decoration marks a hidden block: one on each made each doc change cost O(blocks²) in ProseMirror
  * (`DecorationSet.forChild`, `map`, `buildTree` over 2,000 root decorations: ~50 ms). No sibling selector either: `~`
- * made each restyle of the note walk back over every block before each block (~35–80 ms at 2,000 blocks in Chromium).
+ * made each restyle of the page walk back over every block before each block (~35–80 ms at 2,000 blocks in Chromium).
  */
 export const HEADING_FOLD_STYLE_ATTR = 'data-heading-folds'
 export const HEADING_FOLD_VIEW_ATTR = 'data-heading-fold-view'
 
-/** One id for each editor, so the same note folded differently in another tab is not touched. */
+/** One id for each editor, so the same page folded differently in another tab is not touched. */
 let nextViewId = 0
 
 /**
@@ -377,6 +377,33 @@ const collectHeadingEntries = (
   })
 }
 
+/** Inline typing inside a non-heading textblock: heading labels, levels, and section structure cannot change (YAZ-6028). */
+const typingOutsideHeading = (tr: Transaction): boolean =>
+  tr.steps.length > 0 &&
+  tr.steps.every((step, i) => {
+    if (!(step instanceof ReplaceStep) || step.slice.openStart > 0 || step.slice.openEnd > 0) return false
+    const $from = tr.docs[i]!.resolve(step.from)
+    return $from.parent.isTextblock && $from.parent.type.name !== 'heading' && step.to <= $from.end()
+  })
+
+/** Maps existing heading entries through a non-heading typing transaction, reusing entries strictly before the edit. */
+const mapHeadingEntries = (entries: readonly HeadingEntry[], tr: Transaction): HeadingEntry[] => {
+  if (entries.length === 0) return []
+  let earliest = Infinity
+  for (const step of tr.steps) if (step instanceof ReplaceStep && step.from < earliest) earliest = step.from
+  const { mapping } = tr
+  return entries.map((entry) => {
+    const lastEnd = entry.sectionBlockRanges[entry.sectionBlockRanges.length - 1]?.to ?? entry.headingEnd
+    if (lastEnd <= earliest) return entry
+    const headingPos = entry.headingPos < earliest ? entry.headingPos : mapping.map(entry.headingPos, 1)
+    const headingEnd = entry.headingEnd <= earliest ? entry.headingEnd : mapping.map(entry.headingEnd, -1)
+    const sectionBlockRanges = entry.sectionBlockRanges.map((r) =>
+      r.to <= earliest ? r : { from: r.from < earliest ? r.from : mapping.map(r.from, 1), to: mapping.map(r.to, -1) },
+    )
+    return { ...entry, headingPos, headingEnd, sectionBlockRanges }
+  })
+}
+
 const getHeadingEntries = (doc: ProseNode): HeadingEntry[] => {
   const entries: HeadingEntry[] = []
   collectHeadingEntries(doc, 0, entries, new Map())
@@ -479,7 +506,11 @@ export const createHeadingFolding = ({ seedCollapsedKeys = () => new Set(), onCo
             // A caret move changes no entry, fold or ⌘Z eligibility: keep the SAME state object (YAZ-2131 4C).
             if (!transaction.docChanged && transaction.getMeta(pluginKey) === undefined && transaction.getMeta(VIEW_ACTION_META) === undefined)
               return previousState
-            const entries = transaction.docChanged ? getHeadingEntries(newState.doc) : previousState.entries
+            const entries = !transaction.docChanged
+              ? previousState.entries
+              : typingOutsideHeading(transaction)
+                ? mapHeadingEntries(previousState.entries, transaction)
+                : getHeadingEntries(newState.doc)
             const headingPositions = new Set(entries.map(({ headingPos }) => headingPos))
             const collapsedHeadingPositions = new Set<number>()
             previousState.collapsedHeadingPositions.forEach((position) => {

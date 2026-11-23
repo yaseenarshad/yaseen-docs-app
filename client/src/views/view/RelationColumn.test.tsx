@@ -1,7 +1,7 @@
 /**
  * Relation definitions now save to the current folder with the shared Save/Cancel editor.
  * Legacy vault declarations remain read fallbacks. Link values still write through the normal
- * cell editors; their pickers constrain suggestions to the notes in the declared target FOLDER
+ * cell editors; their pickers constrain suggestions to the pages in the declared target FOLDER
  * (YAZ-2290 D10), which the Files tree names — `tree` is stubbed on the bridge beside `properties`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -16,7 +16,7 @@ import { propertiesStub, resetPropertiesStub } from '../propertiesStub'
 import { testFolderHost } from '../testFolderHost'
 
 /** No store behind this mount: collapse state stays in the pane. */
-vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
+vi.mock('../../lib/storage', () => ({ storage: { getSettings: () => undefined, getViewGroups: () => [], setViewGroups: () => undefined } }))
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn() }))
 import { writeProperty } from '../writeProperty'
 
@@ -48,9 +48,9 @@ const REVENUE = '/vault/KPIs/Revenue.md'
 const CHURN = '/vault/KPIs/Churn.md'
 
 /**
- * Two folders (`People`, `Funnels`) and the notes that live in them, plus the two KPI rows the
+ * Two folders (`People`, `Funnels`) and the pages that live in them, plus the two KPI rows the
  * table shows. `page_type` rides along as ORDINARY frontmatter — it is what `KPI_BASE` filters
- * on, and nothing in the client reads it as an identity any more (YAZ-836). `Topics` is a note,
+ * on, and nothing in the client reads it as an identity any more (YAZ-836). `Topics` is a page,
  * not a folder.
  */
 const RECORDS: IndexRecord[] = [
@@ -189,16 +189,22 @@ function aheadHost() {
   const setColumn = vi.fn(async (key: string, next: PropertyDecl) => {
     settings.columns[key] = next
   })
-  return { setColumn, folder: testFolderHost({ vaultRecords: RECORDS, settings, setColumn }) }
+  return { setColumn, folder: testFolderHost({ vaultRecords: RECORDS, vaultFolders: FOLDER_PAGES, settings, setColumn }) }
 }
 
-/** Pick a `<select>` value the way a user does: the native setter, then a bubbling change event React sees. */
-function selectValue(el: HTMLSelectElement, value: string): void {
-  const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
-  act(() => {
-    set?.call(el, value)
-    el.dispatchEvent(new Event('change', { bubbles: true }))
-  })
+/** The vault's folder pages, `People` and `Funnels`: what "Pages from" lists (YAZ-4795 demo). */
+const FOLDER_PAGES: IndexRecord[] = ['Funnels', 'People'].map((name) => ({ ...rec(`/vault/${name}/.folder.md`, {}), title: name }))
+
+/** "Pages from" (YAZ-4795 demo, in place of the "Link target" text box): its button, then a folder by name. */
+function pickPagesFrom(el: ParentNode, label: string, folder: string): void {
+  click(byLabel(el, `Pages from for ${label}`))
+  click([...el.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((o) => o.querySelector('.type-picker__name')?.textContent === folder)!)
+}
+
+/** The column editor's Type is the type picker (YAZ-3746 13L): its button names the type, then a list of every type. */
+function pickType(el: ParentNode, label: string, type: string): void {
+  click(byLabel(el, `Edit property ${label}`))
+  click([...el.querySelectorAll<HTMLElement>('.type-picker__option')].find((o) => o.querySelector('.type-picker__name')?.textContent === type)!)
 }
 
 /** Let an immediate declaration write resolve, so the panel's `base` moves forward (3D). */
@@ -213,7 +219,7 @@ const options = (el: ParentNode) => [...el.querySelectorAll('[role="option"]')].
 
 /** Open the Properties popover and the relation editor for `key` — the button wears the column's LABEL (YAZ-1513). */
 function openRelation(el: ParentNode, key: string) {
-  click(byLabel(el, 'Properties'))
+  click(byLabel(el, 'Columns and view'))
   click(byLabel(el, `Open ${defaultLabel(key)}`)) // the column's detail (YAZ-1513)
   click(byLabel(el, `Relation for ${defaultLabel(key)}`))
 }
@@ -227,51 +233,52 @@ describe('column menu relation flow', () => {
     openRelation(el, 'owner') // "Make relation": the declaration is born as a link, immediately
     expect(setColumn).toHaveBeenNthCalledWith(1, 'owner', { kind: 'link' }, undefined)
     await settle()
-    setValue(byLabel<HTMLInputElement>(el, 'Link target'), 'People')
-    press(byLabel(el, 'Link target'), 'Enter')
-    expect(setColumn).toHaveBeenNthCalledWith(2, 'owner', { kind: 'link', target: 'People' }, { kind: 'link' })
+    pickPagesFrom(el, 'Owner', 'People')
+    expect(setColumn).toHaveBeenNthCalledWith(2, 'owner', { kind: 'link', target: '[[People]]' }, { kind: 'link' })
     expect((await propertiesStub.get('/vault')).properties).toEqual({})
   })
 
-  it('Multi-link: the Type select, then the target — each an immediate folder-local write against what just landed', async () => {
+  it('Multi-link: the Type picker, then the target — each an immediate folder-local write against what just landed', async () => {
     const { setColumn, folder } = aheadHost()
     const { el } = mount(UNFILTERED_BASE, { folder })
     openRelation(el, 'funnels')
     expect(setColumn).toHaveBeenNthCalledWith(1, 'funnels', { kind: 'link' }, undefined)
     await settle()
-    selectValue(byLabel<HTMLSelectElement>(el, 'Edit property Funnels'), 'multi-link')
+    pickType(el, 'Funnels', 'Multi-link')
     expect(setColumn).toHaveBeenNthCalledWith(2, 'funnels', { kind: 'multi-link' }, { kind: 'link' })
     await settle()
-    setValue(byLabel<HTMLInputElement>(el, 'Link target'), 'Funnels')
-    press(byLabel(el, 'Link target'), 'Enter')
-    expect(setColumn).toHaveBeenNthCalledWith(3, 'funnels', { kind: 'multi-link', target: 'Funnels' }, { kind: 'multi-link' })
+    pickPagesFrom(el, 'Funnels', 'Funnels')
+    expect(setColumn).toHaveBeenNthCalledWith(3, 'funnels', { kind: 'multi-link', target: '[[Funnels]]' }, { kind: 'multi-link' })
     expect((await propertiesStub.get('/vault')).properties).toEqual({})
   })
 
-  it('the target is free text with no obsolete type-name suggestion list', async () => {
+  // YAZ-4795 demo: the free-text target became the "Pages from" folder picker; it still offers no type names, only the
+  // vault's folders after "Any folder".
+  it('the target is the "Pages from" folder picker, with no obsolete type-name suggestion list', async () => {
     const { el } = mount(KPI_BASE, { properties: DECLS, folder: aheadHost().folder })
     openRelation(el, 'owner')
     await settle()
     expect(el.querySelector('datalist')).toBeNull()
-    expect(byLabel<HTMLInputElement>(el, 'Link target').getAttribute('list')).toBeNull()
+    click(byLabel(el, 'Pages from for Owner'))
+    expect([...el.querySelectorAll('[role="menuitemradio"] .type-picker__name')].map((n) => n.textContent)).toEqual(['Any folder', 'Funnels', 'People'])
   })
 
   it('an existing legacy declaration is the seed: nothing is written before the click, and Make relation writes exactly it', async () => {
     const { setColumn, folder } = aheadHost()
     const { el } = mount(KPI_BASE, { properties: DECLS, folder })
-    click(byLabel(el, 'Properties'))
+    click(byLabel(el, 'Columns and view'))
     click(byLabel(el, 'Open Funnels'))
     expect(setColumn).not.toHaveBeenCalled()
     click(byLabel(el, 'Relation for Funnels'))
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('funnels', { kind: 'multi-link', target: 'Funnels' }, undefined)
     await settle()
-    expect(byLabel<HTMLSelectElement>(el, 'Edit property Funnels').value).toBe('multi-link')
-    expect(byLabel<HTMLInputElement>(el, 'Link target').value).toBe('Funnels')
+    expect(byLabel(el, 'Edit property Funnels').textContent).toBe('Multi-link')
+    expect(byLabel(el, 'Pages from for Funnels').textContent).toBe('Funnels')
   })
 
-  it('file.* rows never offer a relation; note.* rows do', () => {
+  it('file.* rows never offer a relation; page.* rows do', () => {
     const { el } = mount(KPI_BASE)
-    click(byLabel(el, 'Properties'))
+    click(byLabel(el, 'Columns and view'))
     click(byLabel(el, 'Open Name'))
     expect(el.querySelector('[aria-label="Relation for Name"]')).toBeNull() // file.name's detail
     click(byLabel(el, 'Back to columns'))
@@ -281,12 +288,12 @@ describe('column menu relation flow', () => {
 })
 
 describe('constrained picker', () => {
-  it('the link editor offers the notes in the target FOLDER and commits the wiki-link through writeProperty', () => {
+  it('the link editor offers the pages in the target FOLDER and commits the wiki-link through writeProperty', () => {
     const { el } = mount(KPI_BASE, { properties: DECLS })
     open(el, 1, 1) // Churn's empty owner cell — typed link by the declaration alone
     const input = byLabel<HTMLInputElement>(el, 'Edit owner')
     setValue(input, '[[')
-    expect(options(el)).toEqual(['Alice', 'Bob']) // the notes in the folder People
+    expect(options(el)).toEqual(['Alice', 'Bob']) // the pages in the folder People
     click(q(el, '[role="option"]'))
     press(byLabel(el, 'Edit owner'), 'Enter')
     expect(write).toHaveBeenCalledExactlyOnceWith(CHURN, 'owner', '[[Alice]]')
@@ -295,7 +302,7 @@ describe('constrained picker', () => {
   it.each([
     ['naming no folder', 'person'],
     ['naming an EMPTY folder', '[[Empty]]'],
-    ['naming a note, not a folder', '[[Topics]]'],
+    ['naming a page, not a folder', '[[Topics]]'],
   ])('a target %s falls back to ALL basenames — never an error', (_name, target) => {
     const ghost: PropertiesResponse = { ...DECLS, properties: { owner: { kind: 'link', target } } }
     const { el } = mount(KPI_BASE, { properties: ghost })
@@ -311,7 +318,7 @@ describe('multi-link cells', () => {
     open(el, 0, 2) // Revenue's empty funnels cell — multi-link vault-wide
     const input = byLabel<HTMLInputElement>(el, 'Edit funnels')
     setValue(input, '[[')
-    expect(options(el)).toEqual(['Retention', 'Signup']) // the notes in the folder Funnels, in the index's path order
+    expect(options(el)).toEqual(['Retention', 'Signup']) // the pages in the folder Funnels, in the index's path order
     setValue(byLabel<HTMLInputElement>(el, 'Edit funnels'), '[[Sig')
     press(byLabel(el, 'Edit funnels'), 'Enter') // completes to [[Signup]]
     expect(byLabel<HTMLInputElement>(el, 'Edit funnels').value).toBe('[[Signup]]')
@@ -331,7 +338,7 @@ describe('multi-link cells', () => {
 describe('round trip and degradation', () => {
   it('a relation value renders as a link chip, like any wiki-link property today', () => {
     const { el } = mount(KPI_BASE, { properties: DECLS })
-    const chip = q<HTMLElement>(cell(el, 0, 1), '.view-table__chip--link')
+    const chip = q<HTMLElement>(cell(el, 0, 1), '.view-link-pill')
     expect(chip.textContent).toBe('Alice')
   })
 

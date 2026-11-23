@@ -34,6 +34,7 @@ import { getCornerRadius } from "./utils";
 import {
   getStyledVisualLineStart,
   getTextElementStyledLayout,
+  getTextElementStyledLines,
 } from "./textLineUnderlines";
 import { getLinkPillMetrics, hasHostLinks } from "./textLinks";
 import {
@@ -208,7 +209,11 @@ const getTextVisualBounds = (
   }
 
   const maxWidth = element.autoResize ? Infinity : element.width;
-  const { lines } = getTextElementStyledLayout(element, maxWidth);
+  const lines = getTextElementStyledLines(
+    element,
+    maxWidth,
+    element.originalText,
+  );
   const lineHeightPx = element.fontSize * element.lineHeight;
   const verticalOffset = getVerticalOffset(
     element.fontFamily,
@@ -292,6 +297,18 @@ const getTextVisualBounds = (
       right = Math.max(right, piece.x + metrics.actualBoundingBoxRight);
       top = Math.min(top, baseline - metrics.actualBoundingBoxAscent);
       bottom = Math.max(bottom, baseline + metrics.actualBoundingBoxDescent);
+    }
+    // YAZ-3746 13BD: an underline is part of what shows, so the box takes it
+    // (`renderElement` draws it from 0.08 em under the baseline, 1/16 em thick)
+    if (
+      line.text &&
+      (line.underlined ||
+        line.segments?.some((segment) => segment.underlined && !segment.link))
+    ) {
+      bottom = Math.max(
+        bottom,
+        baseline + element.fontSize * 0.08 + element.fontSize / 16,
+      );
     }
   }
 
@@ -413,13 +430,12 @@ export const getTextBackgroundGeometry = (
     return null;
   }
 
-  const visualBounds = measuredVisualBounds ??
-    getTextVisualBounds(element) ?? {
-      x: 0,
-      y: 0,
-      width: element.width,
-      height: element.height,
-    };
+  const box = { x: 0, y: 0, width: element.width, height: element.height };
+  // YAZ-4277 D11: a box dragged to a fixed width is filled to its edges; an
+  // auto-width box keeps the fill around its letters
+  const visualBounds = !element.autoResize
+    ? box
+    : measuredVisualBounds ?? getTextVisualBounds(element) ?? box;
   // Slightly wider side padding gives the filled text a compact label shape
   // instead of a square block. Measuring actual glyph bounds keeps words
   // without descenders from looking bottom-heavy.

@@ -1,0 +1,30 @@
+/* A plain draw.io diagram: its page picker (several pages) and the line under a picture with shapes to come. */
+.page-drawing--diagram {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: visible;
+}
+.page-drawing__pages {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--fg-muted);
+}
+.page-drawing__select {
+  min-height: 44px;
+  max-width: 100%;
+  min-width: 0;
+  flex: 1;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg-side);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+.page-drawing__note {
+  font-size: 13px;
+  color: var(--fg-muted);
+}

@@ -271,8 +271,8 @@ const MAKE_FUNCTIONS = ['abspath', 'addprefix', 'addsuffix', 'and', 'basename', 
  */
 const makefile: ExtraLanguage = {
   id: 'makefile',
-  extensions: [],
-  filenames: ['Makefile'],
+  extensions: ['.just'],
+  filenames: ['Makefile', 'Justfile'],
   aliases: ['Makefile', 'make'],
   tokens: {
     tokenPostfix: '.make',
@@ -313,7 +313,7 @@ export const EXTRA_LANGUAGES: readonly ExtraLanguage[] = [haskell, diff, groovy,
  */
 export const FILENAME_LANGUAGES: readonly { id: string; filenames?: string[]; filenamePatterns?: string[] }[] = [
   { id: 'dockerfile', filenamePatterns: ['Dockerfile.*'] },
-  { id: 'ruby', filenames: ['Vagrantfile'] },
+  { id: 'ruby', filenames: ['Vagrantfile', 'Brewfile'] },
 ]
 
 /** The part of `monaco.languages` this needs (the tests hand it a fake). */

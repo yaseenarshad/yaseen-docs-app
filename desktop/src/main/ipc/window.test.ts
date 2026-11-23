@@ -5,6 +5,7 @@ import path from 'node:path'
 import { ipcMain } from 'electron'
 import { MAX_FOLD_KEYS_PER_FILE, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type PageView, type StartView, type TabRef, type TearOffResult, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { CONTRACT, SPECIAL, type Envelope } from '@shared/ipc'
+import { setCardSkillVault } from '@shared/appVaults'
 import { createStore, type Store } from '../store'
 import * as windows from '../windows'
 import { MAX_CLOSE_REFS, registerWindowIpc } from './window'
@@ -35,6 +36,8 @@ let manager: {
   duplicateWindow: ReturnType<typeof vi.fn>
   popOut: ReturnType<typeof vi.fn>
   moveTo: ReturnType<typeof vi.fn<(to: string, path: string) => boolean>>
+  inboxToNewWindow: ReturnType<typeof vi.fn<(from: WindowEntry, carry: unknown) => string>>
+  moveInboxTo: ReturnType<typeof vi.fn<(to: string, carry: unknown) => boolean>>
   focusTab: ReturnType<typeof vi.fn<(to: string, ref: TabRef) => boolean>>
   closeTabs: ReturnType<typeof vi.fn<(to: string, refs: readonly TabRef[]) => boolean>>
   moveTab: ReturnType<typeof vi.fn<(from: string, to: string, ref: TabRef, at?: number, background?: boolean) => boolean>>
@@ -59,6 +62,7 @@ let manager: {
   handleFlushed: ReturnType<typeof vi.fn>
   handleLinkReady: ReturnType<typeof vi.fn>
   vaultNotice: ReturnType<typeof vi.fn>
+  appNotice: ReturnType<typeof vi.fn>
   takeStartView: ReturnType<typeof vi.fn<(id: string) => StartView | undefined>>
   takeReload: ReturnType<typeof vi.fn<(id: string) => { views: (StartView | null)[]; mb: number } | undefined>>
   takeStartEmpty: ReturnType<typeof vi.fn<(id: string) => boolean>>
@@ -81,7 +85,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), tearOff: vi.fn((): TearOffResult => 'opened'), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), addVaultAndTake: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), raise: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeReload: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), takeStartCollapsed: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(() => true), filesZoomMenu: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), inboxToNewWindow: vi.fn(() => 'w9'), moveInboxTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), tearOff: vi.fn((): TearOffResult => 'opened'), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), addVaultAndTake: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), raise: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), appNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeReload: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), takeStartCollapsed: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(() => true), filesZoomMenu: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -103,7 +107,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes, `link:ready` and the paste fallback (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.tearOff.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.addVaultAndTake.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.raise.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.noteClosed.channel, CONTRACT.window.forgetClosed.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.openFiles.channel, CONTRACT.window.openFromFiles.channel, CONTRACT.window.filesWide.channel, CONTRACT.window.filesPreview.channel, CONTRACT.window.filesToNormal.channel, CONTRACT.window.filesZoom.channel, CONTRACT.window.filesZoomMenu.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
+    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.inboxToNewWindow.channel, CONTRACT.window.moveInboxTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.tearOff.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.addVaultAndTake.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.raise.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.pageClosed.channel, CONTRACT.window.forgetClosed.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.openFiles.channel, CONTRACT.window.openFromFiles.channel, CONTRACT.window.filesWide.channel, CONTRACT.window.filesPreview.channel, CONTRACT.window.filesToNormal.channel, CONTRACT.window.filesZoom.channel, CONTRACT.window.filesZoomMenu.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -119,6 +123,15 @@ describe('registerWindowIpc', () => {
 
   it('window:identity answers the complete per-window identity for a registered sender', async () => {
     expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files' }))
+  })
+
+  it('YAZ-5108: window:identity names the card skill\'s copy once main made it, and the window\'s own roots stay as stored', async () => {
+    setCardSkillVault('/Users/demo/Library/Application Support/Yaseen Docs/card-skill')
+    try {
+      expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', cardSkill: '/Users/demo/Library/Application Support/Yaseen Docs/card-skill' }))
+    } finally {
+      setCardSkillVault(null)
+    }
   })
 
   it('window:identity rejects an unregistered sender (BAD_REQUEST) and a window the state no longer has (NOT_FOUND)', async () => {
@@ -332,17 +345,17 @@ describe('registerWindowIpc', () => {
     expect(manager.openWindow).toHaveBeenCalledTimes(2)
   })
 
-  it('window:note-closed (YAZ-3487 D10): the closed notes go to the vaults of the CALLER\'s window; a wrong list is refused', async () => {
+  it('window:page-closed (YAZ-3487 D10): the closed pages go to the vaults of the CALLER\'s window; a wrong list is refused', async () => {
     const addClosed = vi.spyOn(store, 'addClosed')
-    expect(await registered(CONTRACT.window.noteClosed.channel)({ sender }, ['/v/a.md'])).toEqual(ok(undefined))
+    expect(await registered(CONTRACT.window.pageClosed.channel)({ sender }, ['/v/a.md'])).toEqual(ok(undefined))
     expect(addClosed).toHaveBeenCalledExactlyOnceWith(['/v'], ['/v/a.md'])
-    expect(await registered(CONTRACT.window.noteClosed.channel)({ sender }, '/v/a.md')).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CONTRACT.window.noteClosed.channel)({ sender }, ['rel.md'])).toEqual(bad('NOT_ABSOLUTE'))
-    expect(await registered(CONTRACT.window.noteClosed.channel)({ sender: stranger }, ['/v/a.md'])).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.window.pageClosed.channel)({ sender }, '/v/a.md')).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.window.pageClosed.channel)({ sender }, ['rel.md'])).toEqual(bad('NOT_ABSOLUTE'))
+    expect(await registered(CONTRACT.window.pageClosed.channel)({ sender: stranger }, ['/v/a.md'])).toEqual(bad('BAD_REQUEST'))
     expect(addClosed).toHaveBeenCalledTimes(1)
   })
 
-  it('window:forget-closed (YAZ-3487 D14): a list drops those notes, null clears the list of the CALLER\'s vaults; anything else is refused', async () => {
+  it('window:forget-closed (YAZ-3487 D14): a list drops those pages, null clears the list of the CALLER\'s vaults; anything else is refused', async () => {
     const forgetClosed = vi.spyOn(store, 'forgetClosed')
     expect(await registered(CONTRACT.window.forgetClosed.channel)({ sender }, ['/v/a.md'])).toEqual(ok(undefined))
     expect(await registered(CONTRACT.window.forgetClosed.channel)({ sender }, null)).toEqual(ok(undefined))
@@ -662,6 +675,27 @@ describe('registerWindowIpc', () => {
     expect(await moveTo({ sender }, 'w2', '/v/a.md')).toEqual(bad('NOT_FOUND'))
   })
 
+  it('YAZ-5054: window:inbox-to-new-window and window:move-inbox-to take a vault of the CALLER\'s window, and keep only a well-formed scope, filter and card', async () => {
+    const toNew = registered(CONTRACT.window.inboxToNewWindow.channel)
+    const moveInbox = registered(CONTRACT.window.moveInboxTo.channel)
+    const card = { path: '/v/n/c.md', id: 'A-1' }
+    expect(await toNew({ sender }, { root: '/v', folder: 'n', filter: 'next', card, extra: 1 })).toEqual(ok(undefined))
+    expect(manager.inboxToNewWindow).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'w1' }), { root: '/v', folder: 'n', filter: 'next', card })
+    expect(await toNew({ sender }, { root: '/v', folder: '../x', page: '/elsewhere/p.md', filter: 'bogus', card: { path: 1 } })).toEqual(ok(undefined))
+    expect(manager.inboxToNewWindow).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'w1' }), { root: '/v' })
+    // YAZ-5430: no To fix filter any more: a carried `fix` is left out, so the Inbox opens on All cards.
+    expect(await toNew({ sender }, { root: '/v', filter: 'fix' })).toEqual(ok(undefined))
+    expect(manager.inboxToNewWindow).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'w1' }), { root: '/v' })
+    expect(await toNew({ sender }, { root: '/other' })).toEqual(bad('BAD_REQUEST'))
+    expect(await toNew({ sender }, 'Inbox')).toEqual(bad('BAD_REQUEST'))
+    expect(await toNew({ sender: stranger }, { root: '/v' })).toEqual(bad('BAD_REQUEST'))
+    expect(await moveInbox({ sender }, 'w2', { root: '/v', page: '/v/p.md' })).toEqual(ok(undefined))
+    expect(manager.moveInboxTo).toHaveBeenLastCalledWith('w2', { root: '/v', page: '/v/p.md' })
+    expect(await moveInbox({ sender }, 'w1', { root: '/v' })).toEqual(expect.objectContaining({ ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST', message: expect.stringContaining('its own window') }) }))
+    manager.moveInboxTo.mockReturnValueOnce(false)
+    expect(await moveInbox({ sender }, 'w2', { root: '/v' })).toEqual(bad('NOT_FOUND'))
+  })
+
   describe('the tab board doors (YAZ-3343 D3, D13, D14)', () => {
     const REF = { path: '/v/a.md', copy: 1 }
 
@@ -722,11 +756,11 @@ describe('registerWindowIpc', () => {
       const REF0 = { path: '/v/a.md', copy: 0 }
       expect(await act({ sender }, 'w2', REF0, { kind: 'set-name', name: '  Plan  ' })).toEqual(ok(undefined))
       expect(manager.tabAction).toHaveBeenLastCalledWith('w2', REF0, { kind: 'set-name', name: 'Plan' })
-      for (const action of [{ kind: 'duplicate' }, { kind: 'show-in-sidebar' }, { kind: 'set-review', on: true }, { kind: 'set-name', name: null }]) {
+      for (const action of [{ kind: 'duplicate' }, { kind: 'show-in-sidebar' }, { kind: 'set-name', name: null }]) {
         expect(await act({ sender }, 'w2', REF0, action)).toEqual(ok(undefined))
         expect(manager.tabAction).toHaveBeenLastCalledWith('w2', REF0, action)
       }
-      for (const action of [null, { kind: 'delete' }, { kind: 'set-review' }, { kind: 'set-name', name: 3 }]) expect(await act({ sender }, 'w2', REF0, action)).toEqual(bad('BAD_REQUEST'))
+      for (const action of [null, { kind: 'delete' }, { kind: 'set-review', on: true }, { kind: 'set-name', name: 3 }]) expect(await act({ sender }, 'w2', REF0, action)).toEqual(bad('BAD_REQUEST'))
       manager.tabAction.mockReturnValueOnce(false)
       expect(await act({ sender }, 'w2', REF0, { kind: 'duplicate' })).toEqual(bad('NOT_FOUND'))
     })

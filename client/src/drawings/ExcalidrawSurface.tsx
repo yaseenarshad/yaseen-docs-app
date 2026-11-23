@@ -1,10 +1,10 @@
 /**
  * THE ENGINE SEAM (YAZ-879; rebuilt for the drawing DOCUMENT in Draw's 🔒 YAZ-1810, merged back into
- * Docs by YAZ-3028 so the note embed's modal and a drawing TAB share it).
+ * Docs by YAZ-3028 so the page embed's modal and a drawing TAB share it).
  *
  * 🔒 ONE FILE OWNS THE CANVAS. This is the only component that mounts `<Excalidraw>`, the only
  * one that knows how a scene serializes, and the only one that knows what "changed" means to the
- * engine. Its two hosts — `DrawingModal` (the note embed, rule 28) and `DrawingEditor` (a tab, with
+ * engine. Its two hosts — `DrawingModal` (the page embed, rule 28) and `DrawingEditor` (a tab, with
  * the `useDocumentHost` chrome) — import this module's TYPES and this component and nothing
  * else. `DrawingModal.test.tsx` pins the boundary as source; `DrawingEditor.test.tsx` mocks this
  * one module and drives the host through it.
@@ -33,7 +33,7 @@
  * engine's first `onChange` — so a canvas background change is an edit like any other.
  *
  * ONE WRITER: `serializeAsJSON(…, 'local')` is the library's own writer, with `source` pinned
- * (`engine.ts`) and a trailing newline. `serialize()` is a save, by a tab and by the note's popup
+ * (`engine.ts`) and a trailing newline. `serialize()` is a save, by a tab and by the page's popup
  * (YAZ-3943 1A1): the scene with an EMPTY files map, plus the engine's live images and the ids the
  * scene still references, so the host can ship what main lacks (`unpersistedFiles`) without ever
  * seeing an engine type. Main puts the pictures back inside the file (YAZ-3943 D5), or in `assets/`
@@ -60,15 +60,16 @@
  * (`CanvasSidebar.tsx`, Add / Present, the engine's one child), the ⌘F / ⌘C keys that
  * open it — bound on THIS component's own element in the capture phase, because several tabs each mount an
  * engine; the one `window` listener takes only a ⌘F whose target is the page itself, and only while this board is on
- * screen (YAZ-4157 demo 6N) — and the presentation player. The note embed's modal passes
- * none of it: it keeps the engine's own menu at top-left, and a note's drawing has no library
+ * screen (YAZ-4157 demo 6N) — and the presentation player. The page embed's modal passes
+ * none of it: it keeps the engine's own menu at top-left, and a page's drawing has no library
  * (rule 28). Which mode a surface is in is read ONCE, at mount.
  */
 import { requestKeySheet } from '../keys/keySheetRequest'
+import { tellReadOnlyEdit } from '../editor/readOnlyEdit'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { picturesSize, referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
-import { appStateToPrefs, changedPrefKeys, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
-import { CANVAS_PANEL_DEFAULT_W, CANVAS_PANEL_MAX_W, CANVAS_PANEL_MIN_W, DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type OutsideChangeGlow, type PageView } from '@shared/types'
+import { appStateToPrefs, changedPrefKeys, foldArrowsOf, NEW_ELEMENT_DEFAULT_KEYS, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
+import { CANVAS_PANEL_DEFAULT_W, CANVAS_PANEL_MAX_W, CANVAS_PANEL_MIN_W, DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type FoldArrowMode, type OutsideChangeGlow, type PageView } from '@shared/types'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside, MouseMods } from '@shared/keys'
 import { holdColResize } from '../lib/colResize'
@@ -81,7 +82,7 @@ import './outsideMarks.css'
 import { CANVAS_SIDEBAR, CanvasSidebar, openCanvasTab } from './CanvasSidebar'
 import { imageStudioSession, pickChip } from '../image-studio/imageStudioSession'
 import { openViewport, type DrawingScene } from './drawingScene'
-import { applyToolbarMode, loadExcalidraw, type ExcalidrawModule } from './engine'
+import { applyToolbarMode, loadExcalidraw, loadTextBoxEditor, type ExcalidrawModule } from './engine'
 import { assembleExportCopy } from './exportDrawing'
 import { yaseenFormFactor } from './formFactor'
 import { applyFramesVisibility } from './framesVisibility'
@@ -93,6 +94,9 @@ type ExcalidrawProps = ComponentProps<ExcalidrawModule['Excalidraw']>
 type ChangeArgs = Parameters<NonNullable<ExcalidrawProps['onChange']>>
 type ImperativeApi = NonNullable<Parameters<NonNullable<ExcalidrawProps['onExcalidrawAPI']>>[0]>
 type EngineAppState = ChangeArgs[1]
+/** YAZ-4277 D18: the folds kept aside while folding is off; only the engine's fold switch point reads them. */
+type FoldsAside = ReturnType<ExcalidrawModule['getFoldsAside']>
+const NO_FOLDS_ASIDE: FoldsAside = new Map()
 
 /** What a host learns about the canvas; deliberately engine-free (a number and two thunks). */
 export interface DrawingSnapshot {
@@ -111,6 +115,10 @@ export interface DrawingSurfaceApi {
   refresh(): void
   /** Put the keyboard in the canvas (Draw's 🔒 YAZ-1812): the HOST decides WHETHER (`mayTakeFocus`), this only does it. */
   focus(): void
+  /** Open the canvas panel's Add tab and focus its search field (used when focus is on the modal overlay). */
+  openAddSearch(): void
+  /** Open (or toggle) the canvas panel's Add tab on its Components chip (used when focus is on the modal overlay). */
+  openComponentsPanel?(): void
   /** File › Export Image… (Draw's 🔒 YAZ-1775 D10): the engine's OWN export dialog, through its `appState.openDialog` door. */
   openImageExport(): void
   /** View › Canvas Background (Draw's 🔒 YAZ-1775 D10): `appState.viewBackgroundColor`, which the engine then writes into the file. */
@@ -173,7 +181,7 @@ export interface DrawingSurfaceProps {
   canvasPanel?: CanvasPanelState
   /**
    * A panel choice to remember. PASSING IT IS WHAT TURNS THE CANVAS PANEL ON (YAZ-3038): the drawing TAB
-   * passes it; the note embed's modal does not, and gets no rail, no panel, no ⌘F / ⌘C and no player.
+   * passes it; the page embed's modal does not, and gets no rail, no panel, no ⌘F / ⌘C and no player.
    */
   onCanvasPanelChange?: (next: CanvasPanelState) => void
   /** Mount, then every engine change. The first call is the host's clean baseline. */
@@ -204,14 +212,32 @@ export interface DrawingSurfaceProps {
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
-  /** Page links (YAZ-4039): the tab passes them; the note embed's modal does not, and its pills stay text. */
+  /** Page links (YAZ-4039): the tab passes them; the page embed's modal does not, and its pills stay text. */
   links?: DrawingSurfaceLinks
   /**
    * The export box's PDF button (YAZ-3943 D6): the engine's SVG of the export and its size, for the host to
    * make the PDF. The tab passes it; without it the box has no PDF button. Read once, at mount.
    */
   onExportPdf?: (svg: string, size: { width: number; height: number }) => void | Promise<void>
+  /** The board's own "Fold arrows" (YAZ-4277 D5), from its `yaseendraw` block; absent: the app's setting. */
+  foldArrows?: FoldArrowMode
+  /** The board's own "Hover outline" (YAZ-4469 demo), from its `yaseendraw` block; absent: the app's setting. */
+  hoverOutline?: boolean
 }
+
+/**
+ * The app's drawing settings, as both hosts take them (YAZ-4277 3A1, YAZ-4436). Every Settings › Drawings row is a
+ * `CanvasPrefs` key, and `Editor` builds this pair once for the tab (`DrawingEditor`) and the page embed's modal
+ * (`DrawingModal`). So a new row reaches both. The keys are required, so a host cannot leave them out; a value may be
+ * absent (the defaults, no writes).
+ */
+export interface DrawingAppSettings {
+  canvasPrefs: DrawingSurfaceProps['canvasPrefs']
+  onCanvasPrefsChange: DrawingSurfaceProps['onCanvasPrefsChange']
+}
+
+/** Where a Read only board's edit attempt lands (YAZ-4446): the engine's focusable box, or its canvas. */
+const BOARD_EDIT_TARGET = '.excalidraw-container, canvas'
 
 /** One arrow key on the canvas panel's edge (YAZ-4157 demo 6C). */
 const PANEL_KEY_STEP = 16
@@ -282,8 +308,13 @@ export function ExcalidrawSurface({
   hotkeysAside,
   links,
   onExportPdf,
+  foldArrows: boardFoldArrows,
+  hoverOutline: boardHoverOutline,
 }: DrawingSurfaceProps) {
   const [engine, setEngine] = useState<ExcalidrawModule | null>(null)
+  // YAZ-4277 D1: one text box editor for the surface's life, on the loaded engine's box rules (the prop-stability rule);
+  // its module loads with the engine, never in the entry chunk
+  const [textEditor, setTextEditor] = useState<ExcalidrawProps['textEditor']>(undefined)
   /** The canvas panel is the tab's (see the module doc); read once, so a surface never changes mode. */
   const [withPanel] = useState(() => onCanvasPanelChange !== undefined)
   // Callbacks change identity on every host render; the load must run ONCE and `onChange` must
@@ -314,6 +345,8 @@ export function ExcalidrawSurface({
   const panelRef = useRef(canvasPanel)
   /** The engine's raw handle, for the rail and the shortcuts; null until it has mounted. */
   const rawApiRef = useRef<ImperativeApi | null>(null)
+  /** YAZ-4277 demo: whether the engine's scene has its folds aside (folding off), as of the last switch. */
+  const foldsOffAt = useRef(foldArrowsOf(canvasPrefs, boardFoldArrows).openArrows === 'off')
   /**
    * The same handle as STATE, because the panel's tabs are children of `<Excalidraw>` that have to
    * re-render when it arrives (Draw's YAZ-1818) — a ref alone would leave the Add tab's insert disabled.
@@ -412,7 +445,7 @@ export function ExcalidrawSurface({
   // the PREF and let the round trip apply it. Every action reads the refs above, so the store — and
   // therefore `renderTopLeftUI` — never changes identity.
   const rail = useMemo(() => {
-    const flip = (key: 'writingMode' | 'framesVisible') => prefsOutRef.current?.({ ...appliedRef.current, [key]: !appliedRef.current[key] })
+    const flip = (key: 'writingMode' | 'framesVisible' | 'objectsSnapModeEnabled') => prefsOutRef.current?.({ ...appliedRef.current, [key]: !appliedRef.current[key] })
     const store = createLauncherStore(
       {
         // Open on the last-used tab (Components until then); pressing again closes.
@@ -424,8 +457,9 @@ export function ExcalidrawSurface({
         openTab: (tab) => rawApiRef.current?.toggleSidebar({ name: CANVAS_SIDEBAR, tab, force: store.getState().activeTab !== tab }),
         toggleWriting: () => flip('writingMode'),
         toggleFrames: () => flip('framesVisible'),
+        toggleSnap: () => flip('objectsSnapModeEnabled'),
       },
-      { ready: false, activeTab: null, writingMode: canvasPrefs.writingMode, framesVisible: canvasPrefs.framesVisible },
+      { ready: false, activeTab: null, writingMode: canvasPrefs.writingMode, framesVisible: canvasPrefs.framesVisible, objectsSnapModeEnabled: canvasPrefs.objectsSnapModeEnabled },
     )
     return store
     // Mount-only by contract: the initial values are read once (`closePanel` is stable), and every
@@ -530,10 +564,39 @@ export function ExcalidrawSurface({
     return true
   }, [])
 
+  /**
+   * A Read only board's edit attempt (YAZ-4446, D33): the engine's view mode ignores it, so the pane's "Read only" chip
+   * says why. Only on the engine's own box (where its keys, paste and cut land) or its canvas, never on a control in it
+   * (the chips, the panel's fields). A view key the engine takes (zoom, the page keys) stops in the engine, and ? stops
+   * at `onHelpKey`: neither gets here.
+   */
+  const tellBoardEdit = useCallback((event: { target: EventTarget }) => {
+    if (event.target instanceof Element && event.target.matches(BOARD_EDIT_TARGET)) tellReadOnlyEdit(event.target, 'drawing')
+  }, [])
+  const onReadOnlyKey = useCallback(
+    (event: ReactKeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.nativeEvent.isComposing) return
+      if (event.key === 'Enter' || event.key === 'Backspace' || event.key === 'Delete' || (event.key.length === 1 && event.key !== ' ')) tellBoardEdit(event)
+    },
+    [tellBoardEdit],
+  )
+  const onReadOnlyDoubleClick = useCallback((event: ReactMouseEvent) => {
+    if (event.target instanceof HTMLCanvasElement) tellBoardEdit(event)
+  }, [tellBoardEdit])
+
   /** ⌘F's one job (demo 6N): the caret in the Add tab's search field, opening the tab if it is not open. */
   const focusAddSearch = useCallback(() => {
     setSearchFocusPending(true)
     if (rail.getState().activeTab !== 'image-studio') rail.openTab('image-studio')
+  }, [rail])
+
+  /** ⌘C's one job (D6): open the Add tab on its Components chip; a second ⌘C while already there closes the panel. */
+  const toggleComponentsPanel = useCallback(() => {
+    const open = rail.getState().activeTab === 'image-studio'
+    const there = imageStudioSession.getState().chip === 'components'
+    pickChip('components')
+    if (open && !there) return
+    rail.openTab('image-studio')
   }, [rail])
 
   /**
@@ -573,14 +636,10 @@ export function ExcalidrawSurface({
       if (Object.keys((appState.selectedElementIds ?? {}) as Record<string, unknown>).length > 0) return
       event.preventDefault()
       event.stopPropagation()
-      // ⌘C on the open tab moves it to the Components chip; only a second ⌘C, already there, closes the panel.
-      const open = rail.getState().activeTab === 'image-studio'
-      const there = imageStudioSession.getState().chip === 'components'
-      pickChip('components')
-      if (open && !there) return
-      rail.openTab('image-studio')
+      // ⌘C on the open tab sets its Filter › Show to Components; only a second ⌘C, already there, closes the panel.
+      toggleComponentsPanel()
     },
-    [rail, onHelpKey, focusAddSearch],
+    [onHelpKey, focusAddSearch, toggleComponentsPanel],
   )
 
   // ⌘F with the focus on no element (demo 6N): a click on a spot that takes no focus — the panel's header, a gap in the
@@ -590,7 +649,11 @@ export function ExcalidrawSurface({
     if (!withPanel) return
     const onKey = (event: KeyboardEvent) => {
       if (event.target !== document.body && event.target !== document.documentElement) return
-      if (rootRef.current === null || rootRef.current.getClientRects().length === 0) return
+      const root = rootRef.current
+      if (root === null || root.getClientRects().length === 0) return
+      if (getComputedStyle(root).visibility === 'hidden') return
+      const modalOverlay = document.querySelector('.drawing-modal-overlay')
+      if (modalOverlay !== null && !modalOverlay.contains(root)) return
       if (event.repeat || event.isComposing || !pressed(event, 'drawing.imagesPanel', hotkeysRef.current)) return
       event.preventDefault()
       event.stopPropagation()
@@ -612,7 +675,7 @@ export function ExcalidrawSurface({
   }, [engine, canvasPrefs.newTextScreenSize, canvasPrefs.newTextWrapMargin])
 
   useEffect(() => {
-    rail.set({ writingMode: canvasPrefs.writingMode, framesVisible: canvasPrefs.framesVisible })
+    rail.set({ writingMode: canvasPrefs.writingMode, framesVisible: canvasPrefs.framesVisible, objectsSnapModeEnabled: canvasPrefs.objectsSnapModeEnabled })
     if (prefsEqual(canvasPrefs, appliedRef.current)) return
     const keys = changedPrefKeys(appliedRef.current, canvasPrefs)
     appliedRef.current = canvasPrefs
@@ -627,9 +690,20 @@ export function ExcalidrawSurface({
     if (keys.includes('framesVisible')) applyFramesVisibility(api, canvasPrefs.framesVisible)
   }, [canvasPrefs, rail])
 
-  // The scene and the prefs are read ONCE, at mount, by the effect below; a ref keeps them out of
-  // its dependency list without lying to the linter about what it uses.
-  const openedOn = useRef({ scene, canvasPrefs })
+  // YAZ-4277 D18: folding off: each folded box's folds, by id, with the text they belong to, kept aside by the
+  // engine's fold switch point (`takeFoldsAside`, `getFoldsAside`) so the file keeps them (`withFoldsPutBack`).
+  const hiddenFolds = useRef<FoldsAside>(NO_FOLDS_ASIDE)
+
+  // The scene, the prefs and the start view are read ONCE, at mount, by the effect below; a ref keeps them out
+  // of its dependency list without lying to the linter about what it uses.
+  const openedOn = useRef({ scene, canvasPrefs, startCanvas })
+  // Built ONCE, when the engine has loaded, from the mount-time scene and prefs: the engine reads `initialData`
+  // only at mount, and a fresh identity on every settings write would re-render the memoized `<Excalidraw>` for
+  // nothing (the #185 rule). The saved scene may sit far from the origin, so open on ALL of it (Draw's 🔒
+  // YAZ-1855 D1, fit-on-open) — `initialState.viewport`, resolved once the canvas is measured. A woken tab or a
+  // copy opens where it was (YAZ-3737 D13): its pan and zoom over the file's, and no fit. Pan and zoom are never
+  // written into the file, so they are no edit (`boardAppState.ts`).
+  const [initialData, setInitialData] = useState<ReturnType<typeof engineScene> | null>(null)
 
   useEffect(() => {
     let live = true
@@ -640,17 +714,28 @@ export function ExcalidrawSurface({
     // ⚡ Draw's YAZ-1775 R4/R5: the engine reads its styles-panel mode out of localStorage at mount, so the
     // one mode this app ships lands there before every mount.
     applyToolbarMode()
-    loadExcalidraw().then(
-      (mod) => {
+    Promise.all([loadExcalidraw(), loadTextBoxEditor()]).then(
+      ([mod, box]) => {
         if (!live) return
         engineRef.current = mod
+        setTextEditor(box.createTextBoxEditor(mod))
         boardKeys.current = boardAppStateKeys(mod)
         countEdits.current = appStateEdits(boardKeys.current)
+        // Folding off (D18): no fold reaches the engine, and each folded box shows all its lines.
+        const opened = openedOn.current
+        let mounted = opened.scene
+        if (foldsOffAt.current) {
+          const { elements, aside } = mod.takeFoldsAside(mod.restoreElements(opened.scene.elements as ChangeArgs[0], null))
+          hiddenFolds.current = aside
+          mounted = { ...opened.scene, elements }
+        }
+        const start = opened.startCanvas
+        setInitialData(engineScene(mounted, { ...prefsToAppState(opened.canvasPrefs), ...(start !== undefined && { scrollX: start.scrollX, scrollY: start.scrollY, zoom: { value: start.zoom } }) }))
         setEngine(mod)
         // The baseline, before the engine has said anything — through the engine's own restore,
         // because restored elements are what it mounts (see the module doc).
-        const { elements, appState, files } = engineScene(openedOn.current.scene, prefsToAppState(openedOn.current.canvasPrefs))
-        emitRef.current(snapshotOf(countVersion.current, mod, mod.restoreElements(elements, null) as ChangeArgs[0], appState, files, 0))
+        const { elements, appState, files } = engineScene(mounted, prefsToAppState(opened.canvasPrefs))
+        emitRef.current(snapshotOf(countVersion.current, mod, mod.restoreElements(elements, null) as ChangeArgs[0], appState, files, 0, hiddenFolds.current))
       },
       () => {
         if (live) failRef.current(ENGINE_LOAD_FAILED)
@@ -661,20 +746,13 @@ export function ExcalidrawSurface({
     }
   }, [])
 
-  // Built ONCE, from the mount-time scene and prefs: the engine reads `initialData` only at mount,
-  // and a fresh identity on every settings write would re-render the memoized `<Excalidraw>` for
-  // nothing (the #185 rule). The saved scene may sit far from the origin, so open on ALL of it
-  // (Draw's 🔒 YAZ-1855 D1, fit-on-open) — `initialState.viewport`, resolved once the canvas is measured.
-  // A woken tab or a copy opens where it was (YAZ-3737 D13): its pan and zoom over the file's, and no fit. Pan and
-  // zoom are never written into the file, so they are no edit (`boardAppState.ts`).
-  const [initialData] = useState(() => engineScene(scene, { ...prefsToAppState(canvasPrefs), ...(startCanvas !== undefined && { scrollX: startCanvas.scrollX, scrollY: startCanvas.scrollY, zoom: { value: startCanvas.zoom } }) }))
   const [initialState] = useState(() => (startCanvas === undefined ? openViewport(scene) : undefined) as ExcalidrawProps['initialState'])
 
   const onChange = useCallback(
     (elements: ChangeArgs[0], appState: EngineAppState, files: ChangeArgs[2]) => {
       const mod = engineRef.current
       const edits = countEdits.current
-      if (mod !== null && edits !== null) emitRef.current(snapshotOf(countVersion.current, mod, elements, appState, files, edits(appState as unknown as Record<string, unknown>)))
+      if (mod !== null && edits !== null) emitRef.current(snapshotOf(countVersion.current, mod, elements, appState, files, edits(appState as unknown as Record<string, unknown>), hiddenFolds.current))
       if (idleWaiters.current.length > 0 && !inGesture(appState as unknown as Record<string, unknown>)) for (const done of idleWaiters.current.splice(0)) done(true)
       const selected = (appState as unknown as { selectedElementIds: Record<string, unknown> }).selectedElementIds
       marks.current?.seen(selected, (id) => rawApiRef.current?.getSceneElementsMapIncludingDeleted().get(id as never))
@@ -690,7 +768,7 @@ export function ExcalidrawSurface({
       const seen = appStateToPrefs(appState as unknown as EngineAppStateSlice, appliedRef.current)
       if (prefsEqual(seen, appliedRef.current)) return
       appliedRef.current = seen
-      rail.set({ writingMode: seen.writingMode, framesVisible: seen.framesVisible })
+      rail.set({ writingMode: seen.writingMode, framesVisible: seen.framesVisible, objectsSnapModeEnabled: seen.objectsSnapModeEnabled })
       reportPrefs(seen)
     },
     [withPanel, rail, rememberPanel, reportPrefs],
@@ -720,6 +798,12 @@ export function ExcalidrawSurface({
       // `focusContainer()` lives on the engine's App class, not on this handle — so do what it
       // does: focus the engine's own container, the element it gives `tabIndex` for exactly this.
       focus: () => rootRef.current?.querySelector<HTMLElement>('.excalidraw-container')?.focus(),
+      openAddSearch: () => {
+        if (withPanel) focusAddSearch()
+      },
+      openComponentsPanel: () => {
+        if (withPanel) toggleComponentsPanel()
+      },
       openImageExport: () => api.updateScene({ appState: { openDialog: { name: 'imageExport' } } as unknown as EngineAppState }),
       // A read-only drawing keeps its background: the colour is written into the file (YAZ-3076 S26).
       setCanvasBackground: (color) => {
@@ -735,7 +819,13 @@ export function ExcalidrawSurface({
         }),
       pictures: () => picturesSize(api.getSceneElements() as readonly unknown[], api.getFiles() as unknown as Record<string, unknown>),
       replaceScene: (next) => {
-        const restored = mod.restoreElements(next.elements as ChangeArgs[0], null)
+        let restored = mod.restoreElements(next.elements as ChangeArgs[0], null)
+        // Folding off (D18): the new scene's folds go aside; the old scene's are gone.
+        if (foldsOffAt.current) {
+          const taken = mod.takeFoldsAside(restored)
+          restored = taken.elements as typeof restored
+          hiddenFolds.current = taken.aside
+        }
         // A new scene, a new count: computed BEFORE the engine reports it, so its first `onChange` agrees.
         countVersion.current = contentVersion()
         const version = countVersion.current(restored)
@@ -772,7 +862,7 @@ export function ExcalidrawSurface({
         return { scrollX, scrollY, zoom: zoom.value }
       },
     })
-  }, [withPanel, rail])
+  }, [withPanel, rail, focusAddSearch, toggleComponentsPanel])
 
   // The chips live in the engine's OWN top-right row rather than a strip above the canvas, so the
   // canvas starts directly under the tab bar and the chips can never cover the toolbar island.
@@ -814,8 +904,42 @@ export function ExcalidrawSurface({
     [engine, withPanel, activeTab, closePanel, onDock, imperativeApi, readOnly, theme, searchFocusPending, saveRequestPending, onSaveRequestTaken, onSearchFocused, hasSelection, startPresentation, keyBindings, canvasPanel.width, startPanelResize, resizePanelByKey],
   )
 
+  // YAZ-4277 D5, D7: the text boxes' fold arrows: the board's own mode over the app's, and the app's size rows. One
+  // stable object, so the memoized `<Excalidraw>` renders again only when a row changes.
+  const foldArrows = useMemo(
+    () => foldArrowsOf(canvasPrefs, boardFoldArrows),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the four fold rows only, not every canvas pref
+    [boardFoldArrows, canvasPrefs.foldArrowsOpen, canvasPrefs.foldArrowSize, canvasPrefs.foldArrowThickness, canvasPrefs.foldArrowMinSize],
+  )
+  // YAZ-4277 D18: folding turned off opens every fold and keeps it aside; turned on, puts back the folds of each box
+  // whose text did not change (an edit moves the lines, so an edited box loses them: `getFoldsToPutBack`). No undo
+  // step (a fold never is, D3); the board saves the new sizes, and the file keeps the folds either way.
+  const foldsOff = foldArrows.openArrows === 'off'
+  useEffect(() => {
+    const api = rawApiRef.current
+    const mod = engineRef.current
+    if (api === null || mod === null || foldsOffAt.current === foldsOff) return
+    foldsOffAt.current = foldsOff
+    const elements = api.getSceneElements() as ChangeArgs[0]
+    if (foldsOff) {
+      hiddenFolds.current = mod.getFoldsAside(elements)
+      for (const id of hiddenFolds.current.keys()) api.setTextFolds(id, [])
+    } else {
+      const back = mod.getFoldsToPutBack(elements, hiddenFolds.current)
+      hiddenFolds.current = NO_FOLDS_ASIDE
+      for (const [id, lines] of back) api.setTextFolds(id, lines)
+    }
+  }, [foldsOff])
+
+  // YAZ-4277 D14: what a new shape starts with, from Settings › Drawings; one stable object, as above.
+  const defaultItemStyle = useMemo(
+    () => prefsToAppState(canvasPrefs, NEW_ELEMENT_DEFAULT_KEYS),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the five default rows only, not every canvas pref
+    [canvasPrefs.writingStrokeWidth, canvasPrefs.vectorStrokeWidth, canvasPrefs.defaultFontFamily, canvasPrefs.defaultRoughness, canvasPrefs.defaultTextAlign],
+  )
+
   // The frame held while the engine chunk is arriving; the host's canvas frame sizes it.
-  if (engine === null) return <div className="drawing-surface__loading" />
+  if (engine === null || initialData === null) return <div className="drawing-surface__loading" />
   const { Excalidraw } = engine
   return (
     // The surface's own element, so ⌘F / ⌘C are heard here and nowhere else in the shell (the tab only).
@@ -824,6 +948,11 @@ export function ExcalidrawSurface({
       className="drawing-surface"
       style={{ '--canvas-panel-width': `${canvasPanel.width ?? CANVAS_PANEL_DEFAULT_W}px` } as CSSProperties}
       onKeyDownCapture={withPanel ? onKeyDownCapture : onHelpKey}
+      onKeyDown={readOnly ? onReadOnlyKey : undefined}
+      onPaste={readOnly ? tellBoardEdit : undefined}
+      onCut={readOnly ? tellBoardEdit : undefined}
+      onDrop={readOnly ? tellBoardEdit : undefined}
+      onDoubleClick={readOnly ? onReadOnlyDoubleClick : undefined}
     >
       <Excalidraw
         initialData={initialData}
@@ -845,6 +974,17 @@ export function ExcalidrawSurface({
         viewModeEnabled={readOnly ? true : undefined}
         keyBindings={keyBindings}
         hostLinks={links?.hostLinks}
+        // YAZ-4277 D1: a text box edits with the pages engine (`textBoxEditor.ts`)
+        textEditor={textEditor}
+        foldArrows={foldArrows}
+        newElementStyle={canvasPrefs.newElementStyle}
+        fillSetsTextColor={canvasPrefs.fillSetsTextColor}
+        newShapesMatchZoom={canvasPrefs.newShapesMatchZoom}
+        // YAZ-4469 demo: the board's own "Hover outline" over the app's
+        hoverOutline={boardHoverOutline ?? canvasPrefs.hoverOutline}
+        // YAZ-5771: a double click on a text box's left or right edge snaps its width
+        textEdgeDoubleClick={canvasPrefs.textEdgeDoubleClick}
+        defaultItemStyle={defaultItemStyle}
         hostContextMenuItems={hostContextMenuItems}
         onExportPdf={exportPdf}
         onLinkOpen={onLinkOpen}
@@ -870,6 +1010,7 @@ const BUSY_APP_STATE_KEYS = [
   'selectedLinearElement',
   'editingFrame',
   'croppingElementId',
+  'colorEditingElementId',
   'selectedElementsAreBeingDragged',
   'isResizing',
   'isRotating',
@@ -896,6 +1037,7 @@ function snapshotOf(
   appState: EngineAppState,
   files: ChangeArgs[2],
   appStateEditCount: number,
+  hiddenFolds: FoldsAside,
 ): DrawingSnapshot {
   return {
     version: countVersion(elements) + appStateEditCount,
@@ -909,7 +1051,7 @@ function snapshotOf(
       return {
         // An EMPTY files map on purpose: main embeds the pictures (YAZ-3943 D5) or keeps them in
         // `assets/`, so a save never stringifies them here. A text file in a git vault ends with a newline.
-        json: `${engine.serializeAsJSON(elements, appState, {}, 'local')}\n`,
+        json: `${engine.serializeAsJSON(engine.withFoldsPutBack(elements, hiddenFolds) as ChangeArgs[0], appState, {}, 'local')}\n`,
         files: live,
         referenced: referencedFileIds(elements),
       }

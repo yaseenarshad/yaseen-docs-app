@@ -3,12 +3,18 @@
  * pill, `isLinkUnit`): it stays a pill wherever the caret is (`wikilinkPlugin.ts` `opens`). The raw `[[…]]` opens only
  * from the link menu's "Edit link", and closes when the caret leaves it. A Markdown link pill is one unit too, by the
  * same rules (YAZ-4021, `markdownPillsAround`); its words change only by "Edit link" or by typing over the whole pill.
+ * A board embed (`![[x.drawio|…]]`, YAZ-4827 item 21) is one unit by the same rules: the caret steps over its window,
+ * Backspace and Delete remove it whole, and only its menu's "Edit link" opens its text.
  *  - A caret or a selection end that lands inside a closed link steps over it: after ← or → (with Shift or ⌥ too) from
- *    one edge to the other, after anything else (↑/↓, a drag, the browser's own nudge) to the nearer edge. A click on
+ *    one edge to the other, after anything else (↑/↓, a click, the browser's own nudge) to the nearer edge. A click on
  *    the pill itself is `wikilinkClick.ts`'s: it puts the caret at the edge the pointer is nearer, by the pill's middle.
  *    Only a real arrow jumps (YAZ-3747 demo): during a drag the jump flipped the head edge to edge at each letter the
  *    pointer crossed, and at a line's end the browser nudges a head at the link's end back into its hidden `]]`, so a
  *    jump dropped the link from the selection.
+ *  - During a drag (YAZ-5960, `pillDrag.ts`) the pointer decides, not the letter: a head inside a link, or on its edge,
+ *    goes to the far edge once the pointer is past the pill's middle and back to the near edge before it, so the pill
+ *    lights whole as the pointer crosses its middle, in either direction and across lines. It does not flip while the
+ *    pointer stays in one half, and the `]]` nudge at a line's end keeps the link (the pointer is past its middle).
  *  - A triple-click on a line with a link selects the whole line (YAZ-3747 demo): the browser's own stops at a pill's
  *    title, which is not text it can edit.
  *  - Backspace right after it, and Delete right before it, remove the whole link, with ⌥ or as ⌃H / ⌃D too. ⌘Z puts it back.
@@ -21,17 +27,21 @@
 import { Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { boardCheckOf, boardEmbedAt, boardEmbedsIn } from '../drawing/boardEmbedScan'
 import { markdownPillsAround } from '../markdownLink'
+import { pastMiddle, trackDrag, type Pointer } from './pillDrag'
 import { wikilinkMatchAt } from './wikilinkClick'
 import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, isLinkUnit } from './wikilinkPlugin'
 
 /** Set on "Edit link"'s selection (`wikilinkMenu.ts`): the one way into a link. */
 export const OPEN_ID_LINK = 'mdapp-open-id-link'
 
-/** The link that is a unit and holds `pos` strictly inside it, or null: a `[[link]]`, or a Markdown link pill (YAZ-4021). */
+/** The link that is a unit and holds `pos` strictly inside it, or null: a `[[link]]`, a board embed, or a Markdown link pill (YAZ-4021). */
 function linkAround(state: EditorState, pos: number): { from: number; to: number } | null {
   const match = wikilinkMatchAt(state.doc, pos)
   if (match !== null && pos > match.from && isLinkUnit(match.inner)) return match
+  const embed = boardEmbedAt(state.doc, pos, 'inside', boardCheckOf(state))
+  if (embed !== null) return embed
   return markdownPillsAround(state, pos).find((pill) => pill.from < pos && pos < pill.to) ?? null
 }
 
@@ -40,6 +50,9 @@ function linkBeside(state: EditorState, pos: number, back: boolean): { from: num
   const at = back ? pos - 1 : pos + 1
   const match = wikilinkMatchAt(state.doc, at)
   if (match !== null && at > match.from && isLinkUnit(match.inner)) return (back ? match.to : match.from) === pos ? match : null
+  const $pos = state.doc.resolve(pos)
+  const embed = $pos.parent.isTextblock ? boardEmbedsIn($pos.parent, $pos.before(), boardCheckOf(state)).find((m) => (back ? m.to : m.from) === pos) : undefined
+  if (embed !== undefined) return embed
   // One search of the pills: a one-letter pill has no position strictly inside it, so its edge is matched, not `at`.
   return markdownPillsAround(state, pos).find((pill) => (back ? pill.to : pill.from) === pos) ?? null
 }
@@ -91,10 +104,43 @@ export const createIdLinkCaret = () => {
   let word: { pos: number; at: number } | null = null
   /** Whether the latest key was ← or →: only an arrow steps from one edge of a link to the other. */
   let arrow = false
+  /** The drag under way, if any (YAZ-5960): its pointer decides where a head on a link goes. */
+  let drag: { view: EditorView; track: ReturnType<typeof trackDrag> } | null = null
+  /**
+   * During a drag, the edge of a closed link at `head` the pointer asks for: the far edge past the pill's middle, the
+   * near edge before it. A head inside the link, or on an edge of it (the browser may put the head on an edge with the
+   * pointer on the pill's first half). Null when no closed link is at `head` or its pill shows no box. An open link
+   * (the head was strictly inside it) is left alone.
+   */
+  const dragEdge = (view: EditorView, state: EditorState, head: number, was: number, pointer: Pointer): number | null => {
+    const inside = linkAround(state, head)
+    if (inside !== null) {
+      if (was > inside.from && was < inside.to) return null // an open link
+      const past = pastMiddle(view, inside.from, inside.to, pointer)
+      if (past === null) return head - inside.from <= inside.to - head ? inside.from : inside.to
+      return past ? inside.to : inside.from
+    }
+    const open = (link: { from: number; to: number }) => was > link.from && was < link.to
+    const ending = linkBeside(state, head, true)
+    if (ending !== null && !open(ending) && pastMiddle(view, ending.from, ending.to, pointer) === false) return ending.from
+    const starting = linkBeside(state, head, false)
+    if (starting !== null && !open(starting) && pastMiddle(view, starting.from, starting.to, pointer) === true) return starting.to
+    return null
+  }
   return $prose(
     () =>
       new Plugin({
         key: new PluginKey('mdapp-id-link-caret'),
+        view: (view) => {
+          const mine = { view, track: trackDrag(view) }
+          drag = mine
+          return {
+            destroy: () => {
+              mine.track.destroy()
+              if (drag === mine) drag = null
+            },
+          }
+        },
         appendTransaction: (trs, before, state) => {
           // An edit maps the caret: inside an open link it moves as it types. Only a caret move is stepped: a redraw or an
           // index update sets no selection, and costs no scan. A composition (an accent, a Japanese word) is left alone
@@ -116,8 +162,19 @@ export const createIdLinkCaret = () => {
               return state.tr.setSelection(anchor <= head ? TextSelection.create(state.doc, from, to) : TextSelection.create(state.doc, to, from))
             }
           }
-          const link = linkAround(state, head)
           const was = before.selection.head
+          const pointer = drag?.track.pointer() ?? null
+          if (drag !== null && pointer !== null) {
+            const edge = dragEdge(drag.view, state, head, was, pointer)
+            if (edge === null || edge === head) return null
+            arrow = false
+            // The anchor stays (a drag that starts on a pill, `followDrag`, holds a caret on its edge: past its middle the
+            // pill is selected); only one the browser put inside the same link goes with the head.
+            const held = linkAround(state, anchor)
+            const along = held !== null && held.from <= edge && edge <= held.to
+            return state.tr.setSelection(TextSelection.create(state.doc, along ? edge : anchor, edge))
+          }
+          const link = linkAround(state, head)
           if (link === null || (was > link.from && was < link.to)) return null
           const step = arrow
           arrow = false
@@ -150,6 +207,17 @@ export const createIdLinkCaret = () => {
               }
               return false
             },
+          },
+          // A letter the browser types inside a closed link goes to the edge the caret is at (YAZ-4275): at a line's end,
+          // after ⌘→, the editor's caret is at the link's end, but the browser types at the end of the shown name, before the
+          // hidden `.excalidraw]]`. Normal typing lands where the caret is, and pays this one comparison.
+          handleTextInput: (view, from, to, text) => {
+            const { head, empty } = view.state.selection
+            if (from !== to || !empty || head === from || view.composing) return false
+            const link = linkAround(view.state, from)
+            if (link === null || (head !== link.from && head !== link.to)) return false
+            view.dispatch(view.state.tr.insertText(text, head).scrollIntoView())
+            return true
           },
           handleKeyDown: (view, event) => {
             arrow = event.key === 'ArrowLeft' || event.key === 'ArrowRight'

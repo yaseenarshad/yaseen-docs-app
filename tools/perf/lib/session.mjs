@@ -7,13 +7,13 @@ import { writeState } from './work.mjs'
 /** The editor of the tab in front: every visited tab stays mounted, the others are hidden layers. */
 export const ACTIVE = '.tabstack__layer:not(.tabstack__layer--hidden) .ProseMirror'
 
-/** True once note `name`'s last line is in the editor in front, i.e. the whole note is painted. */
+/** True once page `name`'s last line is in the editor in front, i.e. the whole page is painted. */
 export const painted = (name) => `(document.querySelector('${ACTIVE}')?.textContent.includes(${JSON.stringify(sentinel(name))}) ?? false)`
 
 export const js = JSON.stringify
 
 /**
- * Launches `app` on `profile` seeded with `wins` (see writeState), waits for window w1 to paint note
+ * Launches `app` on `profile` seeded with `wins` (see writeState), waits for window w1 to paint page
  * `doc` (within `timeoutMs`; no `doc`: a window with no tab, so no wait), installs the page probes and
  * hands `act` the running session. `hidden`: see launch(). `settings`: seeded into the profile (see writeState).
  * The app is quit whatever happens, so a scenario never leaves a process behind.
@@ -32,7 +32,7 @@ export async function session(app, { profile, wins, doc, timeoutMs = 30_000, hid
   }
 }
 
-/** In the page: click `selector`, then resolve with ms until note `name` is painted plus one frame, and the longest task on the way. */
+/** In the page: click `selector`, then resolve with ms until page `name` is painted plus one frame, and the longest task on the way. */
 export const clickUntilPainted = (selector, name) => `(async () => {
   const t0 = performance.now()
   document.querySelector(${js(selector)}).click()
@@ -41,6 +41,6 @@ export const clickUntilPainted = (selector, name) => `(async () => {
   return { ms: performance.now() - t0, longTaskMs: __perf.longestSince(t0) }
 })()`
 
-/** The tree row / tab button of note `file`. */
+/** The tree row / tab button of page `file`. */
 export const row = (file) => `.tree__row--file[data-path=${js(file)}]`
 export const tab = (file) => `.tabbar__btn[title=${js(file)}]`

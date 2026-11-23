@@ -1,0 +1,174 @@
+/* THE END OF DUE TODAY (YAZ-5043, Option A; `DueTodayEnd.tsx`): ONE look for the Mac and the phone (YAZ-5665). Loaded
+   with the Inbox's and the Review tab's chunks, never eagerly. The ring comes down from the top bar flat as a line,
+   rounds into a ring, fills to the % in 600 ms, and four dots float out once (the first pass's end; YAZ-5678: Due today
+   done is a finish screen, `DoneScreen`). Every animation here is `transform` or `opacity` (the compositor runs them): the fill is two half rings that TURN
+   into place (`ringTurns`), each clipped to its half. `data-motion="wait"` (not in front yet) holds the start; `still`
+   (seen already, Reduce motion) shows the end at once. Each app sets its own buttons (`.due-end__go`) and layout. */
+.due-end__ring {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 12px;
+}
+
+.due-end__track,
+.due-end__missed,
+.due-end__fill {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: 5px solid transparent;
+  border-radius: 50%;
+}
+.due-end__track {
+  border-color: color-mix(in srgb, var(--fg) 9%, transparent);
+}
+/* The missed part: a red ring under the green; the green covers its share, the rest shows red. */
+.due-end__missed {
+  border-color: var(--danger);
+}
+.due-end__half {
+  position: absolute;
+  inset: 0;
+}
+.due-end__half[data-half='r'] {
+  clip-path: inset(0 0 0 50%);
+}
+.due-end__half[data-half='l'] {
+  clip-path: inset(0 50% 0 0);
+}
+/* A half ring: its top and right borders, turned so it lies over the right half at 45°. */
+.due-end__fill {
+  border-top-color: var(--ok);
+  border-right-color: var(--ok);
+}
+.due-end__half[data-half='r'] .due-end__fill {
+  transform: rotate(var(--due-r1));
+}
+.due-end__half[data-half='l'] .due-end__fill {
+  transform: rotate(var(--due-r2));
+}
+
+.due-end__pct {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+.due-end__dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  opacity: 0;
+}
+.due-end__dot[data-dot='0'] { background: var(--ok); --dx: -44px; --dy: -34px; }
+.due-end__dot[data-dot='1'] { background: #e0b341; --dx: 46px; --dy: -40px; }
+.due-end__dot[data-dot='2'] { background: var(--danger); --dx: -40px; --dy: 40px; }
+.due-end__dot[data-dot='3'] { background: var(--accent); --dx: 50px; --dy: 26px; }
+
+/* Waiting to show: nothing yet. */
+.due-end[data-motion='wait'] .due-end__ring,
+.due-end[data-motion='wait'] > :not(.due-end__ring) {
+  opacity: 0;
+}
+.due-end[data-motion='play'] .due-end__ring {
+  animation: due-end-land 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.due-end[data-motion='play'] .due-end__half[data-half='r'] .due-end__fill {
+  animation: due-end-turn-r var(--due-d1) 220ms var(--due-e1) both;
+}
+.due-end[data-motion='play'] .due-end__half[data-half='l'] .due-end__fill {
+  animation: due-end-turn-l var(--due-d2) var(--due-at2) cubic-bezier(0.3, 0.7, 0.2, 1) both;
+}
+.due-end[data-motion='play'] .due-end__missed {
+  animation: due-end-fade 260ms 760ms ease-out both;
+}
+.due-end[data-motion='play'] .due-end__pct {
+  animation: due-end-fade 300ms 300ms ease-out both;
+}
+.due-end[data-motion='play'] .due-end__dot {
+  animation: due-end-dot 900ms 640ms ease-out both;
+}
+.due-end[data-motion='play'] > :not(.due-end__ring) {
+  animation: due-end-fade 280ms 380ms ease-out both;
+}
+@keyframes due-end-land {
+  from {
+    opacity: 0.4;
+    transform: translateY(-36px) scale(2.6, 0.08);
+  }
+}
+/* From out of its half (-180°) to its place. */
+@keyframes due-end-turn-r {
+  from {
+    transform: rotate(-135deg);
+  }
+}
+@keyframes due-end-turn-l {
+  from {
+    transform: rotate(45deg);
+  }
+}
+@keyframes due-end-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes due-end-dot {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.6);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .due-end .due-end__ring,
+  .due-end .due-end__ring *,
+  .due-end > * {
+    animation: none !important;
+  }
+  .due-end[data-motion] .due-end__ring,
+  .due-end[data-motion] > :not(.due-end__ring) {
+    opacity: 1;
+  }
+  .due-end .due-end__dot {
+    opacity: 0;
+  }
+}
+
+.due-end__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 6px;
+}
+.due-end__go {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.due-end__count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+}

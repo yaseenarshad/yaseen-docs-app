@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, normalizeFilesZoom, rootOfPath, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type ScreenPoint, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { INBOX_FILTERS, MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, normalizeFilesZoom, placeVaults, rootOfPath, stripSlash, type FilesAction, type FilesPreviewRequest, type InboxCarry, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type ScreenPoint, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isFiniteNumber, isRecord } from '@shared/guards'
+import { cardSkillVault } from '@shared/appVaults'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { normalizeRightPanel, normalizeTabs, readStoredTab, readTabRef, type Store } from '../store'
@@ -115,6 +116,23 @@ function optionalPopOutCarry(v: unknown): PopOutCarry {
   return { ...(view === undefined ? {} : { view }), ...(name === null ? {} : { name }), ...(v.background === true ? { background: true as const } : {}), ...(at === undefined ? {} : { at }) }
 }
 
+/**
+ * An Inbox tab's carry (YAZ-5054): an object with an absolute vault `root` that the caller's window shows. A `folder`
+ * (root-relative), a `page` (absolute, in that vault), a known `filter` and a `card` `{ path, id }` are kept when well
+ * formed; anything else is left out, never an error.
+ */
+function requireInboxCarry(v: unknown, roots: readonly string[]): InboxCarry {
+  if (!isRecord(v)) throw new BridgeFailure('BAD_REQUEST', "'carry' must be an object")
+  const root = requireAbsPath(v.root, 'root')
+  const shown = roots.find((r) => stripSlash(r) === stripSlash(root))
+  if (shown === undefined) throw new BridgeFailure('BAD_REQUEST', 'that vault is not in this window')
+  const page = typeof v.page === 'string' && rootOfPath([shown], v.page) !== null ? v.page : undefined
+  const folder = typeof v.folder === 'string' && !v.folder.startsWith('/') && !v.folder.split('/').includes('..') ? v.folder : undefined
+  const filter = INBOX_FILTERS.find((f) => f === v.filter)
+  const card = isRecord(v.card) && typeof v.card.path === 'string' && typeof v.card.id === 'string' ? { path: v.card.path, id: v.card.id } : undefined
+  return { root: shown, ...(folder === undefined ? {} : { folder }), ...(page === undefined ? {} : { page }), ...(filter === undefined ? {} : { filter }), ...(card === undefined ? {} : { card }) }
+}
+
 /** Where a drag was let go (YAZ-3637 D1): `{ x, y }`, two finite numbers. */
 function requirePoint(v: unknown): ScreenPoint {
   if (!isRecord(v) || typeof v.x !== 'number' || !Number.isFinite(v.x) || typeof v.y !== 'number' || !Number.isFinite(v.y)) throw new BridgeFailure('BAD_REQUEST', "'point' must be { x, y } with finite numbers")
@@ -154,7 +172,7 @@ function requireFilesAction(v: unknown, from: WindowEntry): FilesAction {
     case 'share':
       return { kind: v.kind, path: inVault(v.path, 'action.path') }
     case 'review':
-      return { kind: 'review', dir: inVault(v.dir, 'action.dir') }
+      return { kind: 'review', dir: inVault(v.dir, 'action.dir'), ...(v.page === true ? { page: true as const } : {}) }
     case 'inbox':
       return { kind: 'inbox', root: inVault(v.root, 'action.root') }
     case 'session':
@@ -180,6 +198,8 @@ function requireFilesPreview(v: unknown): FilesPreviewRequest {
  * answered here too, because it needs the caller's window: `link:ready` (YAZ-2589 A2).
  */
 export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void {
+  /** The vaults of a window's places (YAZ-4922 D3): a tab of a folder of a vault may be any page of that vault. */
+  const vaultsOf = (entry: WindowEntry): string[] => placeVaults(store.get().folders, entry.roots)
   const entryFor = (e: IpcMainInvokeEvent): WindowEntry => {
     const id = windows.idFor(e.sender)
     if (id === undefined) throw new BridgeFailure('BAD_REQUEST', 'sender is not a registered window')
@@ -201,8 +221,10 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     // A Files window's page that starts (a launch, a reload) starts with its board closed (YAZ-3357 D3, D10; bug YAZ-3392):
     // main ends a wide state left from the page before, so the window is narrow again and the next board grows it.
     if (kind === 'files') windows.filesWide(id, false)
+    // The card skill's copy (YAZ-5108), once main made it: the window shows it as the app's own vault.
+    const cardSkill = cardSkillVault()
     // The copies and display names (YAZ-3057) go out with EVERY identity read: a reload keeps them, as a restart does.
-    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(reload !== undefined ? { reloadViews: reload.views, reloadedAtMb: reload.mb } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(startCollapsed ? { startCollapsed: true as const } : {}), ...(kind === undefined ? {} : { kind }), ...(kind === 'files' ? { zoom: normalizeFilesZoom(zoom) } : {}) }
+    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(reload !== undefined ? { reloadViews: reload.views, reloadedAtMb: reload.mb } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(startCollapsed ? { startCollapsed: true as const } : {}), ...(kind === undefined ? {} : { kind }), ...(kind === 'files' ? { zoom: normalizeFilesZoom(zoom) } : {}), ...(cardSkill === null ? {} : { cardSkill }), ...(windows.isReadOnly?.(id) ? { readOnly: true as const } : {}) }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {
@@ -280,7 +302,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   handleWithEvent(CONTRACT.window.popOut, async (e, path: unknown, carry: unknown) => {
     const from = entryFor(e)
     const target = requireAbsPath(path, 'path')
-    if (rootOfPath(from.roots, target) === null) throw new BridgeFailure('BAD_REQUEST', 'path is in no vault of this window')
+    if (rootOfPath(vaultsOf(from), target) === null) throw new BridgeFailure('BAD_REQUEST', 'path is in no vault of this window')
     windows.popOut(from, target, optionalPopOutCarry(carry))
   })
 
@@ -290,7 +312,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   handleWithEvent(CONTRACT.window.tearOff, async (e, path: unknown, carry: unknown, point: unknown, alone: unknown) => {
     const from = entryFor(e)
     const target = requireAbsPath(path, 'path')
-    if (rootOfPath(from.roots, target) === null) throw new BridgeFailure('BAD_REQUEST', 'path is in no vault of this window')
+    if (rootOfPath(vaultsOf(from), target) === null) throw new BridgeFailure('BAD_REQUEST', 'path is in no vault of this window')
     // What "Move to ▸" carries (D9), and no more: a torn-off tab opens in front, at no slot.
     const { view, name } = optionalPopOutCarry(carry)
     return windows.tearOff(from, target, { view, name }, requirePoint(point), alone === true)
@@ -304,6 +326,22 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const target = requireAbsPath(path, 'path')
     if (id === from.id) throw new BridgeFailure('BAD_REQUEST', 'a tab cannot move to its own window')
     if (!windows.moveTo(id, target, optionalPopOutCarry(carry))) throw new BridgeFailure('NOT_FOUND', 'that window is closed or shows no vault of this page')
+  })
+
+  // `window:inbox-to-new-window` (YAZ-5054): the Inbox tab's "Move to new window" and the Inbox row's "Open in new
+  // window". Main copies the CALLER's window, as `pop-out`: an Inbox of a vault it does not show is no Inbox of it.
+  handleWithEvent(CONTRACT.window.inboxToNewWindow, async (e, carry: unknown) => {
+    const from = entryFor(e)
+    windows.inboxToNewWindow(from, requireInboxCarry(carry, vaultsOf(from)))
+  })
+
+  // `window:move-inbox-to` (YAZ-5054): the Inbox tab's "Move to ▸ <window>". A window that closed, or that does not
+  // show the vault, refuses, and the source keeps its Inbox.
+  handleWithEvent(CONTRACT.window.moveInboxTo, async (e, to: unknown, carry: unknown) => {
+    const from = entryFor(e)
+    const id = requireString(to, 'to')
+    if (id === from.id) throw new BridgeFailure('BAD_REQUEST', 'the Inbox cannot move to its own window')
+    if (!windows.moveInboxTo(id, requireInboxCarry(carry, vaultsOf(from)))) throw new BridgeFailure('NOT_FOUND', 'that window is closed or does not show this vault')
   })
 
   // The tab board's doors to other windows (YAZ-3343 D3): `window:focus-tab` raises `to` and makes its tab active,
@@ -418,8 +456,7 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     let clean: TabAction
     if (action.kind === 'duplicate' || action.kind === 'show-in-sidebar') clean = { kind: action.kind }
     else if (action.kind === 'set-name' && (action.name === null || typeof action.name === 'string')) clean = { kind: 'set-name', name: action.name === null ? null : cleanVaultName(action.name) }
-    else if (action.kind === 'set-review' && typeof action.on === 'boolean') clean = { kind: 'set-review', on: action.on }
-    else throw new BridgeFailure('BAD_REQUEST', "'action' must be duplicate, set-name, show-in-sidebar or set-review")
+    else throw new BridgeFailure('BAD_REQUEST', "'action' must be duplicate, set-name or show-in-sidebar")
     if (!windows.tabAction(target, tab, clean)) throw new BridgeFailure('NOT_FOUND', 'that window is closed')
   })
 
@@ -438,15 +475,15 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     windows.highlight(entryFor(e).id, to === null ? null : requireString(to, 'to'))
   })
 
-  // `window:note-closed` (YAZ-3487 D10): the notes of tabs the caller closed go to "Recently closed" of ITS vaults.
-  handleWithEvent(CONTRACT.window.noteClosed, async (e, files: unknown) => {
-    const roots = entryFor(e).roots
+  // `window:page-closed` (YAZ-3487 D10): the pages of tabs the caller closed go to "Recently closed" of ITS vaults.
+  handleWithEvent(CONTRACT.window.pageClosed, async (e, files: unknown) => {
+    const roots = vaultsOf(entryFor(e))
     if (!Array.isArray(files)) throw new BridgeFailure('BAD_REQUEST', "'files' must be a list of absolute paths")
     store.addClosed(roots, files.map((file, i) => requireAbsPath(file, `files[${i}]`)))
   })
-  // `window:forget-closed` (YAZ-3487 D14): drop notes from "Recently closed", or with null clear it, for the caller's vaults.
+  // `window:forget-closed` (YAZ-3487 D14): drop pages from "Recently closed", or with null clear it, for the caller's vaults.
   handleWithEvent(CONTRACT.window.forgetClosed, async (e, files: unknown) => {
-    const roots = entryFor(e).roots
+    const roots = vaultsOf(entryFor(e))
     if (files !== null && !Array.isArray(files)) throw new BridgeFailure('BAD_REQUEST', "'files' must be null or a list of absolute paths")
     store.forgetClosed(roots, files === null ? null : files.map((file, i) => requireAbsPath(file, `files[${i}]`)))
   })

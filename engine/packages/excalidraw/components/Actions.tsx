@@ -9,6 +9,7 @@ import {
 } from "@excalidraw/common";
 
 import {
+  getIconInfo,
   getSmartShapeMetadata,
   hasStrokeColor,
   hasVectorStrokeWidth,
@@ -44,7 +45,7 @@ import {
   getFormValue,
 } from "../actions/actionProperties";
 
-import { useTextEditorFocus } from "../hooks/useTextEditorFocus";
+import { restoreCaretPosition } from "../hooks/useTextEditorFocus";
 
 import { actionToggleViewMode } from "../actions/actionToggleViewMode";
 
@@ -424,6 +425,22 @@ export const ContextualPropertiesToolbar = ({
         targetElements.every(isUnboundTextElement)));
   const isImageTarget =
     targetElements.length > 0 && targetElements.every(isImageElement);
+  // YAZ-4352 1B: icons get their own bar; a photo, or icons with a photo, keep today's
+  const iconKinds = isImageTarget
+    ? new Set(
+        targetElements.map((element) =>
+          isInitializedImageElement(element) && !element.locked
+            ? getIconInfo(app.files[element.fileId]).kind
+            : "photo",
+        ),
+      )
+    : null;
+  const iconBar =
+    !iconKinds || iconKinds.has("photo")
+      ? null
+      : iconKinds.size === 1 && iconKinds.has("one")
+      ? ("one" as const)
+      : ("many" as const);
   const isExclusiveVectorStrokeTarget = hasExclusiveVectorStrokeTarget(
     appState,
     targetElements,
@@ -459,6 +476,8 @@ export const ContextualPropertiesToolbar = ({
 
   if (
     appState.viewModeEnabled ||
+    // YAZ-4354 1D: Edit colors has its own strip below the icon
+    appState.colorEditingElementId ||
     (!isTextTarget &&
       !isImageTarget &&
       !isVectorPropertiesTarget &&
@@ -554,7 +573,33 @@ export const ContextualPropertiesToolbar = ({
       role="toolbar"
       aria-label="Element properties"
     >
-      {isTextTarget && (
+      {/* YAZ-4277 D8: in edit, the whole-box controls only; the letters'
+          styles are in the box editor's pop-up toolbar */}
+      {isTextTarget && appState.editingTextElement && (
+        <>
+          {fontAndSize()}
+          <ContextualToolbarDivider />
+          {textAlignMenu()}
+          {lineSpacing()}
+          {/* demo round 2: the same fill group as outside the edit */}
+          {predicates.backgroundColor && (
+            <>
+              <ContextualToolbarDivider />
+              <div
+                className="contextual-properties-toolbar__group"
+                role="group"
+                aria-label="Fill"
+              >
+                {renderAction("changeBackgroundColor", {
+                  contextToolbar: true,
+                  textToolbar: true,
+                })}
+              </div>
+            </>
+          )}
+        </>
+      )}
+      {isTextTarget && !appState.editingTextElement && (
         <>
           {fontAndSize()}
           <ContextualToolbarDivider />
@@ -572,6 +617,23 @@ export const ContextualPropertiesToolbar = ({
               {renderAction("changeTextHighlight", { contextToolbar: true })}
             </>
           )}
+          {/* YAZ-4277 demo: the box fill on the main bar too, beside the
+              letters' two colors */}
+          {predicates.backgroundColor && (
+            <>
+              <ContextualToolbarDivider />
+              <div
+                className="contextual-properties-toolbar__group"
+                role="group"
+                aria-label="Fill"
+              >
+                {renderAction("changeBackgroundColor", {
+                  contextToolbar: true,
+                  textToolbar: true,
+                })}
+              </div>
+            </>
+          )}
           <ContextualToolbarDivider />
           {renderAction("changeTextStyle", { contextToolbar: true })}
           <ContextualToolbarDivider />
@@ -579,7 +641,7 @@ export const ContextualPropertiesToolbar = ({
           {lineSpacing()}
           <ContextualSecondaryProperties
             renderAction={renderAction}
-            showBackgroundColor={predicates.backgroundColor}
+            showBackgroundColor={false}
             showRoundness={predicates.roundness}
             showOpacity={predicates.opacity}
             showTextBackgroundPadding={targetElements.some(
@@ -588,7 +650,31 @@ export const ContextualPropertiesToolbar = ({
           />
         </>
       )}
-      {isImageTarget && (
+      {isImageTarget && iconBar !== null && (
+        <>
+          {/* YAZ-4352 1B: a one-color icon: Color; a many-color icon: Edit colors (1D). Then Outline; Border in More properties */}
+          {iconBar === "one" ? (
+            <>
+              <span className="contextual-properties-toolbar__label">
+                Color
+              </span>
+              {renderAction("changeIconColors", { contextToolbar: true })}
+            </>
+          ) : (
+            renderAction("colorEditor", { contextToolbar: true })
+          )}
+          <ContextualToolbarDivider />
+          <span className="contextual-properties-toolbar__label">Outline</span>
+          {renderAction("changeIconOutline", { contextToolbar: true })}
+          <ContextualSecondaryProperties
+            renderAction={renderAction}
+            showImageBorder
+            showRoundness={predicates.roundness}
+            showOpacity={predicates.opacity}
+          />
+        </>
+      )}
+      {isImageTarget && iconBar === null && (
         <>
           <span className="contextual-properties-toolbar__label">Border</span>
           {renderAction("changeStrokeColor", { contextToolbar: true })}
@@ -776,8 +862,11 @@ const ContextualSecondaryProperties = ({
   showRoundness = false,
   showOpacity = false,
   showTextBackgroundPadding = false,
+  showImageBorder = false,
 }: {
   renderAction: ActionManager["renderAction"];
+  /** YAZ-4352 1B: an icon's box border (its color and width) */
+  showImageBorder?: boolean;
   showBackgroundColor?: boolean;
   showFreedrawMode?: boolean;
   showStrokeStyle?: boolean;
@@ -793,7 +882,8 @@ const ContextualSecondaryProperties = ({
     !showSloppiness &&
     !showRoundness &&
     !showOpacity &&
-    !showTextBackgroundPadding
+    !showTextBackgroundPadding &&
+    !showImageBorder
   ) {
     return null;
   }
@@ -803,6 +893,21 @@ const ContextualSecondaryProperties = ({
       <ContextualToolbarDivider />
       <ToolbarPopover label="More properties" icon={DotsHorizontalIcon}>
         <div className="contextual-properties-toolbar__secondary-properties">
+          {showImageBorder && (
+            <div
+              className="contextual-properties-toolbar__image-border"
+              role="group"
+              aria-label="Border"
+            >
+              <span className="contextual-properties-toolbar__label">
+                Border
+              </span>
+              {renderAction("changeStrokeColor", { contextToolbar: true })}
+              {renderAction("changeVectorStrokeWidth", {
+                contextToolbar: true,
+              })}
+            </div>
+          )}
           {showBackgroundColor &&
             renderAction("changeBackgroundColor", { contextToolbar: true })}
           {showFreedrawMode &&
@@ -1044,7 +1149,6 @@ const CombinedTextProperties = ({
   predicates: ShapeActionPredicates;
   container: HTMLDivElement | null;
 }) => {
-  const { saveCaretPosition, restoreCaretPosition } = useTextEditorFocus();
   const isOpen = appState.openPopup === "compactTextProperties";
 
   return (
@@ -1053,9 +1157,6 @@ const CombinedTextProperties = ({
         open={isOpen}
         onOpenChange={(open) => {
           if (open) {
-            if (appState.editingTextElement) {
-              saveCaretPosition();
-            }
             setAppState({ openPopup: "compactTextProperties" });
           } else {
             setAppState({ openPopup: null });
@@ -1079,9 +1180,6 @@ const CombinedTextProperties = ({
               if (isOpen) {
                 setAppState({ openPopup: null });
               } else {
-                if (appState.editingTextElement) {
-                  saveCaretPosition();
-                }
                 setAppState({ openPopup: "compactTextProperties" });
               }
             }}

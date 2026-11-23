@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { fitMenu } from '../lib/fitMenu'
 
 interface ContextMenuSurfaceProps {
   x: number
@@ -52,12 +53,21 @@ export function ContextMenuSurface({ x, y, onClose, children, minWidth, classNam
   }, [])
 
   useLayoutEffect(() => {
-    const bounds = menuRef.current?.getBoundingClientRect()
-    if (bounds === undefined) return
-    setPosition({
-      left: Math.max(0, Math.min(x, window.innerWidth - bounds.width)),
-      top: Math.max(0, Math.min(y, window.innerHeight - bounds.height)),
-    })
+    const menu = menuRef.current
+    if (menu === null) return
+    const place = () => {
+      // Taller than the window (a long row menu at a high zoom, YAZ-3746 13AO): it fits the window and scrolls; `x`, `y`
+      // and the window are screen px, the menu's `left` and `top` its own (YAZ-3746 13AM). The one rule: `lib/fitMenu.ts`.
+      const { left, top } = fitMenu(menu, x, y)
+      setPosition((at) => (at.left === left && at.top === top ? at : { left, top }))
+    }
+    place()
+    // A menu whose content grows after it opens (the header menu's "Edit column…", YAZ-4544) is placed again, so it
+    // stays inside the window. The observer fires only on a change of the menu's own size.
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(place)
+    observer.observe(menu)
+    return () => observer.disconnect()
   }, [x, y])
 
   return (

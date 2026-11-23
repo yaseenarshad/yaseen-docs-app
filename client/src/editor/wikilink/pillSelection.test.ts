@@ -12,6 +12,7 @@ import { createCrepe } from '../createCrepe'
 import type { MarkdownLinkNav } from '../markdownLink'
 import { PILL_SELECTED_CLASS } from './pillSelection'
 import { WIKILINK_CLASS, createWikilinkResolveSource } from './wikilinkPlugin'
+import { linkResolver } from '../../links/folderLinks'
 import css from './wikilink.css?raw'
 
 const A = 'k3m9x2pq7abc'
@@ -59,6 +60,25 @@ describe('a selected link is one lit box (YAZ-3747 demo)', () => {
     expect(lit(root)).toEqual([])
     select(view, 5, 21)
     expect(lit(root)).toEqual(['AR v2 plan'])
+    select(view, 3)
+    expect(lit(root)).toEqual([])
+  })
+
+  it('YAZ-5792: lights a card pill`s pieces (its group draws nothing) when the selection holds the link', async () => {
+    const records = [{ path: '/v/verbs.md', name: 'verbs.md', basename: 'verbs', title: 'verbs', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], id: 'YAS-1', cards: [{ id: 'YAS-126', off: false, next: false, reviews: [], title: 'Ser' }] }]
+    const source = createWikilinkResolveSource()
+    source.update(linkResolver(records, '/v', [], [], ['YAS']), records, [], true, ['YAS'])
+    source.setLook({ format: '{icon}{name} ({number})' }, 'Mine')
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: 'pad [[YAS-126]] tail\n', wikilinks: source })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    const view: EditorView = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    expect(lit(root)).toEqual([])
+    // 'pad [[YAS-126]] …': the card link spans 5..16.
+    select(view, 5, 16)
+    expect(lit(root)).toEqual(['Ser', ' (126)'])
     select(view, 3)
     expect(lit(root)).toEqual([])
   })
@@ -126,8 +146,8 @@ function hiddenSelectionSelectors(): string[] {
   return out
 }
 
-describe('a selection with no lit link costs no search of the note (YAZ-4005)', () => {
-  it('in a note with no link, or a selection beside one, nothing searches the note for a lit pill', async () => {
+describe('a selection with no lit link costs no search of the page (YAZ-4005)', () => {
+  it('in a page with no link, or a selection beside one, nothing searches the page for a lit pill', async () => {
     const { view } = await mount(`plain words here\n\nmore plain words [[Named]] end\n`)
     const search = vi.spyOn(view.dom, 'querySelector')
     select(view, 1, 6)

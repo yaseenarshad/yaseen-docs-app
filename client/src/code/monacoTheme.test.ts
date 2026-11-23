@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildMonacoTheme, monacoThemeName, readAppTokens, toHex } from './monacoTheme'
+import { toHex } from '../lib/colour'
+import { buildMonacoTheme, monacoThemeName, readAppTokens } from './monacoTheme'
 
 describe('toHex (YAZ-3447)', () => {
   it('gives Monaco #rrggbb, or #rrggbbaa when the colour is see-through', () => {

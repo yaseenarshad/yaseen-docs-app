@@ -176,6 +176,15 @@ export const getTextHeight = (
   return getLineHeightInPx(fontSize, lineHeight) * lineCount;
 };
 
+/**
+ * YAZ-4438: moves each time the letter widths of a font are cleared, when the
+ * real font loads (`Fonts.onLoaded`). It is part of the layout memo keys, so a
+ * layout made with the fallback font is not used again.
+ */
+let textMetricsVersion = 0;
+
+export const getTextMetricsVersion = () => textMetricsVersion;
+
 export const charWidth = (() => {
   const cachedCharWidth: { [key: FontString]: Array<number> } = {};
 
@@ -198,6 +207,7 @@ export const charWidth = (() => {
 
   const clearCache = (font: FontString) => {
     cachedCharWidth[font] = [];
+    textMetricsVersion++;
   };
 
   return {

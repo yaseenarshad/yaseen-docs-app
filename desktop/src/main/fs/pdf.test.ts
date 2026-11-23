@@ -39,7 +39,7 @@ describe('readPdf', () => {
   it('refuses missing, relative, wrong-extension, and directory paths', async () => {
     expect(await code(readPdf(path.join(root, 'missing.pdf')))).toBe('NOT_FOUND')
     expect(await code(readPdf('relative.pdf'))).toBe('NOT_ABSOLUTE')
-    expect(await code(readPdf(path.join(root, 'notes.txt')))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(readPdf(path.join(root, 'pages.txt')))).toBe('UNSUPPORTED_EXTENSION')
     const directory = path.join(root, 'folder.pdf')
     await mkdir(directory)
     expect(await code(readPdf(directory))).toBe('NOT_A_FILE')

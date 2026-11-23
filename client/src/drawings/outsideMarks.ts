@@ -14,7 +14,7 @@ export type MarkKind = 'added' | 'changed' | 'clash'
 
 export const MARK_COLLABORATORS: Readonly<Record<MarkKind, string>> = { added: 'outside-added-63', changed: 'outside-changed-32', clash: 'outside-clash-8' }
 
-const GLOW_MS: Readonly<Partial<Record<OutsideChangeGlow, number>>> = { '10s': 10_000, '60s': 60_000 }
+const GLOW_MS: Readonly<Partial<Record<OutsideChangeGlow, number>>> = { '60s': 60_000, '5m': 300_000 }
 
 /** The engine's collaborator, as far as an outline needs one. */
 export interface MarkCollaborator {
