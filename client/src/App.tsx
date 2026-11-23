@@ -599,7 +599,7 @@ export function App() {
   const [cardSkill] = useState(storage.getCardSkill)
   const skillLoads = cardSkill !== null && appSettings.cardSkillInSidebar && root !== null
   const skillScope = useVaultScope(skillLoads ? cardSkill : null, notify, askFileAction)
-  const skillShown = skillLoads && vaults.some((vault) => vault?.reviewSettings.settings.enabled === true)
+  const skillShown = skillLoads && vaults.some((vault) => vault?.reviewSettings.settings.enabled === true && vault.ids?.enabled !== false)
   const live = useRef({ roots, vaults, first, skill: skillLoads ? skillScope : null })
   live.current = { roots, vaults, first, skill: skillLoads ? skillScope : null }
   // The window's card files (YAZ-5037), from the vaults' index: a card file shows the card icon in the tree, the tabs,

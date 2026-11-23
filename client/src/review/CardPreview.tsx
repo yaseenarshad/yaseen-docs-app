@@ -111,8 +111,8 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
         event.stopPropagation()
         const delta = event.key === 'ArrowUp' ? -1 : 1
         const moved = arrowGlide(rootRef.current, delta)
-        // YAZ-6393: a fresh Down tap at the bottom opens the next side (keeps Space for hidden blanks).
-        if (!moved && delta > 0 && !event.repeat && steps.nextSide) steps.stepOn('key')
+        // YAZ-6393: a fresh Down tap at the bottom opens the next side directly without revealing hidden blanks.
+        if (!moved && delta > 0 && !event.repeat) steps.openNextSide()
         return
       }
       if (event.key === 'p' || event.key === 'P') {

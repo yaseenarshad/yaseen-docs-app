@@ -3226,7 +3226,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   commentsOrder: 'oldest',
   commentsResolved: 'bottom',
   commentsHint: true,
-  cardSkillInSidebar: true,
+  /** Show the built-in Card skill vault in the sidebar (default Hide; only applies when Cards are on in a vault). */
+  cardSkillInSidebar: false,
   profile: null,
   sidebarSort: DEFAULT_SIDEBAR_SORT,
   searchSort: DEFAULT_SEARCH_SORT,

@@ -651,7 +651,7 @@ const githubKeywords = () => [...REVIEW_KEYWORDS, 'github', 'token', ...(FRIENDS
 const CARD_SPACING_KEYWORDS = [...REVIEW_KEYWORDS, 'spacing', 'line spacing', 'line height', 'paragraph', 'space between blocks', 'gap', 'bullet', 'indent', 'view mode']
 
 /** Every Review row but the switch is there only while review is on. */
-const reviewOn = ({ review }: SettingsCtx): boolean => review?.settings.enabled === true
+const reviewOn = ({ review, ids }: SettingsCtx): boolean => review?.settings.enabled === true && ids?.enabled !== false
 
 /** The live spacing previews (YAZ-5050 round 2): loaded only when Settings shows one. */
 // YAZ-5696 round 2: the eye by Show card titles, its own chunk (its CSS too): no eager weight.
