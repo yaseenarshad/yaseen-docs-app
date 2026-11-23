@@ -51,13 +51,13 @@ const popupOf = (view: EditorView) => view.dom.parentElement!.querySelector<HTML
 const rowsOf = (popup: HTMLElement) => Array.from(popup.querySelectorAll<HTMLButtonElement>('.ctx-menu__item'))
 const rowNamed = (view: EditorView, label: string) => rowsOf(popupOf(view)!).find((row) => row.textContent === label)!
 /** The one link menu's rows (D23, YAZ-3740), with no App doors: an id link's, its top line the ID alone (YAZ-3747 demo), with Copy ID. */
-const idMenu = (id: string) => [`ID: ${id}`, 'Open', 'Open in new tab', 'Copy name and ID', 'Copy ID', 'Copy path', 'Pill style', 'Edit link', 'Remove link']
+const idMenu = (id: string, aliasLabel: 'Add alias' | 'Edit alias' = 'Add alias') => [`ID: ${id}`, 'Open', 'Open in new tab', 'Copy name and ID', 'Copy ID', 'Copy path', 'Pill style', aliasLabel, 'Edit link', 'Remove link']
 /** A found name link's: no top line, it would repeat the pill (YAZ-3747 demo); no Copy ID. */
-const nameMenu = () => ['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Pill style', 'Edit link', 'Remove link']
+const nameMenu = (aliasLabel: 'Add alias' | 'Edit alias' = 'Add alias') => ['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Pill style', aliasLabel, 'Edit link', 'Remove link']
 /** A name link that finds nothing: no top line, no path to copy. */
-const deadNameMenu = () => ['Open', 'Open in new tab', 'Copy name', 'Pill style', 'Edit link', 'Remove link']
+const deadNameMenu = (aliasLabel: 'Add alias' | 'Edit alias' = 'Add alias') => ['Open', 'Open in new tab', 'Copy name', 'Pill style', aliasLabel, 'Edit link', 'Remove link']
 /** A page that is gone (YAZ-3905 S10): what can be said, its ID to copy, Edit and Remove. */
-const missingMenu = (id: string) => [`Missing page · ${id}`, 'Copy ID', 'Pill style', 'Edit link', 'Remove link']
+const missingMenu = (id: string, aliasLabel: 'Add alias' | 'Edit alias' = 'Add alias') => [`Missing page · ${id}`, 'Copy ID', 'Pill style', aliasLabel, 'Edit link', 'Remove link']
 
 /** jsdom has no clipboard; the menu's only job is to hand the id to it, so spy on writeText. */
 let writeText: Mock
@@ -82,7 +82,7 @@ describe('right-click on a rendered id link', () => {
     expect(mouse(linkSpan(root, 'Road Map'), 'contextmenu').defaultPrevented).toBe(true)
     const rows = rowsOf(popupOf(view)!)
     expect(rows.map((row) => row.textContent)).toEqual(idMenu(ID))
-    expect(rows.map((row) => row.disabled)).toEqual([true, false, false, false, false, false, false, false, false])
+    expect(rows.map((row) => row.disabled)).toEqual([true, false, false, false, false, false, false, false, false, false])
   })
 
   it('Copy ID copies exactly the id, says so, closes — and the document keeps every byte', async () => {
@@ -107,7 +107,7 @@ describe('right-click on a rendered id link', () => {
   it('a hand-typed label and a heading segment are the same link: the name row is the TITLE', async () => {
     const { root, view } = await mount(`pad [[${ID}|my label]] and [[${ID}#Scope]] tail\n`)
     mouse(linkSpan(root, 'my label'), 'contextmenu')
-    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu(ID))
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu(ID, 'Edit alias'))
     mouse(linkSpan(root, 'Scope'), 'contextmenu')
     expect(view.dom.parentElement!.querySelectorAll('.ctx-menu--editor')).toHaveLength(1) // retargeted, never stacked
     expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu(ID))
@@ -273,11 +273,58 @@ describe('a name link gets the same menu (YAZ-3609 D23)', () => {
   it('YAZ-4935: a words-first ID link has the ID menu, and Edit link selects the ID on the right of the |', async () => {
     const { root, view } = await mount(`pad [[the plan|${ID}]] tail\n`)
     mouse(linkSpan(root, 'the plan'), 'contextmenu')
-    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu(ID))
+    expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu(ID, 'Edit alias'))
     rowNamed(view, 'Edit link').click()
     const { from, to } = view.state.selection
     expect(view.state.doc.textBetween(from, to)).toBe(ID)
     expect(view.state.doc.textBetween(from - 1, from)).toBe('|')
+  })
+
+  it('YAZ-6353: Add alias / Edit alias / Remove alias on wikilinks, preserving #heading and sanitizing syntax chars', async () => {
+    const { crepe, root, view } = await mount(`a [[Known]] b [[Known#Q1]] c [[the plan|${ID}]] d\n`)
+    // Add alias to plain link
+    mouse(linkSpan(root, 'Known'), 'contextmenu')
+    rowNamed(view, 'Add alias').click()
+    const input1 = view.dom.parentElement!.querySelector<HTMLInputElement>('.drawing-link-edit input')!
+    expect(input1.value).toBe('')
+    expect(input1.placeholder).toBe('Display text (empty removes alias)')
+    input1.value = '[[My | Alias]]'
+    input1.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    expect(getMarkdownForSave(crepe)).toBe(`a [[Known|My  Alias]] b [[Known#Q1]] c [[the plan|${ID}]] d\n`)
+
+    // Edit alias and remove alias by submitting empty string
+    mouse(linkSpan(root, 'My  Alias'), 'contextmenu')
+    rowNamed(view, 'Edit alias').click()
+    const input2 = view.dom.parentElement!.querySelector<HTMLInputElement>('.drawing-link-edit input')!
+    expect(input2.value).toBe('My  Alias')
+    input2.value = ''
+    input2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    expect(getMarkdownForSave(crepe)).toBe(`a [[Known]] b [[Known#Q1]] c [[the plan|${ID}]] d\n`)
+
+    // Preserves #heading
+    mouse(linkSpan(root, 'Q1'), 'contextmenu')
+    rowNamed(view, 'Add alias').click()
+    const input3 = view.dom.parentElement!.querySelector<HTMLInputElement>('.drawing-link-edit input')!
+    input3.value = 'Q1 Summary'
+    input3.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    expect(getMarkdownForSave(crepe)).toBe(`a [[Known]] b [[Known#Q1|Q1 Summary]] c [[the plan|${ID}]] d\n`)
+
+    // Alias-first ID link writes canonical [[target|alias]]
+    mouse(linkSpan(root, 'the plan'), 'contextmenu')
+    rowNamed(view, 'Edit alias').click()
+    const input4 = view.dom.parentElement!.querySelector<HTMLInputElement>('.drawing-link-edit input')!
+    expect(input4.value).toBe('the plan')
+    input4.value = 'Updated Plan'
+    input4.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    expect(getMarkdownForSave(crepe)).toBe(`a [[Known]] b [[Known#Q1|Q1 Summary]] c [[${ID}|Updated Plan]] d\n`)
+
+    // Escape cancels with no change
+    mouse(linkSpan(root, 'Updated Plan'), 'contextmenu')
+    rowNamed(view, 'Edit alias').click()
+    const input5 = view.dom.parentElement!.querySelector<HTMLInputElement>('.drawing-link-edit input')!
+    input5.value = 'Should Not Save'
+    input5.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(getMarkdownForSave(crepe)).toBe(`a [[Known]] b [[Known#Q1|Q1 Summary]] c [[${ID}|Updated Plan]] d\n`)
   })
 
   it('Remove link keeps the text the link shows: an alias, an id link\'s title, a heading part', async () => {

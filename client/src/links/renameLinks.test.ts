@@ -320,6 +320,17 @@ describe('updateLinksAfterRename', () => {
     expect(files['/v/A.md'].content).toBe('See [[Covid 2020|COVID-19]].\n')
   })
 
+  it('YAZ-6352: linkedBasenames includes both sides of plain-name `Alias|Target` and rename rewrites alias-first links', async () => {
+    const files = { '/v/A.md': { content: "See [[AR's V3 Roadmap|V3 full plan]].\n", mtime: 10 } }
+    installBridge(files)
+    const records = [rec('/v/A.md', { links: ["AR's V3 Roadmap|V3 full plan"] }), rec('/v/V3 full plan.md')]
+    expect([...linkedBasenames(records)].sort()).toEqual(["ar's v3 roadmap", 'v3 full plan'])
+    const move = { ids: true, root, oldPath: '/v/V3 full plan.md', newPath: '/v/V4 full plan.md', records }
+    expect(await countLinkReferences(move)).toBe(1)
+    expect(await updateLinksAfterRename(move)).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe("See [[AR's V3 Roadmap|V4 full plan]].\n")
+  })
+
   it('a CONFLICT re-reads once and retries; a second conflict skips the file', async () => {
     const files = { '/v/A.md': { content: '[[B]]\n', mtime: 10 } }
     const bridge = installBridge(files)

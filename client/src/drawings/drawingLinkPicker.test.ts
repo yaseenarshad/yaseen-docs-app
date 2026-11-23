@@ -15,7 +15,7 @@ import { createFromLink } from '../editor/wikilink/createFromLink'
 import { createWikilinkResolveSource, type LinkLook } from '../editor/wikilink/wikilinkPlugin'
 import { createDrawingLinkPicker, createLinkedPage, type PickerEditor } from './drawingLinkPicker'
 import { drawingPasteLink } from './drawingLinks'
-import { openEditLinkBox } from './editLinkBox'
+import { openAliasBox, openEditLinkBox } from './editLinkBox'
 
 const rows: LinkCandidate[] = [
   { name: 'Growth plan', insert: 'YAS-1', label: 'Growth plan', path: '/vault/Growth plan.md' },
@@ -216,6 +216,49 @@ describe('the Edit link box', () => {
     const input = document.querySelector<HTMLInputElement>('.drawing-link-edit input')!
     input.value = 'Other'
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(done).not.toHaveBeenCalled()
+    expect(document.querySelector('.drawing-link-edit')).toBeNull()
+  })
+})
+
+describe('the Alias box (YAZ-6353)', () => {
+  it('focuses and selects current alias, uses default placeholder, and Enter submits even when empty', () => {
+    const done = vi.fn()
+    openAliasBox(document.body, 10, 20, 'Old alias', done)
+    const input = document.querySelector<HTMLInputElement>('.drawing-link-edit input')!
+    expect(input.value).toBe('Old alias')
+    expect(input.placeholder).toBe('Display text (empty removes alias)')
+    expect(document.activeElement).toBe(input)
+    input.value = 'New alias'
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    expect(done).toHaveBeenCalledWith('New alias')
+    expect(document.querySelector('.drawing-link-edit')).toBeNull()
+
+    const doneEmpty = vi.fn()
+    openAliasBox(document.body, 10, 20, 'Old alias', doneEmpty)
+    const input2 = document.querySelector<HTMLInputElement>('.drawing-link-edit input')!
+    input2.value = ''
+    input2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    expect(doneEmpty).toHaveBeenCalledWith('')
+    expect(document.querySelector('.drawing-link-edit')).toBeNull()
+  })
+
+  it('Escape, outside mousedown, and blur cancel with no change', () => {
+    const done = vi.fn()
+    openAliasBox(document.body, 10, 20, 'Keep', done)
+    const input = document.querySelector<HTMLInputElement>('.drawing-link-edit input')!
+    input.value = 'Changed'
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(done).not.toHaveBeenCalled()
+    expect(document.querySelector('.drawing-link-edit')).toBeNull()
+
+    openAliasBox(document.body, 10, 20, 'Keep', done)
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(done).not.toHaveBeenCalled()
+    expect(document.querySelector('.drawing-link-edit')).toBeNull()
+
+    openAliasBox(document.body, 10, 20, 'Keep', done)
+    document.querySelector<HTMLInputElement>('.drawing-link-edit input')!.dispatchEvent(new Event('blur'))
     expect(done).not.toHaveBeenCalled()
     expect(document.querySelector('.drawing-link-edit')).toBeNull()
   })
