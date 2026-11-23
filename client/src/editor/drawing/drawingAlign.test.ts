@@ -122,3 +122,62 @@ describe('6-dot block handle menu Position rows (YAZ-6354)', () => {
     expect(blockMenuItems(view, { pos: itemPos, inside: itemPos }).some((i) => i.kind !== 'strip' && i.label === 'Position')).toBe(false)
   })
 })
+
+describe('6-dot block handle menu Position rows for pictures (YAZ-6424)', () => {
+  it('adds Position flyout for a standalone lone picture, updates alt while preserving width, and resets to App default', async () => {
+    const md = '![Shot|320](images/shot.png)\n'
+    const { crepe, view } = await mount(md)
+    const items = blockMenuItems(view, { pos: 0, inside: 0 })
+    const posRow = items.find((item) => item.kind !== 'strip' && item.label === 'Position')
+    expect(posRow).toBeDefined()
+    const choices = posRow && posRow.kind !== 'strip' ? posRow.children?.[0] ?? [] : []
+    expect(choices.map((c) => [c.label, c.hint])).toEqual([
+      ['App default', '✓'],
+      ['Left', undefined],
+      ['Center', undefined],
+      ['Right', undefined],
+    ])
+
+    choices.find((c) => c.label === 'Center')!.run()
+    expect(getMarkdownForSave(crepe)).toContain('![Shot|320 align=center](images/shot.png)')
+
+    const nextRow = blockMenuItems(view, { pos: 0, inside: 0 }).find((item) => item.kind !== 'strip' && item.label === 'Position')
+    const nextChoices = nextRow && nextRow.kind !== 'strip' ? nextRow.children?.[0] ?? [] : []
+    expect(nextChoices.find((c) => c.label === 'Center')?.hint).toBe('✓')
+
+    nextChoices.find((c) => c.label === 'Right')!.run()
+    expect(getMarkdownForSave(crepe)).toContain('![Shot|320 align=right](images/shot.png)')
+
+    const resetRow = blockMenuItems(view, { pos: 0, inside: 0 }).find((item) => item.kind !== 'strip' && item.label === 'Position')
+    ;(resetRow && resetRow.kind !== 'strip' ? resetRow.children?.[0] : [])!.find((c) => c.label === 'App default')!.run()
+    expect(getMarkdownForSave(crepe)).toContain('![Shot|320](images/shot.png)')
+  })
+
+  it('adds Position flyout for a bullet-nested lone picture and hides it in read-only mode', async () => {
+    const md = '* ![Shot|480](images/shot.png)\n'
+    const { crepe, view } = await mount(md)
+    let itemPos = -1
+    view.state.doc.descendants((node, pos) => {
+      if (itemPos === -1 && node.type.name === 'list_item') itemPos = pos
+    })
+    expect(itemPos).toBeGreaterThanOrEqual(0)
+
+    const row = blockMenuItems(view, { pos: itemPos, inside: itemPos }).find((i) => i.kind !== 'strip' && i.label === 'Position')
+    expect(row).toBeDefined()
+    ;(row && row.kind !== 'strip' ? row.children?.[0] : [])!.find((c) => c.label === 'Center')!.run()
+    expect(getMarkdownForSave(crepe)).toContain('* ![Shot|480 align=center](images/shot.png)')
+
+    crepe.setReadonly(true)
+    expect(blockMenuItems(view, { pos: itemPos, inside: itemPos }).some((i) => i.kind !== 'strip' && i.label === 'Position')).toBe(false)
+  })
+
+  it('omits Position flyout when text is beside the picture or the image src is a board', async () => {
+    const md = 'Before ![Shot](images/shot.png) after\n\n![Arch](../Other/Arch.drawio)\n'
+    const { view } = await mount(md)
+    const positions: number[] = []
+    view.state.doc.forEach((_node, offset) => positions.push(offset))
+
+    expect(blockMenuItems(view, { pos: positions[0]!, inside: positions[0]! }).some((i) => i.kind !== 'strip' && i.label === 'Position')).toBe(false)
+    expect(blockMenuItems(view, { pos: positions[1]!, inside: positions[1]! }).some((i) => i.kind !== 'strip' && i.label === 'Position')).toBe(false)
+  })
+})

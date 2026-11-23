@@ -15,19 +15,24 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Selection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import type { EmbedAlign } from '@shared/embedOptions'
 import type { PageMenuAction, PageMenuArg } from '@shared/types'
 import { createSpellWait } from '@shared/spelling'
 import { api } from '../api'
 import { blockMenuItems } from './blockHandleMenu'
 import { textLineTarget } from './blockHandleTarget'
 import { bulletToCopy, copyVisibleNext, forgetCopyVisible } from './clipboardCopyOut'
+import { loneImageInParagraph, setImageAlign } from './drawing/drawingAlign'
+import { parseAlt } from './image/imageSrc'
+import { IMAGE_VIEW_CLASS } from './image/imageView'
 import { addLinkOn } from './markdownLink'
 import { cardEditorViewFor } from './card/cardEditor'
 import { HEADING_TOGGLE_CLASS } from './outline/headingFolding'
-import { OUTLINE_TOGGLE_CLASS } from './outline/outlineFolding'
+import { OUTLINE_FOLDED_IMAGE_ATTR, OUTLINE_TOGGLE_CLASS } from './outline/outlineFolding'
 import { CellSelection, isInTable } from '@milkdown/kit/prose/tables'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { CELL_NOTE_ASK, type CellNoteAsk } from './table/cellNoteGuard'
+import { tablerIcon, type TablerIcon } from './table/tableIcons'
 import { TABLE_HANDLE_MENU, handleKind, tableMenuSections, type TableMenuKind } from './table/tableMenu'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import type { MenuEntry, MenuSection } from '../sidebar/menuSections'
@@ -217,18 +222,70 @@ export function pageMenuSections(view: EditorView, misspelling: Misspelling | nu
   ]
 }
 
+const alignGlyph = (name: TablerIcon): ReactNode =>
+  glyphOf(() => {
+    const svg = tablerIcon(name)()
+    svg.setAttribute('width', '14')
+    svg.setAttribute('height', '14')
+    return svg
+  })
+
 /**
- * An image's rows (YAZ-3727 D22), as the native image menu had them: main copies the image at the point
+ * An image's rows (YAZ-3727 D22, YAZ-6424), as the native image menu had them: main copies the image at the point
  * right-clicked (`x`, `y`, page px), and reveals a vault image's file; any other image has no file, so its
- * Reveal is inert.
+ * Reveal is inert. When `onAlign` is supplied (editable lone non-board picture), adds a `Position ▸` flyout.
  */
-export function imageMenuSections(image: { src: string; x: number; y: number }, run: (action: PageMenuAction, arg?: PageMenuArg) => void): MenuSection[] {
+export function imageMenuSections(
+  image: { src: string; x: number; y: number; align?: EmbedAlign | null; onAlign?: (align: EmbedAlign | null) => void },
+  run: (action: PageMenuAction, arg?: PageMenuArg) => void,
+): MenuSection[] {
+  const base: MenuSection = [
+    { id: 'copy-image', label: 'Copy image', onSelect: () => run('copy-image', { x: image.x, y: image.y }) },
+    { id: 'reveal-image', label: 'Reveal in Finder', disabled: !image.src.startsWith('app://vault/'), onSelect: () => run('reveal-image', image.src) },
+  ]
+  const onAlign = image.onAlign
+  if (onAlign === undefined) return [base]
+  const current = image.align ?? null
+  const parentIcon: TablerIcon = current === 'center' ? 'alignCenter' : current === 'right' ? 'alignRight' : 'alignLeft'
   return [
+    base,
     [
-      { id: 'copy-image', label: 'Copy image', onSelect: () => run('copy-image', { x: image.x, y: image.y }) },
-      { id: 'reveal-image', label: 'Reveal in Finder', disabled: !image.src.startsWith('app://vault/'), onSelect: () => run('reveal-image', image.src) },
+      {
+        id: 'image-position',
+        label: 'Position',
+        icon: alignGlyph(parentIcon),
+        children: [
+          [
+            { id: 'image-position-default', label: 'App default', hint: current === null ? '✓' : undefined, onSelect: () => onAlign(null) },
+            { id: 'image-position-left', label: 'Left', icon: alignGlyph('alignLeft'), hint: current === 'left' ? '✓' : undefined, onSelect: () => onAlign('left') },
+            { id: 'image-position-center', label: 'Center', icon: alignGlyph('alignCenter'), hint: current === 'center' ? '✓' : undefined, onSelect: () => onAlign('center') },
+            { id: 'image-position-right', label: 'Right', icon: alignGlyph('alignRight'), hint: current === 'right' ? '✓' : undefined, onSelect: () => onAlign('right') },
+          ],
+        ],
+      },
     ],
   ]
+}
+
+const ALIGNABLE_IMAGE_SELECTOR = `.${IMAGE_VIEW_CLASS}:not(.board-embed):not([${OUTLINE_FOLDED_IMAGE_ATTR}="true"])`
+
+/** Document position of a lone non-board `image` node when right-clicking its live `<img>` wrapper, or null. */
+function alignableImagePos(view: EditorView, image: HTMLImageElement): number | null {
+  const wrapper = image.closest(ALIGNABLE_IMAGE_SELECTOR)
+  if (wrapper === null || !view.dom.contains(wrapper)) return null
+  let pos: number
+  try {
+    pos = view.posAtDOM(wrapper, 0)
+  } catch {
+    return null
+  }
+  const { doc } = view.state
+  const imgPos = doc.nodeAt(pos)?.type.name === 'image' ? pos : pos > 0 && doc.nodeAt(pos - 1)?.type.name === 'image' ? pos - 1 : -1
+  if (imgPos < 0) return null
+  const $pos = doc.resolve(imgPos)
+  if ($pos.depth === 0) return null
+  const hit = loneImageInParagraph($pos.before($pos.depth), $pos.parent)
+  return hit !== null && hit.pos === imgPos ? hit.pos : null
 }
 
 interface OpenMenu {
@@ -238,6 +295,8 @@ interface OpenMenu {
   view: EditorView
   /** The image right-clicked, by its `src` as loaded: then the menu is its rows only (D22). */
   image: string | null
+  /** Document position of an alignable lone picture when right-clicked (YAZ-6424), or null. */
+  imagePos: number | null
   misspelling: Misspelling | null
   /** The document position right-clicked, and the document it is in: a bullet there is Without folded lines' copy. */
   pointer: number | null
@@ -303,6 +362,7 @@ export function PageMenu({ view, extra, reading = false }: { view: EditorView | 
       event.preventDefault()
       const active = document.activeElement
       const image = event.target.closest('img')
+      const imagePos = image !== null && target.editable ? alignableImagePos(target, image) : null
       const doc = target.state.doc
       const pointer = pointerPos(target, event.target, event.clientX, event.clientY)
       const ask = ++latest
@@ -314,6 +374,7 @@ export function PageMenu({ view, extra, reading = false }: { view: EditorView | 
           y: event.clientY,
           view: target,
           image: image === null ? null : image.currentSrc || image.src,
+          imagePos,
           misspelling,
           pointer,
           doc,
@@ -344,7 +405,7 @@ export function PageMenu({ view, extra, reading = false }: { view: EditorView | 
       const { x, y, pos } = (event as CustomEvent<{ x: number; y: number; pos: number }>).detail
       const active = document.activeElement
       // YAZ-4970: the row or column the handle selected names the menu: row actions, or column actions.
-      setMenu({ x, y, view: target, image: null, misspelling: null, pointer: pos + 1, doc: target.state.doc, selection: target.state.selection, focused: active instanceof HTMLElement && target.dom.contains(active) ? active : null, table: handleKind(target.state.selection) })
+      setMenu({ x, y, view: target, image: null, imagePos: null, misspelling: null, pointer: pos + 1, doc: target.state.doc, selection: target.state.selection, focused: active instanceof HTMLElement && target.dom.contains(active) ? active : null, table: handleKind(target.state.selection) })
     }
     view.dom.addEventListener('mousedown', onMouseDown, true)
     view.dom.addEventListener('contextmenu', onContextMenu)
@@ -398,11 +459,20 @@ export function PageMenu({ view, extra, reading = false }: { view: EditorView | 
   }
   const [spelling, ...rest] = pageMenuSections(activeView, menu.misspelling, run, pointer, reading, menu.table)
   const more = activeView === view ? (extra?.() ?? []) : []
+  const imagePos = !reading && activeView.editable && menu.doc === activeView.state.doc ? menu.imagePos : null
+  const imageNode = imagePos === null ? null : activeView.state.doc.nodeAt(imagePos)
+  const imageAlign = imageNode !== null && imageNode.type.name === 'image' ? parseAlt((imageNode.attrs.alt as string | undefined) ?? '').align : null
+  const onImageAlign =
+    imagePos === null
+      ? undefined
+      : (next: EmbedAlign | null) => {
+          if (menu.doc === activeView.state.doc) setImageAlign(activeView, imagePos, next)
+        }
   return (
     <ContextMenu
       x={menu.x}
       y={menu.y}
-      sections={menu.image !== null ? imageMenuSections({ src: menu.image, x: menu.x, y: menu.y }, run) : [spelling, ...lineSections(activeView, pointer, menu.selection), ...rest, ...more]}
+      sections={menu.image !== null ? imageMenuSections({ src: menu.image, x: menu.x, y: menu.y, align: imageAlign, onAlign: onImageAlign }, run) : [spelling, ...lineSections(activeView, pointer, menu.selection), ...rest, ...more]}
       onClose={() => {
         setMenu(null)
         refocus()

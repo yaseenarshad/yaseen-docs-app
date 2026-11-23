@@ -11,7 +11,7 @@ import type { MenuAction, MenuItem, MenuSection } from '../sidebar/menuSections'
 import type { CopyAsMode } from '@shared/types'
 import { caretIn, endOf, md, mount, posOf, runCommand, select, unmountAll } from './marks/markTestKit'
 import { isOutlineItemCollapsed, toggleOutlineFold } from './outline/outlineFolding'
-import { lineSections, misspellingOf, PageMenu, pageMenuSections, resetSpellWait, TABLE_HANDLE_MENU, wordAt } from './pageMenu'
+import { imageMenuSections, lineSections, misspellingOf, PageMenu, pageMenuSections, resetSpellWait, TABLE_HANDLE_MENU, wordAt } from './pageMenu'
 import { SPELL_WAIT_FIRST_MS, SPELL_WAIT_MS } from '@shared/spelling'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { CellSelection } from '@milkdown/kit/prose/tables'
@@ -686,5 +686,128 @@ describe('the right-click waits for its guesses (YAZ-4464 D2)', () => {
       await crepe.destroy()
       el.remove()
     }
+  })
+})
+
+describe('picture Position menu on right-click (YAZ-6424)', () => {
+  it('imageMenuSections stays backward-compatible without onAlign and adds Position flyout with icons and active checkmark when provided', () => {
+    const run = vi.fn()
+    const plain = imageMenuSections({ src: 'app://vault/v/a.png', x: 10, y: 20 }, run)
+    expect(plain).toHaveLength(1)
+    expect(shape(plain)).toEqual([['Copy image', 'Reveal in Finder']])
+
+    const onAlign = vi.fn()
+    const withPos = imageMenuSections({ src: 'app://vault/v/a.png', x: 10, y: 20, align: 'center', onAlign }, run)
+    expect(withPos).toHaveLength(2)
+    expect(shape(withPos)).toEqual([['Copy image', 'Reveal in Finder'], ['Position [App default, Left, Center, Right]']])
+
+    const posParent = withPos[1]![0]!
+    expect(posParent.id).toBe('image-position')
+    expect(posParent.icon).toBeDefined()
+    const choices = posParent.children![0]!
+    expect(choices.map((c) => [c.label, c.hint, c.icon !== undefined])).toEqual([
+      ['App default', undefined, false],
+      ['Left', undefined, true],
+      ['Center', '✓', true],
+      ['Right', undefined, true],
+    ])
+
+    choices.find((c) => c.label === 'Right')!.onSelect()
+    choices.find((c) => c.label === 'App default')!.onSelect()
+    expect(onAlign.mock.calls).toEqual([['right'], [null]])
+  })
+
+  async function openImagePage(markdown: string, reading = false) {
+    const mounted = await mount(markdown, { image: { root: '/v', pagePath: '/v/Page.md' } })
+    window.yaseenDocs = { ...window.yaseenDocs, spell: { suggestions: async () => null } } as typeof window.yaseenDocs
+    // Match `open()` above: flush the trailing-paragraph transaction before opening a menu on a list.
+    act(() => mounted.view.dispatch(mounted.view.state.tr))
+    const host = document.createElement('div')
+    document.body.append(host)
+    act(() => {
+      root = createRoot(host)
+      root.render(<PageMenu view={mounted.view} reading={reading} />)
+    })
+    return { ...mounted, host }
+  }
+
+  const rightClickImg = async (img: Element) => {
+    await act(async () => {
+      img.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 }))
+      await guessesAnswered()
+    })
+  }
+
+  const menuItem = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role=menuitem]')].find((b) => b.textContent === label)
+
+  it('shows Position flyout on a standalone lone picture, updates alt while preserving width, and reflects active checkmark', async () => {
+    const { crepe, view } = await openImagePage('![Shot|320](images/shot.png)\n')
+    const img = view.dom.querySelector('.image-view img')!
+    expect(img).not.toBeNull()
+
+    await rightClickImg(img)
+    expect(document.querySelectorAll('.ctx-menu > .ctx-menu__group')).toHaveLength(2)
+    const posBtn = menuItem('Position')!
+    expect(posBtn).toBeDefined()
+    expect(posBtn.querySelector('svg')?.getAttribute('width')).toBe('14')
+
+    act(() => posBtn.click())
+    expect(menuItem('App default')?.dataset.hint).toBe('✓')
+    expect(menuItem('Center')?.querySelector('svg')?.getAttribute('width')).toBe('14')
+    act(() => menuItem('Center')!.click())
+    expect(md(crepe)).toBe('![Shot|320 align=center](images/shot.png)\n')
+
+    await rightClickImg(view.dom.querySelector('.image-view img')!)
+    act(() => menuItem('Position')!.click())
+    expect(menuItem('Center')?.dataset.hint).toBe('✓')
+    act(() => menuItem('Right')!.click())
+    expect(md(crepe)).toBe('![Shot|320 align=right](images/shot.png)\n')
+
+    await rightClickImg(view.dom.querySelector('.image-view img')!)
+    act(() => menuItem('Position')!.click())
+    act(() => menuItem('App default')!.click())
+    expect(md(crepe)).toBe('![Shot|320](images/shot.png)\n')
+  })
+
+  it('shows Position flyout on a bullet-nested lone picture', async () => {
+    const { crepe, view } = await openImagePage('* ![Shot](images/shot.png)\n')
+    await rightClickImg(view.dom.querySelector('.image-view img')!)
+    act(() => menuItem('Position')!.click())
+    act(() => menuItem('Center')!.click())
+    expect(md(crepe)).toBe('* ![Shot|align=center](images/shot.png)\n')
+  })
+
+  it('omits Position on inline-with-text pictures, folded image bullets, read-only pages, and reading mode', async () => {
+    const inlinePage = await openImagePage('Before ![Shot](images/shot.png) after\n')
+    await rightClickImg(inlinePage.view.dom.querySelector('.image-view img')!)
+    expect(menuItem('Position')).toBeUndefined()
+    expect(menuItem('Copy image')).toBeDefined()
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    act(() => root?.unmount())
+    root = null
+
+    const foldedPage = await openImagePage('* ![Shot](images/shot.png)\n')
+    let itemPos = -1
+    foldedPage.view.state.doc.descendants((node, pos) => {
+      if (itemPos === -1 && node.type.name === 'list_item') itemPos = pos
+    })
+    expect(runCommand(foldedPage.crepe, toggleOutlineFold(itemPos))).toBe(true)
+    await rightClickImg(foldedPage.view.dom.querySelector('.image-view img')!)
+    expect(menuItem('Position')).toBeUndefined()
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+
+    // Unfold, then switch to read-only: still no Position.
+    expect(runCommand(foldedPage.crepe, toggleOutlineFold(itemPos))).toBe(true)
+    foldedPage.crepe.setReadonly(true)
+    await rightClickImg(foldedPage.view.dom.querySelector('.image-view img')!)
+    expect(menuItem('Position')).toBeUndefined()
+    act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    act(() => root?.unmount())
+    root = null
+
+    // Reading mode (`reading={true}`): no Position even on an editable view.
+    const readingPage = await openImagePage('![Shot](images/shot.png)\n', true)
+    await rightClickImg(readingPage.view.dom.querySelector('.image-view img')!)
+    expect(menuItem('Position')).toBeUndefined()
   })
 })
