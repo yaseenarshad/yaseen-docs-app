@@ -28,6 +28,12 @@ const mockRemove = vi.fn()
 const mockReveal = vi.fn()
 const mockTest = vi.fn()
 const mockIcons = vi.fn()
+const mockWorkspaceStatus = vi.fn<(workspaceId: string) => Promise<VaultLauncherStatus>>()
+const mockCreateWorkspace = vi.fn()
+const mockRemoveWorkspace = vi.fn()
+const mockRevealWorkspace = vi.fn()
+const mockTestWorkspace = vi.fn()
+const mockWorkspaceIcons = vi.fn()
 
 // Stub canvas 2D context in jsdom so Badge/Image PNG export runs cleanly.
 const fakeCtx = {
@@ -79,6 +85,12 @@ beforeEach(() => {
       reveal: mockReveal,
       test: mockTest,
       icons: mockIcons,
+      workspaceStatus: mockWorkspaceStatus,
+      createWorkspace: mockCreateWorkspace,
+      removeWorkspace: mockRemoveWorkspace,
+      revealWorkspace: mockRevealWorkspace,
+      testWorkspace: mockTestWorkspace,
+      workspaceIcons: mockWorkspaceIcons,
     },
     app: {
       home: vi.fn(async () => '/Users/yasin'),
@@ -205,6 +217,40 @@ describe('VaultLauncherControl', () => {
 
     await act(async () => buttonByText(el, 'Clear')?.click())
     expect(mockRemove).toHaveBeenCalledWith(ROOT)
+    expect(onChanged).toHaveBeenCalledTimes(1)
+    expect(buttonByText(el, 'Make a launcher…')).toBeDefined()
+  })
+
+  it('supports Workspace mode: calls workspaceStatus, revealWorkspace, testWorkspace, and removeWorkspace', async () => {
+    const onChanged = vi.fn()
+    mockWorkspaceStatus.mockResolvedValue({
+      supported: true,
+      exists: true,
+      iconDataUrl: FAKE_PNG_DATA_URL,
+      launcher: {
+        name: 'Work Suite',
+        appPath: '/Applications/Work Suite.app',
+        iconPath: '/tmp/ws.png',
+        target: 'normal',
+        badge: { kind: 'emoji', value: '💼', color: '#007AFF' },
+      },
+    })
+    mockRevealWorkspace.mockResolvedValue(undefined)
+    mockTestWorkspace.mockResolvedValue(undefined)
+    mockRemoveWorkspace.mockResolvedValue(undefined)
+
+    const el = await render(<VaultLauncherControl workspaceId="ws-1" defaultName="Work Suite" onChanged={onChanged} />)
+    expect(mockWorkspaceStatus).toHaveBeenCalledWith('ws-1')
+    expect(el.textContent).toContain('Work Suite.app')
+
+    await act(async () => buttonByText(el, 'Reveal')?.click())
+    expect(mockRevealWorkspace).toHaveBeenCalledWith('ws-1')
+
+    await act(async () => buttonByText(el, 'Test')?.click())
+    expect(mockTestWorkspace).toHaveBeenCalledWith('ws-1')
+
+    await act(async () => buttonByText(el, 'Remove')?.click())
+    expect(mockRemoveWorkspace).toHaveBeenCalledWith('ws-1')
     expect(onChanged).toHaveBeenCalledTimes(1)
     expect(buttonByText(el, 'Make a launcher…')).toBeDefined()
   })
@@ -357,6 +403,41 @@ describe('VaultLauncherModal', () => {
     })
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('supports Workspace mode: hides Open on row, uses workspace title/subtitle, and calls createWorkspace', async () => {
+    const savedStatus: VaultLauncherStatus = {
+      supported: true,
+      exists: true,
+      iconDataUrl: FAKE_PNG_DATA_URL,
+      launcher: {
+        name: 'Work Suite',
+        appPath: '/Applications/Work Suite.app',
+        iconPath: '/tmp/ws.png',
+        target: 'normal',
+        badge: { kind: 'letters', value: 'WS', color: '#007AFF' },
+      },
+    }
+    mockCreateWorkspace.mockResolvedValue(savedStatus)
+    const onSaved = vi.fn()
+
+    const el = await render(
+      <VaultLauncherModal workspaceId="ws-1" defaultName="Work Suite" onSaved={onSaved} onClose={vi.fn()} />,
+    )
+
+    expect(el.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace launcher')
+    expect(el.querySelector('[aria-label="Open on"]')).toBeNull()
+    expect(el.querySelector('.vault-launcher-modal__alfred-sub')?.textContent).toBe('Opens all vaults in workspace')
+
+    await act(async () => buttonByText(el, 'Create launcher')?.click())
+    expect(mockCreateWorkspace).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      name: 'Work Suite',
+      pngBase64: FAKE_PNG_DATA_URL.replace(/^data:image\/png;base64,/, ''),
+      badge: { kind: 'letters', value: 'WS', color: '#007AFF' },
+    })
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(onSaved).toHaveBeenCalledWith(savedStatus)
+  })
 })
 
 describe('SettingsDialog › General › Vault app', () => {
@@ -374,6 +455,24 @@ describe('SettingsDialog › General › Vault app', () => {
     )
     const titles = [...el.querySelectorAll('.settings-group__title')].map((h) => h.textContent)
     expect(titles).toContain('Vault app')
+  })
+
+  it('shows the Workspace launcher row when workspaceLauncher context is provided', async () => {
+    mockStatus.mockResolvedValue({ supported: true, launcher: null, exists: false, iconDataUrl: null })
+    mockWorkspaceStatus.mockResolvedValue({ supported: true, launcher: null, exists: false, iconDataUrl: null })
+    const el = await render(
+      <SettingsDialog
+        ctx={{
+          settings: DEFAULT_SETTINGS,
+          onChange: vi.fn(),
+          vaultLauncher: { root: ROOT, defaultName: 'Notes' },
+          workspaceLauncher: { workspaceId: 'ws-1', defaultName: 'Work Suite' },
+        }}
+        onClose={vi.fn()}
+      />,
+    )
+    expect(el.textContent).toContain('Workspace launcher')
+    expect(mockWorkspaceStatus).toHaveBeenCalledWith('ws-1')
   })
 })
 

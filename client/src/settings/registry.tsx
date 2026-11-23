@@ -500,6 +500,8 @@ export interface SettingsCtx {
   openCourse?: () => void
   /** macOS Vault App launcher (YAZ-5967, YAZ-6375): absent with no vault open or on non-macOS bridges. */
   vaultLauncher?: { root: string; defaultName: string; onChanged?: () => void }
+  /** macOS Workspace launcher: present when the window shows a saved Workspace on macOS. */
+  workspaceLauncher?: { workspaceId: string; defaultName: string; onChanged?: () => void }
 }
 
 export interface SettingDef {
@@ -1089,6 +1091,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         hint: 'Create a macOS launcher app for Alfred, Spotlight, and the Dock.',
         vault: true,
         items: [
+          {
+            id: 'workspaceLauncher',
+            label: 'Workspace launcher',
+            hint: 'Opens all vaults in this workspace directly in Yaseen Docs and updates the Dock icon when focused.',
+            keywords: ['workspace', 'app', 'launcher', 'alfred', 'spotlight', 'dock', 'icon', 'badge', 'macos'],
+            wide: true,
+            available: (ctx) => ctx.workspaceLauncher !== undefined,
+            render: ({ workspaceLauncher }) =>
+              workspaceLauncher && (
+                <Suspense fallback={null}>
+                  <VaultLauncherControl workspaceId={workspaceLauncher.workspaceId} defaultName={workspaceLauncher.defaultName} onChanged={workspaceLauncher.onChanged} />
+                </Suspense>
+              ),
+          },
           {
             id: 'vaultLauncher',
             label: 'Vault launcher',

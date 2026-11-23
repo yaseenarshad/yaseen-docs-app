@@ -306,4 +306,18 @@ describe('Welcome', () => {
     const { el } = mount({ picking: true })
     expect(el.querySelector<HTMLButtonElement>('.btn--primary')?.disabled).toBe(true)
   })
+
+  it('renders an 18x18 launcher icon next to a workspace name when workspaceIcons has an entry', () => {
+    const ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+    const sets: VaultSet[] = [
+      { id: 'ws-1', name: 'Work Suite', roots: ['/vaults/pages', '/vaults/work'], lastUsed: Date.now() },
+      { id: 'ws-2', name: 'Other', roots: ['/a', '/b'], lastUsed: 0 },
+    ]
+    const { el } = mount({ sets, workspaceIcons: { 'ws-1': ICON } })
+    const icons = [...el.querySelectorAll<HTMLImageElement>('.welcome__vault-icon')]
+    expect(icons).toHaveLength(1)
+    expect(icons[0].src).toBe(ICON)
+    expect(icons[0].width).toBe(18)
+    expect(icons[0].height).toBe(18)
+  })
 })

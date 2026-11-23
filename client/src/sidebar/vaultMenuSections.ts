@@ -91,6 +91,10 @@ export interface VaultSetMenuHandlers {
   onRename: (id: string) => void
   /** Forget the workspace: no confirm. */
   onRemove: (id: string) => void
+  /** Open the macOS Workspace Launcher modal for this workspace. Absent on non-macOS. */
+  onLauncher?: (id: string) => void
+  /** True when this workspace already has a launcher (shows "Edit launcher…" instead of "Make a launcher…"). */
+  hasLauncher?: boolean
 }
 
 /** A clipboard copy that says what it did — or why it could not. */
@@ -146,6 +150,9 @@ export function buildVaultMenuSections({ path, name, isCurrent, isAloneHere, ren
 export function buildVaultSetMenuSections(id: string, h: VaultSetMenuHandlers): MenuSection[] {
   return [
     [
+      ...(h.onLauncher !== undefined
+        ? [{ id: 'launcher-set', label: h.hasLauncher ? 'Edit launcher…' : 'Make a launcher…', onSelect: () => h.onLauncher?.(id) }]
+        : []),
       { id: 'rename-set', label: 'Rename', icon: createElement(PencilIcon), onSelect: () => h.onRename(id) },
       { id: 'remove-set', label: 'Remove from workspaces', onSelect: () => h.onRemove(id) },
     ],

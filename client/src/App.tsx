@@ -14,7 +14,7 @@ import { Editor } from './editor/Editor'
 import { keepOutsideChangesOfTabs } from './editor/external/outsideChangesMemory'
 import { newPageBase } from './editor/wikilink/createFromLink'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
-import { useVaultLauncherIcons } from './hooks/useVaultLauncherIcons'
+import { useVaultLauncherIcons, workspaceLauncherCtx } from './hooks/useVaultLauncherIcons'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { onKeySheetRequest, placeOverTab } from './keys/keySheetRequest'
 import { useMenuEvents } from './hooks/useMenuEvents'
@@ -2809,7 +2809,7 @@ export function App() {
       if (added) moveBoardTab(from, storage.getWindowId(), ref)
     })
   }, [addVault, moveBoardTab])
-  const { launcherIcons, refreshLauncherIcons } = useVaultLauncherIcons()
+  const { launcherIcons, workspaceIcons, refreshLauncherIcons } = useVaultLauncherIcons()
   const [todayTarget, setTodayTarget] = useState<string | null>(null)
   const openTarget = useCallback(({ root: targetRoot, target }: { root: string; target: 'inbox' | 'today' }) => {
     if (target === 'inbox') takeInbox({ root: targetRoot })
@@ -4295,7 +4295,7 @@ export function App() {
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
       {settingsOpen && (
         <Suspense fallback={null}>
-          <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled, autoSync: active.sync.autoSync, addToAutoSync: active.sync.addToAutoSync, openAutoSync: active.sync.openAutoSync, refreshAutoSync: active.sync.refreshAutoSync }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, iconLook: settingsIconLook, cardLook: settingsCardLook, tableLook: settingsTableLook, folderPages: settingsFolderPages, places: root === null ? undefined : placeVaults, vaultLauncher: active.root !== null && /Mac/i.test(navigator.platform) && typeof window.yaseenDocs?.vaultLauncher?.status === 'function' ? { root: active.root, defaultName: active.name ?? basename(active.root), onChanged: refreshLauncherIcons } : undefined }} initialPage={settingsPage} onClose={closeSettings} />
+          <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled, autoSync: active.sync.autoSync, addToAutoSync: active.sync.addToAutoSync, openAutoSync: active.sync.openAutoSync, refreshAutoSync: active.sync.refreshAutoSync }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, iconLook: settingsIconLook, cardLook: settingsCardLook, tableLook: settingsTableLook, folderPages: settingsFolderPages, places: root === null ? undefined : placeVaults, vaultLauncher: active.root !== null && /Mac/i.test(navigator.platform) && typeof window.yaseenDocs?.vaultLauncher?.status === 'function' ? { root: active.root, defaultName: active.name ?? basename(active.root), onChanged: refreshLauncherIcons } : undefined, workspaceLauncher: workspaceLauncherCtx(roots, refreshLauncherIcons) }} initialPage={settingsPage} onClose={closeSettings} />
         </Suspense>
       )}
       {courseOpen !== null && (
@@ -4500,7 +4500,7 @@ export function App() {
           onInbox={filesDoors?.inbox ?? toggleInbox}
           // Its "Open in new window" (YAZ-5054): main opens the window, from a Files window too.
           onInboxNewWindow={openInboxInNewWindow}
-          vaultIcons={launcherIcons}
+          vaultIcons={launcherIcons} workspaceIcons={workspaceIcons} onLauncherChanged={refreshLauncherIcons}
         />
         </div>
       )}
@@ -4523,7 +4523,7 @@ export function App() {
       ) : root === null ? (
         <section className="editor">
           {/* No dialog opens by itself (C2, GRO-2164): the Welcome screen offers recents + Open folder…. */}
-          <Welcome recents={storage.getRecentRoots()} sets={storage.getVaultSets()} vaultIcons={launcherIcons} onOpenRecent={openRoot} onOpenSet={openSetFromWelcome} onPickFolder={pick} picking={picking} onNotice={notify} />
+          <Welcome recents={storage.getRecentRoots()} sets={storage.getVaultSets()} vaultIcons={launcherIcons} workspaceIcons={workspaceIcons} onOpenRecent={openRoot} onOpenSet={openSetFromWelcome} onPickFolder={pick} picking={picking} onNotice={notify} />
         </section>
       ) : (
         <div className="workspace" data-inbox-focus={inboxFocused || undefined}>

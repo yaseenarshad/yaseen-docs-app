@@ -220,7 +220,8 @@ function stripPngDataUrlPrefix(dataUrl: string): string {
 }
 
 export interface VaultLauncherModalProps {
-  root: string
+  root?: string
+  workspaceId?: string
   defaultName: string
   initial?: VaultLauncherInfo | null
   initialIconDataUrl?: string | null
@@ -229,7 +230,8 @@ export interface VaultLauncherModalProps {
   onClose: () => void
 }
 
-export function VaultLauncherModal({ root, defaultName, initial, initialIconDataUrl, recreating = false, onSaved, onClose }: VaultLauncherModalProps) {
+export function VaultLauncherModal({ root, workspaceId, defaultName, initial, initialIconDataUrl, recreating = false, onSaved, onClose }: VaultLauncherModalProps) {
+  const isWorkspace = workspaceId !== undefined
   const editing = initial !== null && initial !== undefined
   const initialBadge = initial?.badge
   const startOnImage = editing && initialBadge === undefined && Boolean(initialIconDataUrl)
@@ -305,13 +307,20 @@ export function VaultLauncherModal({ root, defaultName, initial, initialIconData
     try {
       const dataUrl = tab === 'badge' ? await renderBadgeToPng(currentBadge) : imageDataUrl!
       const pngBase64 = stripPngDataUrlPrefix(dataUrl)
-      const next = await api.vaultLauncher.create({
-        root,
-        name: trimmedName,
-        pngBase64,
-        target,
-        ...(tab === 'badge' ? { badge: currentBadge } : {}),
-      })
+      const next = isWorkspace
+        ? await api.vaultLauncher.createWorkspace({
+            workspaceId,
+            name: trimmedName,
+            pngBase64,
+            ...(tab === 'badge' ? { badge: currentBadge } : {}),
+          })
+        : await api.vaultLauncher.create({
+            root: root!,
+            name: trimmedName,
+            pngBase64,
+            target,
+            ...(tab === 'badge' ? { badge: currentBadge } : {}),
+          })
       onSaved(next)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err))
@@ -336,7 +345,17 @@ export function VaultLauncherModal({ root, defaultName, initial, initialIconData
       <div className="vault-launcher-modal">
         <div className="vault-launcher-modal__head">
           <h3 id="vault-launcher-modal-title" className="vault-launcher-modal__title">
-            {recreating ? 'Recreate vault launcher' : editing ? 'Edit vault launcher' : 'Make a vault launcher'}
+            {isWorkspace
+              ? recreating
+                ? 'Recreate workspace launcher'
+                : editing
+                  ? 'Edit workspace launcher'
+                  : 'Create workspace launcher'
+              : recreating
+                ? 'Recreate vault launcher'
+                : editing
+                  ? 'Edit vault launcher'
+                  : 'Make a vault launcher'}
           </h3>
           <button type="button" className="vault-launcher-modal__close" aria-label="Close" disabled={saving} onClick={onClose}>
             ✕
@@ -365,10 +384,12 @@ export function VaultLauncherModal({ root, defaultName, initial, initialIconData
               </div>
             </label>
 
-            <div className="vault-launcher-modal__field">
-              <span className="vault-launcher-modal__label">Open on</span>
-              <Segmented options={TARGET_OPTIONS} value={target} onChange={setTarget} ariaLabel="Open on" />
-            </div>
+            {!isWorkspace && (
+              <div className="vault-launcher-modal__field">
+                <span className="vault-launcher-modal__label">Open on</span>
+                <Segmented options={TARGET_OPTIONS} value={target} onChange={setTarget} ariaLabel="Open on" />
+              </div>
+            )}
 
             <div className="vault-launcher-modal__tabs" role="tablist" aria-label="Icon source">
               <button
@@ -521,7 +542,13 @@ export function VaultLauncherModal({ root, defaultName, initial, initialIconData
               <div className="vault-launcher-modal__alfred-text">
                 <span className="vault-launcher-modal__alfred-name">{displayAppName}.app</span>
                 <span className="vault-launcher-modal__alfred-sub">
-                  {target === 'inbox' ? 'Opens Cards Inbox' : target === 'today' ? "Opens Today's Daily Page" : 'Opens in Yaseen Docs'}
+                  {isWorkspace
+                    ? 'Opens all vaults in workspace'
+                    : target === 'inbox'
+                      ? 'Opens Cards Inbox'
+                      : target === 'today'
+                        ? "Opens Today's Daily Page"
+                        : 'Opens in Yaseen Docs'}
                 </span>
               </div>
             </div>

@@ -100,9 +100,9 @@
  * MAX_VAULT_SETS are saved is refused with "Remove a workspace first" (S68). A window with one vault
  * has no such item (S70): its header's right-click is the vault menu.
  */
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent } from 'react'
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { MAX_VAULT_SETS, cleanVaultName, sameVaults, type VaultEntry, type VaultSet } from '@shared/types'
+import { MAX_VAULT_SETS, cleanVaultName, sameVaults, type VaultEntry, type VaultLauncherStatus, type VaultSet } from '@shared/types'
 import { api } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { matchLinkCandidates } from '../links/completion'
@@ -115,6 +115,8 @@ import { InfoIcon, TriangleIcon } from '../views/view/icons'
 import { ContextMenu } from './ContextMenu'
 import { buildVaultMenuSections, buildVaultSetMenuSections } from './vaultMenuSections'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+
+const VaultLauncherModal = lazy(() => import('../settings/VaultLauncherModal').then((m) => ({ default: m.VaultLauncherModal })))
 
 export interface VaultSwitcherProps {
   /** The vaults of this window, in the window's order (YAZ-2602 D1; a drag of a vault row changes it, YAZ-2631 D5); never empty. */
@@ -146,6 +148,10 @@ export interface VaultSwitcherProps {
   hotkeys: HotkeyOverrides
   /** Per-vault macOS launcher icon data URLs (YAZ-5967, YAZ-6375). */
   vaultIcons?: Record<string, string>
+  /** Per-workspace macOS launcher icon data URLs. */
+  workspaceIcons?: Record<string, string>
+  /** Called when a workspace launcher is saved so App can refresh launcher icons. */
+  onLauncherChanged?: () => void
 }
 
 /**
@@ -210,7 +216,7 @@ export function defaultHighlight(matches: readonly { path: string }[], query: st
 /** The trigger's text (YAZ-2602 S15): one vault's name; two joined with " + "; more as the first two, then "+ N more". */
 export const vaultsLabel = (names: readonly string[]): string => (names.length <= 2 ? names.join(' + ') : `${names[0]} + ${names[1]} + ${names.length - 2} more`)
 
-export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, onOpenHere, onAddHere, onOpenFolderPage, onReveal, onOpenVsCode, onNotice, onOpenSetHere, hotkeys, vaultIcons }: VaultSwitcherProps) {
+export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, onOpenHere, onAddHere, onOpenFolderPage, onReveal, onOpenVsCode, onNotice, onOpenSetHere, hotkeys, vaultIcons, workspaceIcons, onLauncherChanged }: VaultSwitcherProps) {
   // The first vault: the one a window with one vault has, and so the one the trigger's own menu and rename are about.
   const root = roots[0]
   const multi = roots.length > 1
@@ -233,6 +239,8 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
   const [vaultSetMenu, setVaultSetMenu] = useState<{ id: string | null; x: number; y: number } | null>(null)
   /** The workspace name that is an inline field: a saved one's on its row (S67) — or with `id: null` the header's, the name to save this window's vaults under (S63). */
   const [vaultSetField, setVaultSetField] = useState<{ id: string | null } | null>(null)
+  /** Active workspace launcher modal state, loaded via `api.vaultLauncher.workspaceStatus`. */
+  const [launcherModal, setLauncherModal] = useState<{ workspaceId: string; defaultName: string; status: VaultLauncherStatus | null } | null>(null)
   // One menu and one field stand at a time, a vault's or a workspace's: the layer rules below are about either.
   const menuUp = vaultMenu !== null || vaultSetMenu !== null
   const fieldUp = renaming !== null || vaultSetField !== null
@@ -245,7 +253,10 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
   // The trigger's text, live: a change made in ANY window lands through `storage.subscribe`. The saved workspace that is
   // exactly this window's vaults (YAZ-2602 S15) — the first that matches — else each vault's display name (YAZ-1974 D4).
   // One vault is never a workspace (S70), so its header asks the saved ones nothing.
+  const matchedSetId = useSyncExternalStore(storage.subscribe, () => (multi ? storage.getVaultSets().find((set) => sameVaults(set.roots, roots))?.id ?? null : null))
   const name = useSyncExternalStore(storage.subscribe, () => (multi ? storage.getVaultSets().find((set) => sameVaults(set.roots, roots))?.name : undefined) ?? vaultsLabel(roots.map(storage.vaultName)))
+  const headerIcon = multi ? (matchedSetId !== null ? workspaceIcons?.[matchedSetId] : undefined) : vaultIcons?.[root]
+  const canWorkspaceLauncher = /Mac/i.test(navigator.platform) && typeof window.yaseenDocs?.vaultLauncher?.workspaceStatus === 'function'
   const open = panel !== null
 
   const openPanel = useCallback(() => {
@@ -402,6 +413,15 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
     void api.window.removeSet(id).catch(failed('removeSet'))
     setPanel((p) => (p === null ? p : { ...p, sets: p.sets.filter((s) => s.id !== id) }))
     inputRef.current?.focus()
+  }
+  const openWorkspaceLauncher = (id: string): void => {
+    const set = panel?.sets.find((s) => s.id === id) ?? storage.getVaultSets().find((s) => s.id === id)
+    if (set === undefined) return
+    closePanel()
+    void api.vaultLauncher.workspaceStatus(id).then(
+      (status) => setLauncherModal({ workspaceId: id, defaultName: set.name, status }),
+      () => setLauncherModal({ workspaceId: id, defaultName: set.name, status: null }),
+    )
   }
   /**
    * "Save as workspace…" (YAZ-2602 S63): main saves THIS window's vaults under `name`, and a name
@@ -568,8 +588,8 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
           // The vault menu is ONE vault's: with several the trigger offers "Save as workspace…" instead (YAZ-2602 S15, S63).
           onContextMenu={(e) => (multi ? openVaultSetMenu(null, e) : openVaultMenu(root, 'header', e))}
         >
-          {!multi && vaultIcons?.[root] !== undefined && (
-            <img className="sidebar__root-icon" src={vaultIcons[root]} alt="" width={18} height={18} />
+          {headerIcon !== undefined && (
+            <img className="sidebar__root-icon" src={headerIcon} alt="" width={18} height={18} />
           )}
           <span className="sidebar__root-name">{name}</span>
           <span className="sidebar__root-hint" aria-hidden="true"><TriangleIcon up={open} /></span>
@@ -618,7 +638,12 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
                         onClick={(e) => clickRow(i, e)}
                         onContextMenu={(e) => openVaultSetMenu(set.id, e)}
                       >
-                        <span className="vault-switcher__name">{set.name}</span>
+                        <span className={`vault-switcher__name${workspaceIcons?.[set.id] !== undefined ? ' vault-switcher__name--with-icon' : ''}`}>
+                          {workspaceIcons?.[set.id] !== undefined && (
+                            <img className="vault-switcher__icon" src={workspaceIcons[set.id]} alt="" width={18} height={18} />
+                          )}
+                          {set.name}
+                        </span>
                         {when}
                       </button>
                     )}
@@ -763,10 +788,35 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
           sections={
             vaultSetMenu.id === null
               ? [[{ id: 'save-set', label: SAVE_SET_TEXT, onSelect: () => setVaultSetField({ id: null }) }]]
-              : buildVaultSetMenuSections(vaultSetMenu.id, { onRename: (id) => setVaultSetField({ id }), onRemove: removeSet })
+              : buildVaultSetMenuSections(vaultSetMenu.id, {
+                  onRename: (id) => setVaultSetField({ id }),
+                  onRemove: removeSet,
+                  ...(canWorkspaceLauncher
+                    ? {
+                        onLauncher: openWorkspaceLauncher,
+                        hasLauncher: workspaceIcons?.[vaultSetMenu.id] !== undefined,
+                      }
+                    : {}),
+                })
           }
           onClose={closeMenu}
         />
+      )}
+      {launcherModal !== null && (
+        <Suspense fallback={null}>
+          <VaultLauncherModal
+            workspaceId={launcherModal.workspaceId}
+            defaultName={launcherModal.defaultName}
+            initial={launcherModal.status?.launcher}
+            initialIconDataUrl={launcherModal.status?.iconDataUrl}
+            recreating={launcherModal.status?.launcher !== null && launcherModal.status?.launcher !== undefined && !launcherModal.status.exists}
+            onSaved={() => {
+              setLauncherModal(null)
+              onLauncherChanged?.()
+            }}
+            onClose={() => setLauncherModal(null)}
+          />
+        </Suspense>
       )}
     </>
   )
