@@ -66,6 +66,7 @@ import { CardPreviewHost } from '../tabs/cardPreview'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
 import { usePicturesFolderAllow } from './usePicturesFolderAllow'
+import './drawingEditor.css'
 import './drawingModal.css'
 
 /**
@@ -659,7 +660,7 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
             {error}
           </p>
         )}
-        <div className="drawing-modal__canvas">
+        <div className="drawing-modal__canvas editor--drawing">
           {loaded !== null && (
             <Suspense fallback={null}>
               <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} canvasPanel={canvasPanel} onCanvasPanelChange={onCanvasPanelChange} onSnapshot={onSnapshot} onFailed={setError} onApi={onApi} onExportPdf={exportPdf} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} links={links} foldArrows={loaded.scene.foldArrows} hoverOutline={loaded.scene.hoverOutline} />
