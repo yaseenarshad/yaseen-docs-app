@@ -216,23 +216,25 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
           {/* Calendar default card (pill) style (YAZ-6331, YAZ-6344): Soft Accent, Soft Slate, White + Bar, White, plus colour + strength for Soft Accent and White + Bar. */}
           <div className="view-settings-row">
             <RowLabel icon="cardStyle">Card style</RowLabel>
-            <span className="cal-line">
-              <ChoiceSeg
-                label="Card style"
-                value={calendarCardStyleOf(view)}
-                options={CALENDAR_CARD_STYLES}
-                onChange={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'calendarCardStyle', next, defaults))}
-              />
-              {(calendarCardStyleOf(view) === 'accent' || calendarCardStyleOf(view) === 'bar') && (
-                <CalendarCardColorPicker
-                  label="Card style"
-                  color={calendarCardColorOf(view)}
-                  onColor={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'calendarCardColor', next === null ? '' : writeColorStrength(next), defaults))}
-                />
-              )}
-            </span>
+            <ChoiceSeg
+              label="Card style"
+              value={calendarCardStyleOf(view)}
+              options={CALENDAR_CARD_STYLES}
+              onChange={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'calendarCardStyle', next, defaults))}
+            />
             <FromSettings own={own} viewKey="calendarCardStyle" also="calendarCardColor" viewIndex={viewIndex} onUpdate={onUpdate} />
           </div>
+          {(calendarCardStyleOf(view) === 'accent' || calendarCardStyleOf(view) === 'bar') && (
+            <div className="view-settings-row">
+              <RowLabel icon="cardStyle">Card colour</RowLabel>
+              <CalendarCardColorPicker
+                label="Card style"
+                color={calendarCardColorOf(view)}
+                onColor={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'calendarCardColor', next === null ? '' : writeColorStrength(next), defaults))}
+              />
+              <FromSettings own={own} viewKey="calendarCardColor" viewIndex={viewIndex} onUpdate={onUpdate} />
+            </div>
+          )}
           <label className="view-settings-row">
             <RowLabel icon="hideWeekends">Hide weekends</RowLabel>
             <input
