@@ -1149,4 +1149,59 @@ describe('YAZ-6330: DrawingModal tab parity (canvasPanel, ⌘S, ⌘F, Escape gua
       height: 600,
     })
   })
+
+  it('YAZ-6335: Escape does not close modal when engine .sidebar, focused search input, or portaled .excalidraw-modal-container .Modal is open', async () => {
+    const { overlay, onClose } = await open()
+    const canvas = container!.querySelector('.drawing-modal__canvas')!
+
+    // 1. Engine sidebar uses .sidebar / .sidebar--docked
+    const sidebar = document.createElement('div')
+    sidebar.className = 'sidebar sidebar--docked'
+    canvas.appendChild(sidebar)
+    await escOn(overlay)
+    expect(onClose).not.toHaveBeenCalled()
+    sidebar.remove()
+
+    // 2. Focused search <input> inside the modal
+    const input = document.createElement('input')
+    canvas.appendChild(input)
+    input.focus()
+    await escOn(input)
+    expect(onClose).not.toHaveBeenCalled()
+    input.remove()
+
+    // 3. Portaled dialog on document.body (.excalidraw-modal-container .Modal)
+    const portal = document.createElement('div')
+    portal.className = 'excalidraw-modal-container'
+    const modal = document.createElement('div')
+    modal.className = 'Modal'
+    portal.appendChild(modal)
+    document.body.appendChild(portal)
+    await escOn(overlay)
+    expect(onClose).not.toHaveBeenCalled()
+    portal.remove()
+
+    // Once all inner UI is gone, Escape closes the modal.
+    await escOn(overlay)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('YAZ-6335 (should-fix): Move to its own file returning early without closing keeps modal alive and autosaving', async () => {
+    const json = '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}'
+    const onSave = vi.fn()
+    const onMoveToFile = vi.fn().mockResolvedValue(undefined)
+    await open('ok', 100, { inline: { json, pagePath: '/v/Note.md', onSave, onMoveToFile } })
+    emit(1)
+    const moreBtn = container!.querySelector<HTMLButtonElement>('button[aria-label="Drawing actions"]')!
+    await click(moreBtn)
+    const moveBtn = [...container!.querySelectorAll<HTMLButtonElement>('.drawing-modal__menu button')].find((b) => b.textContent === 'Move to its own file')!
+    await click(moveBtn)
+    expect(onMoveToFile).toHaveBeenCalledTimes(1)
+    // Subsequent edit still autosaves if host kept the modal open (e.g. user cancelled allowFileAction).
+    emit(2)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600)
+    })
+    expect(onSave).toHaveBeenCalledTimes(1)
+  })
 })

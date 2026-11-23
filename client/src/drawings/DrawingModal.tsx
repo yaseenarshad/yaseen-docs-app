@@ -84,7 +84,8 @@ export const DISCARD_PROMPT = 'Changes are not saved. Discard them?'
 const FORGET_PANEL = (): void => undefined
 const EXPORT_FAILED = "The Excalidraw drawing couldn't be exported."
 const PDF_FAILED = "The PDF couldn't be exported."
-const INNER_ESCAPE_SELECTOR = '.excalidraw-sidebar, .presentation-player, .Modal, .excalidraw .Dialog'
+const INNER_ESCAPE_SELECTOR = '.sidebar, .sidebar--docked, .excalidraw-sidebar, .presentation-player, .Modal, .excalidraw .Dialog, .excalidraw-modal-container .Modal'
+const PORTALED_ESCAPE_SELECTOR = '.excalidraw-modal-container .Modal, .excalidraw .Dialog'
 
 /** Inline mode (YAZ-5040): edits a ```` ```excalidraw ```` block inside a `.md` page instead of a standalone `.excalidraw` file. */
 export interface InlineDrawingModalProps {
@@ -452,8 +453,6 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
         compactJson = compactInlineScene(json).json
       }
       await onMoveToFile(compactJson)
-      left.current = true
-      autosave.current?.dispose()
     } catch {
       // Host reports the failure notice; keep the modal open so edits are not lost.
     } finally {
@@ -525,9 +524,15 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
       return
     }
     if (e.defaultPrevented) return
-    const inInner = e.target instanceof Element && e.target.closest(INNER_ESCAPE_SELECTOR) !== null
-    const hasInner = sheetRef.current?.querySelector(INNER_ESCAPE_SELECTOR) !== null
-    if (inInner || hasInner) return
+    const target = e.target
+    const inEditable =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
+      (target instanceof HTMLElement && (target.isContentEditable || target.closest("[contenteditable='true']") !== null))
+    const inInner = target instanceof Element && target.closest(INNER_ESCAPE_SELECTOR) !== null
+    const hasInner = sheetRef.current?.querySelector(INNER_ESCAPE_SELECTOR) !== null || document.querySelector(PORTALED_ESCAPE_SELECTOR) !== null
+    if (inEditable || inInner || hasInner) return
     e.preventDefault()
     e.stopPropagation()
     void requestClose()
