@@ -558,7 +558,7 @@ app.whenReady().then(() => {
               },
               { trashItem: (p) => shell.trashItem(p) },
             )
-            return { appPath: res.appPath }
+            return { appPath: res.appPath, name: res.name }
           },
           remove: async (appPath, root) => {
             await removeVaultLauncher(appPath, root, { trashItem: (p) => shell.trashItem(p) })
@@ -683,6 +683,7 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   if (quitting) return
   quitting = true
+  dockIcon?.dispose()
   void runQuitSequence({
     flushWindows: async () => {
       await automationServer?.then((server) => server.close(), () => undefined)

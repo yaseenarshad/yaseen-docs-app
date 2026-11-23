@@ -224,11 +224,12 @@ export interface VaultLauncherModalProps {
   defaultName: string
   initial?: VaultLauncherInfo | null
   initialIconDataUrl?: string | null
+  recreating?: boolean
   onSaved: (status: VaultLauncherStatus) => void
   onClose: () => void
 }
 
-export function VaultLauncherModal({ root, defaultName, initial, initialIconDataUrl, onSaved, onClose }: VaultLauncherModalProps) {
+export function VaultLauncherModal({ root, defaultName, initial, initialIconDataUrl, recreating = false, onSaved, onClose }: VaultLauncherModalProps) {
   const editing = initial !== null && initial !== undefined
   const initialBadge = initial?.badge
   const startOnImage = editing && initialBadge === undefined && Boolean(initialIconDataUrl)
@@ -335,7 +336,7 @@ export function VaultLauncherModal({ root, defaultName, initial, initialIconData
       <div className="vault-launcher-modal">
         <div className="vault-launcher-modal__head">
           <h3 id="vault-launcher-modal-title" className="vault-launcher-modal__title">
-            {editing ? 'Edit vault launcher' : 'Make a vault launcher'}
+            {recreating ? 'Recreate vault launcher' : editing ? 'Edit vault launcher' : 'Make a vault launcher'}
           </h3>
           <button type="button" className="vault-launcher-modal__close" aria-label="Close" disabled={saving} onClick={onClose}>
             ✕
@@ -538,7 +539,7 @@ export function VaultLauncherModal({ root, defaultName, initial, initialIconData
             Cancel
           </button>
           <button type="button" className="btn btn--primary" disabled={!canSubmit} onClick={() => void handleSave()}>
-            {saving ? 'Saving…' : editing ? 'Save launcher' : 'Create launcher'}
+            {saving ? 'Saving…' : recreating ? 'Recreate launcher' : editing ? 'Save launcher' : 'Create launcher'}
           </button>
         </div>
       </div>

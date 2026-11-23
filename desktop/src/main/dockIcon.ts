@@ -11,11 +11,10 @@ import type { Store } from './store'
  * - Returns `null` when the default Yaseen Docs icon should be shown (Welcome screen, empty window,
  *   no focused window, no launcher, or a launcher removed in Finder).
  */
-export function resolveDockIconPath(
+function resolveLauncherCandidate(
   state: Pick<AppState, 'windows' | 'folders'>,
   focusedWinId: string | null | undefined,
-  exists: (path: string) => boolean,
-): string | null {
+): { appPath: string; iconPath: string } | null {
   if (focusedWinId == null) return null
   const entry = state.windows.find((w) => w.id === focusedWinId)
   if (entry === undefined) return null
@@ -23,8 +22,18 @@ export function resolveDockIconPath(
   if (activeVault === null) return null
   const launcher = state.folders[activeVault]?.launcher ?? state.folders[stripSlash(activeVault)]?.launcher
   if (launcher === undefined) return null
-  if (!exists(launcher.appPath) || !exists(launcher.iconPath)) return null
-  return launcher.iconPath
+  return { appPath: launcher.appPath, iconPath: launcher.iconPath }
+}
+
+export function resolveDockIconPath(
+  state: Pick<AppState, 'windows' | 'folders'>,
+  focusedWinId: string | null | undefined,
+  exists: (path: string) => boolean,
+): string | null {
+  const candidate = resolveLauncherCandidate(state, focusedWinId)
+  if (candidate === null) return null
+  if (!exists(candidate.appPath) || !exists(candidate.iconPath)) return null
+  return candidate.iconPath
 }
 
 export interface DockIconControllerDeps<TImage> {
@@ -56,6 +65,8 @@ export function createDockIconController<TImage>(deps: DockIconControllerDeps<TI
   const cache = new Map<string, TImage>()
   // `undefined` = nothing applied yet; `null` = default icon applied; `string` = custom iconPath applied.
   let lastAppliedKey: string | null | undefined = undefined
+  // Tracks the last checked `(appPath, iconPath)` candidate so unrelated `store.onChange` commits skip `existsSync`.
+  let lastCandidateKey: string | null | undefined = undefined
   let disposed = false
 
   const getImage = (iconPath: string): TImage | null => {
@@ -67,9 +78,14 @@ export function createDockIconController<TImage>(deps: DockIconControllerDeps<TI
     return loaded
   }
 
-  const sync = (): void => {
+  const syncInternal = (verifyDiskIfSame: boolean): void => {
     if (disposed) return
-    const resolved = resolveDockIconPath(deps.store.get(), deps.getFocusedWindowId(), deps.exists)
+    const candidate = resolveLauncherCandidate(deps.store.get(), deps.getFocusedWindowId())
+    const candidateKey = candidate === null ? null : `${candidate.appPath}\0${candidate.iconPath}`
+    if (!verifyDiskIfSame && candidateKey === lastCandidateKey) return
+    lastCandidateKey = candidateKey
+
+    const resolved = candidate !== null && deps.exists(candidate.appPath) && deps.exists(candidate.iconPath) ? candidate.iconPath : null
     if (resolved === lastAppliedKey) return
 
     if (resolved !== null) {
@@ -92,8 +108,11 @@ export function createDockIconController<TImage>(deps: DockIconControllerDeps<TI
     lastAppliedKey = null
   }
 
+  const sync = (): void => syncInternal(true)
+
   const invalidate = (iconPath?: string): void => {
     if (disposed) return
+    lastCandidateKey = undefined
     if (iconPath === undefined) {
       cache.clear()
       lastAppliedKey = undefined
@@ -105,7 +124,7 @@ export function createDockIconController<TImage>(deps: DockIconControllerDeps<TI
   }
 
   const unsubscribe = deps.store.onChange(() => {
-    sync()
+    syncInternal(false)
   })
 
   const dispose = (): void => {

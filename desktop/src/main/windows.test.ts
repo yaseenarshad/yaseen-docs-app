@@ -2822,4 +2822,27 @@ describe('createWindowManager: routeToFile openTarget and missing vault notice (
       [CONTRACT.link.onNotice.channel, "Can't open /v/trailing-slash: folder not found"],
     ])
   })
+
+  it('queues link:open-target until handleLinkReady on cold start, and delivers immediately on warm start', () => {
+    const { host, created } = makeHost([AREA], () => false, (p) => p === '/v/work' || p === '/v/work/')
+    const manager = createWindowManager(store, host)
+
+    // Cold start: new window is still loading, so push is held until handleLinkReady.
+    manager.routeToFile('/v/work/', null, 'today')
+    expect(created).toHaveLength(1)
+    const win = created[0].win
+    expect(win.webContents.send).not.toHaveBeenCalled()
+
+    manager.handleLinkReady(win.webContents)
+    expect(win.webContents.send.mock.calls).toEqual([
+      [CONTRACT.link.onOpenTarget.channel, { root: '/v/work', target: 'today' }],
+    ])
+
+    // Warm start: renderer is already listening, so push delivers immediately.
+    manager.routeToFile('/v/work', null, 'inbox')
+    expect(win.webContents.send.mock.calls).toEqual([
+      [CONTRACT.link.onOpenTarget.channel, { root: '/v/work', target: 'today' }],
+      [CONTRACT.link.onOpenTarget.channel, { root: '/v/work', target: 'inbox' }],
+    ])
+  })
 })

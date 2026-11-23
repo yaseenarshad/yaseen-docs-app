@@ -35,7 +35,7 @@ export interface VaultLauncherInstallParams {
 /** Platform backend plugged into `registerVaultLauncherIpc` (macOS `.app` bundle builder, or stub off macOS). */
 export interface VaultLauncherBackend {
   readonly supported: boolean
-  install(params: VaultLauncherInstallParams): Promise<{ appPath: string }>
+  install(params: VaultLauncherInstallParams): Promise<{ appPath: string; name?: string }>
   remove(appPath: string, root: string): Promise<void>
   reveal(appPath: string): Promise<void> | void
   launch(appPath: string): Promise<void> | void
@@ -178,10 +178,8 @@ export function registerVaultLauncherIpc(
     const badge = parseOptionalBadge(rawReq.badge)
 
     const iconPath = vaultLauncherIconPath(userData, root)
-    await atomicWriteBuffer(iconPath, png)
-
     const previousAppPath = store.get().folders[root]?.launcher?.appPath
-    const { appPath } = await backend.install({
+    const installed = await backend.install({
       root,
       name,
       png,
@@ -189,10 +187,13 @@ export function registerVaultLauncherIpc(
       target,
       previousAppPath,
     })
+    // Write the cached icon PNG only after install succeeds so a failed install never overwrites an existing icon.
+    await atomicWriteBuffer(iconPath, png)
 
+    const installedName = installed.name !== undefined ? (cleanVaultName(installed.name) ?? name) : name
     const launcher: VaultLauncherInfo | null = cleanVaultLauncher({
-      name,
-      appPath,
+      name: installedName,
+      appPath: installed.appPath,
       iconPath,
       ...(target !== undefined ? { target } : {}),
       ...(badge !== undefined ? { badge } : {}),
@@ -207,7 +208,7 @@ export function registerVaultLauncherIpc(
     return {
       supported: backend.supported,
       launcher,
-      exists: backend.exists(appPath),
+      exists: backend.exists(installed.appPath),
       iconDataUrl: `data:image/png;base64,${png.toString('base64')}`,
     }
   })

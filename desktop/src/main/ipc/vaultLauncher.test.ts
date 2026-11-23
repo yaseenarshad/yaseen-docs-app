@@ -254,6 +254,33 @@ describe('vaultLauncher IPC (YAZ-6374)', () => {
     })
   })
 
+  it('preserves previous cached icon PNG when backend.install fails and persists sanitized backend name', async () => {
+    const firstPng = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('first-icon')])
+    const secondPng = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('second-icon')])
+
+    vi.mocked(backend.install).mockResolvedValueOnce({ appPath: '/Applications/Work.app', name: 'Work' })
+    installedApps.add('/Applications/Work.app')
+    const okRes = await registered(CONTRACT.vaultLauncher.create)(undefined, {
+      root: ROOT,
+      name: 'Work.app',
+      pngBase64: firstPng.toString('base64'),
+    })
+    expect(okRes).toMatchObject({ ok: true, value: { launcher: { name: 'Work', appPath: '/Applications/Work.app' } } })
+
+    const iconPath = vaultLauncherIconPath(dir, ROOT)
+    expect(await readFile(iconPath)).toEqual(firstPng)
+
+    // Second install fails (e.g. collision guard): cached icon PNG must stay `firstPng`.
+    vi.mocked(backend.install).mockRejectedValueOnce(new Error('Cannot overwrite third-party app'))
+    const failRes = await registered(CONTRACT.vaultLauncher.create)(undefined, {
+      root: ROOT,
+      name: 'Safari',
+      pngBase64: secondPng.toString('base64'),
+    })
+    expect(failRes).toMatchObject({ ok: false })
+    expect(await readFile(iconPath)).toEqual(firstPng)
+  })
+
   it('unsupported stub backend reports supported: false and refuses create', async () => {
     vi.mocked(ipcMain.handle).mockClear()
     registerVaultLauncherIpc(store, dir, createUnsupportedVaultLauncherBackend())

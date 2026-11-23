@@ -1585,12 +1585,14 @@ export function App() {
     if (vault === null) throw new Error(`no vault of this window has the folder "${folder}". Make it, or change the daily pages folder in Settings › Files & Links`)
     return { vault, tree: trees.find((t) => t.root === vault)!.tree }
   }, [])
-  const openDailyPage = useCallback((background = false) => {
+  const openDailyPage = useCallback((background = false, targetRoot?: string) => {
     const { vaults, settings: now, dailyRoot } = placeInputs.current
     if (vaults.length === 0) return
     const title = dailyPageName(now.dailyPageFormat, new Date()).trim()
     // YAZ-5491: the vault of the file that says on; with no file yet, the first that holds the folder (D2).
-    void dailyVault(dailyRoot === null ? vaults : [dailyRoot], now.dailyPageFolder)
+    // YAZ-5967: a Vault App launcher with `?open=today` targets its own vault explicitly in multi-vault windows.
+    const scope = targetRoot !== undefined ? [targetRoot] : dailyRoot === null ? vaults : [dailyRoot]
+    void dailyVault(scope, now.dailyPageFolder)
       .then(async ({ vault, tree }): Promise<string | null> => {
         const index = scopeOf(vault).wikilinks
         // Until the index lands the vault's kind is not known (YAZ-2523 🔒 V5), and it decides what is written.
@@ -2828,7 +2830,7 @@ export function App() {
     if (at === -1) return setTodayTarget(null)
     if (vaults[at].wikilinks.resolve === null) return
     setTodayTarget(null)
-    openDailyPage(false)
+    openDailyPage(false, roots[at])
   }, [todayTarget, roots, vaults, openDailyPage])
 
   // CLI navigation (YAZ-4502): show the page and the sidebar list, reveal the target there, pick the folder view, and

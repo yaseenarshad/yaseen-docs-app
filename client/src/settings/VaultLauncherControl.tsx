@@ -72,12 +72,25 @@ export function VaultLauncherControl({ root, defaultName, onChanged }: VaultLaun
     }
   }
 
+  const refreshAfterMissing = async (err: unknown): Promise<void> => {
+    try {
+      const fresh = await api.vaultLauncher.status(root)
+      if (!fresh.exists) {
+        setStatus(fresh)
+        return
+      }
+    } catch {
+      // Fall through to show the original action error.
+    }
+    setError(err instanceof Error ? err.message : String(err))
+  }
+
   const handleReveal = async (): Promise<void> => {
     setError(null)
     try {
       await api.vaultLauncher.reveal(root)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err))
+      await refreshAfterMissing(err)
     }
   }
 
@@ -86,7 +99,7 @@ export function VaultLauncherControl({ root, defaultName, onChanged }: VaultLaun
     try {
       await api.vaultLauncher.test(root)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err))
+      await refreshAfterMissing(err)
     }
   }
 
@@ -156,6 +169,7 @@ export function VaultLauncherControl({ root, defaultName, onChanged }: VaultLaun
             defaultName={defaultName}
             initial={launcher}
             initialIconDataUrl={iconDataUrl}
+            recreating={launcher !== null && !exists}
             onSaved={(next) => {
               setStatus(next)
               setModalOpen(false)

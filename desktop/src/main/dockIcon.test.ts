@@ -222,4 +222,46 @@ describe('createDockIconController (YAZ-6374)', () => {
     expect(setDockIcon).toHaveBeenCalledTimes(1)
     controller.dispose()
   })
+
+  it('skips exists checks on unrelated store.onChange commits, but still detects Finder deletion on explicit sync()', () => {
+    const store = makeMemoryStore({
+      ...defaultAppState(),
+      windows: [makeWin('w1', { root: '/vaults/alpha', roots: ['/vaults/alpha'], file: '/vaults/alpha/a.md' })],
+      folders: {
+        '/vaults/alpha': { ...defaultFolderState(), launcher: launcherA },
+      },
+    })
+
+    const existing = new Set([launcherA.appPath, launcherA.iconPath, DEFAULT_ICON])
+    const exists = vi.fn((p: string) => existing.has(p))
+    const setDockIcon = vi.fn()
+    const loadImage = vi.fn((p: string) => `img:${p}`)
+
+    const controller = createDockIconController({
+      store,
+      getFocusedWindowId: () => 'w1',
+      defaultIconPath: DEFAULT_ICON,
+      setDockIcon,
+      loadImage,
+      exists,
+    })
+
+    controller.sync()
+    expect(setDockIcon).toHaveBeenCalledWith(`img:${launcherA.iconPath}`)
+    exists.mockClear()
+
+    // Unrelated store commit (same vault/launcher): 0 exists calls.
+    store.set({
+      ...store.get(),
+      windows: store.get().windows.map((w) => (w.id === 'w1' ? { ...w, file: '/vaults/alpha/b.md' } : w)),
+    })
+    expect(exists).not.toHaveBeenCalled()
+
+    // Finder removes the .app; explicit sync() (e.g. browser-window-focus) detects it and resets to default.
+    existing.delete(launcherA.appPath)
+    controller.sync()
+    expect(exists).toHaveBeenCalled()
+    expect(setDockIcon).toHaveBeenLastCalledWith(`img:${DEFAULT_ICON}`)
+    controller.dispose()
+  })
 })
