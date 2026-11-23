@@ -545,26 +545,35 @@ describe('YAZ-4279 UI/UX: ResizeObserver refresh, scrollToElements, repairScene,
     await act(async () => {
       root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onApi={(a) => (handle = a)} />)
     })
-    const setViewport = vi.fn()
-    const elA = { id: 'a', type: 'rectangle' }
-    const elB = { id: 'b', type: 'rectangle' }
+    const updateScene = vi.fn()
+    const elA = { id: 'a', type: 'rectangle', x: 0, y: 0, width: 100, height: 80 }
+    const elB = { id: 'b', type: 'rectangle', x: 2000, y: 1000, width: 200, height: 100 }
     await act(async () => {
       ;(last().onExcalidrawAPI as (api: unknown) => void)({
         refresh: vi.fn(),
-        getAppState: () => ({}),
+        getAppState: () => ({ width: 1000, height: 800, zoom: { value: 1 }, scrollX: 0, scrollY: 0 }),
         getSceneElements: () => [elA, elB],
         getSceneElementsIncludingDeleted: () => [elA, elB],
         getSceneElementsMapIncludingDeleted: () => new Map(),
         getFiles: () => ({}),
-        updateScene: vi.fn(),
+        updateScene,
         updateFrameRendering: vi.fn(),
         addFiles: vi.fn(),
         pruneFiles: vi.fn(),
-        setViewport,
+        setViewport: vi.fn(),
       })
     })
+    updateScene.mockClear()
     handle!.scrollToElements!(['b'])
-    expect(setViewport).toHaveBeenCalledWith({ target: [elB], fit: 'contain', animation: true, offsets: { ui: true } })
+    expect(updateScene).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appState: expect.objectContaining({
+          scrollX: -1600,
+          scrollY: -650,
+          zoom: { value: 1 },
+        }),
+      }),
+    )
   })
 
   it('item 11: repairScene drops tombstones, deduplicates ids, fixes broken bindings and originalText, and updates immediately', async () => {

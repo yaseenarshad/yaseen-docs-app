@@ -221,6 +221,7 @@ function InlineDrawingHost({
         const doc = await loadInlineDocument(root, path, index)
         reloadedTo.current = doc.mtime
         tookFile(doc)
+        clearOutsideChip()
         a.reset(s.replaceScene(doc.scene) + titleVersionRef.current, doc.mtime)
         return doc.readOnly
       } catch (err) {
