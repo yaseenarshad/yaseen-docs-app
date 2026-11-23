@@ -1291,16 +1291,17 @@ function CrepeHost({
         moveCaretIntoZoom(crepe)
         tellRealZoom(crepe, zoomKeyRef.current ?? null, true)
       }
-      // The mount's caret grab (⚡ YAZ-888) YIELDS to the sidebar walk (YAZ-921): a page opened
-      // while focus stands on a tree row is a PREVIEW — stealing the caret would strand the
-      // arrows mid-walk. It yields to a tab's name field too (YAZ-3059). Every other door (tabs,
-      // wikilinks, boot) still lands in the text.
+      // The mount's caret grab (⚡ YAZ-888) YIELDS to the sidebar walk (YAZ-921) and the sidebar
+      // search bar (YAZ-6180): a page opened while focus stands on a tree row or in `.sidebar__search-input`
+      // is a PREVIEW — stealing the caret would strand the arrows mid-walk or block Esc from leaving
+      // search and closing the sidebar. It yields to a tab's name field too (YAZ-3059). Every other
+      // door (tabs, wikilinks, boot) still lands in the text.
       // The caret it had (YAZ-3737 D3): a woken tab's, a copy's. Before the grab, which keeps it.
       if (start?.selection !== undefined) placeCaret(crepe, start.selection)
       const active = document.activeElement
       // A tab woken behind the page on show (YAZ-3737 S7) takes no caret and no keys: its layer is hidden.
       const behind = hostRef.current?.closest('.tabstack__layer--hidden') != null
-      if (!(active instanceof HTMLElement && active.closest('.tree') !== null) && !namingTab(active) && !behind) focusEditor(crepe)
+      if (!(active instanceof HTMLElement && active.closest('.tree, .sidebar__search-input') !== null) && !namingTab(active) && !behind) focusEditor(crepe)
       // A copy starts where its source stood (YAZ-2940 D7) — after the caret grab, which may scroll,
       // and after the start drill-in, which the editor state already holds (YAZ-2951 S6).
       const scroller = hostRef.current?.closest('.editor-host')

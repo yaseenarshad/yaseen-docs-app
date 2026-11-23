@@ -2767,6 +2767,23 @@ describe('the mount caret grab yields to a tab\'s name field (YAZ-3059 S7, YAZ-3
       strip.remove()
     }
   })
+
+  it('YAZ-6180: an editor that mounts while the sidebar search input has focus yields so Esc leaves search and closes the sidebar', async () => {
+    const sidebar = document.createElement('aside')
+    sidebar.className = 'sidebar'
+    const input = document.createElement('input')
+    input.className = 'sidebar__search-input'
+    sidebar.appendChild(input)
+    document.body.appendChild(sidebar)
+    try {
+      input.focus()
+      expect(document.activeElement).toBe(input)
+      await mount(FM + BODY)
+      expect(focusEditor).not.toHaveBeenCalled()
+    } finally {
+      sidebar.remove()
+    }
+  })
 })
 
 describe('a read-only page (YAZ-3076 D2)', () => {
