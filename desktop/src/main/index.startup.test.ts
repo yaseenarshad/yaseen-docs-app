@@ -178,13 +178,23 @@ describe('main startup order (YAZ-2172)', () => {
     expect(h.s.order.indexOf('setPath:userData')).toBeLessThan(h.s.order.indexOf('singleInstanceLock'))
   })
 
-  it('claims the yaseendocs:// and yaseendraw:// handlers once each, and never under the e2e harness (YAZ-2131 🔒 D8, YAZ-3028 D7)', async () => {
+  it('claims the yaseendocs:// and yaseendraw:// handlers once each, and never under the e2e harness or unpackaged dev mode (YAZ-2131 🔒 D8, YAZ-3028 D7, YAZ-6367)', async () => {
     expect(h.app.setAsDefaultProtocolClient.mock.calls).toEqual([['yaseendocs'], ['yaseendraw']])
     vi.clearAllMocks()
     vi.stubEnv('YASEEN_DOCS_E2E', '1')
     vi.resetModules()
     await import('./index')
     expect(h.app.setAsDefaultProtocolClient).not.toHaveBeenCalled()
+    vi.clearAllMocks()
+    vi.stubEnv('YASEEN_DOCS_E2E', '')
+    h.app.isPackaged = false
+    try {
+      vi.resetModules()
+      await import('./index')
+      expect(h.app.setAsDefaultProtocolClient).not.toHaveBeenCalled()
+    } finally {
+      h.app.isPackaged = true
+    }
   })
 
   it('registers app:// with exactly standard + secure + fetch + code cache + stream (YAZ-5014: a card`s sound), before ready', () => {
