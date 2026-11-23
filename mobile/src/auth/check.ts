@@ -1,7 +1,6 @@
-import { FRIENDS_ENABLED } from '@shared/features'
 import { VAULT_CONFIG_DIR } from '@shared/types'
-import { GithubError, githubClient, repoPath, type FetchLike, type GithubClient } from '../github/client'
-import type { GistsAccess, VaultAccount } from './account'
+import { GithubError, githubClient, repoPath, type FetchLike } from '../github/client'
+import type { VaultAccount } from './account'
 import { readTokenEnd } from './expiry'
 import { cleanToken, isBranchName, parseRepo } from './input'
 
@@ -146,8 +145,8 @@ export async function checkSignIn(input: SignInInput, deps: CheckDeps = {}): Pro
       login: u.login,
       name: u.name ?? null,
       avatarUrl: u.avatar_url,
-      // YAZ-5652: only Friends uses gists; with it off, no Gists check (no `POST /gists`): not known.
-      gists: FRIENDS_ENABLED ? await gistsAccess(client, user.headers) : 'unknown',
+      // YAZ-6326: Friends runs on Cloudflare D1 (/api/friends/*), not GitHub Gists — never probe `POST /gists`.
+      gists: 'unknown',
       expiresAt: readTokenEnd(user.headers),
       checkedAt: now(),
     }
@@ -155,17 +154,6 @@ export async function checkSignIn(input: SignInInput, deps: CheckDeps = {}): Pro
   } catch (error) {
     if (!(error instanceof GithubError)) throw error
     return fail(fromGithub(error))
-  }
-}
-
-async function gistsAccess(client: GithubClient, userHeaders: Headers): Promise<GistsAccess> {
-  const scopes = userHeaders.get('x-oauth-scopes')
-  if (scopes !== null) return scopes.split(',').some((s) => s.trim() === 'gist') ? 'yes' : 'no'
-  try {
-    const probe = await client.request('/gists', { method: 'POST', body: { files: {} }, allow: [403, 404, 422] })
-    return probe.status === 422 ? 'yes' : 'no'
-  } catch {
-    return 'unknown'
   }
 }
 

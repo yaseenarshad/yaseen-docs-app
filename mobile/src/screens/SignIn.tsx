@@ -108,15 +108,16 @@ export function SignIn({ mode }: { mode: SignInMode }) {
     setHelp(null)
     void app.signInWithGithub(mode, another).catch(() => (setLeaving(false), setHelp(SAVE_FAILED)))
   }
-  const chooseRepos = () => (app.services.goToGithub ?? ((to: string) => location.assign(to)))(GITHUB_CHOOSE_REPOS)
+  const existingGithub = mode.kind === 'add' && step === 'start' && app.github.kind === 'none' ? (app.githubAccounts[0] ?? null) : null
+  const picking = mode.kind !== 'again' ? (app.github.kind === 'picking' ? app.github.login : existingGithub) : null
+  const chooseRepos = () => void app.manageRepos('picker', picking ?? undefined).catch(() => (app.services.goToGithub ?? ((to: string) => location.assign(to)))(GITHUB_CHOOSE_REPOS))
   const useToken = () => {
     app.endGithub()
     setHelp(null)
     setStep('token')
   }
-  const existingGithub = mode.kind === 'add' && step === 'start' && app.github.kind === 'none' ? (app.githubAccounts[0] ?? null) : null
-  const picking = mode.kind !== 'again' ? (app.github.kind === 'picking' ? app.github.login : existingGithub) : null
   const failed = app.github.kind === 'failed' ? app.github.help : null
+  const retrySelectAccount = app.github.kind === 'failed' && app.github.selectAccount === true
   const ready = app.phase === 'ready'
   const title = mode.kind === 'first' ? 'Yaseen Docs' : mode.kind === 'add' ? 'Add a vault' : 'Sign in again'
   return (
@@ -136,17 +137,17 @@ export function SignIn({ mode }: { mode: SignInMode }) {
           {mode.kind === 'first' && <p className="lead">Your vault is a repo on GitHub. Sign in, then choose it.</p>}
           {mode.kind === 'add' && <p className="lead">Sign in with GitHub, then choose the repo.</p>}
           {again !== null && <p className="lead">{`GitHub needs you to sign in again for ${again.repo}.${app.unit(' The pages on this phone stay.')}`}</p>}
-          {failed !== null && <Problem message={failed.message} action={FORWARD_LABEL[failed.forward]} onAction={() => (failed.forward === 'choose-repos' ? chooseRepos() : toGithub())} />}
-          <button type="button" className="btn btn--primary" disabled={leaving} aria-busy={leaving} onClick={() => toGithub()}>
+          {failed !== null && <Problem message={failed.message} action={FORWARD_LABEL[failed.forward]} onAction={() => (failed.forward === 'choose-repos' ? chooseRepos() : toGithub(retrySelectAccount))} />}
+          <button type="button" className="btn btn--primary" disabled={leaving} aria-busy={leaving} onClick={() => toGithub(retrySelectAccount)}>
             {leaving ? 'Opening GitHub…' : 'Sign in with GitHub'}
           </button>
           {mode.kind !== 'again' && <p className="muted">GitHub asks which repos Yaseen Docs may use. Access then renews by itself.</p>}
-          {help !== null && <Problem message={help.message} action={FORWARD_LABEL[help.forward]} onAction={() => toGithub()} />}
+          {help !== null && <Problem message={help.message} action={FORWARD_LABEL[help.forward]} onAction={() => toGithub(retrySelectAccount)} />}
           <div className="repo-picker__ways">
             <button type="button" className="link-btn" onClick={useToken}>
               Use a token instead
             </button>
-            {mode.kind === 'add' && (
+            {(mode.kind === 'add' || mode.kind === 'again') && (
               <button type="button" className="link-btn" onClick={() => toGithub(true)}>
                 Another GitHub account
               </button>

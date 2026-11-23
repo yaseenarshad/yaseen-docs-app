@@ -316,7 +316,7 @@ function FriendsPart() {
   const fa = app.friendsAccount
   // Friends runs on Cloudflare D1 (/api/friends/*), not GitHub Gists — suppress legacy `no-gists` token alert.
   const alert = fa.kind === 'no-gists' ? null : friendsMessage(fa)
-  const choices = app.list.vaults.filter((v) => app.accounts[vaultId(v)]?.gists === 'yes')
+  const choices = app.list.vaults.filter((v) => app.accounts[vaultId(v)] !== undefined)
   const actingVault = fa.kind === 'ok' || fa.kind === 'two-accounts' ? fa.vault : null
   const acting = actingVault === null ? undefined : app.accounts[actingVault]
   const githubName = acting?.name ?? acting?.login ?? app.accounts[app.vaultKey ?? '']?.name ?? app.accounts[app.vaultKey ?? '']?.login ?? ''

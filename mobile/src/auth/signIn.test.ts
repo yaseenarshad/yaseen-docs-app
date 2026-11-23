@@ -104,7 +104,7 @@ describe('a good token', () => {
     expect(result).toEqual({
       ok: true,
       vault: 'yaseen/vault@main',
-      account: { login: 'yaseen', name: 'Yaseen', avatarUrl: 'https://avatars.githubusercontent.com/u/1?v=4', gists: 'yes', expiresAt: '2026-12-31T00:00:00.000Z', checkedAt: NOW },
+      account: { login: 'yaseen', name: 'Yaseen', avatarUrl: 'https://avatars.githubusercontent.com/u/1?v=4', gists: 'unknown', expiresAt: '2026-12-31T00:00:00.000Z', checkedAt: NOW },
     })
     expect(github.calls.map((c) => `${c.method} ${c.url.slice(GITHUB_API.length)}`)).toEqual([
       'GET /user',
@@ -112,10 +112,9 @@ describe('a good token', () => {
       'GET /repos/yaseen/vault/branches/main',
       'GET /repos/yaseen/vault/contents/.yaseendocs?ref=main',
       'POST /repos/yaseen/vault/git/blobs',
-      'POST /gists',
     ])
     expect(await tokens.read('yaseen/vault@main')).toBe(GOOD)
-    expect(await loadAccount(store, 'yaseen/vault@main')).toMatchObject({ login: 'yaseen', gists: 'yes' })
+    expect(await loadAccount(store, 'yaseen/vault@main')).toMatchObject({ login: 'yaseen', gists: 'unknown' })
     const list = await loadVaultList(store)
     // The repo is stored as GitHub writes it, and the default branch when none is given.
     expect(list).toEqual({ vaults: [{ repo: 'yaseen/vault', branch: 'main', addedAt: NOW }], open: 'yaseen/vault@main' })
@@ -153,7 +152,7 @@ describe('a good token', () => {
 
   it('a classic token: the Gists permission is read from its scopes, with no probe', async () => {
     const result = await signIn({ repo: 'yaseen/vault', token: CLASSIC }, deps)
-    expect(result).toMatchObject({ ok: true, account: { gists: 'yes', expiresAt: null } })
+    expect(result).toMatchObject({ ok: true, account: { gists: 'unknown', expiresAt: null } })
     expect(github.calls.some((c) => c.url.endsWith('/gists'))).toBe(false)
   })
 })
@@ -270,33 +269,20 @@ describe("GitHub's order of checks for a write is not proven (403 before 422, or
     expect(await signIn({ repo: 'yaseen/vault', token: GOOD }, deps)).toMatchObject({ ok: true })
   })
 
-  it('permission first: a token with no Gists permission is "no" at sign-in', async () => {
-    expect(await signIn({ repo: 'yaseen/vault', token: NO_GISTS }, deps)).toMatchObject({ ok: true, account: { gists: 'no' } })
-  })
-
-  it('body first: the Gists probe says "yes" by mistake; the first refused gist write sets "no", and Friends says so', async () => {
-    github.bodyFirst = true
-    expect(await signIn({ repo: 'yaseen/vault', token: NO_GISTS }, deps)).toMatchObject({ ok: true, account: { gists: 'yes' } })
-    expect(await loadFriendsAccount(store)).toMatchObject({ kind: 'ok' })
-    // The friends sender (4E) writes its gist and gets 403: READ_ONLY on a write.
-    const refused = await githubClient(NO_GISTS, { fetch: github.fetch })
-      .request('/gists', { method: 'POST', body: { public: false, files: { 'notecards-friends.json': { content: '{}' } } } })
-      .catch((e: unknown) => e as GithubError)
-    expect((refused as GithubError).code).toBe('READ_ONLY')
-    await recordGistsRefused(store, 'yaseen/vault@main')
-    expect(await loadAccount(store, 'yaseen/vault@main')).toMatchObject({ gists: 'no' })
-    expect(await loadFriendsAccount(store)).toEqual({ kind: 'no-gists', logins: ['yaseen'] })
+  it('sign-in does not probe POST /gists (Friends uses D1, YAZ-6326)', async () => {
+    expect(await signIn({ repo: 'yaseen/vault', token: NO_GISTS }, deps)).toMatchObject({ ok: true, account: { gists: 'unknown' } })
+    expect(github.calls.filter((c) => c.url.endsWith('/gists'))).toHaveLength(0)
   })
 })
 
 describe('new row: the token has no Gists permission', () => {
-  it('sign-in works; the account says no Gists, so the Friends tab can tell how to add it', async () => {
+  it('sign-in works without Gists permission (Friends uses D1)', async () => {
     const result = await signIn({ repo: 'yaseen/vault', token: NO_GISTS }, deps)
-    expect(result).toMatchObject({ ok: true, account: { gists: 'no' } })
+    expect(result).toMatchObject({ ok: true, account: { gists: 'unknown' } })
     expect(await startState(store, tokens)).toEqual({ kind: 'ready', vault: 'yaseen/vault@main' })
   })
 
-  it('when the Gists check cannot run, sign-in still works and the answer is unknown', async () => {
+  it('when the Gists endpoint is down, sign-in still works without touching it', async () => {
     const fetch = failGistsProbe(github)
     const result = await signIn({ repo: 'yaseen/vault', token: GOOD }, { ...deps, fetch })
     expect(result).toMatchObject({ ok: true, account: { gists: 'unknown' } })
@@ -338,7 +324,7 @@ describe('N6: the token is cancelled while in use', () => {
     expect(await signInAgain('yaseen/vault@main', OTHER_REPO, deps)).toEqual({ ok: false, error: { kind: 'repo-not-found', repo: 'yaseen/vault' } })
     expect(await tokens.read('yaseen/vault@main')).toBe(GOOD)
 
-    expect(await signInAgain('yaseen/vault@main', NO_GISTS, deps)).toMatchObject({ ok: true, vault: 'yaseen/vault@main', account: { gists: 'no' } })
+    expect(await signInAgain('yaseen/vault@main', NO_GISTS, deps)).toMatchObject({ ok: true, vault: 'yaseen/vault@main', account: { gists: 'unknown' } })
     expect(await tokens.read('yaseen/vault@main')).toBe(NO_GISTS)
     expect((await store.read('yaseen/vault@main', 'Page.md'))?.content).toBe('# Page')
     expect(await store.checkpoint('yaseen/vault@main')).toMatchObject({ commit: 'c0ffee' })

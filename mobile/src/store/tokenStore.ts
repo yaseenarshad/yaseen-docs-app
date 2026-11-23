@@ -50,10 +50,10 @@ export interface TokenStore {
   takeManaging(): Promise<Managing | null>
 }
 
-/** Where "Manage repos on GitHub" was tapped: Settings, or the open vault's "repo taken off" notice. */
+/** Where "Manage repos on GitHub" / "Choose repos on GitHub" was tapped. */
 export interface Managing {
   login: string | null
-  from: 'settings' | 'vault'
+  from: 'settings' | 'vault' | 'picker'
   startedAt: number
 }
 
@@ -108,9 +108,17 @@ export const PENDING_MS = 10 * 60_000
 const LOCK = 'notecards-github-refresh'
 
 type Locks = { request<T>(name: string, fn: () => Promise<T>): Promise<T> }
+const fallbackLocks = new Map<string, Promise<unknown>>()
 const webLocks = <T>(name: string, fn: () => Promise<T>): Promise<T> => {
   const locks = (globalThis as { navigator?: { locks?: Locks } }).navigator?.locks
-  return locks === undefined ? fn() : locks.request(name, fn)
+  if (locks !== undefined) return locks.request(name, fn)
+  const prev = fallbackLocks.get(name) ?? Promise.resolve()
+  const next = prev.catch(() => undefined).then(fn)
+  const settled = next.finally(() => {
+    if (fallbackLocks.get(name) === settled) fallbackLocks.delete(name)
+  })
+  fallbackLocks.set(name, settled)
+  return next
 }
 
 const isPair = (v: unknown): v is GithubPair => v !== null && typeof v === 'object' && typeof (v as GithubPair).access === 'string' && typeof (v as GithubPair).login === 'string'

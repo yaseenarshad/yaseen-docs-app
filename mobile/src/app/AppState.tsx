@@ -56,7 +56,7 @@ export interface AppServices {
  * - `picking`: signed in as `login`; the sign-in screen shows the repos chosen for the app (`listInstalledRepos`).
  * - `failed`: the words of what went wrong, shown on the sign-in screen with one way forward.
  */
-export type GithubFlow = { kind: 'none' } | { kind: 'picking'; login: string } | { kind: 'failed'; help: Help }
+export type GithubFlow = { kind: 'none' } | { kind: 'picking'; login: string } | { kind: 'failed'; help: Help; selectAccount?: boolean }
 
 /**
  * - `loading`: reading the phone's storage. No network call.
@@ -114,7 +114,7 @@ export interface AppModel {
    * YAZ-5645 slice 2, "Manage repos on GitHub": keeps where it was tapped (`from`; `login`: the account, else the open
    * vault's), then goes to GitHub's repo page. GitHub sends the person back to `/auth/installed` (the Setup URL).
    */
-  manageRepos(from: 'settings' | 'vault', login?: string): Promise<void>
+  manageRepos(from: 'settings' | 'vault' | 'picker', login?: string): Promise<void>
   /**
    * YAZ-5645 slice 2, "Sign out of this account": ends the sign-in on GitHub (decision D7, through the Worker, at most
    * `STOP_WAIT_MS`), then the account's tokens leave the phone. Its vaults and their pages stay; they show Sign in again.
@@ -289,14 +289,14 @@ export function AppProvider({ services, children }: { services: AppServices; chi
       }
       if (githubReturn.pathname === INSTALLED_PATH) {
         // Slice 2: back from "Manage repos on GitHub". From Settings: Settings again. From the vault's notice: the vault,
-        // which this start already syncs again.
+        // which this start already syncs again. From the repo picker: restore the exact account's picker (YAZ-6327).
         const managing = await tokens.takeManaging().catch(() => null)
-        if (managing !== null && ready) {
+        if (managing !== null && managing.from !== 'picker' && ready) {
           if (managing.from === 'settings') setNav((n) => ({ ...n, stack: [{ kind: 'settings' }] }))
           return
         }
-        // Back from "choose repos" (the Setup URL): the account signed in last lists its repos again.
-        const login = (await tokens.githubAccounts()).at(-1)
+        // Back from "choose repos" (the Setup URL): prefer the recorded account from the picker, else the last signed-in account.
+        const login = managing?.login ?? (await tokens.githubAccounts()).at(-1)
         if (login === undefined) return
         setGithub({ kind: 'picking', login })
         return show({ kind: 'add' })
@@ -319,7 +319,11 @@ export function AppProvider({ services, children }: { services: AppServices; chi
         if (!ready) setNav({ tab: openingTab(await friends.hasFriends(), next.tabs), stack: [] })
         return
       }
-      setGithub({ kind: 'failed', help: outcome === null ? SAVE_FAILED : githubHelp(outcome.error) })
+      setGithub({
+        kind: 'failed',
+        help: outcome === null ? SAVE_FAILED : githubHelp(outcome.error),
+        selectAccount: outcome !== null && outcome.error.kind === 'other-account',
+      })
       show(mode)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -480,7 +484,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   const githubAccess = useCallback((login: string) => tokens.accessFor(login), [tokens])
   const endGithub = useCallback(() => setGithub({ kind: 'none' }), [])
   const manageRepos = useCallback(
-    async (from: 'settings' | 'vault', login?: string) => {
+    async (from: 'settings' | 'vault' | 'picker', login?: string) => {
       const who = login ?? (openKey.current === null ? null : await tokens.githubOf(openKey.current).catch(() => null))
       await tokens.saveManaging({ login: who, from, startedAt: (services.now ?? Date.now)() })
       ;(services.goToGithub ?? ((to: string) => location.assign(to)))(GITHUB_CHOOSE_REPOS)

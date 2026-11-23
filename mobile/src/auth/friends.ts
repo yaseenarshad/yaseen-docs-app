@@ -23,16 +23,15 @@ const CHOICE = 'friendsVault'
 /** Pure: from the vaults in list order, with what their check learned, and the person's choice (a vault id). */
 export function friendsAccount(vaults: readonly { vault: string; account: VaultAccount | undefined }[], chosen: string | null): FriendsAccount {
   if (vaults.length === 0) return { kind: 'no-vaults' }
-  const withGists = vaults.filter((v) => v.account?.gists === 'yes')
+  const eligible = vaults.filter((v) => v.account !== undefined && v.account.gists !== 'no')
   const logins: string[] = []
   for (const v of vaults) {
     const login = v.account?.login
     if (login !== undefined && !logins.some((l) => l.toLowerCase() === login.toLowerCase())) logins.push(login)
   }
-  const use = withGists.find((v) => v.vault === chosen) ?? withGists[0]
+  const use = eligible.find((v) => v.vault === chosen) ?? eligible[0]
   if (use === undefined) {
-    const unknown = vaults.some((v) => v.account === undefined || v.account.gists === 'unknown')
-    return unknown ? { kind: 'unchecked' } : { kind: 'no-gists', logins }
+    return vaults.some((v) => v.account === undefined) ? { kind: 'unchecked' } : { kind: 'no-gists', logins }
   }
   const login = use.account!.login
   return logins.length > 1 ? { kind: 'two-accounts', vault: use.vault, login, logins } : { kind: 'ok', vault: use.vault, login }
@@ -56,9 +55,9 @@ export async function loadFriendsAccount(store: VaultStore): Promise<FriendsAcco
   return friendsAccount(vaults, (await store.getState<string>(PHONE, CHOICE)) ?? null)
 }
 
-/** "Friends use @login" › change (4A). Only a vault whose token has the Gists permission can be chosen. */
+/** "Friends use @login" › change (4A). Any vault with a checked GitHub account can be chosen (Friends uses D1, not Gists). */
 export async function chooseFriendsVault(store: VaultStore, vault: string): Promise<void> {
-  if ((await loadAccount(store, vault))?.gists !== 'yes') throw new Error('Only a vault whose token has the Gists permission can act for friends')
+  if ((await loadAccount(store, vault)) === undefined) throw new Error('Only a vault with a checked GitHub account can act for friends')
   await store.setState(PHONE, CHOICE, vault)
 }
 
