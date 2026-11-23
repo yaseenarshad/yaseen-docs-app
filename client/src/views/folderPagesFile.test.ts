@@ -7,8 +7,8 @@ import { FOLDER_PAGES_CHOICES, FOLDER_PAGES_LINE_MAX, FOLDER_PAGES_PERSONAL, FOL
 import { DEFAULT_FOLDER_PAGES, FOLDER_PAGE_CHOICES, MAX_CAL_LINE } from '@shared/types'
 
 describe('folder-pages.json (shared/folderPages.ts)', () => {
-  it('the 27 vault parts and the 5 personal ones are every Settings › Folder pages part, once', () => {
-    expect(FOLDER_PAGES_VAULT_PARTS).toHaveLength(27)
+  it('the 32 vault parts and the 5 personal ones are every Settings › Folder pages part, once', () => {
+    expect(FOLDER_PAGES_VAULT_PARTS).toHaveLength(32)
     expect([...FOLDER_PAGES_VAULT_PARTS, ...FOLDER_PAGES_PERSONAL].sort()).toEqual(Object.keys(DEFAULT_FOLDER_PAGES).sort())
     // The choices and the line width, written out for the phone's first load, are types.ts'.
     const { weekStartsOn: _personal, cardClickOpens: _click, ...vaultChoices } = FOLDER_PAGE_CHOICES
@@ -17,19 +17,20 @@ describe('folder-pages.json (shared/folderPages.ts)', () => {
   })
 
   it('the sanitiser keeps each part that reads and drops each one that does not, alone; never a personal part', () => {
-    expect(sanitizeFolderPagesFile({ version: 1, rowHeight: 'tall', rowNumbers: 'no', weekLine: 3, dayLine: 99, weekLineColor: 'blue light', dayLineColor: 'sparkly', columnMarks: 'name', weekStartsOn: 'monday', askBeforeDelete: false, later: 1 })).toEqual({ rowHeight: 'tall', weekLine: 3, weekLineColor: 'blue light', columnMarks: 'name' })
+    expect(sanitizeFolderPagesFile({ version: 1, rowHeight: 'tall', rowNumbers: 'no', weekLine: 3, dayLine: 99, weekLineColor: 'blue light', dayLineColor: 'sparkly', calendarCardStyle: 'bar', monthShade: false, monthShadeColor: 'teal medium', monthLine: 0, monthLineColor: 'red strong', columnMarks: 'name', weekStartsOn: 'monday', askBeforeDelete: false, later: 1 })).toEqual({ rowHeight: 'tall', weekLine: 3, weekLineColor: 'blue light', calendarCardStyle: 'bar', monthShade: false, monthShadeColor: 'teal medium', monthLine: 0, monthLineColor: 'red strong', columnMarks: 'name' })
+    expect(sanitizeFolderPagesFile({ calendarCardStyle: 'neon', monthShade: 'yes', monthShadeColor: 'sparkly', monthLine: 13, monthLineColor: 'nope' })).toEqual({})
     expect(sanitizeFolderPagesFile('nope')).toEqual({})
   })
 
   it('the file holds only what differs from the defaults; the key-by-key resolve puts the vault\'s parts over the app\'s, the personal ones the app\'s', () => {
-    const app = { ...DEFAULT_FOLDER_PAGES, subfolders: 'rows' as const, hideWeekends: true, weekStartsOn: 'monday' as const, rowBand: false }
+    const app = { ...DEFAULT_FOLDER_PAGES, subfolders: 'rows' as const, hideWeekends: true, calendarCardStyle: 'slate' as const, monthShade: false, monthShadeColor: 'blue strong', monthLine: 2, monthLineColor: 'red', weekStartsOn: 'monday' as const, rowBand: false }
     const file = folderPagesOf(app)
-    expect(file).toEqual({ subfolders: 'rows', hideWeekends: true })
-    expect(folderPagesFile(file)).toEqual({ version: 1, subfolders: 'rows', hideWeekends: true })
+    expect(file).toEqual({ subfolders: 'rows', hideWeekends: true, calendarCardStyle: 'slate', monthShade: false, monthShadeColor: 'blue strong', monthLine: 2, monthLineColor: 'red' })
+    expect(folderPagesFile(file)).toEqual({ version: 1, subfolders: 'rows', hideWeekends: true, calendarCardStyle: 'slate', monthShade: false, monthShadeColor: 'blue strong', monthLine: 2, monthLineColor: 'red' })
     expect(folderPagesOf(DEFAULT_FOLDER_PAGES)).toEqual({})
-    const vault = folderPagesVault({ rowHeight: 'medium' })
+    const vault = folderPagesVault({ rowHeight: 'medium', calendarCardStyle: 'bar', monthLine: 3 })
     // A vault with a file: its parts (each it leaves out the default, not the app's), the app's personal parts.
-    expect(folderPagesFor(app, vault)).toEqual({ ...DEFAULT_FOLDER_PAGES, rowHeight: 'medium', weekStartsOn: 'monday', rowBand: false })
+    expect(folderPagesFor(app, vault)).toEqual({ ...DEFAULT_FOLDER_PAGES, rowHeight: 'medium', calendarCardStyle: 'bar', monthLine: 3, weekStartsOn: 'monday', rowBand: false })
     // No file: the app's, whole.
     expect(folderPagesFor(app, null)).toBe(app)
   })

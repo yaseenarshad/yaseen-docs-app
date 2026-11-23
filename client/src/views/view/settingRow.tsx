@@ -29,6 +29,7 @@ const ICONS = {
   clickOpens: <><rect x="2" y="2.5" width="9" height="6.5" rx="1.2" /><path d="M8 7.5l5.5 2-2.3.9 1.8 2.3-1 .8-1.8-2.3-1.4 2z" /></>,
   opensIn: <path d="M2.5 3.5h11v10h-11zM2.5 7h11M6.2 7v6.5M9.8 7v6.5" />,
   cardTitles: <><rect x="2" y="4" width="12" height="8" rx="1.5" /><path d="M4.5 7h7M4.5 9.5h4" /></>,
+  cardStyle: <><rect x="2" y="3.5" width="12" height="9" rx="1.5" /><path d="M4.5 3.5v9" strokeWidth="2" /></>,
   hideWeekends: <><rect x="2.5" y="3.5" width="11" height="10" rx="1.5" /><path d="M5 11l6-5" /></>,
   foldDays: <><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" /><path d="M5 5.5h6M5 8h6M6 11l2-1.5 2 1.5" /></>,
   markerStyle: <><path d="M6 4h8M6 8h8M6 12h8" /><circle cx="3" cy="4" r=".9" /><circle cx="3" cy="8" r=".9" /><circle cx="3" cy="12" r=".9" /></>,

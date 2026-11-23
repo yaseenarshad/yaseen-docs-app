@@ -63,7 +63,9 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
       ['foldersFirst', 'Off', { foldersFirst: false }],
       ['calendarScale', 'Week', { calendarScale: 'week' }],
       ['cardTitles', 'Wrap', { cardTitles: 'wrap' }],
+      ['calendarCardStyle', 'White + Bar', { calendarCardStyle: 'bar' }],
       ['hideWeekends', 'On', { hideWeekends: true }],
+      ['monthShade', 'Off', { monthShade: false }],
       ['showFolderPageFiles', 'On', { showFolderPageFiles: true }],
       ['askBeforeDelete', 'Off', { askBeforeDelete: false }],
       ['confirmChanges', 'Off', { confirmChanges: false }],
@@ -95,7 +97,10 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     expect(pressed('folderPages.foldersFirst')).toBe('On')
     expect(pressed('folderPages.calendarScale')).toBe('Month')
     expect(pressed('folderPages.cardTitles')).toBe('Clip')
+    expect(pressed('folderPages.calendarCardStyle')).toBe('Soft Accent')
     expect(pressed('folderPages.hideWeekends')).toBe('Off')
+    expect(pressed('folderPages.monthShade')).toBe('On')
+    expect(row('folderPages.monthLine')?.querySelector('.cal-line__thickness')?.textContent).toBe('Off')
     expect(pressed('folderPages.showFolderPageFiles')).toBe('Off')
     // Delete page… asks first unless this is turned off (YAZ-4592 S26).
     expect(pressed('folderPages.askBeforeDelete')).toBe('On')
@@ -116,6 +121,16 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     act(() => row('folderPages.dayLine')!.querySelector<HTMLButtonElement>('.cal-line__colour')!.click())
     act(() => inPanel((b) => b.textContent === 'Teal').click())
     expect(written().folderPages).toEqual({ ...DEFAULT_SETTINGS.folderPages, dayLineColor: 'teal' })
+    // Close dayLine's FillPicker panel before opening monthShade's.
+    act(() => row('folderPages.dayLine')!.querySelector<HTMLButtonElement>('.cal-line__colour')!.click())
+    // YAZ-6331: monthShade colour dot and monthLine thickness.
+    act(() => row('folderPages.monthShade')!.querySelector<HTMLButtonElement>('.cal-line__colour')!.click())
+    act(() => inPanel((b) => b.textContent === 'Blue').click())
+    expect(written().folderPages).toEqual({ ...DEFAULT_SETTINGS.folderPages, monthShadeColor: 'blue light' })
+    act(() => row('folderPages.monthShade')!.querySelector<HTMLButtonElement>('.cal-line__colour')!.click())
+    act(() => row('folderPages.monthLine')!.querySelector<HTMLButtonElement>('.cal-line__thickness')!.click())
+    act(() => inPanel((b) => b.textContent === '2 px').click())
+    expect(written().folderPages).toEqual({ ...DEFAULT_SETTINGS.folderPages, monthLine: 2 })
   })
 
   it('Row band and the window pin show the table block’s setting until they are set', async () => {

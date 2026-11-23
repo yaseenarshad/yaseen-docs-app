@@ -2161,6 +2161,8 @@ export const FOLDER_PAGE_CHOICES = {
   // YAZ-5588: Rolling, one scrolling column of week rows with no month breaks.
   calendarScale: ['month', 'week', 'rolling'],
   cardTitles: ['clip', 'wrap'],
+  // YAZ-6331: Calendar default card (pill) style: Soft Accent, Soft Slate, White + Bar, White.
+  calendarCardStyle: ['accent', 'slate', 'bar', 'plain'],
   columnMarks: ['icon', 'name', 'off'],
   // YAZ-4798: a grouped table's group lines, the three choices of Settings › Sidebar › Level lines (`TocLines`), and their look (`SidebarLineStyle`).
   groupLines: ['hover', 'always', 'off'],
@@ -2218,6 +2220,8 @@ export interface FolderPagesSettings {
   /** "Calendar opens in": Month or Week. */
   calendarScale: (typeof FOLDER_PAGE_CHOICES.calendarScale)[number]
   cardTitles: (typeof FOLDER_PAGE_CHOICES.cardTitles)[number]
+  /** A calendar's default card (pill) style (YAZ-6331): Soft Accent, Soft Slate, White + Bar, or White. */
+  calendarCardStyle: (typeof FOLDER_PAGE_CHOICES.calendarCardStyle)[number]
   /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. */
   hideWeekends: boolean
   /** A calendar's lines (YAZ-4878): the width between weeks and between days, whole px 1–`MAX_CAL_LINE`, and each line's colour and strength (`readColorStrength`: `gray`, `blue light`). */
@@ -2225,6 +2229,12 @@ export interface FolderPagesSettings {
   dayLine: number
   weekLineColor: string
   dayLineColor: string
+  /** Rolling's "Shade every other month" (YAZ-5608, YAZ-6331): on/off and its colour + strength (`readColorStrength`, default `'gray light'`). */
+  monthShade: boolean
+  monthShadeColor: string
+  /** A calendar's line "Between months" (YAZ-5608, YAZ-6331): 0 (Off) or 1–`MAX_CAL_LINE` px, and its colour + strength (default `'blue'`). */
+  monthLine: number
+  monthLineColor: string
   showFolderPageFiles: boolean
   /** A folder page's "Delete page…" asks first (YAZ-4592 S26). Its own switch: Files › Confirm before deleting does not touch it. */
   askBeforeDelete: boolean
