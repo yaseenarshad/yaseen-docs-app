@@ -102,6 +102,8 @@ export interface AppModel {
   saveFriendsSettings(settings: FriendsSettings): Promise<void>
   /** YAZ-5645: where "Sign in with GitHub" stands after the trip to GitHub. */
   github: GithubFlow
+  /** GitHub App accounts already signed in on this phone (local token store, no network). */
+  githubAccounts: readonly string[]
   /** "Sign in with GitHub": keeps the pending sign-in, then goes to GitHub. `another`: GitHub's account picker. */
   signInWithGithub(mode: SignInMode, another?: boolean): Promise<void>
   /** A GitHub account's access token (refreshed first when it ends soon), for the repo list; null: signed out. */
@@ -175,6 +177,7 @@ interface Loaded {
   phase: Phase
   list: VaultList
   accounts: Record<string, VaultAccount | undefined>
+  githubAccounts: readonly string[]
   friendsAccount: FriendsAccount
   friendsSettings: FriendsSettings
   unit: UnitText
@@ -185,6 +188,7 @@ const EMPTY: Loaded = {
   phase: 'loading',
   list: { vaults: [], open: null },
   accounts: {},
+  githubAccounts: [],
   friendsAccount: { kind: 'no-vaults' },
   friendsSettings: { vaults: null, nickname: null },
   unit: SAME_WORD,
@@ -233,6 +237,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
         phase: start.kind === 'ready' ? 'ready' : start.kind,
         list,
         accounts,
+        githubAccounts: await tokens.githubAccounts().catch(() => []),
         friendsAccount: await loadFriendsAccount(store),
         friendsSettings: await friends.settings(),
         unit: key === null ? SAME_WORD : await readUnitWord(store, key),
