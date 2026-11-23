@@ -380,7 +380,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 24,
+    cacheVersion: 25,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
     recordKeys: ['aliases', 'basename', 'cards', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'inlineDrawings', 'kind', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags', 'title'],
@@ -403,9 +403,9 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       tags: ['alpha', 'beta', 'gamma', 'tag/nested', 'card-tag'],
       // `[[Not A Link]]` sits under `aliases`, so it is a NAME, never an outgoing link (GRO-2214).
       // A whole-value link in a folder's block of `in` is a link (D19).
-      // Words that only LOOK like an ID keep both page sides (YAZ-4954): the resolver picks, where the pages are known.
+      // Plain-name piped links keep both sides (YAZ-6352) as ID-looking words did (YAZ-4954): the resolver picks, where the pages are known.
       // A file is always the page, whatever its words look like (YAZ-4954 part 2).
-      links: ['Ref', 'Folder Ref', 'Page One', 'Page Two', 'Covid pages|COVID-19', 'chart.pdf', 'Card Link'],
+      links: ['Ref|shown', 'Folder Ref', 'Page One|alias', 'Page Two', 'Covid pages|COVID-19', 'chart.pdf', 'Card Link'],
       embeds: ['img.png', 'photo.png'],
       // A card's title (off its card line, YAZ-5308) and its `notitle` part ride on the record (YAZ-5030): a card link shows the title.
       // Its own properties too (YAZ-5349, CACHE_VERSION 19), off its card line.

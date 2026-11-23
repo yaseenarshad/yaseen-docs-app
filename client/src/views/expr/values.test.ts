@@ -9,7 +9,7 @@ const rec = {
 describe('fromYaml', () => {
   it('detects wiki links', () => {
     expect(fromYaml('[[Foo]]')).toEqual(new LinkValue('Foo'))
-    expect(fromYaml('[[Foo|Display]]')).toEqual(new LinkValue('Foo', 'Display'))
+    expect(fromYaml('[[Foo|Display]]')).toEqual(new LinkValue('Foo|Display'))
     // YAZ-4935: the page on either side of the `|`. Words first keeps the text whole (YAZ-4954): only the pages can
     // tell whether "staging" is a page, so the resolver picks; written back, the link is its text as written.
     expect(fromYaml('[[staging|WIKI-116]]')).toEqual(new LinkValue('staging|WIKI-116'))
@@ -140,7 +140,7 @@ describe('fromYaml: words that only look like an ID (YAZ-4954)', () => {
     expect(fromYaml('[[Covid pages|COVID-19]]')).toEqual(new LinkValue('Covid pages|COVID-19'))
     expect(fromYaml('[[Covid pages#Intro|COVID-19]]')).toEqual(new LinkValue('Covid pages#Intro|COVID-19'))
     expect(fromYaml('[[COVID-19|Covid pages]]')).toEqual(new LinkValue('COVID-19', 'Covid pages'))
-    expect(fromYaml('[[Postgres|database]]')).toEqual(new LinkValue('Postgres', 'database'))
+    expect(fromYaml('[[Postgres|database]]')).toEqual(new LinkValue('Postgres|database'))
   })
 
   it('the stored form is the text as written; a reader with the pages shows the words of the side it picks', () => {

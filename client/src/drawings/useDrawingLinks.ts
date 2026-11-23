@@ -175,7 +175,7 @@ export function useDrawingLinks(host: DrawingLinkHost) {
                 has: words !== null && words.trim() !== '',
                 run: () =>
                   (closeMenu.current = openAliasBox(parent, event.clientX, event.clientY, words ?? '', (next) => {
-                    const cleaned = next.trim().replace(/\[\[|\]\]|\|/g, '').trim()
+                    const cleaned = next.trim().replace(/[[\]|]/g, '').trim()
                     replace(cleaned === '' ? `[[${target}]]` : `[[${target}|${cleaned}]]`)
                   })),
               }

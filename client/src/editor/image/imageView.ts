@@ -78,6 +78,7 @@ import { holdFrames } from '../../lib/colResize'
 import type { MenuRow } from '../blockHandleMenu'
 import { BOARD_VIEW_META } from '../drawing/boardEmbed'
 import { boardImageName, isBoardSrc } from '../drawing/boardEmbedText'
+import { syncAlignAttr } from '../drawing/drawingAlign'
 import { BOX_BROKEN_CLASS, menuRowOf, mountInBox, onFlush } from '../embed/hostWindow'
 import type { BoardRef, BoardWindowHandle } from '../embed/types'
 import { linkMenuRows, openMenuAt } from '../linkMenu'
@@ -320,7 +321,11 @@ class ImageNodeView implements NodeView {
     this.setFold(foldOf(decorations))
     if (node.attrs.src !== prev.attrs.src) this.render()
     else if (this.boardOn) {
-      if (node.attrs.alt !== prev.attrs.alt) this.board?.update({ options: boardOptions(node.attrs.alt), ref: this.boardRef() })
+      if (node.attrs.alt !== prev.attrs.alt) {
+        const options = boardOptions(node.attrs.alt)
+        syncAlignAttr(this.dom, options?.align)
+        this.board?.update({ options, ref: this.boardRef() })
+      }
     } else if (node.attrs.alt !== prev.attrs.alt || node.attrs.title !== prev.attrs.title) this.patch(node.attrs.alt, node.attrs.title)
     return true
   }
@@ -378,8 +383,10 @@ class ImageNodeView implements NodeView {
       views.delete(board)
     }
     const columnWidth = () => this.view.dom.clientWidth
+    const initialOptions = boardOptions(this.node.attrs.alt as string)
+    syncAlignAttr(this.dom, initialOptions?.align)
     mountInBox(this.dom, {
-      options: boardOptions(this.node.attrs.alt as string),
+      options: initialOptions,
       columnWidth,
       host: () => ({
         ref: this.boardRef(),
@@ -422,6 +429,7 @@ class ImageNodeView implements NodeView {
     this.board = null
     this.dom.classList.remove('board-embed', BOX_BROKEN_CLASS)
     this.dom.style.removeProperty('--board-embed-height')
+    syncAlignAttr(this.dom, null)
   }
 
   private setFold(next: { foldable: boolean; folded: boolean }): void {

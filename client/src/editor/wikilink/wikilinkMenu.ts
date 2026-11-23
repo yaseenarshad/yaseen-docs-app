@@ -63,7 +63,7 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
           has: words !== null && words.trim() !== '',
           run: () =>
             openAlias(words ?? '', (next) => {
-              const cleaned = next.trim().replace(/\[\[|\]\]|\|/g, '').trim()
+              const cleaned = next.trim().replace(/[[\]|]/g, '').trim()
               const replacement = cleaned === '' ? `[[${target}]]` : `[[${target}|${cleaned}]]`
               view.dispatch(view.state.tr.insertText(replacement, from, to))
               view.focus()

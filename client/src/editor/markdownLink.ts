@@ -255,7 +255,9 @@ function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, 
             openAlias(currentText, (next) => {
               const trimmed = next.trim()
               const replacement = trimmed === '' ? defaultLabel : trimmed
-              view.dispatch(view.state.tr.replaceWith(hit.from, hit.to, view.state.schema.text(replacement, [hit.mark])))
+              const marks = view.state.doc.nodeAt(hit.from)?.marks ?? [hit.mark]
+              const preserved = marks.some((m) => m.eq(hit.mark)) ? marks : [...marks, hit.mark]
+              view.dispatch(view.state.tr.replaceWith(hit.from, hit.to, view.state.schema.text(replacement, preserved)))
               view.focus()
             }),
         }

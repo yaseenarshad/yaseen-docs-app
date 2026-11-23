@@ -68,7 +68,7 @@ import { titleOf } from '@shared/pageName'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { SAME_WORD, type UnitText } from '../vault/unitWord'
-import { targetBasename, targetKey } from '@shared/linkResolver'
+import { pickTarget, targetBasename, targetKey } from '@shared/linkResolver'
 import { resolverFor } from '../views/engine'
 import { flushRenamedPath } from '../lib/renameContinuity'
 import { basename, dirname, relTo, stripExt } from '../lib/paths'
@@ -170,6 +170,7 @@ export interface UpdateLinksOptions {
 function makeResolves({ ids, root, oldPath, kind, records, folders = [], dirs = [], viewOnlyCatalog, title }: Pick<UpdateLinksOptions, 'ids' | 'root' | 'oldPath' | 'records' | 'folders' | 'dirs' | 'viewOnlyCatalog' | 'title'> & { kind: 'file' | 'dir' }): {
   resolves: ResolvesToOld
   resolveTargetPath: (t: string) => string | null
+  isPage: (page: string) => boolean
   spellsTitle: (t: string) => boolean
   typedId: (t: string) => string | undefined
 } {
@@ -199,10 +200,14 @@ function makeResolves({ ids, root, oldPath, kind, records, folders = [], dirs = 
   // link finds it, by its title too (`folderResolver`), but for its id: no folder ids either.
   const anyPage = resolverFor(records, root)
   const folder = folderResolver(root, dirs, folders, { ids: false })
+  const preLink = linkResolver(records, root, dirs, folders)
+  // Vault-wide page/folder/view-only check so left-wins in `splitLink` sees other real targets (YAZ-6365).
+  const isPage = (page: string): boolean => (isViewOnly(page) ? (viewOnlyCatalog?.resolve(page) ?? null) !== null : preLink(page) !== null)
   const prefix = `${oldPath}/`
   const isMoved = kind === 'dir' ? (p: string) => p === oldPath || p.startsWith(prefix) : (p: string) => p === oldPath
   const targetPaths = new Map<string, string | null>()
-  const resolveTargetPath = (t: string): string | null => {
+  const resolveTargetPath = (raw: string): string | null => {
+    const t = raw.includes('|') ? pickTarget(raw, isPage) : raw
     const hit = targetPaths.get(t)
     if (hit !== undefined) return hit
     const dir = (): string | null => {
@@ -224,7 +229,7 @@ function makeResolves({ ids, root, oldPath, kind, records, folders = [], dirs = 
     return hit !== null && isMoved(hit)
   }
   // Asked of a target that resolved to `oldPath`: the page it reached is the renamed one.
-  return { resolves, resolveTargetPath, spellsTitle: (t) => spells(t, kind === 'dir' ? settings.get(oldPath) : resolver(t)?.record), typedId }
+  return { resolves, resolveTargetPath, isPage, spellsTitle: (t) => spells(t, kind === 'dir' ? settings.get(oldPath) : resolver(t)?.record), typedId }
 }
 
 /**
@@ -248,7 +253,7 @@ export function linkingPages({ ids, root, oldPath, kind = 'file', records, folde
 export async function updateLinksAfterRename({ ids, root, oldPath, newPath, kind = 'file', records, folders = [], dirs = [], viewOnlyCatalog, title }: UpdateLinksOptions): Promise<RenameRewriteSummary> {
   const prefix = `${oldPath}/`
   const mapMoved = kind === 'dir' ? (p: string) => (p === oldPath || p.startsWith(prefix) ? newPath + p.slice(oldPath.length) : p) : (p: string) => (p === oldPath ? newPath : p)
-  const { resolves, resolveTargetPath, spellsTitle, typedId } = makeResolves({ ids, root, oldPath, kind, records, folders, dirs, viewOnlyCatalog, title })
+  const { resolves, resolveTargetPath, isPage, spellsTitle, typedId } = makeResolves({ ids, root, oldPath, kind, records, folders, dirs, viewOnlyCatalog, title })
   // File mode: whether a bare form still wins AFTER the move is decided by RESOLUTION, not
   // text — the post-move record set (the moved record re-pathed) answers it (shallowest rule).
   const newName = basename(newPath)
@@ -320,7 +325,7 @@ export async function updateLinksAfterRename({ ids, root, oldPath, newPath, kind
       await flushRenamedPath(filePath)
       let file = await api.readFile(filePath)
       for (let attempt = 0; ; attempt++) {
-        const next = rewritePageLinks(file.content, resolves, newTarget)
+        const next = rewritePageLinks(file.content, resolves, newTarget, isPage)
         if (next === null) break
         try {
           // Quiet (YAZ-3235 D1): a link rewrite is not an edit the user made, so Recents does not list this page.

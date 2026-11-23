@@ -437,7 +437,7 @@ describe('links inside cards (YAZ-4960 D17)', () => {
   const page = ['Intro [[Outside]]', '', '```card', 'Front [[Old Name|words]] and #card-tag', '---', '![[pic.png]] back', '```', '<!-- card: YAZ-3 -->', '', '```js', '[[In code]] #code-tag', '```', ''].join('\n')
 
   it('count as links, embeds and tags, and a rename rewrites them; another fence\'s text stays out', async () => {
-    expect(extractLinks({}, page)).toEqual(['Outside', 'Old Name'])
+    expect(extractLinks({}, page)).toEqual(['Outside', 'Old Name|words'])
     expect(extractTags({}, page)).toEqual(['card-tag'])
     const masked = maskCode(page)
     expect(masked).toHaveLength(page.length)
@@ -447,6 +447,6 @@ describe('links inside cards (YAZ-4960 D17)', () => {
     const renamed = rewritePageLinks(page, (t) => t === 'Old Name', () => 'New Name')
     expect(renamed).toBe(page.replace('[[Old Name|words]]', '[[New Name|words]]'))
     const records = await vault({ 'deck.md': page })
-    expect(records.get(at('deck.md'))).toMatchObject({ links: ['Outside', 'Old Name'], embeds: ['pic.png'], tags: ['card-tag'], cards: [{ id: 'YAZ-3', off: false, next: false, reviews: [] }] })
+    expect(records.get(at('deck.md'))).toMatchObject({ links: ['Outside', 'Old Name|words'], embeds: ['pic.png'], tags: ['card-tag'], cards: [{ id: 'YAZ-3', off: false, next: false, reviews: [] }] })
   })
 })
