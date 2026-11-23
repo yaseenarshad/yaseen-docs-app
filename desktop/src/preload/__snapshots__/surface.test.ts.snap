@@ -145,6 +145,7 @@ link.onHighlightTab/1: on link:highlight-tab -> listener[[{"id":"0-0-0-0-0","ev"
 link.onNotice/1: on link:notice -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:notice
 link.onOpenFile/1: on link:open-file -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:open-file
 link.onOpenFromFiles/1: on link:open-from-files -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:open-from-files
+link.onOpenTarget/1: on link:open-target -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:open-target
 link.onPopOutTab/1: on link:pop-out-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:pop-out-tab
 link.onSendTab/1: on link:send-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:send-tab
 link.onSetRoots/1: on link:set-roots -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:set-roots
@@ -283,6 +284,12 @@ update.state/0: invoke update:state []; => "answer"; !> {"code":"NOT_FOUND","mes
 vaultConfig.onChange/1: on vaultConfig:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off vaultConfig:changed
 vaultConfig.read/2: invoke vaultConfig:read ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultConfig.write/4: invoke vaultConfig:write ["a0","a1","a2",null]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.create/1: invoke vault-launcher:create ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.icons/0: invoke vault-launcher:icons []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.remove/1: invoke vault-launcher:remove ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.reveal/1: invoke vault-launcher:reveal ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.status/1: invoke vault-launcher:status ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.test/1: invoke vault-launcher:test ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 watch/2: send watch:subscribe [{"id":"0-0-0-0-0","root":"a0"}]; on watch:event -> listener[["ev"]]; off watch:event; send watch:unsubscribe ["0-0-0-0-0"]
 window.addVaultAndTake/4: invoke window:add-vault-and-take ["a0","a1","a2",null]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.closeOther/1: invoke window:close-other ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

@@ -2,7 +2,7 @@ import { rendererUrlFor } from './rendererUrl'
 import { startAutomationServer, type AutomationServer } from '../automation/server'
 import { prepareAutomation } from './automation'
 import { registerAutomationIpc } from './ipc/automation'
-import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, systemPreferences, webContents } from 'electron'
+import { app, BrowserWindow, clipboard, Menu, nativeImage, nativeTheme, net, powerMonitor, protocol, screen, shell, systemPreferences, webContents } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { enableCompileCache } from 'node:module'
@@ -59,6 +59,7 @@ import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
 import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
 import { initMint, macId } from './vaultIndex/mint'
 import { createWindowManager } from './windows'
+import { createDockIconController, type DockIconController } from './dockIcon'
 import { dropLanded } from './dragLanding'
 import { blockFileNavigation, createWindowOpenHandler } from './windowOpenPolicy'
 import { createUpdater, runFile, shortVersion, spawnDetached } from './updater'
@@ -216,6 +217,7 @@ const manager = createWindowManager(store, {
       const popup = previewByOwner.get(ownerId)
       previewByOwner.delete(ownerId)
       if (popup !== undefined && !popup.isDestroyed()) popup.destroy()
+      dockIcon?.sync()
     })
     // A file dropped where nothing takes it never opens in the window (YAZ-3253 S21). When it is the
     // drag out of another window, that window asks nothing (YAZ-3263): this drop fires no `drop` event.
@@ -342,10 +344,13 @@ let reloadWatch: ReloadWatch | undefined
 
 /** The menu's apply step, once `ready` made it: a focus change moves which window the board items ask about (YAZ-3037). */
 let rebuildMenuOnFocus: (() => void) | undefined
+/** Live macOS Dock icon switcher (YAZ-5967, YAZ-6374), created on `ready` when on macOS and not hiddenE2E. */
+let dockIcon: DockIconController | undefined
 
 app.on('browser-window-focus', (_event, win) => {
   lastFocusedWcId = win.webContents.id
   rebuildMenuOnFocus?.()
+  dockIcon?.sync()
   // YAZ-1081 D2: focusing a vault's window is a PULL trigger — alt-tabbing back from another
   // machine should converge without waiting out a timer. The manager's own cooldown throttles it.
   // Every vault the window shows (YAZ-2602 S43).
@@ -502,6 +507,26 @@ app.whenReady().then(() => {
   // rebuilds only when the board items' answer moves (YAZ-3044 A32).
   subscribeMenuRebuildOnActiveFile(store, applyIfMoved)
   rebuildMenuOnFocus = applyIfMoved
+  if (process.platform === 'darwin' && !hiddenE2E && app.dock !== undefined) {
+    const defaultIconPath = app.isPackaged ? join(process.resourcesPath, 'icon.icns') : join(__dirname, '../../build/icon.png')
+    const dock = app.dock
+    dockIcon = createDockIconController<Electron.NativeImage>({
+      store,
+      getFocusedWindowId: () => {
+        const focused = BrowserWindow.getFocusedWindow()
+        if (focused === null || focused.isDestroyed() || previewPopups.has(focused)) return null
+        return manager.idFor(focused.webContents) ?? null
+      },
+      defaultIconPath: existsSync(defaultIconPath) ? defaultIconPath : null,
+      setDockIcon: (img) => dock.setIcon(img),
+      loadImage: (p) => {
+        const img = nativeImage.createFromPath(p)
+        return img.isEmpty() ? null : img
+      },
+      exists: existsSync,
+    })
+    dockIcon.sync()
+  }
   let friendsTokenChanged: (() => void) | undefined
   const { sync, githubAuth: auth, secrets, lsp } = registerIpc(store, manager, {
     userData: app.getPath('userData'),
@@ -515,6 +540,7 @@ app.whenReady().then(() => {
     openExternal: (url) => shell.openExternal(url),
     openPath: (appPath) => shell.openPath(appPath),
     onGithubAuthChange: () => friendsTokenChanged?.(),
+    onVaultLauncherIconChanged: (iconPath) => dockIcon?.invalidate(iconPath),
   }, settingsFolder)
   githubAuth = auth
   // Friends backend (YAZ-6219): D1 API service + background stats sender, reusing GitHub App auth (`githubAuth.getValidAuth()`).

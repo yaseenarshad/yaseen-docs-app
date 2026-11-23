@@ -133,6 +133,7 @@ import {
   addOpen,
   addRecentRoot,
   cleanVaultKey,
+  cleanVaultLauncher,
   cleanUpNextTaken,
   cleanCardsAdded,
   cleanVaultName,
@@ -1115,6 +1116,9 @@ function sanitizeSwitches(raw: unknown): Record<string, boolean> {
 
 function sanitizeFolder(raw: unknown): FolderState | null {
   if (!isRecord(raw)) return null
+  const upNext = cleanUpNextTaken(raw.upNext)
+  const added = cleanCardsAdded(raw.added)
+  const launcher = cleanVaultLauncher(raw.launcher)
   return {
     // Tree expansion is SESSION state (YAZ-1642): never restored, never written (`toDisk`).
     // A relaunch starts every tree collapsed; a pre-1642 file's leftover lists are ignored.
@@ -1135,9 +1139,11 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     // "A folder of <vault>" (YAZ-4922 D3): kept only as an absolute path; whether it holds the bucket is `sanitizeFolders`'.
     ...(typeof raw.in === 'string' && isAbsolute(raw.in) && { in: stripSlash(raw.in) }),
     // "Up next a day" (YAZ-5028): today's taken marks; a junk entry is none.
-    ...(cleanUpNextTaken(raw.upNext) !== null && { upNext: cleanUpNextTaken(raw.upNext)! }),
+    ...(upNext !== null && { upNext }),
     // "Add more for today" (YAZ-5042): the day's added numbers; a junk entry is none.
-    ...(cleanCardsAdded(raw.added) !== null && { added: cleanCardsAdded(raw.added)! }),
+    ...(added !== null && { added }),
+    // macOS Vault App launcher metadata (YAZ-5967, YAZ-6374): a junk entry is dropped.
+    ...(launcher !== null && { launcher }),
   }
 }
 
@@ -1562,6 +1568,13 @@ export function createStore(filePath: string): Store {
         ...(patch.upNext !== undefined && cleanUpNextTaken(patch.upNext) !== null ? { upNext: cleanUpNextTaken(patch.upNext)! } : {}),
         // "Add more for today" (YAZ-5042): the renderer hands in the day's numbers whole; a junk value changes nothing.
         ...(patch.added !== undefined && cleanCardsAdded(patch.added) !== null ? { added: cleanCardsAdded(patch.added)! } : {}),
+      }
+      // macOS Vault App launcher metadata (YAZ-5967, YAZ-6374): null deletes, valid sets, junk changes nothing.
+      if (patch.launcher === null) {
+        delete next.launcher
+      } else if (patch.launcher !== undefined) {
+        const launcher = cleanVaultLauncher(patch.launcher)
+        if (launcher !== null) next.launcher = launcher
       }
       // One vault per number (YAZ-2555 D2): the same commit takes it from the vault that had it.
       commit({ ...state, folders: { ...(key == null ? state.folders : freeVaultKey(state.folders, key)), [root]: next } })
