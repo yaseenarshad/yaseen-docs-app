@@ -940,7 +940,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     if (e.shiftKey ? history.redo() : history.undo()) e.preventDefault()
   }
   return (
-    <div ref={rootRef} className={`view-cal${rolling ? ' view-cal--rolling' : ''}${resize === null ? '' : ' view-cal--resizing'}`} onKeyDown={onUndoKey}>
+    <div ref={rootRef} className={`view-cal${rolling ? ' view-cal--rolling' : ''}${resize === null ? '' : ' view-cal--resizing'}`} data-card-style={calendarCardStyleOf(view)} onKeyDown={onUndoKey}>
       <div className="view-cal__nav">
         {/* The title alone at the left, the controls at the right (YAZ-3746 13M): views.css gives the title the room between. */}
         <h3 className="view-cal__month">{title}</h3>
@@ -965,7 +965,6 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
       <div
         ref={gridRef}
         className={`view-cal__grid${isWeek ? ' view-cal__grid--week' : ''}${rolling ? ' view-cal__grid--rolling' : ''}${hideWeekends ? ' view-cal__grid--weekdays' : ''}`}
-        data-card-style={calendarCardStyleOf(view)}
         role="grid"
         aria-label={title}
         style={gridLines(view)}

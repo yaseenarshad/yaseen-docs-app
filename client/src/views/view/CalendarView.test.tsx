@@ -2065,20 +2065,20 @@ describe('tell months apart (YAZ-5608): Shade every other month, and a line Betw
     expect(grid().style.getPropertyValue('--cal-month-shade')).toBe('')
   })
 
-  it('YAZ-6331: Calendar card style presets set data-card-style on .view-cal__grid and ViewSettings Card style writes/resets calendarCardStyle', () => {
+  it('YAZ-6331: Calendar card style presets set data-card-style on .view-cal (grid + No date tray) and ViewSettings Card style writes/resets calendarCardStyle', () => {
     const { el, yaml } = mount(CALENDAR)
-    const grid = () => q<HTMLElement>(el, '.view-cal__grid')
-    expect(grid().dataset.cardStyle).toBe('accent')
+    const cal = () => q<HTMLElement>(el, '.view-cal')
+    expect(cal().dataset.cardStyle).toBe('accent')
     openView(el)
     expect(seg(el, 'Card style').map((b) => b.textContent)).toEqual(['Soft Accent', 'Soft Slate', 'White + Bar', 'White'])
     click(seg(el, 'Card style').find((b) => b.textContent === 'White + Bar')!)
     expect(yaml()).toContain('calendarCardStyle: bar')
-    expect(grid().dataset.cardStyle).toBe('bar')
+    expect(cal().dataset.cardStyle).toBe('bar')
     const reset = el.querySelector<HTMLButtonElement>('.view-popover--properties [aria-label="Card style"]')?.closest('.view-settings-row')?.querySelector<HTMLButtonElement>('[aria-label="Reset to Settings"]')
     expect(reset).not.toBeNull()
     click(reset!)
     expect(yaml()).not.toContain('calendarCardStyle')
-    expect(grid().dataset.cardStyle).toBe('accent')
+    expect(cal().dataset.cardStyle).toBe('accent')
   })
 
   it('YAZ-6331: CSS rules for month shade default (2%), card styles, White + Bar cut-start dashed preservation, and [data-color] border polish', () => {
