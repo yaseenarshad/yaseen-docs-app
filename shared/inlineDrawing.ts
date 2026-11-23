@@ -15,7 +15,8 @@
  *   exact window size, pan/zoom view, and lock state.
  * - Pure: no DOM, no Node, no engine import.
  */
-import { EMPTY_SCENE, stripEmbeddedScene } from './drawingAssets'
+import { BOARD_META_KEY, EMPTY_SCENE, FOLD_ARROWS_KEY, HOVER_LINKS_KEY, HOVER_OUTLINE_KEY, stripEmbeddedScene } from './drawingAssets'
+import type { FoldArrowMode } from './types'
 import { formatEmbedOptions, newEmbed, parseEmbedOptions, type EmbedOptions } from './embedOptions'
 import { closesFence, fenceOf, lineKinds } from './fences'
 import { isRecord } from './guards'
@@ -94,15 +95,36 @@ export function cleanDrawingLine(value: unknown): string | null {
   return parseDrawingLine(trimmed) === null ? null : trimmed
 }
 
+/** Per-drawing settings stored in `yaseendraw` for inline drawings (YAZ-6342). */
+export interface InlineDrawingSettings {
+  hoverLinksOff?: boolean
+  foldArrows?: FoldArrowMode
+  hoverOutline?: boolean
+}
+
 /**
  * Strips any embedded `files` map and compacts a scene object into a single-line JSON string for `.md`.
+ * When `settings` is passed, merges per-drawing `yaseendraw` flags (`hoverLinks`, `foldArrows`, `hoverOutline`)
+ * and omits `yaseendraw` when empty so default inline scenes stay unchanged.
  * Throws if `sceneText` is not a valid JSON object with an `elements` array.
  */
-export function compactInlineScene(sceneText: string): { json: string; embeddedCount: number } {
+export function compactInlineScene(sceneText: string, settings?: InlineDrawingSettings): { json: string; embeddedCount: number } {
   const parsed: unknown = JSON.parse(sceneText)
   if (!isRecord(parsed) || !Array.isArray(parsed.elements)) throw new Error('not an Excalidraw scene')
   const { lean, embedded } = stripEmbeddedScene(parsed)
-  return { json: JSON.stringify(lean), embeddedCount: Object.keys(embedded).length }
+  if (settings === undefined) {
+    return { json: JSON.stringify(lean), embeddedCount: Object.keys(embedded).length }
+  }
+  const { [BOARD_META_KEY]: own, ...rest } = lean
+  const { [HOVER_LINKS_KEY]: _hl, [FOLD_ARROWS_KEY]: _fa, [HOVER_OUTLINE_KEY]: _ho, ...extras } = isRecord(own) ? own : {}
+  const meta: Record<string, unknown> = {
+    ...extras,
+    ...(settings.hoverLinksOff === true ? { [HOVER_LINKS_KEY]: false } : {}),
+    ...(settings.foldArrows !== undefined ? { [FOLD_ARROWS_KEY]: settings.foldArrows } : {}),
+    ...(settings.hoverOutline !== undefined ? { [HOVER_OUTLINE_KEY]: settings.hoverOutline } : {}),
+  }
+  const out = Object.keys(meta).length > 0 ? { [BOARD_META_KEY]: meta, ...rest } : rest
+  return { json: JSON.stringify(out), embeddedCount: Object.keys(embedded).length }
 }
 
 /** Picks a backtick fence longer than any backtick run inside `body` so JSON strings never break the fence. */

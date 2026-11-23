@@ -114,6 +114,8 @@ export interface DrawingSurfaceApi {
   focus(): void
   /** Open the canvas panel's Add tab and focus its search field (used when focus is on the modal overlay). */
   openAddSearch(): void
+  /** Open (or toggle) the canvas panel's Add tab on its Components chip (used when focus is on the modal overlay). */
+  openComponentsPanel?(): void
   /** File › Export Image… (Draw's 🔒 YAZ-1775 D10): the engine's OWN export dialog, through its `appState.openDialog` door. */
   openImageExport(): void
   /** View › Canvas Background (Draw's 🔒 YAZ-1775 D10): `appState.viewBackgroundColor`, which the engine then writes into the file. */
@@ -561,6 +563,15 @@ export function ExcalidrawSurface({
     if (rail.getState().activeTab !== 'image-studio') rail.openTab('image-studio')
   }, [rail])
 
+  /** ⌘C's one job (D6): open the Add tab on its Components chip; a second ⌘C while already there closes the panel. */
+  const toggleComponentsPanel = useCallback(() => {
+    const open = rail.getState().activeTab === 'image-studio'
+    const there = imageStudioSession.getState().chip === 'components'
+    pickChip('components')
+    if (open && !there) return
+    rail.openTab('image-studio')
+  }, [rail])
+
   /**
    * ⌘F → the Add tab, ⌘C → the Add tab on its Components chip (YAZ-4157 D6; Draw's port of the web app's `c` / `f`,
    * `AppSidebar.tsx:983-1078`; the keys as the user set them, YAZ-3564),
@@ -599,13 +610,9 @@ export function ExcalidrawSurface({
       event.preventDefault()
       event.stopPropagation()
       // ⌘C on the open tab sets its Filter › Show to Components; only a second ⌘C, already there, closes the panel.
-      const open = rail.getState().activeTab === 'image-studio'
-      const there = imageStudioSession.getState().chip === 'components'
-      pickChip('components')
-      if (open && !there) return
-      rail.openTab('image-studio')
+      toggleComponentsPanel()
     },
-    [rail, onHelpKey, focusAddSearch],
+    [onHelpKey, focusAddSearch, toggleComponentsPanel],
   )
 
   // ⌘F with the focus on no element (demo 6N): a click on a spot that takes no focus — the panel's header, a gap in the
@@ -760,6 +767,9 @@ export function ExcalidrawSurface({
       openAddSearch: () => {
         if (withPanel) focusAddSearch()
       },
+      openComponentsPanel: () => {
+        if (withPanel) toggleComponentsPanel()
+      },
       openImageExport: () => api.updateScene({ appState: { openDialog: { name: 'imageExport' } } as unknown as EngineAppState }),
       // A read-only drawing keeps its background: the colour is written into the file (YAZ-3076 S26).
       setCanvasBackground: (color) => {
@@ -797,7 +807,7 @@ export function ExcalidrawSurface({
         return { scrollX, scrollY, zoom: zoom.value }
       },
     })
-  }, [withPanel, rail, focusAddSearch])
+  }, [withPanel, rail, focusAddSearch, toggleComponentsPanel])
 
   // The chips live in the engine's OWN top-right row rather than a strip above the canvas, so the
   // canvas starts directly under the tab bar and the chips can never cover the toolbar island.

@@ -45,6 +45,7 @@ const seam = vi.hoisted(() => ({
   openImageExport: vi.fn(),
   exportScene: vi.fn(async () => '{"type":"excalidraw","elements":[],"files":{}}\n'),
   openAddSearch: vi.fn(),
+  openComponentsPanel: vi.fn(),
 }))
 vi.mock('./ExcalidrawSurface', () => ({
   ENGINE_LOAD_FAILED: "Can't open the drawing editor.",
@@ -55,6 +56,7 @@ vi.mock('./ExcalidrawSurface', () => ({
       refresh: () => undefined,
       focus: () => undefined,
       openAddSearch: seam.openAddSearch,
+      openComponentsPanel: seam.openComponentsPanel,
       openImageExport: seam.openImageExport,
       setCanvasBackground: () => undefined,
       exportScene: seam.exportScene,
@@ -102,6 +104,7 @@ beforeEach(() => {
   seam.exportScene.mockReset()
   seam.exportScene.mockResolvedValue('{"type":"excalidraw","elements":[],"files":{}}\n')
   seam.openAddSearch.mockReset()
+  seam.openComponentsPanel.mockReset()
   readAsset.mockReset()
   drawingSave.mockReset()
   drawingSave.mockResolvedValue({ path: PATH, mtime: 999, size: BYTES.length, persisted: [] })
@@ -1207,5 +1210,144 @@ describe('YAZ-6330: DrawingModal tab parity (canvasPanel, ⌘S, ⌘F, Escape gua
       await vi.advanceTimersByTimeAsync(600)
     })
     expect(onSave).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('YAZ-6341: ⌘F and ⌘C in DrawingModal capture phase', () => {
+  it('⌘F opens Add panel search from overlay, inline title input, and canvas (.excalidraw-container), and leaves .sidebar/.canvas-panel alone', async () => {
+    const json = '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}'
+    const { overlay } = await open('ok', 100, { inline: { json, pagePath: '/v/Note.md', title: 'Flow', onSave: vi.fn() } })
+
+    // 1. From overlay
+    overlay.focus()
+    const evOverlay = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void overlay.dispatchEvent(evOverlay))
+    expect(evOverlay.defaultPrevented).toBe(true)
+    expect(seam.openAddSearch).toHaveBeenCalledTimes(1)
+
+    // 2. From inline title input
+    const titleInput = container!.querySelector<HTMLInputElement>('.drawing-modal__title-input')!
+    titleInput.focus()
+    const evTitle = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void titleInput.dispatchEvent(evTitle))
+    expect(evTitle.defaultPrevented).toBe(true)
+    expect(seam.openAddSearch).toHaveBeenCalledTimes(2)
+
+    // 3. From canvas (.excalidraw-container inside .drawing-surface)
+    const canvasHost = container!.querySelector('.drawing-modal__canvas')!
+    const excalContainer = document.createElement('div')
+    excalContainer.className = 'drawing-surface'
+    const inner = document.createElement('div')
+    inner.className = 'excalidraw-container'
+    inner.tabIndex = 0
+    excalContainer.appendChild(inner)
+    canvasHost.appendChild(excalContainer)
+    inner.focus()
+    const evCanvas = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void inner.dispatchEvent(evCanvas))
+    expect(evCanvas.defaultPrevented).toBe(true)
+    expect(seam.openAddSearch).toHaveBeenCalledTimes(3)
+
+    // 4. Inside .sidebar / .canvas-panel: DrawingModal capture does NOT hijack it
+    const sidebar = document.createElement('div')
+    sidebar.className = 'sidebar'
+    const searchInput = document.createElement('input')
+    sidebar.appendChild(searchInput)
+    canvasHost.appendChild(sidebar)
+    searchInput.focus()
+    const evSidebar = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void searchInput.dispatchEvent(evSidebar))
+    expect(evSidebar.defaultPrevented).toBe(false)
+    expect(seam.openAddSearch).toHaveBeenCalledTimes(3)
+
+    excalContainer.remove()
+    sidebar.remove()
+  })
+
+  it('⌘C on overlay opens Components panel, while ⌘C in the title input is left alone for copying text', async () => {
+    const json = '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}'
+    const { overlay } = await open('ok', 100, { inline: { json, pagePath: '/v/Note.md', title: 'Flow', onSave: vi.fn() } })
+
+    overlay.focus()
+    const evOverlay = new KeyboardEvent('keydown', { key: 'c', code: 'KeyC', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void overlay.dispatchEvent(evOverlay))
+    expect(evOverlay.defaultPrevented).toBe(true)
+    expect(seam.openComponentsPanel).toHaveBeenCalledTimes(1)
+
+    const titleInput = container!.querySelector<HTMLInputElement>('.drawing-modal__title-input')!
+    titleInput.focus()
+    const evTitle = new KeyboardEvent('keydown', { key: 'c', code: 'KeyC', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void titleInput.dispatchEvent(evTitle))
+    expect(evTitle.defaultPrevented).toBe(false)
+    expect(seam.openComponentsPanel).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('YAZ-6342: per-drawing settings in inline DrawingModal', () => {
+  it('renders Link preview on hover, Fold arrows, and Hover outline above Export rows, updates ExcalidrawSurface live, and persists yaseendraw in compact JSON', async () => {
+    const onSave = vi.fn()
+    const initial = JSON.stringify({
+      yaseendraw: { hoverLinks: false, foldArrows: 'always', hoverOutline: false },
+      type: 'excalidraw',
+      version: 2,
+      elements: [],
+      appState: {},
+      files: {},
+    })
+    await open('ok', 100, {
+      canvasPrefs: { ...DEFAULT_CANVAS_PREFS, foldArrowsOpen: 'hover', hoverOutline: true },
+      inline: { json: initial, pagePath: '/v/Notes.md', onSave },
+    })
+
+    // Initial loaded settings reach ExcalidrawSurface
+    expect(seam.props?.foldArrows).toBe('always')
+    expect(seam.props?.hoverOutline).toBe(false)
+
+    // Baseline snapshot
+    const raw = JSON.stringify({ type: 'excalidraw', version: 2, elements: [{ id: 'r1', type: 'rectangle' }], appState: {}, files: {} })
+    act(() => seam.props?.onSnapshot({ version: 1, serialize: () => ({ json: raw, files: {}, referenced: new Set() }) }))
+
+    const moreBtn = container!.querySelector<HTMLButtonElement>('button[aria-label="Drawing actions"]')!
+    await click(moreBtn)
+    const menu = container!.querySelector('.drawing-modal__menu')!
+    expect(menu.textContent).toContain('Link preview on hover')
+    expect(menu.textContent).toContain('Fold arrows (app: hover)')
+    expect(menu.textContent).toContain('Hover outline (app: on)')
+    // Settings appear above Export rows
+    expect(menu.textContent!.indexOf('Hover outline')).toBeLessThan(menu.textContent!.indexOf('Export Image or PDF…'))
+
+    const hoverLinksBtn = menu.querySelector<HTMLButtonElement>('button[role="menuitemcheckbox"]')!
+    expect(hoverLinksBtn.getAttribute('aria-checked')).toBe('false')
+
+    // Toggle Link preview on hover -> ON
+    await click(hoverLinksBtn)
+    expect(hoverLinksBtn.getAttribute('aria-checked')).toBe('true')
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(onSave.mock.calls[0][0] as string).yaseendraw).toEqual({ foldArrows: 'always', hoverOutline: false })
+
+    // Change Fold arrows -> Off
+    const foldGroup = menu.querySelector('[role="group"][aria-label="Fold arrows"]')!
+    const foldOffBtn = [...foldGroup.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Off')!
+    await click(foldOffBtn)
+    expect(seam.props?.foldArrows).toBe('off')
+    expect(onSave).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(onSave.mock.calls[1][0] as string).yaseendraw).toEqual({ foldArrows: 'off', hoverOutline: false })
+
+    // Change Hover outline -> On
+    const outlineGroup = menu.querySelector('[role="group"][aria-label="Hover outline"]')!
+    const outlineOnBtn = [...outlineGroup.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'On')!
+    await click(outlineOnBtn)
+    expect(seam.props?.hoverOutline).toBe(true)
+    expect(onSave).toHaveBeenCalledTimes(3)
+    expect(JSON.parse(onSave.mock.calls[2][0] as string).yaseendraw).toEqual({ foldArrows: 'off', hoverOutline: true })
+
+    // Reset Fold arrows -> App and Hover outline -> App: yaseendraw is omitted cleanly
+    const foldAppBtn = [...foldGroup.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'App')!
+    const outlineAppBtn = [...outlineGroup.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'App')!
+    await click(foldAppBtn)
+    await click(outlineAppBtn)
+    expect(seam.props?.foldArrows).toBeUndefined()
+    expect(seam.props?.hoverOutline).toBeUndefined()
+    expect(JSON.parse(onSave.mock.calls[4][0] as string).yaseendraw).toBeUndefined()
   })
 })
