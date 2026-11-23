@@ -5,7 +5,7 @@ import { edgeScroller } from '../../lib/edgeScroll'
 import { type CardClick, openByKey } from '../../lib/openGesture'
 import { clickCard } from './cardClick'
 import {
-  type BarPlace, type CalendarScale, type DayKey, CALENDAR_SCALES, type Span, type SpanPreview, bucketByDay, addDays, calLineColor, calLineCss, calendarCardStyleOf, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthEdges, monthLineColorOf, monthLineOf, monthShadeColorOf, monthShadeCss, monthStart, monthWeeks, rollingEnds, shadedMonth, spanDays, spanOf, timeFirst, timeOf,
+  type BarPlace, type CalendarScale, type DayKey, CALENDAR_SCALES, type Span, type SpanPreview, bucketByDay, addDays, calLineColor, calLineCss, calendarCardColorOf, calendarCardColorVars, calendarCardStyleOf, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthEdges, monthLineColorOf, monthLineOf, monthShadeColorOf, monthShadeCss, monthStart, monthWeeks, rollingEnds, shadedMonth, spanDays, spanOf, timeFirst, timeOf,
   firstShownOfMonth, todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends,
 } from '../calendar'
 import { type ColorStrengthValue, type IndexRecord, calLine, headerRowAttrs } from '@shared/types'
@@ -939,8 +939,15 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]') !== null) return
     if (e.shiftKey ? history.redo() : history.undo()) e.preventDefault()
   }
+  const cardColor = calendarCardColorOf(view)
   return (
-    <div ref={rootRef} className={`view-cal${rolling ? ' view-cal--rolling' : ''}${resize === null ? '' : ' view-cal--resizing'}`} data-card-style={calendarCardStyleOf(view)} onKeyDown={onUndoKey}>
+    <div
+      ref={rootRef}
+      className={`view-cal${rolling ? ' view-cal--rolling' : ''}${resize === null ? '' : ' view-cal--resizing'}`}
+      data-card-style={calendarCardStyleOf(view)}
+      style={cardColor === null ? undefined : (calendarCardColorVars(cardColor) as CSSProperties)}
+      onKeyDown={onUndoKey}
+    >
       <div className="view-cal__nav">
         {/* The title alone at the left, the controls at the right (YAZ-3746 13M): views.css gives the title the room between. */}
         <h3 className="view-cal__month">{title}</h3>

@@ -33,6 +33,36 @@ export const CALENDAR_CARD_STYLES: readonly (readonly [CalendarCardStyle, string
 export const calendarCardStyleOf = (view: Pick<ViewDef, 'calendarCardStyle'>): CalendarCardStyle =>
   CALENDAR_CARD_STYLES.find(([s]) => s === view.calendarCardStyle)?.[0] ?? 'accent'
 
+/** A calendar's default card colour and strength (YAZ-6344): stored `readColorStrength`, or `null` for the app's `--accent` at Light. */
+export const calendarCardColorOf = (view: Pick<ViewDef, 'calendarCardColor'>): ColorStrengthValue | null => readColorStrength(view.calendarCardColor)
+
+/**
+ * The CSS custom properties for a calendar's default card colour and strength (YAZ-6344):
+ * - Unset (`null`): `--accent` at Light (8% fill, 24% border, 48% hover border, solid `--accent` bar).
+ * - Set (`ColorStrengthValue`): Fill Light 8% / Medium 14% / Strong 22%; Border 24% / 36% / 50%; Hover border 48% / 62% / 78%;
+ *   accent swatch is `var(--fg-muted)` for `gray`, else `var(--table-fill-solid-<color>)`.
+ */
+export function calendarCardColorVars(value: ColorStrengthValue | null): Record<'--cal-card-accent' | '--cal-card-fill-wash' | '--cal-card-border-wash' | '--cal-card-hover-wash', string> {
+  if (value === null) {
+    return {
+      '--cal-card-accent': 'var(--accent)',
+      '--cal-card-fill-wash': '8%',
+      '--cal-card-border-wash': '24%',
+      '--cal-card-hover-wash': '48%',
+    }
+  }
+  const accent = value.color === 'gray' ? 'var(--fg-muted)' : `var(--table-fill-solid-${value.color})`
+  const fill = value.strength === 'light' ? '8%' : value.strength === 'medium' ? '14%' : '22%'
+  const border = value.strength === 'light' ? '24%' : value.strength === 'medium' ? '36%' : '50%'
+  const hover = value.strength === 'light' ? '48%' : value.strength === 'medium' ? '62%' : '78%'
+  return {
+    '--cal-card-accent': accent,
+    '--cal-card-fill-wash': fill,
+    '--cal-card-border-wash': border,
+    '--cal-card-hover-wash': hover,
+  }
+}
+
 /** A day as the grid and a write name it: `YYYY-MM-DD`. */
 export type DayKey = string
 

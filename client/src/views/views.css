@@ -2428,8 +2428,8 @@
   padding: 2px 6px;
   font-size: 12px;
   line-height: 18px;
-  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
-  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--bg));
+  background: color-mix(in srgb, var(--cal-card-accent, var(--accent)) var(--cal-card-fill-wash, 8%), var(--bg));
+  border: 1px solid color-mix(in srgb, var(--cal-card-accent, var(--accent)) var(--cal-card-border-wash, 24%), var(--bg));
   border-radius: 4px;
   cursor: pointer;
 }
@@ -2439,7 +2439,7 @@
 }
 
 .view-cal__card:not([data-color]):hover {
-  border-color: color-mix(in srgb, var(--accent) 48%, var(--bg));
+  border-color: color-mix(in srgb, var(--cal-card-accent, var(--accent)) var(--cal-card-hover-wash, 48%), var(--bg));
 }
 
 /* Calendar default card (pill) styles (YAZ-6331): Soft Slate, White + Bar, White. Colored cards ([data-color]) keep their own fill. */
@@ -2451,7 +2451,7 @@
 [data-card-style='bar'] .view-cal__card:not([data-color]) {
   background: var(--bg);
   border-color: color-mix(in srgb, var(--fg) 14%, var(--bg));
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--cal-card-accent, var(--accent));
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
@@ -2467,7 +2467,7 @@
 }
 
 [data-card-style='bar'] .view-cal__card:not([data-color]):not(.view-cal__bar--cut-start):hover {
-  border-left-color: var(--accent);
+  border-left-color: var(--cal-card-accent, var(--accent));
 }
 
 .view-cal__card:focus {

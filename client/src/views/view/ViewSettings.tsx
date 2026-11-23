@@ -4,8 +4,8 @@ import { GROUP_INDENTS, type Mutate, type ViewDef, type ViewSet, groupIndentOf, 
 import { TextField } from './TextField'
 import { cardWidth } from './cardWidth'
 import { type ColorStrengthValue, calLine, writeColorStrength } from '@shared/types'
-import { CALENDAR_CARD_STYLES, CALENDAR_SCALES, calLineColor, calendarCardStyleOf, calendarScaleOf, hideWeekendsDefault, hidesWeekends, monthLineColorOf, monthLineOf, monthShadeColorOf } from '../calendar'
-import { CalLineControls, MonthShadeColorPicker } from './CalendarLineControls'
+import { CALENDAR_CARD_STYLES, CALENDAR_SCALES, calLineColor, calendarCardColorOf, calendarCardStyleOf, calendarScaleOf, hideWeekendsDefault, hidesWeekends, monthLineColorOf, monthLineOf, monthShadeColorOf } from '../calendar'
+import { CalLineControls, CalendarCardColorPicker, MonthShadeColorPicker } from './CalendarLineControls'
 import { markerStyleOf } from './ListView'
 import { SubfoldersSwitch } from './SubfoldersSwitch'
 import { GroupGuideSettings, HeaderRowStyleRow, TableLookSettings } from './TableLookSettings'
@@ -213,16 +213,25 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
             />
             <FromSettings own={own} viewKey="cardTitles" viewIndex={viewIndex} onUpdate={onUpdate} />
           </div>
-          {/* Calendar default card (pill) style (YAZ-6331): Soft Accent, Soft Slate, White + Bar, White. */}
+          {/* Calendar default card (pill) style (YAZ-6331, YAZ-6344): Soft Accent, Soft Slate, White + Bar, White, plus colour + strength for Soft Accent and White + Bar. */}
           <div className="view-settings-row">
             <RowLabel icon="cardStyle">Card style</RowLabel>
-            <ChoiceSeg
-              label="Card style"
-              value={calendarCardStyleOf(view)}
-              options={CALENDAR_CARD_STYLES}
-              onChange={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'calendarCardStyle', next, defaults))}
-            />
-            <FromSettings own={own} viewKey="calendarCardStyle" viewIndex={viewIndex} onUpdate={onUpdate} />
+            <span className="cal-line">
+              <ChoiceSeg
+                label="Card style"
+                value={calendarCardStyleOf(view)}
+                options={CALENDAR_CARD_STYLES}
+                onChange={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'calendarCardStyle', next, defaults))}
+              />
+              {(calendarCardStyleOf(view) === 'accent' || calendarCardStyleOf(view) === 'bar') && (
+                <CalendarCardColorPicker
+                  label="Card style"
+                  color={calendarCardColorOf(view)}
+                  onColor={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'calendarCardColor', next === null ? '' : writeColorStrength(next), defaults))}
+                />
+              )}
+            </span>
+            <FromSettings own={own} viewKey="calendarCardStyle" also="calendarCardColor" viewIndex={viewIndex} onUpdate={onUpdate} />
           </div>
           <label className="view-settings-row">
             <RowLabel icon="hideWeekends">Hide weekends</RowLabel>

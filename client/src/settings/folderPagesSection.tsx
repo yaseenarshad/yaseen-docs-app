@@ -19,8 +19,8 @@
  */
 import { calLine, folderRowBandOn, folderWindowPinned, type FolderPagesSettings, writeColorStrength } from '@shared/types'
 import { FOLDER_PAGES_VAULT_PARTS } from '@shared/folderPages'
-import { calLineColor, monthLineColorOf, monthLineOf, monthShadeColorOf } from '../views/calendar'
-import { CalLineControls, MonthShadeColorPicker } from '../views/view/CalendarLineControls'
+import { calLineColor, calendarCardColorOf, monthLineColorOf, monthLineOf, monthShadeColorOf } from '../views/calendar'
+import { CalLineControls, CalendarCardColorPicker, MonthShadeColorPicker } from '../views/view/CalendarLineControls'
 import { Segmented, Select } from './controls'
 import { ON_OFF_OPTIONS, type Option } from './options'
 import type { SettingDef, SettingsCtx, SettingsSection } from './registry'
@@ -238,7 +238,28 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         row('cardClickOpens', 'Clicking a card opens', CARD_CLICK_OPTIONS, { hint: 'A click on a card in a Calendar or a Board. ⌘-click still opens a background tab, ⌥-click the right panel, ⇧↩ the mini window. A view’s settings can say otherwise.', keywords: ['click', 'card', 'open', 'mini window', 'background tab', 'tab', 'calendar', 'board'] }),
         row('calendarScale', 'Calendar opens in', CALENDAR_SCALE_OPTIONS, { keywords: ['calendar', 'month', 'week', 'rolling', 'scroll'] }),
         row('cardTitles', 'Calendar card titles', CARD_TITLES_OPTIONS, { keywords: ['calendar', 'card', 'titles', 'wrap', 'clip'] }),
-        row('calendarCardStyle', 'Calendar card style', CALENDAR_CARD_STYLE_OPTIONS, { hint: 'The look of uncoloured cards in a calendar. Cards with their own colour keep it. A calendar’s View tab can say otherwise.', keywords: ['calendar', 'card', 'pill', 'style', 'accent', 'slate', 'bar', 'white'] }),
+        {
+          id: 'folderPages.calendarCardStyle',
+          label: 'Calendar card style',
+          hint: 'The look and colour of uncoloured cards in a calendar. Cards with their own colour keep it. A calendar’s View tab can say otherwise.',
+          keywords: [...WORDS, 'calendar', 'card', 'pill', 'style', 'accent', 'slate', 'bar', 'white', 'colour', 'color'],
+          render: (outer) => {
+            const { settings, onChange } = folderPagesCtx(outer, 'calendarCardStyle')
+            const style = settings.folderPages.calendarCardStyle
+            return (
+              <span className="cal-line">
+                <Segmented options={CALENDAR_CARD_STYLE_OPTIONS} value={style} onChange={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, calendarCardStyle: next } })} ariaLabel="Calendar card style" />
+                {(style === 'accent' || style === 'bar') && (
+                  <CalendarCardColorPicker
+                    label="Calendar card style"
+                    color={calendarCardColorOf(settings.folderPages)}
+                    onColor={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, calendarCardColor: next === null ? '' : writeColorStrength(next) } })}
+                  />
+                )}
+              </span>
+            )
+          },
+        },
         row('hideWeekends', 'Calendar hides weekends', ON_OFF_OPTIONS, { hint: 'Monday to Friday only. A weekend page shows on the Friday before.', keywords: ['calendar', 'weekends', 'saturday', 'sunday', 'hide'] }),
         // YAZ-4878: the grid's lines, a thickness and a colour each; a calendar's View tab can say otherwise.
         lineRow('weekLine', 'weekLineColor', 'Calendar line between weeks', 'Its thickness and colour. A calendar’s View tab can say otherwise.'),

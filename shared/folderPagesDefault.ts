@@ -28,6 +28,7 @@ export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
   calendarScale: 'month',
   cardTitles: 'clip',
   calendarCardStyle: 'accent',
+  calendarCardColor: '',
   hideWeekends: false,
   // YAZ-4878: 1 px lines in the app's line colour (Gray, Medium), the look before the setting existed.
   weekLine: 1,

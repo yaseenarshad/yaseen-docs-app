@@ -106,3 +106,47 @@ export function MonthShadeColorPicker({ label, color, onColor }: { label: string
     </Dropdown>
   )
 }
+
+/**
+ * The colour + strength dot for Calendar's "Card style" (YAZ-6344): same `Dropdown` + `FillPicker` pattern as
+ * `MonthShadeColorPicker`, with an "Accent (default)" option that clears back to `null` (`''`).
+ */
+export function CalendarCardColorPicker({ label, color, onColor }: { label: string; color: ColorStrengthValue | null; onColor: (next: ColorStrengthValue | null) => void }) {
+  return (
+    <Dropdown
+      label={`${label} colour`}
+      className="cal-line__colour"
+      panelClassName="cal-line__panel view-style__panel ctx-menu--glyphs"
+      trigger={<span className="table-menu-swatch cal-line__dot" style={{ background: color === null ? 'var(--accent)' : calLineCss(color, 2) }} />}
+    >
+      {() => (
+        <>
+          <div className="ctx-menu__group" role="group">
+            <button
+              type="button"
+              role="menuitem"
+              className="ctx-menu__item"
+              data-hint={color === null ? '✓' : undefined}
+              onClick={() => {
+                if (color !== null) onColor(null)
+              }}
+            >
+              <span className="ctx-menu__label">
+                <span className="table-menu-swatch" style={{ background: 'var(--accent)' }} />
+                Accent (default)
+              </span>
+            </button>
+          </div>
+          <FillPicker
+            label={label}
+            strengths={COLOR_STRENGTHS}
+            strength={color?.strength ?? 'light'}
+            color={color?.color ?? null}
+            onStrength={(strength) => onColor({ color: color?.color ?? 'blue', strength: strength as ColorStrength })}
+            onColor={(next) => onColor({ color: next as ColorName, strength: color?.strength ?? 'light' })}
+          />
+        </>
+      )}
+    </Dropdown>
+  )
+}

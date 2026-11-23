@@ -104,6 +104,8 @@ export interface ViewDef {
   cardTitles?: 'clip' | 'wrap'
   /** A calendar's default card (pill) style (YAZ-6331): Soft Accent, Soft Slate, White + Bar, or White. Absent = Settings › Folder pages (`accent`). */
   calendarCardStyle?: CalendarCardStyle
+  /** A calendar's default card colour and strength (YAZ-6344): `readColorStrength`, or `''` for `--accent` at Light. Absent = Settings › Folder pages (`''`). */
+  calendarCardColor?: string
   /** A Calendar's or Board's "Clicking a card opens" (YAZ-5582): a plain click's `window` or `background` tab. Absent = Same as Settings. */
   clickOpens?: 'window' | 'background'
   /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. Absent = the Settings › Folder pages default. */

@@ -549,6 +549,7 @@ const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => 
   calendarScale: oneOf(FOLDER_PAGE_CHOICES.calendarScale),
   cardTitles: oneOf(FOLDER_PAGE_CHOICES.cardTitles),
   calendarCardStyle: oneOf(FOLDER_PAGE_CHOICES.calendarCardStyle),
+  calendarCardColor: (v) => v === '' || readColorStrength(v) !== null,
   hideWeekends: isBool,
   // YAZ-4878: a width 1–12 and a colour the app reads; a file from before them reads 1 px, Gray.
   weekLine: (v) => calLine(v) === v,

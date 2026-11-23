@@ -2222,6 +2222,8 @@ export interface FolderPagesSettings {
   cardTitles: (typeof FOLDER_PAGE_CHOICES.cardTitles)[number]
   /** A calendar's default card (pill) style (YAZ-6331): Soft Accent, Soft Slate, White + Bar, or White. */
   calendarCardStyle: (typeof FOLDER_PAGE_CHOICES.calendarCardStyle)[number]
+  /** A calendar's default card colour and strength (YAZ-6344): `readColorStrength`, or `''` for the app's `--accent` at Light. */
+  calendarCardColor: string
   /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. */
   hideWeekends: boolean
   /** A calendar's lines (YAZ-4878): the width between weeks and between days, whole px 1–`MAX_CAL_LINE`, and each line's colour and strength (`readColorStrength`: `gray`, `blue light`). */
