@@ -13,7 +13,7 @@
  *   a sibling tab of the same `.md` page updates quietly without conflict.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import type { CanvasPanelState, CanvasPrefs, FoldArrowMode, OutsideChangeGlow, PageView } from '@shared/types'
+import type { CanvasPanelState, CanvasPrefs, FoldArrowMode, OutsideChangeGlow, OutsideOutlineColors, OutsideOutlineThickness, PageView } from '@shared/types'
 import { missingPicturesNotice, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { compactInlineScene, drawingTitleOf, findInlineDrawings, inlineDrawingBlock, withDrawingTitle } from '@shared/inlineDrawing'
@@ -40,6 +40,7 @@ import { exportFileName } from './exportDrawing'
 import { ExcalidrawSurface, type DrawingSnapshot, type DrawingSurfaceApi } from './ExcalidrawSurface'
 import { pressed } from './drawingKeys'
 import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
+import { useOutsideUpdateChip } from './useOutsideUpdateChip'
 import './drawingEditor.css'
 
 const EXPORT_FAILED = "The drawing couldn't be exported."
@@ -105,6 +106,10 @@ export interface InlineDrawingTabProps extends DocumentHostProps, DrawingLinkPro
   hotkeysAside?: HotkeyAside
   /** Settings › Outside changes › Glow (YAZ-4279 D5): how long a shape the file changed stays outlined. Absent → until checked. */
   outsideChangeGlow?: OutsideChangeGlow
+  /** Settings › Outside changes › Board border thickness (YAZ-6398). */
+  outsideOutlineThickness?: OutsideOutlineThickness
+  /** Settings › Outside changes › Board border colors (YAZ-6398). */
+  outsideOutlineColors?: OutsideOutlineColors
   startView?: PageView
 }
 
@@ -142,11 +147,14 @@ function InlineDrawingHost({
   onFailed,
   startView,
   outsideChangeGlow = 'until-checked',
+  outsideOutlineThickness,
+  outsideOutlineColors,
   ...linkProps
 }: InlineDrawingHostProps) {
   const theme = useAppliedTheme()
   const snapshot = useRef<DrawingSnapshot | null>(null)
   const surface = useRef<DrawingSurfaceApi | null>(null)
+  const { onOutsideChange, clearChip: clearOutsideChip, chip: outsideChip } = useOutsideUpdateChip(surface, outsideChangeGlow)
   const reloadedTo = useRef<number | null>(null)
   const base = useRef<SceneSide | string>(sideOf(loaded.scene))
   const persisted = useRef(new Set(loaded.stored))
@@ -203,6 +211,7 @@ function InlineDrawingHost({
     onKeepMine: () => {
       persisted.current = new Set()
       keepMineRef.current = true
+      clearOutsideChip()
       surface.current?.clash([])
     },
     reload: async (a) => {
@@ -500,7 +509,11 @@ function InlineDrawingHost({
           onExportPdf={exportPdf}
           foldArrows={boardFoldArrows}
           hoverOutline={boardHoverOutline}
+          onOutsideChange={onOutsideChange}
+          outsideOutlineThickness={outsideOutlineThickness}
+          outsideOutlineColors={outsideOutlineColors}
         />
+        {outsideChip}
       </div>
       <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={linkProps.previewScope} diagramDarkColors={linkProps.diagramDarkColors ?? 'adapt'} />
     </div>

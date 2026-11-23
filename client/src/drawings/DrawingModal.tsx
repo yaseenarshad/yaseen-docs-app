@@ -49,9 +49,10 @@
  */
 import { lazy, Suspense, useCallback, useContext, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
-import type { OutsideChangeGlow } from '@shared/types'
+import type { OutsideChangeGlow, OutsideOutlineColors, OutsideOutlineThickness } from '@shared/types'
 import type { HotkeyAside } from '@shared/keys'
 import type { CanvasPanelState, FoldArrowMode } from '@shared/types'
+import { splitFrontmatter } from '@shared/frontmatter'
 import { api } from '../api'
 import { setPlaceOverTab } from '../keys/keySheetRequest'
 import { ConflictBar } from '../documents/ConflictBar'
@@ -69,11 +70,12 @@ import type { SceneSide } from './mergeScene'
 import { sideOf, takeFromDisk, type TakeAnswer } from './takeFromDisk'
 import { PICTURES_MOVED_OUT, saveDrawing, saveErrorMessage } from './saveDrawing'
 import { missingPicturesNotice, picturesFolderOutside, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
-import { compactInlineScene } from '@shared/inlineDrawing'
+import { compactInlineScene, findInlineDrawings } from '@shared/inlineDrawing'
 import type { NoticeKind } from '../lib/notice'
 import { CardPreviewHost } from '../tabs/cardPreview'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
+import { useOutsideUpdateChip } from './useOutsideUpdateChip'
 import { usePicturesFolderAllow } from './usePicturesFolderAllow'
 import './drawingEditor.css'
 import './drawingModal.css'
@@ -112,6 +114,8 @@ const HOVER_OUTLINE_CHOICES: readonly { value: 'app' | boolean; label: string; t
 export interface InlineDrawingModalProps {
   json: string
   pagePath: string
+  /** 0-based index of this inline drawing block in `pagePath`, used for live AI merge (YAZ-6407). */
+  index?: number
   title?: string
   /** Focus and select the title input on mount (used when creating a new drawing via `/drawing`). */
   autoFocusTitle?: boolean
@@ -149,9 +153,13 @@ export interface DrawingModalProps extends DrawingLinkProps, DrawingAppSettings 
   watch?: WatchSource
   /** Settings › Outside changes › Glow (YAZ-4279 D5): how long a shape the file changed stays outlined. Absent → until checked. */
   outsideChangeGlow?: OutsideChangeGlow
+  /** Settings › Outside changes › Board border thickness (YAZ-6398). */
+  outsideOutlineThickness?: OutsideOutlineThickness
+  /** Settings › Outside changes › Board border colors (YAZ-6398). */
+  outsideOutlineColors?: OutsideOutlineColors
 }
 
-export function DrawingModal({ root, target = '', inline, theme, onClose, onOpenInTab, hotkeys, hotkeysAside, onNotice, watch, outsideChangeGlow = 'until-checked', canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, ...linkProps }: DrawingModalProps) {
+export function DrawingModal({ root, target = '', inline, theme, onClose, onOpenInTab, hotkeys, hotkeysAside, onNotice, watch, outsideChangeGlow = 'until-checked', outsideOutlineThickness, outsideOutlineColors, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, ...linkProps }: DrawingModalProps) {
   const inlineRef = useRef(inline)
   inlineRef.current = inline
   const onOpenInTabRef = useRef(onOpenInTab)
@@ -162,6 +170,7 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
   const titleInputRef = useRef<HTMLInputElement>(null)
   const menuWrapRef = useRef<HTMLDivElement>(null)
   const surface = useRef<DrawingSurfaceApi | null>(null)
+  const { onOutsideChange, clearChip: clearOutsideChip, chip: outsideChip } = useOutsideUpdateChip(surface, outsideChangeGlow)
   const onApi = useCallback((a: DrawingSurfaceApi) => {
     surface.current = a
   }, [])
@@ -239,13 +248,25 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
     persisted.current = new Set(drawing.stored)
   }
 
-  /** YAZ-4279 D6, item 6: the file merged into this canvas, edits or none (`takeFromDisk`, the tab's flow). */
+  /** Reads the inline drawing block back from the markdown page on disk (YAZ-6407). */
+  const readInlineFromDisk = async (): Promise<LoadedDrawing | null> => {
+    const opts = inlineRef.current
+    if (opts === undefined) return null
+    const file = await api.readFile(opts.pagePath)
+    const blocks = findInlineDrawings(splitFrontmatter(file.content).body)
+    const block = blocks[opts.index ?? 0]
+    if (block === undefined) return null
+    const drawing = await openInlineDrawing(root, block.json, opts.pagePath)
+    return { ...drawing, mtime: file.mtime }
+  }
+
+  /** YAZ-4279 D6, item 6 & YAZ-6407: the file merged into this canvas, edits or none (`takeFromDisk`, the tab's flow). */
   const mergeFile = async (): Promise<TakeAnswer> => {
     const s = surface.current
     const was = base.current
-    if (s === null || was === null || isInline) return 'conflict'
-    const drawing = await openDrawing(root, target)
-    if (left.current) return 'merged'
+    if (s === null || was === null) return 'conflict'
+    const drawing = isInline ? await readInlineFromDisk() : await openDrawing(root, target)
+    if (left.current || drawing === null) return 'merged'
     const answer = await takeFromDisk({ surface: s, autosave: autosave.current, base: was, disk: drawing, readOnly: loadedRef.current?.scene.readOnly === true, glow: glowRef.current, baselineAt: (mtime) => (tookAt.current = mtime) })
     if (answer === 'merged') tookFile(drawing)
     return answer
@@ -367,6 +388,7 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
           }
           const { json: compactJson } = compactInlineScene(json, inlineSettingsRef.current)
           await inlineOpts.onSave(compactJson)
+          base.current = json
           setError(null)
           return { mtime: Date.now() }
         }
@@ -463,6 +485,7 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
   const keepMine = (): void => {
     if (conflict === null) return
     clearConflict()
+    clearOutsideChip()
     surface.current?.clash([])
     // YAZ-4071 7H: the disk's version may lack a picture this canvas uses, so this save ships them all.
     persisted.current = new Set()
@@ -476,7 +499,8 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
   const reload = async (): Promise<void> => {
     setError(null)
     try {
-      const drawing = await openDrawing(root, target)
+      const drawing = isInline ? await readInlineFromDisk() : await openDrawing(root, target)
+      if (drawing === null) throw new Error('missing inline drawing')
       tookFile(drawing)
       clearConflict()
       generationRef.current += 1
@@ -504,8 +528,8 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
   const reloadRef = useRef(reload)
   reloadRef.current = reload
 
-  // YAZ-4279 item 6: an outside save of this file, once any save in flight has settled — the tab's rule.
-  const file = isInline ? null : (loaded?.path ?? null)
+  // YAZ-4279 item 6 & YAZ-6407: an outside save of this file (or the page holding this inline drawing), once any save in flight has settled.
+  const file = isInline ? (inlinePagePath ?? null) : (loaded?.path ?? null)
   useEffect(() => {
     if (watch === undefined || file === null) return
     return watch.subscribe((ev) => {
@@ -886,9 +910,10 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
         <div className="drawing-modal__canvas editor--drawing">
           {loaded !== null && (
             <Suspense fallback={null}>
-              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} canvasPanel={canvasPanel} onCanvasPanelChange={onCanvasPanelChange} onSnapshot={onSnapshot} onFailed={setError} onApi={onApi} onExportPdf={exportPdf} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} links={links} foldArrows={boardFoldArrows} hoverOutline={boardHoverOutline} />
+              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} canvasPanel={canvasPanel} onCanvasPanelChange={onCanvasPanelChange} onSnapshot={onSnapshot} onFailed={setError} onApi={onApi} onExportPdf={exportPdf} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} links={links} foldArrows={boardFoldArrows} hoverOutline={boardHoverOutline} onOutsideChange={onOutsideChange} outsideOutlineThickness={outsideOutlineThickness} outsideOutlineColors={outsideOutlineColors} />
             </Suspense>
           )}
+          {outsideChip}
         </div>
         <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={linkProps.previewScope} diagramDarkColors={linkProps.diagramDarkColors ?? 'adapt'} />
         {allowSheet}

@@ -1,4 +1,4 @@
-import type { OutsideChangeGlow } from '@shared/types'
+import { DEFAULT_OUTSIDE_OUTLINE_COLORS, type OutsideChangeGlow, type OutsideOutlineColors, type OutsideOutlineThickness } from '@shared/types'
 
 /**
  * WHAT CHANGED OUTSIDE, ON THE CANVAS (YAZ-4279 D5, items 7 and 8). Each shape an outside save added (green) or changed
@@ -23,12 +23,20 @@ export const MARK_COLORS: Readonly<Record<MarkKind, { background: string; stroke
 
 const GLOW_MS: Readonly<Partial<Record<OutsideChangeGlow, number>>> = { '60s': 60_000, '5m': 300_000 }
 
+/** Stroke widths in screen px for Thin / Normal / Thick (YAZ-6398). */
+export const OUTLINE_THICKNESS_PX: Readonly<Record<OutsideOutlineThickness, number>> = {
+  thin: 1.5,
+  normal: 3,
+  thick: 5,
+}
+
 /** The engine's collaborator, as far as an outline needs one. */
 export interface MarkCollaborator {
   id: string
   username: string
   selectedElementIds: Record<string, true>
   color?: { background: string; stroke: string }
+  strokeWidth?: number
 }
 
 interface Shape {
@@ -39,9 +47,19 @@ interface Shape {
 export class OutsideMarks {
   private readonly marks = new Map<string, { kind: MarkKind; version: number; checkable: boolean }>()
   private timer: ReturnType<typeof setTimeout> | null = null
+  private thickness: OutsideOutlineThickness = 'normal'
+  private colors: OutsideOutlineColors = DEFAULT_OUTSIDE_OUTLINE_COLORS
 
   /** `show` hands the engine its collaborators: one per colour that has a shape. */
   constructor(private readonly show: (collaborators: Map<string, MarkCollaborator>) => void) {}
+
+  /** Update outline thickness/colors live from Settings › Editor › Outside changes (YAZ-6398). */
+  setStyle(thickness: OutsideOutlineThickness = 'normal', colors: OutsideOutlineColors = DEFAULT_OUTSIDE_OUTLINE_COLORS): void {
+    if (this.thickness === thickness && this.colors.added === colors.added && this.colors.changed === colors.changed && this.colors.clash === colors.clash) return
+    this.thickness = thickness
+    this.colors = colors
+    if (this.marks.size > 0) this.render()
+  }
 
   /** An outside save's shapes, at the versions the canvas now holds them. Earlier outside marks go: these are the news. */
   mark(added: readonly string[], changed: readonly string[], shapes: readonly Shape[], glow: OutsideChangeGlow): void {
@@ -108,7 +126,11 @@ export class OutsideMarks {
     const byKind = new Map<MarkKind, Record<string, true>>()
     for (const [id, { kind }] of this.marks) byKind.set(kind, { ...byKind.get(kind), [id]: true })
     const collaborators = new Map<string, MarkCollaborator>()
-    for (const [kind, ids] of byKind) collaborators.set(MARK_COLLABORATORS[kind], { id: MARK_COLLABORATORS[kind], username: 'Outside change', selectedElementIds: ids, color: MARK_COLORS[kind] })
+    const strokeWidth = OUTLINE_THICKNESS_PX[this.thickness]
+    for (const [kind, ids] of byKind) {
+      const c = this.colors[kind] ?? MARK_COLORS[kind].stroke
+      collaborators.set(MARK_COLLABORATORS[kind], { id: MARK_COLLABORATORS[kind], username: 'Outside change', selectedElementIds: ids, color: { background: c, stroke: c }, strokeWidth })
+    }
     this.show(collaborators)
   }
 }

@@ -24,6 +24,7 @@ import { storage } from '../lib/storage'
 import { basename } from '../lib/paths'
 import { useAppliedTheme } from '../lib/theme'
 import { useDrawingLinks, type DrawingLinkProps } from '../drawings/useDrawingLinks'
+import { OutsideUpdateChip } from '../drawings/OutsideUpdateChip'
 import { linkPreviewHint, readOnlyHint, RELOAD_DISK_HINT } from '../drawings/cogHints'
 import { CardPreviewHost } from '../tabs/cardPreview'
 import { useDrawioLinkBridge } from './drawioLinkBridge'
@@ -46,7 +47,9 @@ const READY_FALLBACK_MS = 3000
 const MERGE_TIMEOUT_MS = 60_000
 
 /** The overlay's answer to a `yaseenMerge`, and whether the tab had unsaved edits when draw.io began it. */
-type MergeAnswer = { conflict: true; dirty: boolean } | { conflict: false; dirty: boolean; xml?: string }
+type MergeAnswer =
+  | { conflict: true; dirty: boolean }
+  | { conflict: false; dirty: boolean; xml?: string; changedIds?: string[]; groups?: string[][]; offscreen?: boolean }
 
 export interface DrawioEditorProps extends DocumentHostProps, DrawingLinkProps {
   /** 🔒 YAZ-1802 D16: the app's dark-mode colour setting, applied live (see the module doc). */
@@ -100,6 +103,10 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
   /** The Glow setting as of now: what the overlay outlines what the file changed for (D5). */
   const glowRef = useRef(outsideChangeGlow)
   glowRef.current = outsideChangeGlow
+  /** YAZ-6416: floating bottom-center OutsideUpdateChip state (Show, 1/N cycling, Back, Mark checked) for full parity with Excalidraw. */
+  const [outsideUpdate, setOutsideUpdate] = useState<{ ids: string[]; groups: string[][]; index: number; seq: number; offscreen: boolean; hasBack: boolean } | null>(null)
+  const outsideSeq = useRef(0)
+  const chipAutoDismissMs = outsideChangeGlow === '60s' ? 60_000 : outsideChangeGlow === '5m' ? 300_000 : 0
   /** Bumped on every draw.io change; `Autosave` compares these, never the XML. */
   const version = useRef(0)
   /** The mtime of the document a `load` action carried, until draw.io answers `load`. */
@@ -246,6 +253,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     reload: async (a) => {
       const res = await api.diagram.load({ root, path })
       a.reset(version.current, res.mtime)
+      setOutsideUpdate(null)
       sendLoad(res.xml, res.mtime, true)
       keptHoverLinksOff.current = isDiagramHoverLinksOff(res.xml)
       setHoverLinksOff(keptHoverLinksOff.current)
@@ -274,10 +282,17 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
       // Edits as draw.io began the merge (a label typed while it waited counts, 4A-1) stay pending; none: the merge is clean.
       if (answer.dirty) a.rebase(res.mtime)
       else a.reset(version.current, res.mtime)
+      if (answer.changedIds !== undefined && answer.changedIds.length > 0 && glowRef.current !== 'off') {
+        const groups = answer.groups !== undefined && answer.groups.length > 0 ? answer.groups : [answer.changedIds]
+        setOutsideUpdate({ ids: answer.changedIds, groups, index: -1, seq: ++outsideSeq.current, offscreen: answer.offscreen ?? true, hasBack: false })
+      }
       return 'merged'
     },
     // Keep mine answers the bar: the overlay's red outlines of the clash go (item 8).
-    onKeepMine: () => post({ action: 'yaseenClearClash' }),
+    onKeepMine: () => {
+      setOutsideUpdate(null)
+      post({ action: 'yaseenClearClash' })
+    },
     // Export Image… is the one board command a diagram answers.
     onCommand: (command) => {
       if (command.kind === 'export-image') void exportImage()
@@ -404,7 +419,13 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
           return
         case 'yaseenMerge': {
           const m = merging.current
-          if (m?.id === msg.id) m.answer(msg.conflict === true ? { conflict: true, dirty: m.dirty } : { conflict: false, dirty: m.dirty, xml: msg.xml })
+          if (m?.id === msg.id) {
+            m.answer(
+              msg.conflict === true
+                ? { conflict: true, dirty: m.dirty }
+                : { conflict: false, dirty: m.dirty, xml: msg.xml, changedIds: msg.changedIds, groups: msg.groups, offscreen: msg.offscreen },
+            )
+          }
           return
         }
         default:
@@ -445,11 +466,53 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     syncColors()
   }, [darkColors, syncColors])
 
+  const jumpOutsideGroup = useCallback(
+    (delta: number) => {
+      setOutsideUpdate((cur) => {
+        if (cur === null || cur.groups.length === 0) return null
+        const total = cur.groups.length
+        const nextIdx = cur.index < 0 ? (delta < 0 ? total - 1 : 0) : (cur.index + delta + total) % total
+        post({ action: 'yaseenShowCells', ids: cur.groups[nextIdx] })
+        return { ...cur, index: nextIdx, seq: ++outsideSeq.current, hasBack: true }
+      })
+    },
+    [post],
+  )
+  const showOutsideUpdate = useCallback(() => jumpOutsideGroup(0), [jumpOutsideGroup])
+  const prevOutsideUpdate = useCallback(() => jumpOutsideGroup(-1), [jumpOutsideGroup])
+  const nextOutsideUpdate = useCallback(() => jumpOutsideGroup(1), [jumpOutsideGroup])
+  const backOutsideUpdate = useCallback(() => {
+    post({ action: 'yaseenRestoreView' })
+    setOutsideUpdate((cur) => (cur === null ? null : { ...cur, index: -1, hasBack: false }))
+  }, [post])
+  const clearOutsideUpdate = useCallback(() => {
+    post({ action: 'yaseenClearOutsideMarks' })
+    setOutsideUpdate(null)
+  }, [post])
+  const dismissOutsideUpdate = useCallback(() => setOutsideUpdate(null), [])
+
   return (
     <div className="drawio-editor" ref={board.hostRef}>
       {board.conflictBar}
       <DocumentChips store={board.chips} className="drawio-editor__chips" />
       <iframe ref={frameRef} className="drawio-editor__frame" src={src} title={`${boardBaseName(basename(path))} — draw.io`} />
+      {outsideUpdate !== null && outsideChangeGlow !== 'off' && (
+        <OutsideUpdateChip
+          count={outsideUpdate.ids.length}
+          seq={outsideUpdate.seq}
+          canShow={outsideUpdate.offscreen}
+          onShow={showOutsideUpdate}
+          step={
+            outsideUpdate.groups.length >= 2
+              ? { index: outsideUpdate.index, total: outsideUpdate.groups.length, onPrev: prevOutsideUpdate, onNext: nextOutsideUpdate }
+              : undefined
+          }
+          onBack={outsideUpdate.hasBack ? backOutsideUpdate : undefined}
+          onClear={clearOutsideUpdate}
+          onDismiss={dismissOutsideUpdate}
+          autoDismissMs={chipAutoDismissMs}
+        />
+      )}
       <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={linkProps.previewScope} diagramDarkColors={darkColors} />
     </div>
   )

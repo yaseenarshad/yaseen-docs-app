@@ -16182,18 +16182,30 @@ class App extends React.Component<AppProps, AppState> {
           : MIN_ZOOM;
         newZoom = Math.max(newZoom, minZoom);
 
+        // YAZ-6403: always read live canvas rect on wheel-zoom so offsetLeft/offsetTop are never stale after sidebar toggles or tab reveals.
+        const liveRect = this.excalidrawContainerRef.current?.getBoundingClientRect();
         const didTranslate = this.viewport.translate(
-          (state) => ({
-            ...getViewportForZoomWithScrollConstraints(
-              {
-                viewportX: event.clientX,
-                viewportY: event.clientY,
-                nextZoom: getNormalizedZoom(newZoom),
-              },
-              state,
-            ),
-            shouldCacheIgnoreZoom: true,
-          }),
+          (state) => {
+            const offsetLeft = liveRect ? liveRect.left : state.offsetLeft;
+            const offsetTop = liveRect ? liveRect.top : state.offsetTop;
+            const syncedState =
+              offsetLeft !== state.offsetLeft || offsetTop !== state.offsetTop
+                ? { ...state, offsetLeft, offsetTop }
+                : state;
+            return {
+              ...getViewportForZoomWithScrollConstraints(
+                {
+                  viewportX: event.clientX,
+                  viewportY: event.clientY,
+                  nextZoom: getNormalizedZoom(newZoom),
+                },
+                syncedState,
+              ),
+              offsetLeft,
+              offsetTop,
+              shouldCacheIgnoreZoom: true,
+            };
+          },
           {
             zoomPreConstrained: true,
             preserveScrollConstraintsSnapBack: true,

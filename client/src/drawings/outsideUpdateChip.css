@@ -1,5 +1,6 @@
 /* YAZ-4279 item 10: floating bottom-center pill for outside drawing updates. */
 .drawing-editor__canvas > .outside-update-chip,
+.drawing-modal__canvas > .outside-update-chip,
 .outside-update-chip {
   position: absolute;
   left: 50%;

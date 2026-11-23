@@ -49,7 +49,7 @@
  * opens naming an outside folder this Mac has not approved asks once to allow it (`usePicturesFolderAllow`).
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse, FoldArrowMode, OutsideChangeGlow, PageView } from '@shared/types'
+import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse, FoldArrowMode, OutsideChangeGlow, OutsideOutlineColors, OutsideOutlineThickness, PageView } from '@shared/types'
 import { missingPicturesNotice, missingPicturesText, picturesFolderOutside, picturesMissingRefusal, picturesSize, unpersistedFiles, withHomeTilde } from '@shared/drawingAssets'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -266,6 +266,10 @@ export interface DrawingEditorProps extends DocumentHostProps, DrawingLinkProps 
   hotkeysAside?: HotkeyAside
   /** Settings › Outside changes › Glow (YAZ-4279 D5): how long a shape the file changed stays outlined. Absent → until checked. */
   outsideChangeGlow?: OutsideChangeGlow
+  /** Settings › Outside changes › Board border thickness (YAZ-6398). */
+  outsideOutlineThickness?: OutsideOutlineThickness
+  /** Settings › Outside changes › Board border colors (YAZ-6398). */
+  outsideOutlineColors?: OutsideOutlineColors
   /** The page view a woken tab or a copy starts with (YAZ-3737 D13): only its `canvas`, the pan and zoom, counts here. */
   startView?: PageView
 }
@@ -311,7 +315,7 @@ interface DrawingHostProps extends DrawingEditorProps {
 const FORGET_PANEL = (): void => undefined
 
 /** Mounts exactly one canvas for `loaded`; its board document owns everything that writes. */
-function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, hotkeys, hotkeysAside, onFailed, startView, outsideChangeGlow = 'until-checked', ...linkProps }: DrawingHostProps) {
+function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, hotkeys, hotkeysAside, onFailed, startView, outsideChangeGlow = 'until-checked', outsideOutlineThickness, outsideOutlineColors, ...linkProps }: DrawingHostProps) {
   const theme = useAppliedTheme()
   /** The latest snapshot; read only when a save fires (see the module doc). */
   const snapshot = useRef<DrawingSnapshot | null>(null)
@@ -340,13 +344,42 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
   const [boardFoldArrows, setBoardFoldArrows] = useState<FoldArrowMode | undefined>(loaded.scene.foldArrows)
   /** The board's own "Hover outline" (YAZ-4469 demo) as the file last said it; absent: the app setting. */
   const [boardHoverOutline, setBoardHoverOutline] = useState<boolean | undefined>(loaded.scene.hoverOutline)
-  /** YAZ-4279 item 10: shapes added/changed by the latest outside merge, shown in the floating chip. */
-  const [outsideUpdate, setOutsideUpdate] = useState<{ ids: string[]; seq: number } | null>(null)
+  /** YAZ-4279 item 10 / YAZ-6396 / YAZ-6402: shapes added/changed by the latest outside merge, grouped into spatial stops. */
+  const [outsideUpdate, setOutsideUpdate] = useState<{ ids: string[]; groups: string[][]; index: number; seq: number; offscreen: boolean; backView: NonNullable<PageView['canvas']> | null } | null>(null)
   const outsideSeq = useRef(0)
   const onOutsideChange = useCallback((ids: string[]) => {
-    if (ids.length > 0) setOutsideUpdate({ ids, seq: ++outsideSeq.current })
+    if (ids.length > 0 && outsideChangeGlow !== 'off') {
+      const offscreen = surface.current?.areAnyOffscreen?.(ids) ?? true
+      const groups = surface.current?.clusterElements?.(ids)
+      const normalized = groups !== undefined && groups.length > 0 ? groups : [ids]
+      setOutsideUpdate({ ids, groups: normalized, index: -1, seq: ++outsideSeq.current, offscreen, backView: null })
+    }
+  }, [outsideChangeGlow])
+  const jumpOutsideGroup = useCallback((delta: number) => {
+    setOutsideUpdate((cur) => {
+      if (cur === null || cur.groups.length === 0) return null
+      const prev = cur.backView ?? surface.current?.canvas() ?? null
+      const total = cur.groups.length
+      const nextIdx = cur.index < 0 ? (delta < 0 ? total - 1 : 0) : (cur.index + delta + total) % total
+      surface.current?.scrollToElements?.(cur.groups[nextIdx])
+      return { ...cur, index: nextIdx, seq: ++outsideSeq.current, backView: prev }
+    })
+  }, [])
+  const showOutsideUpdate = useCallback(() => jumpOutsideGroup(0), [jumpOutsideGroup])
+  const prevOutsideUpdate = useCallback(() => jumpOutsideGroup(-1), [jumpOutsideGroup])
+  const nextOutsideUpdate = useCallback(() => jumpOutsideGroup(1), [jumpOutsideGroup])
+  const backOutsideUpdate = useCallback(() => {
+    setOutsideUpdate((cur) => {
+      if (cur?.backView != null) surface.current?.restoreCanvas?.(cur.backView)
+      return cur === null ? null : { ...cur, index: -1, backView: null }
+    })
+  }, [])
+  const clearOutsideUpdate = useCallback(() => {
+    surface.current?.clearOutsideMarks?.()
+    setOutsideUpdate(null)
   }, [])
   const dismissOutsideUpdate = useCallback(() => setOutsideUpdate(null), [])
+  const chipAutoDismissMs = outsideChangeGlow === '60s' ? 60_000 : outsideChangeGlow === '5m' ? 300_000 : 0
 
   // Fresh closures every render are fine: the hook reads them through its `engine` ref, never stale.
   const board = useDocumentHost({
@@ -740,13 +773,24 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
           foldArrows={boardFoldArrows}
           hoverOutline={boardHoverOutline}
           onOutsideChange={onOutsideChange}
+          outsideOutlineThickness={outsideOutlineThickness}
+          outsideOutlineColors={outsideOutlineColors}
         />
-        {outsideUpdate !== null && (
+        {outsideUpdate !== null && outsideChangeGlow !== 'off' && (
           <OutsideUpdateChip
             count={outsideUpdate.ids.length}
             seq={outsideUpdate.seq}
-            onShow={() => surface.current?.scrollToElements?.(outsideUpdate.ids)}
+            canShow={outsideUpdate.offscreen}
+            onShow={showOutsideUpdate}
+            step={
+              outsideUpdate.groups.length >= 2
+                ? { index: outsideUpdate.index, total: outsideUpdate.groups.length, onPrev: prevOutsideUpdate, onNext: nextOutsideUpdate }
+                : undefined
+            }
+            onBack={outsideUpdate.backView !== null ? backOutsideUpdate : undefined}
+            onClear={clearOutsideUpdate}
             onDismiss={dismissOutsideUpdate}
+            autoDismissMs={chipAutoDismissMs}
           />
         )}
       </div>

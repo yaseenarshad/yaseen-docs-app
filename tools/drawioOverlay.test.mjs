@@ -659,7 +659,10 @@ describe('PostConfig.js yaseenMerge (YAZ-4279 D2, D4), against a stand-in draw.i
     expect(file.setShadowPages).toHaveBeenCalledWith({ xml: '<base/>' })
     expect(file.mergeFile.mock.calls[0][0]).toMatchObject({ xml: '<disk/>' })
     // 4A-1: "merging" first, so the host knows every edit of the user's is in; 4A-3: the whole merged file in the answer.
-    expect(answers()).toEqual([{ event: 'yaseenMerging', id: 4 }, { event: 'yaseenMerge', id: 4, xml: '<merged-file/>' }])
+    expect(answers()).toEqual([
+      { event: 'yaseenMerging', id: 4 },
+      { event: 'yaseenMerge', id: 4, xml: '<merged-file/>', changedIds: ['n1', 'c1'], groups: [['n1'], ['c1']], offscreen: false },
+    ])
   })
 
   it('both sides on different fields of one cell, or different cells, merge', () => {

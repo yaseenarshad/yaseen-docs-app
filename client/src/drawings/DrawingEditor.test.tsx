@@ -1328,9 +1328,9 @@ describe('YAZ-3943 demo round 3 — what the confirm box before a picture move s
 })
 
 describe('YAZ-4279 UI/UX: OutsideUpdateChip, Reload from disk, Repair drawing file, and Keep both', () => {
-  it('item 10: OutsideUpdateChip appears on onOutsideChange, Show pans to updated shapes, dismiss & 12s auto-dismiss hide it', async () => {
+  it('item 10 / YAZ-6399: OutsideUpdateChip appears on onOutsideChange, Show pans to updated shapes, stays open on until-checked, and auto-dismisses on 60s', async () => {
     surface.scrolledTo = []
-    render()
+    render({ outsideChangeGlow: 'until-checked' })
     await flush()
     emit(1)
     expect(container.querySelector('.outside-update-chip')).toBeNull()
@@ -1343,14 +1343,21 @@ describe('YAZ-4279 UI/UX: OutsideUpdateChip, Reload from disk, Repair drawing fi
     act(() => chip!.querySelector<HTMLButtonElement>('.outside-update-chip__show')!.click())
     expect(surface.scrolledTo).toEqual([['s1', 's2']])
 
+    // Until-checked stays open past 12s until dismissed or marked checked.
+    await act(async () => {
+      vi.advanceTimersByTime(12_000)
+    })
+    expect(container.querySelector('.outside-update-chip')).not.toBeNull()
+
     act(() => chip!.querySelector<HTMLButtonElement>('.outside-update-chip__dismiss')!.click())
     expect(container.querySelector('.outside-update-chip')).toBeNull()
 
-    // Auto-dismiss after 12s.
+    // With 60s glow, chip auto-dismisses after 60s.
+    render({ outsideChangeGlow: '60s' })
     act(() => surface.props!.onOutsideChange!(['s3']))
     expect(container.querySelector('.outside-update-chip')!.textContent).toContain('1 shape changed')
     await act(async () => {
-      vi.advanceTimersByTime(12_000)
+      vi.advanceTimersByTime(60_000)
     })
     expect(container.querySelector('.outside-update-chip')).toBeNull()
   })

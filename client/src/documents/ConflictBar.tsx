@@ -9,7 +9,7 @@ export function ConflictBar({ onReload, onKeepBoth, onKeepMine }: { onReload: ()
     <div className="conflict-bar" role="alert">
       <span>File changed on disk.</span>
       <button type="button" onClick={onReload}>
-        Reload
+        {onKeepBoth !== undefined ? 'Keep theirs' : 'Reload'}
       </button>
       {onKeepBoth !== undefined && (
         <button type="button" onClick={onKeepBoth}>

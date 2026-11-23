@@ -259,7 +259,7 @@ export type DrawioMessage =
   | { event: 'save'; xml: string }
   | { event: 'yaseenMerging'; id: number }
   | { event: 'yaseenMerge'; id: number; conflict: true }
-  | { event: 'yaseenMerge'; id: number; conflict?: false; xml?: string }
+  | { event: 'yaseenMerge'; id: number; conflict?: false; xml?: string; changedIds?: string[]; groups?: string[][]; offscreen?: boolean }
   | DrawioLinkMessage
 
 /**
@@ -369,10 +369,18 @@ export function readDrawioMessage(ev: { source: unknown; origin: string; data: u
       return typeof xml === 'string' ? { event, xml } : null
     case 'yaseenMerging':
       return typeof id === 'number' ? { event, id } : null
-    case 'yaseenMerge':
+    case 'yaseenMerge': {
       if (typeof id !== 'number') return null
       if (conflict === true) return { event, id, conflict }
-      return typeof xml === 'string' ? { event, id, xml } : { event, id }
+      const raw = msg as Record<string, unknown>
+      const changedIds = Array.isArray(raw.changedIds) && raw.changedIds.every(isString) ? raw.changedIds : undefined
+      const groups =
+        Array.isArray(raw.groups) && raw.groups.every((g) => Array.isArray(g) && g.every(isString))
+          ? (raw.groups as string[][])
+          : undefined
+      const offscreen = typeof raw.offscreen === 'boolean' ? raw.offscreen : undefined
+      return { event, id, ...(typeof xml === 'string' && { xml }), ...(changedIds !== undefined && { changedIds }), ...(groups !== undefined && { groups }), ...(offscreen !== undefined && { offscreen }) }
+    }
     default:
       return readLinkMessage(msg as Record<string, unknown>)
   }

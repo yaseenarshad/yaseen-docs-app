@@ -337,6 +337,26 @@ window.ICON_SERVICE_PATH = null;
 			evt.stopImmediatePropagation();
 			clearMarks('clash');
 		}
+
+		// YAZ-6416: OutsideUpdateChip parity for draw.io (Show, 1/N cycling, Back, Mark checked).
+		if (msg != null && msg.action == 'yaseenShowCells')
+		{
+			evt.stopImmediatePropagation();
+			showCells(Array.isArray(msg.ids) ? msg.ids : []);
+		}
+
+		if (msg != null && msg.action == 'yaseenRestoreView')
+		{
+			evt.stopImmediatePropagation();
+			restoreBackView();
+		}
+
+		if (msg != null && msg.action == 'yaseenClearOutsideMarks')
+		{
+			evt.stopImmediatePropagation();
+			savedBackView = null;
+			clearMarks('outside');
+		}
 	});
 
 	/** The one `yaseenMerge` waiting for the gesture to end, and whether a wait runs. */
@@ -409,9 +429,17 @@ window.ICON_SERVICE_PATH = null;
 			{
 				var changed = changedCells(theirs);
 				clearMarks('outside');
+				savedBackView = null;
 				markCells(changed.added, 'added', msg.glow);
 				markCells(changed.changed, 'changed', msg.glow);
-				answer({xml: embedXml()});
+				var allIds = changed.added.concat(changed.changed);
+				var graph = editorUi.editor.graph;
+				answer({
+					xml: embedXml(),
+					changedIds: allIds,
+					groups: clusterCellIds(graph, allIds),
+					offscreen: areCellsOffscreen(graph, allIds)
+				});
 			}, function()
 			{
 				answer({conflict: true});
@@ -553,6 +581,183 @@ window.ICON_SERVICE_PATH = null;
 	var MARK_COLORS = {added: '#2f9e44', changed: '#f08c00', clash: '#e03131'};
 	var marks = [];
 	var marksWatched = false;
+	var savedBackView = null;
+
+	function cellRect(graph, id)
+	{
+		var cell = graph.model.getCell(id);
+		var state = (cell != null) ? graph.view.getState(cell) : null;
+
+		if (state == null)
+		{
+			return null;
+		}
+
+		return {id: id, x: state.x, y: state.y, width: state.width, height: state.height};
+	}
+
+	function clusterCellIds(graph, ids)
+	{
+		var rects = [];
+
+		for (var i = 0; i < ids.length; i++)
+		{
+			var r = cellRect(graph, ids[i]);
+
+			if (r != null)
+			{
+				rects.push(r);
+			}
+		}
+
+		if (rects.length <= 1)
+		{
+			return rects.length == 1 ? [[rects[0].id]] : [];
+		}
+
+		var pad = 300 * (graph.view.scale || 1);
+		var visited = {};
+		var clusters = [];
+
+		for (var a = 0; a < rects.length; a++)
+		{
+			if (visited[a])
+			{
+				continue;
+			}
+
+			visited[a] = true;
+			var queue = [a];
+			var groupIds = [];
+			var minX = Infinity, minY = Infinity;
+
+			while (queue.length > 0)
+			{
+				var cur = queue.pop();
+				var el = rects[cur];
+				groupIds.push(el.id);
+
+				if (el.x < minX) minX = el.x;
+				if (el.y < minY) minY = el.y;
+
+				for (var b = 0; b < rects.length; b++)
+				{
+					if (!visited[b])
+					{
+						var other = rects[b];
+
+						if (el.x - pad <= other.x + other.width &&
+							other.x - pad <= el.x + el.width &&
+							el.y - pad <= other.y + other.height &&
+							other.y - pad <= el.y + el.height)
+						{
+							visited[b] = true;
+							queue.push(b);
+						}
+					}
+				}
+			}
+
+			clusters.push({ids: groupIds, minX: minX, minY: minY});
+		}
+
+		clusters.sort(function(x, y)
+		{
+			return Math.round(x.minY / 200) - Math.round(y.minY / 200) || x.minX - y.minX;
+		});
+
+		return clusters.map(function(c) { return c.ids; });
+	}
+
+	function areCellsOffscreen(graph, ids)
+	{
+		var container = graph.container;
+
+		if (container == null || ids.length == 0)
+		{
+			return false;
+		}
+
+		var vx1 = container.scrollLeft;
+		var vy1 = container.scrollTop;
+		var vx2 = vx1 + container.clientWidth;
+		var vy2 = vy1 + container.clientHeight;
+		var pad = 24;
+
+		for (var i = 0; i < ids.length; i++)
+		{
+			var r = cellRect(graph, ids[i]);
+
+			if (r != null && (r.x < vx1 + pad || r.y < vy1 + pad || r.x + r.width > vx2 - pad || r.y + r.height > vy2 - pad))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	function showCells(ids)
+	{
+		var graph = editorUi.editor.graph;
+		var container = graph.container;
+
+		if (container == null || ids.length == 0)
+		{
+			return;
+		}
+
+		if (savedBackView == null)
+		{
+			savedBackView = currentView(editorUi);
+		}
+
+		var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, found = false;
+
+		for (var i = 0; i < ids.length; i++)
+		{
+			var r = cellRect(graph, ids[i]);
+
+			if (r != null)
+			{
+				found = true;
+				if (r.x < minX) minX = r.x;
+				if (r.y < minY) minY = r.y;
+				if (r.x + r.width > maxX) maxX = r.x + r.width;
+				if (r.y + r.height > maxY) maxY = r.y + r.height;
+			}
+		}
+
+		if (!found)
+		{
+			return;
+		}
+
+		var cx = (minX + maxX) / 2;
+		var cy = (minY + maxY) / 2;
+		container.scrollLeft = Math.max(0, Math.round(cx - container.clientWidth / 2));
+		container.scrollTop = Math.max(0, Math.round(cy - container.clientHeight / 2));
+	}
+
+	function restoreBackView()
+	{
+		if (savedBackView == null)
+		{
+			return;
+		}
+
+		var view = savedBackView;
+		savedBackView = null;
+		var page = editorUi.getPageById(view.pageId) || editorUi.pages[view.pageIndex];
+
+		if (page != null && page != editorUi.currentPage)
+		{
+			editorUi.selectPage(page, true);
+		}
+
+		editorUi.editor.graph.view.setScale(view.scale);
+		editorUi.restoreScrollState(view.scroll);
+	}
 
 	function markCells(ids, kind, glow)
 	{

@@ -1738,6 +1738,59 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={ON_OFF_OPTIONS} value={settings.outsideListPinned} onChange={(outsideListPinned) => onChange({ ...settings, outsideListPinned })} ariaLabel="Pin default" />
             ),
           },
+          {
+            id: 'outsideOutlineThickness',
+            label: 'Board border thickness',
+            hint: 'How thick the dashed border around AI-changed shapes is on drawings.',
+            keywords: ['ai', 'agent', 'changed', 'border', 'thickness', 'drawing', 'board'],
+            render: ({ settings, onChange }) => (
+              <Segmented
+                options={[
+                  { value: 'thin' as const, label: 'Thin' },
+                  { value: 'normal' as const, label: 'Normal' },
+                  { value: 'thick' as const, label: 'Thick' },
+                ]}
+                value={settings.outsideOutlineThickness ?? 'normal'}
+                onChange={(outsideOutlineThickness) => onChange({ ...settings, outsideOutlineThickness })}
+                ariaLabel="Board border thickness"
+              />
+            ),
+          },
+          {
+            id: 'outsideOutlineColors',
+            label: 'Board border colors',
+            hint: 'Colors for shapes added, changed, or clashing on an open drawing.',
+            keywords: ['ai', 'agent', 'changed', 'border', 'color', 'colour', 'drawing', 'board'],
+            render: ({ settings, onChange }) => {
+              const colors = settings.outsideOutlineColors ?? { added: '#16a34a', changed: '#d97706', clash: '#dc2626' }
+              const setColor = (k: 'added' | 'changed' | 'clash', val: string) =>
+                onChange({ ...settings, outsideOutlineColors: { ...colors, [k]: val } })
+              return (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+                  {([['added', 'Added'], ['changed', 'Changed'], ['clash', 'Clash']] as const).map(([k, lbl]) => (
+                    <label key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
+                      <span>{lbl}</span>
+                      <input
+                        type="color"
+                        value={colors[k]}
+                        onChange={(e) => setColor(k, e.target.value)}
+                        aria-label={`${lbl} border color`}
+                        style={{ width: 22, height: 22, padding: 0, border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', cursor: 'pointer' }}
+                      />
+                    </label>
+                  ))}
+                  <button
+                    type="button"
+                    className="settings-btn"
+                    onClick={() => onChange({ ...settings, outsideOutlineColors: { added: '#16a34a', changed: '#d97706', clash: '#dc2626' } })}
+                    style={{ fontSize: 11, padding: '2px 7px' }}
+                  >
+                    Reset
+                  </button>
+                </div>
+              )
+            },
+          },
         ],
       },
       {
