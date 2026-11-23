@@ -38,16 +38,16 @@
       "$comment": "Unbundled node_modules files inside app.asar (must stay 0)."
     },
     "rendererEagerJsBytes": {
-      "max": 3035000,
-      "$comment": "Renderer entry JS static import closure bytes (measured 3,026,498 B on feat/yaz-5040-inline-excalidraw; raised with Yasin's OK)."
+      "max": 3055000,
+      "$comment": "Renderer entry JS static import closure bytes (measured 3,043,468 B after YAZ-6347 / PR #310; raised with Yasin's OK)."
     },
     "rendererEagerCssBytes": {
       "max": 305000,
       "$comment": "Renderer entry CSS static closure bytes (measured 300,285 B on feat/yaz-5993-11-20-pr; raised with Yasin's OK)."
     },
     "rendererTotalBytes": {
-      "max": 31800000,
-      "$comment": "Renderer out/ total bytes excluding excalidraw-assets (measured 31.47 MB on yaz-6008-speed)."
+      "max": 31900000,
+      "$comment": "Renderer out/ total bytes excluding excalidraw-assets (measured 31.80 MB after YAZ-6347 / PR #310; raised with Yasin's OK)."
     },
     "rendererMapBytes": {
       "max": 0,
