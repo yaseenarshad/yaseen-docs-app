@@ -54,7 +54,7 @@ describe('viewOnlyLinkTarget: the page side of the link (YAZ-4935)', () => {
     expect(viewOnlyLinkTarget('Page|words')).toBeNull()
   })
 
-  it('a view-only name is no ID, so words first keep the left side as the page: null, as for any name', () => {
-    expect(viewOnlyLinkTarget('the report|report.pdf')).toBeNull()
+  it('YAZ-6352: an embedded file on the right side resolves when the left side is plain words', () => {
+    expect(viewOnlyLinkTarget('the report|report.pdf')).toEqual({ page: 'report.pdf', raw: 'report.pdf', hasSubtarget: false })
   })
 })
