@@ -126,7 +126,8 @@ function handleLink(url: string): void {
     manager.linkNotice(`Can't open link: ${url}`)
     return
   }
-  manager.routeToFile(parsed.path, parsed.root, parsed.open)
+  if (parsed.open !== undefined) manager.routeToFile(parsed.path, parsed.root, parsed.open)
+  else manager.routeToFile(parsed.path, parsed.root)
 }
 
 /** macOS fires `open-url` before `ready` on cold start; Linux/Windows pass protocol URLs in `process.argv`. */

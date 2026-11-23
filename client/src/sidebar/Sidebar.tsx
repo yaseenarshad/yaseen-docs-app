@@ -409,7 +409,6 @@ interface SidebarProps {
   onInbox: (root: string) => void
   /** An Inbox row's "Open in new window" (YAZ-5054): App opens that vault's Inbox in a new window. Absent: no such item. */
   onInboxNewWindow?: (root: string) => void
-  /** Per-vault launcher icon data URLs for the vault switcher (YAZ-5967, YAZ-6375). */
   vaultIcons?: Record<string, string>
 }
 

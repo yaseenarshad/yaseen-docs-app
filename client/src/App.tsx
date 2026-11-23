@@ -14,6 +14,7 @@ import { Editor } from './editor/Editor'
 import { keepOutsideChangesOfTabs } from './editor/external/outsideChangesMemory'
 import { newPageBase } from './editor/wikilink/createFromLink'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
+import { useVaultLauncherIcons } from './hooks/useVaultLauncherIcons'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { onKeySheetRequest, placeOverTab } from './keys/keySheetRequest'
 import { useMenuEvents } from './hooks/useMenuEvents'
@@ -2808,17 +2809,7 @@ export function App() {
       if (added) moveBoardTab(from, storage.getWindowId(), ref)
     })
   }, [addVault, moveBoardTab])
-  // macOS Vault App launcher icons for Vault Switcher and Welcome (YAZ-5967, YAZ-6375).
-  const [launcherIcons, setLauncherIcons] = useState<Record<string, string>>({})
-  const refreshLauncherIcons = useCallback(() => {
-    if (typeof window.yaseenDocs?.vaultLauncher?.icons !== 'function') return
-    void api.vaultLauncher.icons().then(setLauncherIcons, () => undefined)
-  }, [])
-  useEffect(() => {
-    refreshLauncherIcons()
-  }, [refreshLauncherIcons])
-
-  // Target view requested by a macOS Vault App launcher (`?open=inbox` or `?open=today`, YAZ-5967, YAZ-6375).
+  const { launcherIcons, refreshLauncherIcons } = useVaultLauncherIcons()
   const [todayTarget, setTodayTarget] = useState<string | null>(null)
   const openTarget = useCallback(({ root: targetRoot, target }: { root: string; target: 'inbox' | 'today' }) => {
     if (target === 'inbox') takeInbox({ root: targetRoot })
