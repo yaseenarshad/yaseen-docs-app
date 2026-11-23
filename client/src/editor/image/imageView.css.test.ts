@@ -10,7 +10,7 @@ import { beats, rules, specificity } from '../cssRules'
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const imageCss = read('./imageView.css')
 
-const LONE_IMAGE_SELECTOR = ".milkdown p:has(> .image-view:only-child:not(.board-embed):not([data-outline-folded-image='true'])) > .image-view"
+const LONE_IMAGE_SELECTOR = ".milkdown .image-view[data-lone-image='true']:not(.board-embed):not([data-outline-folded-image='true'])"
 
 describe('imageView.css', () => {
   it('YAZ-6422: lone pictures align via --image-align-start/end, guard bullet nesting, and honor data-align overrides', () => {
@@ -28,7 +28,7 @@ describe('imageView.css', () => {
     expect(lone!.body).not.toContain('!important')
     expect(beats(specificity(lone!.selector), specificity(baseInline!.selector))).toBe(true)
 
-    const bulletGuard = rules(imageCss, 'li p:has(> .image-view:only-child:not(.board-embed):not([data-outline-folded-image=\'true\'])) > .image-view:not([data-align])').find((r) =>
+    const bulletGuard = rules(imageCss, "li .image-view[data-lone-image='true']:not(.board-embed):not([data-outline-folded-image='true']):not([data-align])").find((r) =>
       /margin-inline:\s*0 auto/.test(r.body),
     )
     expect(bulletGuard).toBeDefined()

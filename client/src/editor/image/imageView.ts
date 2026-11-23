@@ -69,8 +69,8 @@
  */
 import { imageSchema } from '@milkdown/kit/preset/commonmark'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { NodeSelection, Plugin, Selection } from '@milkdown/kit/prose/state'
-import type { Decoration, EditorView, NodeView, ViewMutationRecord } from '@milkdown/kit/prose/view'
+import { NodeSelection, Plugin, PluginKey, Selection } from '@milkdown/kit/prose/state'
+import { Decoration, DecorationSet, type EditorView, type NodeView, type ViewMutationRecord } from '@milkdown/kit/prose/view'
 import { $prose, $view } from '@milkdown/kit/utils'
 import { optionsPipe, optionsSuffix, parseEmbedOptions, type EmbedAlign, type EmbedOptions } from '@shared/embedOptions'
 import { fileKind } from '@shared/fileKind'
@@ -98,6 +98,8 @@ export const IMAGE_SELECTED_CLASS = 'is-selected'
  * (`data-outline-foldable-image`) and what a press does.
  */
 export const IMAGE_FOLD_CLASS = 'image-view__fold'
+/** Node decoration attribute on a lone non-board picture in a paragraph (YAZ-6425); CSS aligns only these. */
+export const LONE_IMAGE_ATTR = 'data-lone-image'
 
 /** Narrower than this and the handles cover the image; the drag clamps here. */
 export const MIN_WIDTH = 40
@@ -514,15 +516,39 @@ const boardWindows = new WeakMap<Node, () => BoardWindowHandle | null>()
 /** The board images of each editor view: a page that turns read-only tells their windows (item 24), as the text host does. */
 const boardViews = new WeakMap<EditorView, Set<() => BoardWindowHandle | null>>()
 
+const imageBoardKeysKey = new PluginKey<DecorationSet>('mdapp-image-board-keys')
+
+function loneImageDecorations(doc: ProseNode): DecorationSet {
+  const decos: Decoration[] = []
+  doc.descendants((node, pos) => {
+    if (node.type.name !== 'paragraph') return true
+    if (node.childCount === 1) {
+      const child = node.firstChild
+      if (child !== null && child.type.name === 'image' && !isBoardSrc((child.attrs.src as string | undefined) ?? '')) {
+        decos.push(Decoration.node(pos + 1, pos + 1 + child.nodeSize, { [LONE_IMAGE_ATTR]: 'true' }))
+      }
+    }
+    return false
+  })
+  return DecorationSet.create(doc, decos)
+}
+
 /**
  * The keys of a selected board image (an embed from another vault, D1), as `boardEmbed.ts` has them for `![[…]]`: the
  * editor keeps the focus, so ⌘+ ⌘− ⌘0 and Shift+1 come here and go to that image's window; Escape first deselects it,
  * the caret after the node (item 20, A2), before the page's Escape leaves for the sidebar. Its plugin view tells the
- * windows when the page turns read-only or editable (item 24).
+ * windows when the page turns read-only or editable (item 24). Also marks each lone non-board picture with
+ * `data-lone-image="true"` so CSS aligns lone pictures without relying on `:only-child` (which ignores text nodes and
+ * breaks on ProseMirror's separator/trailing-break siblings).
  */
 export const imageBoardKeys = $prose(
   () =>
-    new Plugin({
+    new Plugin<DecorationSet>({
+      key: imageBoardKeysKey,
+      state: {
+        init: (_config, state) => loneImageDecorations(state.doc),
+        apply: (tr, prev) => (tr.docChanged ? loneImageDecorations(tr.doc) : prev),
+      },
       view: (editorView) => {
         let editable = editorView.editable
         return {
@@ -534,6 +560,7 @@ export const imageBoardKeys = $prose(
         }
       },
       props: {
+        decorations: (state) => imageBoardKeysKey.getState(state),
         handleKeyDown: (view, event) => {
           const sel = view.state.selection
           if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'image') return false

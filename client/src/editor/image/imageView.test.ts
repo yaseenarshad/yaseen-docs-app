@@ -396,6 +396,16 @@ describe('update', () => {
     expect(imgOf(root)).toBe(img)
     expect(viewEl(root)?.hasAttribute('data-align')).toBe(false)
   })
+
+  it('marks a lone picture with data-lone-image="true" and clears it when text sits beside the picture (YAZ-6425)', async () => {
+    const { root, view } = await mount('![alt](images/a.png)\n')
+    expect(viewEl(root)?.getAttribute('data-lone-image')).toBe('true')
+    const pos = imagePos(view)
+    view.dispatch(view.state.tr.insertText('caption ', pos))
+    expect(viewEl(root)?.hasAttribute('data-lone-image')).toBe(false)
+    view.dispatch(view.state.tr.delete(pos, pos + 'caption '.length))
+    expect(viewEl(root)?.getAttribute('data-lone-image')).toBe('true')
+  })
 })
 
 describe('ignoreMutation', () => {
