@@ -117,6 +117,52 @@ describe('the board`s right-click menu: Save to library… (YAZ-4157 demo 6L)', 
     expect(press.defaultPrevented).toBe(false)
   })
 
+  it('YAZ-6330: a hidden tab (visibility: hidden) and a background tab under .drawing-modal-overlay leave ⌘F alone', async () => {
+    await renderWithPanel(false)
+    const surface = container!.querySelector<HTMLElement>('.drawing-surface')!
+    surface.getClientRects = () => [{}] as unknown as DOMRectList
+    const sidebar = () => (last().children as { props: { searchFocusPending: boolean } }).props
+
+    // Hidden tab (visibility: hidden on an ancestor or the surface itself).
+    container!.style.visibility = 'hidden'
+    const hiddenPress = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+    await act(async () => void document.body.dispatchEvent(hiddenPress))
+    expect(hiddenPress.defaultPrevented).toBe(false)
+    expect(sidebar().searchFocusPending).toBe(false)
+    container!.style.visibility = ''
+
+    // Background tab while a .drawing-modal-overlay is open elsewhere in the DOM.
+    const modal = document.createElement('div')
+    modal.className = 'drawing-modal-overlay'
+    document.body.appendChild(modal)
+    try {
+      const underModalPress = new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true })
+      await act(async () => void document.body.dispatchEvent(underModalPress))
+      expect(underModalPress.defaultPrevented).toBe(false)
+      expect(sidebar().searchFocusPending).toBe(false)
+    } finally {
+      modal.remove()
+    }
+  })
+
+  it('YAZ-6330: DrawingSurfaceApi.openAddSearch() opens the Add tab and requests search focus', async () => {
+    let handle: import('./ExcalidrawSurface').DrawingSurfaceApi | null = null
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onCanvasPanelChange={() => undefined} onApi={(a) => (handle = a)} />)
+    })
+    const toggleSidebar = vi.fn()
+    const raw = { getAppState: () => ({ defaultSidebarDockedPreference: false }), toggleSidebar, updateFrameRendering: vi.fn(), updateScene: vi.fn() }
+    await act(async () => (last().onExcalidrawAPI as (a: unknown) => void)(raw))
+    const sidebar = () => (last().children as { props: { searchFocusPending: boolean } }).props
+    expect(sidebar().searchFocusPending).toBe(false)
+    await act(async () => handle!.openAddSearch())
+    expect(sidebar().searchFocusPending).toBe(true)
+    expect(toggleSidebar).toHaveBeenCalledWith({ name: CANVAS_SIDEBAR, tab: 'image-studio', force: true })
+  })
+
   it('the panel`s edge: the arrow keys step 16 px, a drag stops at 260 and 720 px, and each stores the width (demo 6C)', async () => {
     const onCanvasPanelChange = vi.fn()
     container ??= document.createElement('div')

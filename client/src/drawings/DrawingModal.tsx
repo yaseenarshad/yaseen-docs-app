@@ -46,13 +46,18 @@
 import { lazy, Suspense, useCallback, useContext, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
+import type { CanvasPanelState } from '@shared/types'
 import { api } from '../api'
 import { setPlaceOverTab } from '../keys/keySheetRequest'
 import { ConflictBar } from '../documents/ConflictBar'
+import { exportWithNotice } from '../documents/useDocumentHost'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
+import { basename } from '../lib/paths'
+import { pressed } from './drawingKeys'
 import { openDrawing, openInlineDrawing, type LoadedDrawing } from './drawingScene'
-import type { DrawingAppSettings, DrawingSnapshot } from './ExcalidrawSurface'
+import { exportFileName } from './exportDrawing'
+import type { DrawingAppSettings, DrawingSnapshot, DrawingSurfaceApi } from './ExcalidrawSurface'
 import { PICTURES_MOVED_OUT, saveDrawing, saveErrorMessage } from './saveDrawing'
 import { missingPicturesNotice, picturesFolderOutside, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
 import { compactInlineScene } from '@shared/inlineDrawing'
@@ -75,6 +80,11 @@ export const BROKEN_DRAWING_MESSAGE = "This drawing can't be opened: its file is
 
 /** The inline confirm's copy (an in-modal strip, not a sheet), asked only when a save failed or a conflict blocks it. */
 export const DISCARD_PROMPT = 'Changes are not saved. Discard them?'
+
+const FORGET_PANEL = (): void => undefined
+const EXPORT_FAILED = "The Excalidraw drawing couldn't be exported."
+const PDF_FAILED = "The PDF couldn't be exported."
+const INNER_ESCAPE_SELECTOR = '.excalidraw-sidebar, .presentation-player, .Modal, .excalidraw .Dialog'
 
 /** Inline mode (YAZ-5040): edits a ```` ```excalidraw ```` block inside a `.md` page instead of a standalone `.excalidraw` file. */
 export interface InlineDrawingModalProps {
@@ -101,6 +111,12 @@ export interface DrawingModalProps extends DrawingLinkProps, DrawingAppSettings 
   theme: 'light' | 'dark'
   /** Close: the host drops the modal (it is unmounted, never hidden). */
   onClose: () => void
+  /** Opens the resolved `.excalidraw` file in a tab (standalone popup mode). */
+  onOpenInTab?: (path: string) => void | Promise<void>
+  /** What the canvas panel remembers (`SettingsState.canvasPanel`). */
+  canvasPanel?: CanvasPanelState
+  /** Persists canvas panel choices (`tab`, `docked`, `width`). */
+  onCanvasPanelChange?: (next: CanvasPanelState) => void
   /** `settings.hotkeys` (YAZ-3564 K5): the drawing keys as the user set them. Omitted = the defaults. */
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
@@ -109,15 +125,23 @@ export interface DrawingModalProps extends DrawingLinkProps, DrawingAppSettings 
   onNotice?: (message: string, icon?: NoticeKind) => void
 }
 
-export function DrawingModal({ root, target = '', inline, theme, onClose, hotkeys, hotkeysAside, onNotice, canvasPrefs, onCanvasPrefsChange, ...linkProps }: DrawingModalProps) {
+export function DrawingModal({ root, target = '', inline, theme, onClose, onOpenInTab, hotkeys, hotkeysAside, onNotice, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, ...linkProps }: DrawingModalProps) {
   const inlineRef = useRef(inline)
   inlineRef.current = inline
+  const onOpenInTabRef = useRef(onOpenInTab)
+  onOpenInTabRef.current = onOpenInTab
   const isInline = inline !== undefined
   const inlinePagePath = inline?.pagePath
   const overlayRef = useRef<HTMLDivElement>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
+  const menuWrapRef = useRef<HTMLDivElement>(null)
+  const surface = useRef<DrawingSurfaceApi | null>(null)
+  const onApi = useCallback((a: DrawingSurfaceApi) => {
+    surface.current = a
+  }, [])
   /** The sheet: the link menu, the Edit link box and the `[[` picker go in it, so a click on them is not a click-away. */
   const sheetRef = useRef<HTMLDivElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [loaded, setLoaded] = useState<LoadedDrawing | null>(null)
   const loadedRef = useRef<LoadedDrawing | null>(null)
   loadedRef.current = loaded
@@ -138,9 +162,21 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, hotkey
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [inlineTitle, setInlineTitle] = useState(inline?.title ?? '')
+  const inlineTitleRef = useRef(inlineTitle)
+  inlineTitleRef.current = inlineTitle
   useEffect(() => {
     setInlineTitle(inline?.title ?? '')
   }, [inline?.title])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onMouseDown = (e: MouseEvent) => {
+      if (menuWrapRef.current !== null && e.target instanceof Node && menuWrapRef.current.contains(e.target)) return
+      setMenuOpen(false)
+    }
+    window.addEventListener('mousedown', onMouseDown, true)
+    return () => window.removeEventListener('mousedown', onMouseDown, true)
+  }, [menuOpen])
   /** The disk's mtime while the conflict bar is up (YAZ-3044 A4); null when there is no conflict. */
   const [conflict, setConflict] = useState<number | null>(null)
   /** Bumped by Reload so the surface remounts on the disk's scene (it reads `scene` once, on mount). */
@@ -365,10 +401,73 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, hotkey
     }
   }
 
-  /** Inline mode (YAZ-6134): flushes pending edits (same as closing), closes the modal, and opens the drawing in a tab. */
+  const exportBaseName = useCallback((): string => {
+    if (isInline) {
+      const title = inlineTitleRef.current.trim()
+      return title !== '' ? `${title}.excalidraw` : basename(inlinePagePath ?? 'drawing')
+    }
+    return basename(loadedRef.current?.path ?? target)
+  }, [isInline, inlinePagePath, target])
+
+  const exportDrawing = async (): Promise<void> => {
+    const s = surface.current
+    if (s === null || left.current) return
+    await exportWithNotice(async () => api.dialog.saveDrawing({ defaultName: exportFileName(exportBaseName()), content: await s.exportScene() }), EXPORT_FAILED, onNotice)
+  }
+
+  const exportPdf = useCallback(
+    async (svg: string, size: { width: number; height: number }): Promise<void> => {
+      if (left.current) return
+      await exportWithNotice(() => api.dialog.savePdf({ defaultName: exportFileName(exportBaseName(), 'pdf'), svg, width: size.width, height: size.height }), PDF_FAILED, onNotice)
+    },
+    [exportBaseName, onNotice],
+  )
+
+  /** Inline mode: flushes pending edits, serializes compact scene, and moves the inline drawing to its own `.excalidraw` file. */
+  const moveToFile = async (): Promise<void> => {
+    const onMoveToFile = inlineRef.current?.onMoveToFile
+    if (onMoveToFile === undefined || closing.current || left.current) return
+    closing.current = true
+    try {
+      const a = autosave.current
+      if (a !== null) {
+        await a.flush()
+        const failed = (): boolean => statusRef.current === 'error' || conflictRef.current !== null
+        if (a.dirty && !failed()) await a.flush()
+        if (left.current) return
+        if (a.dirty) {
+          setConfirming(true)
+          return
+        }
+      }
+      let compactJson = inlineRef.current!.json
+      const current = snapshot.current
+      if (current !== null) {
+        const { json, files, referenced } = current.serialize()
+        const newFiles = unpersistedFiles(files, referenced, persisted.current)
+        if (newFiles.length > 0) {
+          const res = await api.drawing.landAssets({ root, newFiles })
+          for (const id of res.persisted) persisted.current.add(id)
+        }
+        compactJson = compactInlineScene(json).json
+      }
+      await onMoveToFile(compactJson)
+      left.current = true
+      autosave.current?.dispose()
+    } catch {
+      // Host reports the failure notice; keep the modal open so edits are not lost.
+    } finally {
+      closing.current = false
+    }
+  }
+
+  /** Flushes pending edits (same as closing), closes the modal, and opens the drawing in a tab (inline or standalone). */
   const openInTab = async (): Promise<void> => {
-    const onOpenInTab = inlineRef.current?.onOpenInTab
-    if (onOpenInTab === undefined || closing.current || left.current) return
+    const inlineOpen = inlineRef.current?.onOpenInTab
+    const standaloneOpen = onOpenInTabRef.current
+    const drawingPath = loadedRef.current?.path
+    const run = isInline ? inlineOpen : standaloneOpen !== undefined && drawingPath !== undefined ? () => standaloneOpen(drawingPath) : undefined
+    if (run === undefined || closing.current || left.current) return
     const a = autosave.current
     if (a !== null) {
       closing.current = true
@@ -384,16 +483,54 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, hotkey
     }
     left.current = true
     onClose()
-    await onOpenInTab()
+    await run()
+  }
+
+  const onKeyDownCapture = (e: ReactKeyboardEvent): void => {
+    if (pressed(e, 'drawing.saveNow', hotkeys)) {
+      e.preventDefault()
+      e.stopPropagation()
+      void autosave.current?.flush()
+    }
   }
 
   const onKeyDown = (e: ReactKeyboardEvent): void => {
+    if (!e.repeat && !e.nativeEvent.isComposing && pressed(e, 'drawing.imagesPanel', hotkeys)) {
+      const t = e.target
+      const inSurface = t instanceof Element && t.closest('.drawing-surface') !== null
+      const editable =
+        t instanceof HTMLInputElement ||
+        t instanceof HTMLTextAreaElement ||
+        t instanceof HTMLSelectElement ||
+        (t instanceof HTMLElement && (t.isContentEditable || t.closest("[contenteditable='true']") !== null))
+      if (!inSurface && !editable) {
+        e.preventDefault()
+        e.stopPropagation()
+        surface.current?.openAddSearch()
+        return
+      }
+    }
     if (e.key !== 'Escape') return
+    if (menuOpen) {
+      e.preventDefault()
+      e.stopPropagation()
+      setMenuOpen(false)
+      return
+    }
+    // While the strip is up, Esc answers IT — a second Esc must not skip the question.
+    if (confirming) {
+      e.preventDefault()
+      e.stopPropagation()
+      setConfirming(false)
+      return
+    }
+    if (e.defaultPrevented) return
+    const inInner = e.target instanceof Element && e.target.closest(INNER_ESCAPE_SELECTOR) !== null
+    const hasInner = sheetRef.current?.querySelector(INNER_ESCAPE_SELECTOR) !== null
+    if (inInner || hasInner) return
     e.preventDefault()
     e.stopPropagation()
-    // While the strip is up, Esc answers IT — a second Esc must not skip the question.
-    if (confirming) setConfirming(false)
-    else void requestClose()
+    void requestClose()
   }
 
   const onTitleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
@@ -405,8 +542,10 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, hotkey
     }
   }
 
+  const canOpenInTab = isInline ? inline?.onOpenInTab !== undefined : onOpenInTab !== undefined
+
   return (
-    <div ref={overlayRef} className="drawing-modal-overlay" tabIndex={-1} onMouseDown={() => void requestClose()} onKeyDown={onKeyDown}>
+    <div ref={overlayRef} className="drawing-modal-overlay" tabIndex={-1} onMouseDown={() => void requestClose()} onKeyDownCapture={onKeyDownCapture} onKeyDown={onKeyDown}>
       <div ref={sheetRef} className="drawing-modal" role="dialog" aria-modal="true" aria-label={isInline ? (inlineTitle.trim() || 'Inline drawing') : `Drawing ${target}`} onMouseDown={(e) => e.stopPropagation()}>
         <header className="drawing-modal__bar">
           {isInline ? (
@@ -431,12 +570,70 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, hotkey
             </span>
           )}
           {loaded !== null && !readOnly && <SaveIndicator status={status} />}
-          {loaded !== null && inline?.onOpenInTab !== undefined && (
-            <button type="button" className="drawing-modal__btn" onClick={() => void openInTab()}>
-              Open in tab
+          {loaded !== null && (
+            <div ref={menuWrapRef} className="drawing-modal__more">
+              <button
+                type="button"
+                className="drawing-modal__icon-btn"
+                aria-label="Drawing actions"
+                title="Drawing actions"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setMenuOpen((v) => !v)}
+              >
+                ⋯
+              </button>
+              {menuOpen && (
+                <div className="drawing-modal__menu" role="menu">
+                  <button
+                    type="button"
+                    className="drawing-modal__menu-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      surface.current?.openImageExport()
+                    }}
+                  >
+                    Export Image or PDF…
+                  </button>
+                  <button
+                    type="button"
+                    className="drawing-modal__menu-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      void exportDrawing()
+                    }}
+                  >
+                    Export Excalidraw Drawing…
+                  </button>
+                  {isInline && !readOnly && inline?.onMoveToFile !== undefined && (
+                    <>
+                      <div className="drawing-modal__menu-divider" role="separator" />
+                      <button
+                        type="button"
+                        className="drawing-modal__menu-item"
+                        role="menuitem"
+                        onClick={() => {
+                          setMenuOpen(false)
+                          void moveToFile()
+                        }}
+                      >
+                        Move to its own file
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {loaded !== null && canOpenInTab && (
+            <button type="button" className="drawing-modal__icon-btn" aria-label="Open in tab" title="Open in tab" onClick={() => void openInTab()}>
+              ↗
             </button>
           )}
-          <button type="button" className="drawing-modal__btn drawing-modal__close" aria-label="Close drawing" onClick={() => void requestClose()}>
+          <button type="button" className="drawing-modal__icon-btn drawing-modal__close" aria-label="Close drawing" title="Close drawing" onClick={() => void requestClose()}>
             ✕
           </button>
         </header>
@@ -460,7 +657,7 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, hotkey
         <div className="drawing-modal__canvas">
           {loaded !== null && (
             <Suspense fallback={null}>
-              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} onSnapshot={onSnapshot} onFailed={setError} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} links={links} foldArrows={loaded.scene.foldArrows} hoverOutline={loaded.scene.hoverOutline} />
+              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} canvasPanel={canvasPanel} onCanvasPanelChange={onCanvasPanelChange} onSnapshot={onSnapshot} onFailed={setError} onApi={onApi} onExportPdf={exportPdf} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} links={links} foldArrows={loaded.scene.foldArrows} hoverOutline={loaded.scene.hoverOutline} />
             </Suspense>
           )}
         </div>
