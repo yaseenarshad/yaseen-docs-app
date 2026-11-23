@@ -2486,6 +2486,11 @@ export interface SettingsState {
    * cards read anywhere: `data-table-position` on `.app`, one rule in `table.css`. The file never changes.
    */
   tablePosition: TablePosition
+  /**
+   * Settings › Drawings and diagrams › Embeds in pages › Drawing position (YAZ-6354): `left` (default) or `center`
+   * for inline drawings, embedded drawings, and draw.io diagrams in pages.
+   */
+  drawingPosition: TablePosition
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
   /**
@@ -3239,7 +3244,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   commentsOrder: 'oldest',
   commentsResolved: 'bottom',
   commentsHint: true,
-  cardSkillInSidebar: true,
+  /** Show the built-in Card skill vault in the sidebar (default Hide; only applies when Cards are on in a vault). */
+  cardSkillInSidebar: false,
   profile: null,
   sidebarSort: DEFAULT_SIDEBAR_SORT,
   searchSort: DEFAULT_SEARCH_SORT,
@@ -3289,6 +3295,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableStickyHeader: true,
   tableTextInCells: 'wrap',
   tablePosition: 'left',
+  drawingPosition: 'left',
   tableNowMark: 'line',
   tableNextShade: false,
   tableNextColour: 'red',
@@ -3631,6 +3638,93 @@ export interface FolderState {
    * at midnight). Persisted, per machine; another Mac does not see it. Additive: absent = none.
    */
   added?: CardsAdded
+  /**
+   * macOS Vault App launcher metadata (YAZ-5967, YAZ-6374): custom `.app` launcher bundle and cached 512x512 PNG icon
+   * for this vault. Persisted, per machine; additive (old builds ignore it). Absent = no launcher.
+   */
+  launcher?: VaultLauncherInfo
+}
+
+/** Optional view opened when launching a vault via its macOS `.app` launcher (YAZ-5967). */
+export type VaultLauncherTarget = 'normal' | 'inbox' | 'today'
+
+/** Badge icon recipe saved alongside a vault launcher so the editor can prefill on edit (YAZ-5967). */
+export interface VaultLauncherBadge {
+  kind: 'emoji' | 'letters' | 'material'
+  value: string
+  color: string
+}
+
+/** Per-Mac metadata for a vault's `.app` launcher (YAZ-5967, YAZ-6374). */
+export interface VaultLauncherInfo {
+  name: string
+  appPath: string
+  iconPath: string
+  target?: VaultLauncherTarget
+  badge?: VaultLauncherBadge
+}
+
+/** Status returned by `vaultLauncher.status` and `vaultLauncher.create` (YAZ-6374). */
+export interface VaultLauncherStatus {
+  supported: boolean
+  launcher: VaultLauncherInfo | null
+  exists: boolean
+  iconDataUrl: string | null
+}
+
+/** Request payload for `vaultLauncher.create` (YAZ-6374). */
+export interface CreateVaultLauncherRequest {
+  root: string
+  name: string
+  pngBase64: string
+  target?: VaultLauncherTarget
+  badge?: VaultLauncherBadge
+}
+
+/** Request payload for `vaultLauncher.createWorkspace`. */
+export interface CreateWorkspaceLauncherRequest {
+  workspaceId: string
+  name: string
+  pngBase64: string
+  badge?: VaultLauncherBadge
+}
+
+const VAULT_LAUNCHER_TARGETS = ['normal', 'inbox', 'today'] as const
+const VAULT_LAUNCHER_BADGE_KINDS = ['emoji', 'letters', 'material'] as const
+
+/** Pure (the store and the bridge): a valid `VaultLauncherInfo`, or null. */
+export function cleanVaultLauncher(raw: unknown): VaultLauncherInfo | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const r = raw as Record<string, unknown>
+  const name = cleanVaultName(r.name)
+  if (name === null) return null
+  if (typeof r.appPath !== 'string' || !r.appPath.startsWith('/') || r.appPath.includes('\0')) return null
+  if (typeof r.iconPath !== 'string' || !r.iconPath.startsWith('/') || r.iconPath.includes('\0')) return null
+  const out: VaultLauncherInfo = {
+    name,
+    appPath: r.appPath,
+    iconPath: r.iconPath,
+  }
+  if (typeof r.target === 'string' && (VAULT_LAUNCHER_TARGETS as readonly string[]).includes(r.target)) {
+    out.target = r.target as VaultLauncherTarget
+  }
+  if (typeof r.badge === 'object' && r.badge !== null && !Array.isArray(r.badge)) {
+    const b = r.badge as Record<string, unknown>
+    const kind = b.kind
+    const value = typeof b.value === 'string' ? b.value.trim() : ''
+    const color = b.color
+    if (
+      typeof kind === 'string' &&
+      (VAULT_LAUNCHER_BADGE_KINDS as readonly string[]).includes(kind) &&
+      value.length > 0 &&
+      value.length <= 64 &&
+      typeof color === 'string' &&
+      /^#[0-9a-f]{6}$/i.test(color)
+    ) {
+      out.badge = { kind: kind as VaultLauncherBadge['kind'], value, color }
+    }
+  }
+  return out
 }
 
 /** The Up next marks an answer took off on one day (YAZ-5028): at most `MAX_UP_NEXT_TAKEN` card IDs. */
@@ -3669,7 +3763,9 @@ export function cleanCardsAdded(raw: unknown): CardsAdded | null {
 }
 
 /** What `state.setFolder` may merge into a bucket — every other field has its own targeted mutator. */
-export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key' | 'in' | 'upNext' | 'added'>>
+export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key' | 'in' | 'upNext' | 'added'>> & {
+  launcher?: VaultLauncherInfo | null
+}
 
 /** Pure: `folders` with `key` taken from the vault that has it (YAZ-2555 D2: one vault per number) — shared by the client cache and the main store. */
 export function freeVaultKey(folders: Record<string, FolderState>, key: number): Record<string, FolderState> {
@@ -3692,6 +3788,8 @@ export interface VaultSet {
   roots: string[]
   /** When it was last saved or opened (ms); 0 = not known. */
   lastUsed: number
+  /** Per-Mac macOS `.app` launcher metadata for this workspace. Absent = no launcher. */
+  launcher?: VaultLauncherInfo
 }
 
 /** What `window.openSet` answers (YAZ-2602 S66): `missing` is the set's vaults whose folder is gone, as absolute paths; `opened: false` = none is left, and no window opened. */

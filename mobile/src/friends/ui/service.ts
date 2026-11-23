@@ -1305,15 +1305,22 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       try {
         const res = await api.acceptInvite(parsed.code)
         if (res.kind === 'friend') {
+          if (res.alreadyFriends) {
+            return { kind: 'already', name: 'This person', paired: true } as unknown as PasteAnswer
+          }
           return { kind: 'added', name: 'Your friend', paired: true, sendBack: null } as unknown as PasteAnswer
         }
-        return { kind: 'joined', name: gistText(res.name, 30) || 'Group', group: res.groupId, sendToAdmin: '' } as unknown as PasteAnswer
+        const groupName = gistText(res.name, 30) || 'Group'
+        if (res.alreadyMember) {
+          return { kind: 'already', name: groupName, sendToAdmin: null } as unknown as PasteAnswer
+        }
+        return { kind: 'joined', name: groupName, group: res.groupId, sendToAdmin: '' } as unknown as PasteAnswer
       } catch (err) {
         if (err instanceof FriendsApiError) {
           if (err.code === 'invite_not_found' || err.code === 'invite_expired') return { kind: 'not-found' }
-          if (err.code === 'cannot_add_self') return { kind: 'own-link' }
-          if (err.code === 'already_friends') return { kind: 'already', name: 'This person' }
-          if (err.code === 'already_member') return { kind: 'already', name: 'this group' }
+          if (err.code === 'self_invite' || err.code === 'cannot_add_self') return { kind: 'own-link' }
+          if (err.code === 'already_friends') return { kind: 'already', name: 'This person', paired: true } as unknown as PasteAnswer
+          if (err.code === 'already_member') return { kind: 'already', name: 'this group', sendToAdmin: null } as unknown as PasteAnswer
         }
         return mapApiError(err)
       }

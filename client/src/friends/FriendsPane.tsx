@@ -35,8 +35,55 @@ export interface FriendsPaneProps {
   onBack: () => void
   onNotice?: (message: string) => void
   onBoardLoaded?: (board: FriendsBoardPayload) => void
-  pendingInvite?: { kind: 'friend' | 'group'; code: string } | null
+  pendingInvite?: {
+    kind: 'friend' | 'group'
+    code: string
+    status?: 'accepted' | 'pending-auth' | 'error'
+    result?: unknown
+    error?: string
+  } | null
   onClearPendingInvite?: () => void
+}
+
+/** Plain-English message for a D1 Friends invite API error code (YAZ-6372). */
+export function friendlyInviteError(code: string): string {
+  switch (code) {
+    case 'invite_not_found':
+      return 'This invite link is no longer valid. Ask for a new one.'
+    case 'invite_expired':
+      return 'This invite link has expired. Ask for a new one.'
+    case 'self_invite':
+    case 'cannot_add_self':
+      return 'That is your own invite link.'
+    case 'blocked':
+      return 'Unable to accept this invite link.'
+    case 'banned':
+      return 'You cannot join this group.'
+    case 'bad_code':
+      return 'Paste a valid friend link, group link, or invite code.'
+    case 'signed_out':
+    case 'unauthorized':
+      return 'Sign in with GitHub first to accept this invite.'
+    case 'rate_limited':
+      return 'Too many requests. Try again in a few minutes.'
+    default:
+      return /^[a-z0-9_]+$/i.test(code) ? 'Could not accept invite link. Try again.' : code
+  }
+}
+
+/** Plain-English notice for a successful invite acceptance result (YAZ-6372). */
+export function friendlyInviteSuccess(result: unknown): string {
+  if (result && typeof result === 'object') {
+    const r = result as { kind?: unknown; name?: unknown; alreadyMember?: unknown; alreadyFriends?: unknown }
+    if (r.kind === 'group') {
+      const name = typeof r.name === 'string' && r.name.trim() ? r.name.trim() : 'group'
+      return r.alreadyMember === true ? `You are already in ${name}.` : `Joined ${name}.`
+    }
+    if (r.kind === 'friend') {
+      return r.alreadyFriends === true ? 'You are already friends.' : 'Friend added!'
+    }
+  }
+  return 'Invite accepted!'
 }
 
 const PERIODS: readonly { id: BoardPeriod; label: string }[] = [
@@ -474,10 +521,25 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
   // Handle deep-link invite (yaseendocs://friend#<code> or yaseendocs://group#<code>)
   useEffect(() => {
     if (!pendingInvite) return
+    if (pendingInvite.status === 'accepted') {
+      onNotice?.(friendlyInviteSuccess(pendingInvite.result))
+      void loadBoard(true)
+      onClearPendingInvite?.()
+      return
+    }
+    if (pendingInvite.status === 'pending-auth') {
+      onClearPendingInvite?.()
+      return
+    }
+    if (pendingInvite.status === 'error') {
+      onNotice?.(friendlyInviteError(pendingInvite.error ?? 'Could not accept invite link.'))
+      onClearPendingInvite?.()
+      return
+    }
     setInviteInput(pendingInvite.code)
     setEnterLinkOpen(true)
     onClearPendingInvite?.()
-  }, [pendingInvite, onClearPendingInvite])
+  }, [pendingInvite, onClearPendingInvite, onNotice, loadBoard])
 
   const handleSignIn = async () => {
     if (signingIn) return
@@ -525,12 +587,12 @@ export function FriendsPane({ vaultRoot, onBack, onNotice, onBoardLoaded, pendin
     try {
       const res = await api.friends.acceptInvite(parsed.code)
       if (!res.ok) {
-        setInviteError(res.error)
+        setInviteError(friendlyInviteError(res.error))
         return
       }
       setInviteInput('')
       setEnterLinkOpen(false)
-      onNotice?.('Invite accepted!')
+      onNotice?.(friendlyInviteSuccess(res.result))
       await loadBoard(true)
     } catch (err) {
       setInviteError(err instanceof Error ? err.message : 'Could not accept invite.')

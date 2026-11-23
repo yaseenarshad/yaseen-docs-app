@@ -251,7 +251,9 @@ export function useInlineDrawing(host: InlineDrawingHost): {
     const { state } = view
     const type = state.schema.nodes.code_block
     if (type === undefined) return
-    const node = type.create({ language: DRAWING_LANGUAGE, drawingLine: NEW_INLINE_DRAWING_LINE }, state.schema.text(EMPTY_INLINE_SCENE_JSON))
+    const defaultTitle = hostRef.current.title().trim()
+    const drawingLine = withDrawingTitle(NEW_INLINE_DRAWING_LINE, defaultTitle) ?? NEW_INLINE_DRAWING_LINE
+    const node = type.create({ language: DRAWING_LANGUAGE, drawingLine }, state.schema.text(EMPTY_INLINE_SCENE_JSON))
     const { $from } = state.selection
     const replaceEmptyParagraph = $from.parent.type.name === 'paragraph' && $from.parent.content.size === 0 && $from.depth >= 1
     let tr: Transaction

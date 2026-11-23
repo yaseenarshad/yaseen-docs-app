@@ -271,7 +271,13 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   // YAZ-6220: Friends in-place toggle inside CardInbox (zero extra sidebar rows).
   const [showFriendsBtn, setShowFriendsBtn] = useState(() => FRIENDS_ENABLED && readShowFriendsInInbox())
   const [friendsOpen, setFriendsOpen] = useState(false)
-  const [pendingInvite, setPendingInvite] = useState<{ kind: 'friend' | 'group'; code: string } | null>(null)
+  const [pendingInvite, setPendingInvite] = useState<{
+    kind: 'friend' | 'group'
+    code: string
+    status?: 'accepted' | 'pending-auth' | 'error'
+    result?: unknown
+    error?: string
+  } | null>(null)
   const [shareCard, setShareCard] = useState<{ title: string; markdown: string } | null>(null)
   const [friendsMeta, setFriendsMeta] = useState<{ friendsCount: number; finishedToday: number; myStreak: number } | null>(null)
 
@@ -491,7 +497,13 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
         return
       }
       if (key.kind === 'scroll') {
-        if (!moreOpen && rootRef.current !== null) arrowGlide(rootRef.current, key.delta)
+        if (!moreOpen && rootRef.current !== null) {
+          const moved = arrowGlide(rootRef.current, key.delta)
+          // YAZ-6393: a fresh Down tap at the bottom opens the next side directly without revealing hidden blanks.
+          if (!moved && key.delta > 0 && !event.repeat && live.current.steps.openNextSide()) {
+            tourEvent('inbox-step-shown', card.path)
+          }
+        }
         return
       }
       if (key.kind === 'answer') {

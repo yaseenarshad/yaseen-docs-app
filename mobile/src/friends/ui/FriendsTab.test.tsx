@@ -772,4 +772,20 @@ describe('YAZ-6218..6275: D1 Friends UI additions', () => {
     expect(deleted).toBe(true)
     expect(statusText(h)).toContain('Your Friends data has been deleted.')
   })
+
+  it('YAZ-6372: D1 group paste shows "Joined <Group>." (not legacy admin text) and already-member shows "You are already in <Group>."', async () => {
+    let s: FakeService
+    ;({ h, s } = await open(demoBoard(NOW)))
+    await tap(h, 'Add a friend or a group')
+    await tap(h, 'Enter link to add friend/group')
+    s.pasteAnswer = { kind: 'joined', name: 'Founders', group: 'g1', sendToAdmin: '' } as never
+    await typeInput(h, 'input[name="friend-link"]', 'https://docs.yaseenarshad.com/group#p7m2s9m8ak')
+    await tap(h, 'Submit')
+    expect(statusText(h)).toContain('Joined Founders.')
+    expect(statusText(h)).not.toContain('Send your join link to the group')
+
+    s.pasteAnswer = { kind: 'already', name: 'Founders', sendToAdmin: null } as never
+    await tap(h, 'Submit')
+    expect(statusText(h)).toContain('You are already in Founders.')
+  })
 })

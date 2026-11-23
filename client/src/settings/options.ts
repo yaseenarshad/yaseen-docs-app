@@ -253,6 +253,12 @@ export const TABLE_POSITION_OPTIONS: readonly Option<TablePosition>[] = [
   { label: 'Centre', value: 'center' },
 ]
 
+/** Settings › Drawings and diagrams › Embeds in pages › Drawing position (YAZ-6354). */
+export const DRAWING_POSITION_OPTIONS: readonly Option<TablePosition>[] = [
+  { label: 'Left', value: 'left' },
+  { label: 'Center', value: 'center' },
+]
+
 /** Settings › Review › Card look › Card tables (YAZ-5136 round 3): the pages' Table position, or the cards' own. */
 export const cardTablePositionOptions = (unit: UnitText): readonly Option<CardTablePosition>[] => [{ label: unit('Same as pages'), value: 'pages' }, ...TABLE_POSITION_OPTIONS]
 

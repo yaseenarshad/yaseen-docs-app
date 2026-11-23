@@ -5,6 +5,9 @@
 export interface InviteDeepLinkPayload {
   kind: 'friend' | 'group'
   code: string
+  status?: 'accepted' | 'pending-auth' | 'error'
+  result?: unknown
+  error?: string
 }
 
 export interface PendingInviteDeps {
@@ -25,13 +28,26 @@ export interface PendingInviteHandler {
 export function createPendingInviteHandler(deps: PendingInviteDeps): PendingInviteHandler {
   let pending: InviteDeepLinkPayload | null = null
 
+  async function acceptAndNotify(invite: InviteDeepLinkPayload): Promise<void> {
+    const res = await deps
+      .acceptInvite(invite.code)
+      .catch((err) => ({ ok: false as const, error: err instanceof Error ? err.message : 'accept_failed' }))
+    if (res.ok) {
+      deps.notifyRenderer({ kind: invite.kind, code: invite.code, status: 'accepted', result: res.result })
+    } else {
+      deps.notifyRenderer({ kind: invite.kind, code: invite.code, status: 'error', error: res.error })
+    }
+  }
+
   return {
     async onInviteLink(payload) {
-      deps.notifyRenderer(payload)
       const signedIn = await deps.isSignedIn().catch(() => false)
       if (!signedIn) {
-        pending = payload
+        pending = { kind: payload.kind, code: payload.code }
+        deps.notifyRenderer({ kind: payload.kind, code: payload.code, status: 'pending-auth' })
+        return
       }
+      await acceptAndNotify(payload)
     },
 
     async onAuthChanged() {
@@ -40,8 +56,7 @@ export function createPendingInviteHandler(deps: PendingInviteDeps): PendingInvi
       if (!signedIn) return false
       const invite = pending
       pending = null
-      await deps.acceptInvite(invite.code).catch(() => undefined)
-      deps.notifyRenderer(invite)
+      await acceptAndNotify(invite)
       return true
     },
 

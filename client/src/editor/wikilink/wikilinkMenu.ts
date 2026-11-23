@@ -20,6 +20,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { pathTitles } from '../../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkMenu } from '../linkMenu'
+import { openAliasBox } from '../../drawings/editLinkBox'
 import { boardCheckOf, cardCheckOf } from '../drawing/boardEmbedScan'
 import { boardEmbedTarget } from '../drawing/boardEmbedText'
 import { inCellOrPage } from '../table/cellBlocks'
@@ -52,9 +53,23 @@ function idOf(inner: string, source: WikilinkResolveSource): string | null {
 }
 
 /** The one link menu of the `[[inner]]` at `from`..`to` (YAZ-3740, YAZ-3905). */
-function menuOf(view: EditorView, from: number, to: number, inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined, keep: (run: () => void) => () => void, allowHighlight = true): LinkMenu {
+function menuOf(view: EditorView, from: number, to: number, inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined, keep: (run: () => void) => () => void, allowHighlight = true, openAlias?: (current: string, done: (next: string) => void) => void): LinkMenu {
   // The page side of the link, on either side of the `|` (`splitLink`, YAZ-4935).
-  const { head: target, pipe, pageFirst } = linkSplit(inner, source)
+  const { head: target, words, pipe, pageFirst } = linkSplit(inner, source)
+  // 1-click Add alias / Edit alias (YAZ-6353): opens floating box at pointer and writes canonical [[target|alias]].
+  const alias =
+    view.editable && openAlias !== undefined
+      ? {
+          has: words !== null && words.trim() !== '',
+          run: () =>
+            openAlias(words ?? '', (next) => {
+              const cleaned = next.trim().replace(/[[\]|]/g, '').trim()
+              const replacement = cleaned === '' ? `[[${target}]]` : `[[${target}|${cleaned}]]`
+              view.dispatch(view.state.tr.insertText(replacement, from, to))
+              view.focus()
+            }),
+        }
+      : undefined
   // The caret inside the raw `[[…]]`, its target selected: the link shows as text to type over.
   const edit = view.editable
     ? () => {
@@ -66,7 +81,7 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
     : undefined
   // The text the link shows stays, as plain text: the same rule as the pill's (YAZ-3778 D2, D3, S12).
   const remove = view.editable ? (text: string) => view.dispatch(view.state.tr.insertText(text, from, to)) : undefined
-  const menu = linkMenuOf(inner, source, nav, follow, viewOnly, vaultsOf, edit, remove)
+  const menu = linkMenuOf(inner, source, nav, follow, viewOnly, vaultsOf, edit, remove, alias)
   // This link's own style (YAZ-4924 round 5): the toolbar's marks around the whole `[[…]]`.
   menu.pillStyle = pillStyleRow(view, from, to, keep, allowHighlight)
   // A drawing's or a diagram's link (YAZ-4829 D8): `!` before it, and an alias goes, as the embed shows the board's name.
@@ -87,7 +102,7 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
  * The link menu of a raw `[[inner]]`, wherever it is drawn: a page, or a drawing's pill (YAZ-4039 D11). `edit` and
  * `remove` are the place's own; absent (a read-only page), their rows are left out. `remove` gets the text to leave.
  */
-export function linkMenuOf(inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined, edit: (() => void) | undefined, removeWith: ((text: string) => void) | undefined): LinkMenu {
+export function linkMenuOf(inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined, edit: (() => void) | undefined, removeWith: ((text: string) => void) | undefined, alias?: LinkMenu['alias']): LinkMenu {
   const page = linkPageName(inner, source)
   const titles = pathTitles(source.records, source.folders)
   const cards = cardResolverOf(source)
@@ -101,9 +116,9 @@ export function linkMenuOf(inner: string, source: WikilinkResolveSource, nav: Wi
   const copyIdRow = (id: string) => () => copyText(id, 'ID', nav.onNotice, undefined, true)
   // A page that is gone (S10) and an ID of another vault (S23): what can be said, the ID to copy, and the link's own rows.
   const missing = missingId(inner, source)
-  if (missing !== undefined) return { labels: ['Missing page', missing], copyId: copyIdRow(missing), edit, remove }
+  if (missing !== undefined) return { labels: ['Missing page', missing], copyId: copyIdRow(missing), alias, edit, remove }
   const other = otherVaultId(inner, source, vaultsOf)
-  if (other !== null) return { labels: [other.id, other.vault === null ? 'ID from another vault' : `ID from the ${other.vault} vault`], copyId: copyIdRow(other.id), edit, remove }
+  if (other !== null) return { labels: [other.id, other.vault === null ? 'ID from another vault' : `ID from the ${other.vault} vault`], copyId: copyIdRow(other.id), alias, edit, remove }
   const id = idOf(inner, source)
   const title = id === null ? page : titleOf(id)
   // The page's name as the pill shows it (D2, D3): its title for an ID link, else its name without folders or a hidden extension.
@@ -124,6 +139,7 @@ export function linkMenuOf(inner: string, source: WikilinkResolveSource, nav: Wi
       : shown !== '' && found ? { copyName: () => copyText(shown, 'name', nav.onNotice, undefined, true) } : {}),
     copyId: id === null ? undefined : copyIdRow(id),
     ...(path === null ? {} : placeRows(path, nav, nav.onNotice)),
+    alias,
     edit,
     remove,
   }
@@ -159,7 +175,10 @@ export function createWikilinkMenu(source: WikilinkResolveSource, nav: WikilinkN
             event.preventDefault()
             close()
             const { from, to, inner } = hit
-            const rows = () => linkMenuRows(menuOf(view, from, to, inner, source, nav, follow, viewOnly, vaultsOf, keep, allowHighlight))
+            const openAlias = (current: string, done: (next: string) => void) => {
+              close = openAliasBox(parent, event.clientX, event.clientY, current, done)
+            }
+            const rows = () => linkMenuRows(menuOf(view, from, to, inner, source, nav, follow, viewOnly, vaultsOf, keep, allowHighlight, openAlias))
             close = openMenuAt(parent, event.clientX, event.clientY, rows(), rows)
             return true
           },

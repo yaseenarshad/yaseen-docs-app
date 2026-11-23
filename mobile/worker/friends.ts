@@ -448,9 +448,9 @@ export async function handleFriends(
       if (r.other_id != null) sharedCountBy.set(Number(r.other_id), Number(r.cnt))
     }
 
-    // Active invites created by me (unexpired friend invites)
+    // Active invites created by me (unexpired, unredeemed friend invites)
     const myInvites = await db
-      .prepare("SELECT code, expires_at, created_at FROM invites WHERE creator_id = ? AND kind = 'friend' AND (expires_at IS NULL OR expires_at > ?)")
+      .prepare("SELECT code, expires_at, created_at FROM invites WHERE creator_id = ? AND kind = 'friend' AND used_by IS NULL AND (expires_at IS NULL OR expires_at > ?)")
       .bind(meId, nowIso)
       .all<Record<string, unknown>>()
 
@@ -866,13 +866,20 @@ export async function handleFriends(
     if (!/^[a-z0-9]{6,32}$/.test(code)) return refuse(400, 'bad_code')
 
     // First check single-use friend invite
-    const inv = await db.prepare('SELECT code, kind, creator_id, expires_at FROM invites WHERE code = ?').bind(code).first<Record<string, unknown>>()
+    const inv = await db.prepare('SELECT code, kind, creator_id, expires_at, used_by FROM invites WHERE code = ?').bind(code).first<Record<string, unknown>>()
     if (inv && inv.kind === 'friend') {
+      const otherId = Number(inv.creator_id)
+      if (inv.used_by !== null && inv.used_by !== undefined) {
+        // YAZ-6372: Idempotent for the same user who redeemed it (handles double-tap / auto-accept + paste).
+        if (Number(inv.used_by) === meId) {
+          return answer(200, { kind: 'friend', friendId: otherId, alreadyFriends: true })
+        }
+        return refuse(404, 'invite_not_found')
+      }
       if (inv.expires_at && String(inv.expires_at) <= nowIso) {
         await db.prepare('DELETE FROM invites WHERE code = ?').bind(code).run()
         return refuse(410, 'invite_expired')
       }
-      const otherId = Number(inv.creator_id)
       if (otherId === meId) return refuse(400, 'self_invite')
       const blocked = await db
         .prepare('SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)')
@@ -881,22 +888,26 @@ export async function handleFriends(
       if (blocked) return refuse(403, 'blocked')
 
       const [a, b] = canonicalPair(meId, otherId)
+      const existingFriend = await db.prepare('SELECT 1 FROM friendships WHERE user_a = ? AND user_b = ?').bind(a, b).first()
+      const alreadyFriends = Boolean(existingFriend)
       await db.batch([
         db.prepare('INSERT OR IGNORE INTO friendships (user_a, user_b, created_at) VALUES (?, ?, ?)').bind(a, b, nowIso),
-        db.prepare('DELETE FROM invites WHERE code = ?').bind(code),
+        db.prepare('UPDATE invites SET used_by = ?, used_at = ? WHERE code = ? AND used_by IS NULL').bind(meId, nowIso, code),
       ])
-      runInBackground(
-        ctx,
-        (async () => {
-          const meUser = await db
-            .prepare('SELECT nickname, name, login FROM users WHERE github_id = ?')
-            .bind(meId)
-            .first<{ nickname: string | null; name: string | null; login: string | null }>()
-          const meName = displayNameFor(meUser?.nickname, meUser?.name, String(meUser?.login ?? claims.login))
-          await notifyFriendInviteAccepted(env, db, otherId, meId, meName, fetch, nowMs)
-        })(),
-      )
-      return answer(200, { kind: 'friend', friendId: otherId })
+      if (!alreadyFriends) {
+        runInBackground(
+          ctx,
+          (async () => {
+            const meUser = await db
+              .prepare('SELECT nickname, name, login FROM users WHERE github_id = ?')
+              .bind(meId)
+              .first<{ nickname: string | null; name: string | null; login: string | null }>()
+            const meName = displayNameFor(meUser?.nickname, meUser?.name, String(meUser?.login ?? claims.login))
+            await notifyFriendInviteAccepted(env, db, otherId, meId, meName, fetch, nowMs)
+          })(),
+        )
+      }
+      return answer(200, { kind: 'friend', friendId: otherId, alreadyFriends })
     }
 
     // Next check reusable group invite code
@@ -912,7 +923,7 @@ export async function handleFriends(
 
       const existing = await db.prepare('SELECT status FROM group_members WHERE group_id = ? AND user_id = ?').bind(gid, meId).first<{ status: string }>()
       if (existing?.status === 'banned') return refuse(403, 'banned')
-      if (existing?.status === 'active') return answer(200, { kind: 'group', groupId: gid, status: 'active', name: String(grp.name) })
+      if (existing?.status === 'active') return answer(200, { kind: 'group', groupId: gid, status: 'active', name: String(grp.name), alreadyMember: true })
 
       await db
         .prepare(
@@ -922,7 +933,7 @@ export async function handleFriends(
         )
         .bind(gid, meId, nowIso, nowIso)
         .run()
-      return answer(200, { kind: 'group', groupId: gid, status: 'active', name: String(grp.name) })
+      return answer(200, { kind: 'group', groupId: gid, status: 'active', name: String(grp.name), alreadyMember: false })
     }
 
     return refuse(404, 'invite_not_found')
@@ -1652,7 +1663,7 @@ export async function handleFriends(
       db.prepare('DELETE FROM friendships WHERE user_a = ? OR user_b = ?').bind(meId, meId),
       db.prepare('DELETE FROM deck_permissions WHERE owner_id = ? OR friend_id = ?').bind(meId, meId),
       db.prepare('DELETE FROM deck_vaults WHERE owner_id = ?').bind(meId),
-      db.prepare('DELETE FROM invites WHERE creator_id = ? OR group_id IN (SELECT id FROM groups WHERE admin_id = ?)').bind(meId, meId),
+      db.prepare('DELETE FROM invites WHERE creator_id = ? OR used_by = ? OR group_id IN (SELECT id FROM groups WHERE admin_id = ?)').bind(meId, meId, meId),
       db.prepare('DELETE FROM shared_card_states WHERE user_id = ? OR shared_card_id IN (SELECT id FROM shared_cards WHERE group_id IN (SELECT id FROM groups WHERE admin_id = ?))').bind(meId, meId),
       db.prepare('DELETE FROM shared_cards WHERE sender_id = ? OR to_user_id = ? OR group_id IN (SELECT id FROM groups WHERE admin_id = ?)').bind(meId, meId, meId),
       db.prepare('DELETE FROM shared_folders WHERE sender_id = ? OR to_user_id = ? OR group_id IN (SELECT id FROM groups WHERE admin_id = ?)').bind(meId, meId, meId),

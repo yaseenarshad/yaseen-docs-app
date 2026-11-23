@@ -66,7 +66,15 @@ export interface FriendsApi {
   browseDeckFile?: (ownerId: number, repo: string, path: string) => Promise<{ ok: true; file: DeckFilePayload } | { ok: false; error: string }>
   browseDeckAsset?: (ownerId: number, repo: string, path: string) => Promise<{ ok: true; mime: string; dataBase64: string } | { ok: false; error: string }>
   deleteMe: () => Promise<{ ok: true } | { ok: false; error: string }>
-  onInviteLink: (cb: (payload: { kind: 'friend' | 'group'; code: string }) => void) => () => void
+  onInviteLink: (
+    cb: (payload: {
+      kind: 'friend' | 'group'
+      code: string
+      status?: 'accepted' | 'pending-auth' | 'error'
+      result?: unknown
+      error?: string
+    }) => void,
+  ) => () => void
 }
 
 const friendsBridge = (): FriendsApi => (window.yaseenDocs as unknown as { friends: FriendsApi }).friends

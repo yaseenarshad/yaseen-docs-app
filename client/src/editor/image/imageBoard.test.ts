@@ -53,7 +53,7 @@ vi.mock('../embed/types', async (original) => ({
     }),
 }))
 
-const OPTS: EmbedOptions = { width: 640, height: 360, view: { x: 1, y: 2, zoom: 0.5 }, locked: false, page: null, rest: [] }
+const OPTS: EmbedOptions = { width: 640, height: 360, view: { x: 1, y: 2, zoom: 0.5 }, locked: false, page: null, align: null, rest: [] }
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
 function imageOptions(extra: Partial<ImageOptions> = {}): ImageOptions {
@@ -232,5 +232,16 @@ describe('a board src (2B)', () => {
     await windows(1)
     expect(fakes.list[0]!.calls).toContainEqual(['setFolded', true])
     expect(fakes.list[0]!.calls).not.toContainEqual(['setFoldable', true])
+  })
+
+  it('syncs data-align on mount and when alignment options change', async () => {
+    const { root } = await mount('![CloudFront|640x360 align=right](../w/CloudFront.drawio)\n')
+    await windows(1)
+    const box = root.querySelector<HTMLElement>('.board-embed')!
+    expect(box.dataset.align).toBe('right')
+    fakes.list[0]!.host.onOptions!({ ...OPTS, align: 'center' })
+    expect(box.dataset.align).toBe('center')
+    fakes.list[0]!.host.onOptions!({ ...OPTS, align: null })
+    expect(box.dataset.align).toBeUndefined()
   })
 })

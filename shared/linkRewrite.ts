@@ -43,9 +43,9 @@ export { maskCode }
  * link kept across a move), where the match is left untouched so the link stays byte-identical,
  * padding included.
  */
-export function rewriteInner(inner: string, resolves: ResolvesToOld, newTarget: NewTarget): string | null {
-  // Words that only look like an ID (`[[Covid pages|COVID-19]]`): the left side is the page when it is the renamed page.
-  const { page: target, hash, words, pageFirst } = splitLink(inner, resolves)
+export function rewriteInner(inner: string, resolves: ResolvesToOld, newTarget: NewTarget, isPage?: (page: string) => boolean): string | null {
+  // Pass vault-wide `isPage` when known so left-wins sees other real pages (`[[Page A|Page B]]` keeps `Page A`, YAZ-6365).
+  const { page: target, hash, words, pageFirst } = splitLink(inner, isPage ?? resolves)
   if (target === '' || !resolves(target)) return null
   const next = newTarget(target)
   if (next === target) return null
@@ -54,12 +54,12 @@ export function rewriteInner(inner: string, resolves: ResolvesToOld, newTarget: 
 }
 
 /** Body `[[links]]` and `![[embeds]]` outside code, spliced in place; the input when nothing matched. */
-export function rewriteBodyLinks(body: string, resolves: ResolvesToOld, newTarget: NewTarget): string {
+export function rewriteBodyLinks(body: string, resolves: ResolvesToOld, newTarget: NewTarget, isPage?: (page: string) => boolean): string {
   const masked = maskCode(body)
   let out = ''
   let last = 0
   for (const m of masked.matchAll(WIKILINK_RE)) {
-    const replaced = rewriteInner(m[2], resolves, newTarget)
+    const replaced = rewriteInner(m[2], resolves, newTarget, isPage)
     if (replaced === null) continue
     const innerStart = m.index + m[1].length + 2 // after `[[` / `![[`
     out += body.slice(last, innerStart) + replaced
@@ -71,20 +71,20 @@ export function rewriteBodyLinks(body: string, resolves: ResolvesToOld, newTarge
 const EXACT_WIKILINK_RE = /^\[\[([^[\]]+)\]\]$/
 
 /** A frontmatter string that is exactly `[[…]]` → its rewrite, else undefined. */
-export function rewriteExactLink(value: string, resolves: ResolvesToOld, newTarget: NewTarget): string | undefined {
+export function rewriteExactLink(value: string, resolves: ResolvesToOld, newTarget: NewTarget, isPage?: (page: string) => boolean): string | undefined {
   const m = EXACT_WIKILINK_RE.exec(value.trim())
   if (m === null) return undefined
-  const inner = rewriteInner(m[1], resolves, newTarget)
+  const inner = rewriteInner(m[1], resolves, newTarget, isPage)
   return inner === null ? undefined : `[[${inner}]]`
 }
 
 /** A frontmatter VALUE — a whole-value link, or a list holding some — rewritten, else undefined. */
-function rewriteLinkValue(value: unknown, resolves: ResolvesToOld, newTarget: NewTarget): unknown {
-  if (typeof value === 'string') return rewriteExactLink(value, resolves, newTarget)
+function rewriteLinkValue(value: unknown, resolves: ResolvesToOld, newTarget: NewTarget, isPage?: (page: string) => boolean): unknown {
+  if (typeof value === 'string') return rewriteExactLink(value, resolves, newTarget, isPage)
   if (!Array.isArray(value)) return undefined
   let changed = false
   const next = value.map((item: unknown) => {
-    const r = typeof item === 'string' ? rewriteExactLink(item, resolves, newTarget) : undefined
+    const r = typeof item === 'string' ? rewriteExactLink(item, resolves, newTarget, isPage) : undefined
     if (r !== undefined) changed = true
     return r ?? item
   })
@@ -111,26 +111,26 @@ export function exactLinkTarget(value: string, isPage?: (page: string) => boolea
  * (YAZ-864 — see the module doc). Null when nothing changed — the caller never writes an
  * unchanged file, so a page carrying settings that reference nobody stays byte-identical.
  */
-export function rewritePageLinks(content: string, resolves: ResolvesToOld, newTarget: NewTarget): string | null {
+export function rewritePageLinks(content: string, resolves: ResolvesToOld, newTarget: NewTarget, isPage?: (page: string) => boolean): string | null {
   const { frontmatter, body } = splitFrontmatter(content)
-  let out = frontmatter + rewriteBodyLinks(body, resolves, newTarget)
+  let out = frontmatter + rewriteBodyLinks(body, resolves, newTarget, isPage)
   if (frontmatter !== '') {
     const { properties, error } = parseFrontmatter(frontmatter)
     if (error === undefined) {
       for (const [key, value] of Object.entries(properties)) {
-        const next = rewriteLinkValue(value, resolves, newTarget)
+        const next = rewriteLinkValue(value, resolves, newTarget, isPage)
         if (next !== undefined) out = setFrontmatterProperty(out, key, next)
       }
       // A folder's values (D19): each block's links by the same rule, each written where it stands.
       for (const [id, block] of folderBlocks(properties)) {
         for (const [key, value] of Object.entries(block)) {
-          const next = rewriteLinkValue(value, resolves, newTarget)
+          const next = rewriteLinkValue(value, resolves, newTarget, isPage)
           if (next !== undefined) out = setFrontmatterIn(out, [FOLDER_VALUES_KEY, id, key], next)
         }
       }
       // The nested leaves go back as the WHOLE key — the one door's own write shape
       // (`writeFolderSettings`), so nothing about that block is serialised two ways.
-      const settings = mapFolderSettingsLinks(properties, (link) => rewriteExactLink(link, resolves, newTarget))
+      const settings = mapFolderSettingsLinks(properties, (link) => rewriteExactLink(link, resolves, newTarget, isPage))
       if (settings !== null) out = setFrontmatterProperty(out, settings.key, settings.value)
     }
   }

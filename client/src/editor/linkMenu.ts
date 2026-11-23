@@ -104,6 +104,8 @@ export interface LinkMenu {
   showAsEmbed?: () => void
   /** "Pill style ›" (YAZ-4924 round 5, `pillStyle.ts`): a pill in a page; disabled in a read-only page. */
   pillStyle?: MenuRow
+  /** "Add alias" / "Edit alias" (YAZ-6353): right above "Edit link"; left out in a read-only page. */
+  alias?: { has: boolean; run: () => void }
   /** Left out in a read-only page, with `remove`. */
   edit?: () => void
   remove?: () => void
@@ -128,7 +130,13 @@ export function linkMenuRows(menu: LinkMenu): MenuRow[] {
     menu.focus === undefined ? null : { label: menu.focus.on ? 'Remove from focus' : 'Add to focus', run: menu.focus.run, icon: eyeGlyph },
     children.every((list) => list.length === 0) ? null : { label: 'Open in', run: () => {}, children },
   ])
-  group([menu.pillStyle ?? null, row('Show as embed', menu.showAsEmbed), row('Edit link', menu.edit), row('Remove link', menu.remove, true)])
+  group([
+    menu.pillStyle ?? null,
+    row('Show as embed', menu.showAsEmbed),
+    menu.alias === undefined ? null : { label: menu.alias.has ? 'Edit alias' : 'Add alias', run: menu.alias.run },
+    row('Edit link', menu.edit),
+    row('Remove link', menu.remove, true),
+  ])
   return rows
 }
 

@@ -71,10 +71,9 @@ describe('splitLink: the page on either side of the | (YAZ-4935)', () => {
     // Page first stays page first; an empty left side is no page.
     expect(splitLink('WIKI-116|staging', found)).toMatchObject({ page: 'WIKI-116', words: 'staging', pageFirst: true })
     expect(splitLink('|WIKI-116', () => true)).toMatchObject({ page: 'WIKI-116', pageFirst: false })
-    // The heading goes with the left side when it wins; the check is asked only when the shape alone would pick the right.
+    // The heading goes with the left side when it wins; an ID on the left does not need to ask `isPage`.
     expect(splitLink('Covid pages#Intro|COVID-19', found)).toMatchObject({ page: 'Covid pages', hash: '#Intro', pageFirst: true })
     const asked: string[] = []
-    splitLink('Postgres|database', (p) => (asked.push(p), false))
     splitLink('WIKI-116|staging', (p) => (asked.push(p), false))
     expect(asked).toEqual([])
   })
@@ -96,7 +95,7 @@ describe('indexTarget: a reader with no list of pages keeps both sides when only
     expect(indexTarget('WIKI-116|staging')).toBe('WIKI-116')
     expect(indexTarget('|WIKI-116')).toBe('WIKI-116')
     expect(indexTarget('#Intro|WIKI-116')).toBe('WIKI-116')
-    expect(indexTarget('Postgres|database')).toBe('Postgres')
+    expect(indexTarget('Postgres|database')).toBe('Postgres|database')
     expect(indexTarget('WIKI-116|WIKI-117')).toBe('WIKI-116')
     expect(indexTarget('Page#Heading')).toBe('Page')
     expect(indexTarget('EMB-40|640x360 view=120,-40,0.8')).toBe('EMB-40')
@@ -143,8 +142,9 @@ describe('a file name is always the page; an ID shape never beats it (YAZ-4954 p
     expect(asked).toEqual([])
   })
 
-  it('every other link reads as before: a page name and a file, a .md name, a code file name, two files', () => {
-    expect(splitLink('Covid pages|photo.png')).toMatchObject({ page: 'Covid pages', pageFirst: true })
+  it('every other link reads as before: a .md name, a code file name, two files; a plain name + file picks the file unless left resolves (YAZ-6352)', () => {
+    expect(splitLink('Covid pages|photo.png')).toMatchObject({ page: 'photo.png', words: 'Covid pages', pageFirst: false })
+    expect(splitLink('Covid pages|photo.png', (p) => p === 'Covid pages')).toMatchObject({ page: 'Covid pages', words: 'photo.png', pageFirst: true })
     expect(splitLink('pages.md|FIG-1')).toMatchObject({ page: 'FIG-1', pageFirst: false })
     expect(splitLink('pages.md|FIG-1', (p) => p === 'pages.md')).toMatchObject({ page: 'pages.md', pageFirst: true })
     expect(splitLink('Node.js|FIG-1')).toMatchObject({ page: 'FIG-1', pageFirst: false })
@@ -161,5 +161,68 @@ describe('a file name is always the page; an ID shape never beats it (YAZ-4954 p
     expect(indexTarget('photo.png|FIG-1')).toBe('photo.png')
     expect(indexTarget('FIG-1|photo.png')).toBe('photo.png')
     expect(indexTarget('assets/x.drawio#p|EMB-4')).toBe('assets/x.drawio')
+  })
+})
+
+describe('either-side alias resolution for all piped links (YAZ-6352)', () => {
+  const only = (...names: string[]) => (page: string) => names.includes(page)
+
+  it('alias-first link to a drawing file resolves to the file on the right', () => {
+    expect(splitLink("AR's V3 Roadmap|V3 full plan (latest).excalidraw")).toEqual({
+      page: 'V3 full plan (latest).excalidraw',
+      hash: '',
+      head: 'V3 full plan (latest).excalidraw',
+      words: "AR's V3 Roadmap",
+      pipe: 15,
+      pageFirst: false,
+    })
+    expect(splitLink("AR's V3 Roadmap|V3 full plan (latest).excalidraw", only('V3 full plan (latest).excalidraw'))).toMatchObject({
+      page: 'V3 full plan (latest).excalidraw',
+      words: "AR's V3 Roadmap",
+      pageFirst: false,
+    })
+  })
+
+  it('alias-first link to a plain .md page resolves to the right when left misses and right resolves', () => {
+    expect(splitLink("AR's V3 Roadmap|V3 full plan", only('V3 full plan'))).toEqual({
+      page: 'V3 full plan',
+      hash: '',
+      head: 'V3 full plan',
+      words: "AR's V3 Roadmap",
+      pipe: 15,
+      pageFirst: false,
+    })
+    expect(pickTarget("AR's V3 Roadmap|V3 full plan", only('V3 full plan'))).toBe('V3 full plan')
+  })
+
+  it('preserves #heading on the right side for alias-first plain page links', () => {
+    expect(splitLink('My Alias|V3 plan#Section', only('V3 plan'))).toEqual({
+      page: 'V3 plan',
+      hash: '#Section',
+      head: 'V3 plan#Section',
+      words: 'My Alias',
+      pipe: 8,
+      pageFirst: false,
+    })
+    expect(indexTarget('My Alias|V3 plan#Section')).toBe('My Alias|V3 plan')
+  })
+
+  it('left wins when both sides match real pages, or when neither resolves', () => {
+    expect(splitLink('Page A|Page B', only('Page A', 'Page B'))).toMatchObject({
+      page: 'Page A',
+      words: 'Page B',
+      pageFirst: true,
+    })
+    expect(pickTarget('Page A|Page B', only('Page A', 'Page B'))).toBe('Page A')
+    expect(splitLink('Unknown Left|Unknown Right', only())).toMatchObject({
+      page: 'Unknown Left',
+      words: 'Unknown Right',
+      pageFirst: true,
+    })
+  })
+
+  it('indexTarget keeps original left|right order for undecided plain-name and name|file links', () => {
+    expect(indexTarget("AR's V3 Roadmap|V3 full plan")).toBe("AR's V3 Roadmap|V3 full plan")
+    expect(indexTarget("AR's V3 Roadmap|V3 full plan (latest).excalidraw")).toBe("AR's V3 Roadmap|V3 full plan (latest).excalidraw")
   })
 })

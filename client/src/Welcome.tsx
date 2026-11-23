@@ -52,12 +52,16 @@ interface WelcomeProps {
   picking: boolean
   /** App's passive notice: what a menu item did, or why it could not. */
   onNotice: VaultMenuHandlers['onNotice']
+  /** Per-vault macOS launcher icon data URLs (YAZ-5967, YAZ-6375). */
+  vaultIcons?: Record<string, string>
+  /** Per-workspace macOS launcher icon data URLs. */
+  workspaceIcons?: Record<string, string>
 }
 
 /** A row's menu or inline name field: a folder row's (its path) or a workspace row's (its id). */
 type RowRef = { kind: 'folder' | 'set'; key: string }
 
-export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, picking, onNotice }: WelcomeProps) {
+export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, picking, onNotice, vaultIcons, workspaceIcons }: WelcomeProps) {
   const [rows, setRows] = useState(() => recents.slice(0, MAX_RECENT_ROOTS))
   const [workspaces, setWorkspaces] = useState(() => sets)
   /**
@@ -152,7 +156,12 @@ export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, 
                       </div>
                     ) : (
                       <button type="button" className="welcome__recent" disabled={missing.has(s.id)} onClick={() => settle(s.id, onOpenSet(s.id))} onContextMenu={(e) => openMenu('set', s.id, e)}>
-                        <span className="welcome__recent-name">{s.name}</span>
+                        <span className={`welcome__recent-name${workspaceIcons?.[s.id] !== undefined ? ' welcome__recent-name--with-icon' : ''}`}>
+                          {workspaceIcons?.[s.id] !== undefined && (
+                            <img className="welcome__vault-icon" src={workspaceIcons[s.id]} alt="" width={18} height={18} />
+                          )}
+                          {s.name}
+                        </span>
                         {time}
                         {vaults}
                       </button>
@@ -186,7 +195,12 @@ export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, 
                     </div>
                   ) : (
                     <button type="button" className="welcome__recent" disabled={missing.has(r.path)} onClick={() => settle(r.path, onOpenRecent(r.path))} onContextMenu={(e) => openMenu('folder', r.path, e)}>
-                      <span className="welcome__recent-name">{storage.vaultName(r.path)}</span>
+                      <span className={`welcome__recent-name${vaultIcons?.[r.path] !== undefined ? ' welcome__recent-name--with-icon' : ''}`}>
+                        {vaultIcons?.[r.path] !== undefined && (
+                          <img className="welcome__vault-icon" src={vaultIcons[r.path]} alt="" width={20} height={20} />
+                        )}
+                        {storage.vaultName(r.path)}
+                      </span>
                       {time}
                       {path}
                     </button>

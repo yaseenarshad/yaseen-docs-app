@@ -35,7 +35,7 @@
     "desktop:build:linux": "npm run build -w desktop && node tools/packDesktop.mjs --linux",
     "lint": "oxlint -c .oxlintrc.json client/src desktop/src mobile/src shared",
     "typecheck": "npm run engine:build && tsc -p client/tsconfig.json --noEmit && tsc -p shared/tsconfig.json --noEmit && tsc -p desktop/tsconfig.json --noEmit && tsc -p mobile/tsconfig.json --noEmit && tsc -p mobile/tsconfig.test.json --noEmit",
-    "test": "npm run engine:build && node tools/buildSpeller.mjs && vitest run",
+    "test": "npm run engine:build && node tools/buildSpeller.mjs && node tools/buildVaultLauncher.mjs && vitest run",
     "verify": "node tools/verify.mjs",
     "e2e": "npm run build -w desktop && playwright test --config desktop/e2e/playwright.config.ts",
     "e2e:only": "playwright test --config desktop/e2e/playwright.config.ts",

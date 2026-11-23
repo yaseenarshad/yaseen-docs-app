@@ -1858,4 +1858,31 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
     expect(openAlone).not.toHaveBeenCalled()
     expect(panel(el)).toBeNull()
   })
+
+  it('renders workspace launcher icon and opens Workspace launcher modal from workspace context menu on macOS', async () => {
+    const ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+    const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
+    const workspaceStatus = vi.fn(async () => ({ supported: true, launcher: null, exists: false, iconDataUrl: null }))
+    ;(window.yaseenDocs as unknown as Record<string, unknown>).vaultLauncher = { workspaceStatus }
+    try {
+      act(() => broadcast(seeded({ vaultSets: [{ id: 'set-work', name: 'Work', roots: [ARCHIVE, '/w/Notes'], lastUsed: NOW }] })))
+      const { el } = render({ workspaceIcons: { 'set-work': ICON } })
+      openPanel(el)
+      const wsRow = rows(el)[0]
+      const wsIcon = wsRow.querySelector<HTMLImageElement>('.vault-switcher__icon')
+      expect(wsIcon?.src).toBe(ICON)
+      expect(wsIcon?.width).toBe(18)
+      expect(wsIcon?.height).toBe(18)
+
+      rightClick(wsRow)
+      expect(menuLabels()).toContain('Edit launcher…')
+      pick('Edit launcher…')
+      await vi.waitFor(() => {
+        expect(workspaceStatus).toHaveBeenCalledWith('set-work')
+        expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace launcher')
+      })
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
 })

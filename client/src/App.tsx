@@ -14,6 +14,7 @@ import { Editor } from './editor/Editor'
 import { keepOutsideChangesOfTabs } from './editor/external/outsideChangesMemory'
 import { newPageBase } from './editor/wikilink/createFromLink'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
+import { useVaultLauncherIcons, workspaceLauncherCtx } from './hooks/useVaultLauncherIcons'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { onKeySheetRequest, placeOverTab } from './keys/keySheetRequest'
 import { useMenuEvents } from './hooks/useMenuEvents'
@@ -599,7 +600,7 @@ export function App() {
   const [cardSkill] = useState(storage.getCardSkill)
   const skillLoads = cardSkill !== null && appSettings.cardSkillInSidebar && root !== null
   const skillScope = useVaultScope(skillLoads ? cardSkill : null, notify, askFileAction)
-  const skillShown = skillLoads && vaults.some((vault) => vault?.reviewSettings.settings.enabled === true)
+  const skillShown = skillLoads && vaults.some((vault) => vault?.reviewSettings.settings.enabled === true && vault.ids?.enabled !== false)
   const live = useRef({ roots, vaults, first, skill: skillLoads ? skillScope : null })
   live.current = { roots, vaults, first, skill: skillLoads ? skillScope : null }
   // The window's card files (YAZ-5037), from the vaults' index: a card file shows the card icon in the tree, the tabs,
@@ -1585,12 +1586,14 @@ export function App() {
     if (vault === null) throw new Error(`no vault of this window has the folder "${folder}". Make it, or change the daily pages folder in Settings › Files & Links`)
     return { vault, tree: trees.find((t) => t.root === vault)!.tree }
   }, [])
-  const openDailyPage = useCallback((background = false) => {
+  const openDailyPage = useCallback((background = false, targetRoot?: string) => {
     const { vaults, settings: now, dailyRoot } = placeInputs.current
     if (vaults.length === 0) return
     const title = dailyPageName(now.dailyPageFormat, new Date()).trim()
     // YAZ-5491: the vault of the file that says on; with no file yet, the first that holds the folder (D2).
-    void dailyVault(dailyRoot === null ? vaults : [dailyRoot], now.dailyPageFolder)
+    // YAZ-5967: a Vault App launcher with `?open=today` targets its own vault explicitly in multi-vault windows.
+    const scope = targetRoot !== undefined ? [targetRoot] : dailyRoot === null ? vaults : [dailyRoot]
+    void dailyVault(scope, now.dailyPageFolder)
       .then(async ({ vault, tree }): Promise<string | null> => {
         const index = scopeOf(vault).wikilinks
         // Until the index lands the vault's kind is not known (YAZ-2523 🔒 V5), and it decides what is written.
@@ -2806,11 +2809,26 @@ export function App() {
       if (added) moveBoardTab(from, storage.getWindowId(), ref)
     })
   }, [addVault, moveBoardTab])
+  const { launcherIcons, workspaceIcons, refreshLauncherIcons } = useVaultLauncherIcons()
+  const [todayTarget, setTodayTarget] = useState<string | null>(null)
+  const openTarget = useCallback(({ root: targetRoot, target }: { root: string; target: 'inbox' | 'today' }) => {
+    if (target === 'inbox') takeInbox({ root: targetRoot })
+    else if (target === 'today') setTodayTarget(targetRoot)
+  }, [takeInbox])
+  useEffect(() => {
+    if (todayTarget === null) return
+    const at = roots.findIndex((r) => stripSlash(r) === stripSlash(todayTarget))
+    if (at === -1) return setTodayTarget(null)
+    if (vaults[at].wikilinks.resolve === null) return
+    setTodayTarget(null)
+    openDailyPage(false, roots[at])
+  }, [todayTarget, roots, vaults, openDailyPage])
+
   // CLI navigation (YAZ-4502): show the page and the sidebar list, reveal the target there, pick the folder view, and
   // reply only once the window shows it. Nothing here runs unless main sends a request.
   useAutomationSurface('app', { ready: true, inspect: () => ({ path: pageOnShow, tab: activeTab, sidebar: sidebarLens, sidebarCollapsed }) })
   useAutomation((target) => navigateApp(target, { isSidebarCollapsed: () => sidebarCollapsedRef.current, toggleSidebar, changeLens, openPage }))
-  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles, onTakeInbox: takeInbox })
+  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles, onTakeInbox: takeInbox, onOpenTarget: openTarget })
   /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
   const moveBoardCardToSlot = useCallback((id: string, slot: number) => {
     const from = now.current.tabs.findIndex((t) => t.id === id)
@@ -4279,7 +4297,7 @@ export function App() {
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
       {settingsOpen && (
         <Suspense fallback={null}>
-          <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled, autoSync: active.sync.autoSync, addToAutoSync: active.sync.addToAutoSync, openAutoSync: active.sync.openAutoSync, refreshAutoSync: active.sync.refreshAutoSync }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, iconLook: settingsIconLook, cardLook: settingsCardLook, tableLook: settingsTableLook, folderPages: settingsFolderPages, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />
+          <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled, autoSync: active.sync.autoSync, addToAutoSync: active.sync.addToAutoSync, openAutoSync: active.sync.openAutoSync, refreshAutoSync: active.sync.refreshAutoSync }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, iconLook: settingsIconLook, cardLook: settingsCardLook, tableLook: settingsTableLook, folderPages: settingsFolderPages, places: root === null ? undefined : placeVaults, vaultLauncher: active.root !== null && /Mac/i.test(navigator.platform) && typeof window.yaseenDocs?.vaultLauncher?.status === 'function' ? { root: active.root, defaultName: active.name ?? basename(active.root), onChanged: refreshLauncherIcons } : undefined, workspaceLauncher: workspaceLauncherCtx(roots, refreshLauncherIcons) }} initialPage={settingsPage} onClose={closeSettings} />
         </Suspense>
       )}
       {courseOpen !== null && (
@@ -4484,6 +4502,7 @@ export function App() {
           onInbox={filesDoors?.inbox ?? toggleInbox}
           // Its "Open in new window" (YAZ-5054): main opens the window, from a Files window too.
           onInboxNewWindow={openInboxInNewWindow}
+          vaultIcons={launcherIcons} workspaceIcons={workspaceIcons} onLauncherChanged={refreshLauncherIcons}
         />
         </div>
       )}
@@ -4506,7 +4525,7 @@ export function App() {
       ) : root === null ? (
         <section className="editor">
           {/* No dialog opens by itself (C2, GRO-2164): the Welcome screen offers recents + Open folder…. */}
-          <Welcome recents={storage.getRecentRoots()} sets={storage.getVaultSets()} onOpenRecent={openRoot} onOpenSet={openSetFromWelcome} onPickFolder={pick} picking={picking} onNotice={notify} />
+          <Welcome recents={storage.getRecentRoots()} sets={storage.getVaultSets()} vaultIcons={launcherIcons} workspaceIcons={workspaceIcons} onOpenRecent={openRoot} onOpenSet={openSetFromWelcome} onPickFolder={pick} picking={picking} onNotice={notify} />
         </section>
       ) : (
         <div className="workspace" data-inbox-focus={inboxFocused || undefined}>

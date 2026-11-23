@@ -865,13 +865,38 @@ describe('page links (YAZ-4039)', () => {
     expect(replace).toHaveBeenLastCalledWith('[[Other]]')
   })
 
-  it('a read-only board gives no Edit link or Remove link', async () => {
+  it('Add alias / Edit alias changes or removes the alias on a drawing pill (YAZ-6353)', async () => {
+    render({ wikilinks: linkSource(), onOpenLink: vi.fn(), onOpenLinkBackground: vi.fn() })
+    await flush()
+    const links = surface.props!.links!
+    const replace = vi.fn()
+    const menuRow = (label: string) => [...container.querySelectorAll<HTMLButtonElement>('.ctx-menu--editor .ctx-menu__item')].find((row) => row.textContent === label)
+    act(() => void links.hostLinks.onContextMenu?.({ ...hit, inner: 'Known#Intro', replace }, new MouseEvent('contextmenu', { clientX: 40, clientY: 20 })))
+    act(() => menuRow('Add alias')!.click())
+    const input = container.querySelector<HTMLInputElement>('.drawing-link-edit input')!
+    expect(input.value).toBe('')
+    input.value = 'Overview'
+    act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })))
+    expect(replace).toHaveBeenLastCalledWith('[[Known#Intro|Overview]]')
+
+    act(() => void links.hostLinks.onContextMenu?.({ ...hit, inner: 'Known#Intro|Overview', replace }, new MouseEvent('contextmenu', { clientX: 40, clientY: 20 })))
+    act(() => menuRow('Edit alias')!.click())
+    const input2 = container.querySelector<HTMLInputElement>('.drawing-link-edit input')!
+    expect(input2.value).toBe('Overview')
+    input2.value = ''
+    act(() => void input2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })))
+    expect(replace).toHaveBeenLastCalledWith('[[Known#Intro]]')
+  })
+
+  it('a read-only board gives no Add alias, Edit link, or Remove link', async () => {
     const readOnly = `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, readonly: true }, type: 'excalidraw', version: 2, elements: [], appState: {}, files: {} })}\n`
     load.mockResolvedValue(loaded({ json: readOnly }))
     render({ wikilinks: linkSource(), onOpenLink: vi.fn(), onOpenLinkBackground: vi.fn() })
     await flush()
     act(() => void surface.props!.links!.hostLinks.onContextMenu?.({ ...hit, replace: vi.fn() }, new MouseEvent('contextmenu')))
     const rows = [...container.querySelectorAll('.ctx-menu--editor .ctx-menu__item')].map((row) => row.textContent)
+    expect(rows).not.toContain('Add alias')
+    expect(rows).not.toContain('Edit alias')
     expect(rows).not.toContain('Edit link')
     expect(rows).not.toContain('Remove link')
   })

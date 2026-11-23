@@ -112,7 +112,7 @@ async function mount(markdown: string, extra: Partial<CreateCrepeOptions> = {}) 
 const windows = (n: number) => vi.waitFor(() => expect(fakes.list.filter((f) => !f.destroyed)).toHaveLength(n))
 const hidden = (root: HTMLElement) => Array.from(root.querySelectorAll(`.${BOARD_EMBED_SYNTAX_CLASS}`)).map((el) => el.textContent ?? '').join('')
 const md = (crepe: Crepe) => getMarkdownForSave(crepe)
-const OPTS: EmbedOptions = { width: 640, height: 360, view: { x: 120, y: -40, zoom: 0.8 }, locked: false, page: null, rest: [] }
+const OPTS: EmbedOptions = { width: 640, height: 360, view: { x: 120, y: -40, zoom: 0.8 }, locked: false, page: null, align: null, rest: [] }
 
 /** The first position of `text` in the doc. */
 function posOf(view: EditorView, text: string): number {
@@ -344,7 +344,7 @@ describe('open and the menu (2C)', () => {
     fakes.list[0]!.host.onContextMenu!(new MouseEvent('contextmenu', { clientX: 5, clientY: 5 }))
     const labels = Array.from(document.querySelectorAll('.ctx-menu > .ctx-menu__item, .ctx-menu > .ctx-menu__parent > .ctx-menu__item')).map((b) => b.textContent)
     expect(labels.slice(0, 2)).toEqual(['Open', 'Open in new tab'])
-    expect(labels.slice(-6)).toEqual(['Fit whole drawing', 'Page', 'Edit drawing', 'Show as link', 'Edit link', 'Remove embed'])
+    expect(labels.slice(-7)).toEqual(['Fit whole drawing', 'Page', 'Position', 'Edit drawing', 'Show as link', 'Edit link', 'Remove embed'])
     const click = (label: string) => Array.from(document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')).find((b) => b.textContent === label)!.click()
     click('Edit drawing')
     expect(onEditInPopup).toHaveBeenCalledWith('Sketch.excalidraw')
@@ -378,7 +378,7 @@ describe('open and the menu (2C)', () => {
     void view
     await windows(1)
     // A new embed starts with its view locked (YAZ-2571 round 7): no size, the window's own.
-    expect(fakes.list[0]!.host.options).toEqual({ width: null, height: null, view: null, locked: true, page: null, rest: [] })
+    expect(fakes.list[0]!.host.options).toEqual({ width: null, height: null, view: null, locked: true, page: null, align: null, rest: [] })
   })
 
   it('⌥Enter in the `[[` picker puts a board in as its embed; Enter as a link (item 8)', async () => {
@@ -655,5 +655,40 @@ describe('YAZ-4920: an id link to a board embeds (D1 on YAZ-4821: id links keep 
     expect(md(crepe)).toBe('x![[EMB-40|locked]] [[EMB-40]]\n')
     await windows(1)
     expect(fakes.list[0]!.host.ref.path).toBe('/v/Boards/Slides with frames.excalidraw')
+  })
+
+  it('YAZ-6354: syncs data-align and updates alignment via the Position flyout menu for .excalidraw and .drawio embeds', async () => {
+    const { crepe, root } = await mount('![[Sketch.excalidraw|640x360 align=right]]\n\n![[CloudFront.drawio]]\n', { wikilinkNav: nav(), viewOnlyLinks: viewOnlyResolving() })
+    await windows(2)
+    const boxes = [...root.querySelectorAll<HTMLElement>('.board-embed')]
+    expect(boxes[0]!.dataset.align).toBe('right')
+    expect(boxes[1]!.dataset.align).toBeUndefined()
+
+    // Change .excalidraw embed from right -> App default via Position flyout.
+    fakes.list[0]!.host.onContextMenu!(new MouseEvent('contextmenu', { clientX: 5, clientY: 5 }))
+    ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item--parent')].find((b) => b.textContent === 'Position')!.click()
+    const sub0 = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')]
+    expect(sub0.map((b) => [b.textContent, b.dataset.hint])).toEqual([
+      ['App default', undefined],
+      ['Left', undefined],
+      ['Center', undefined],
+      ['Right', '✓'],
+    ])
+    sub0.find((b) => b.textContent === 'App default')!.click()
+    expect(boxes[0]!.dataset.align).toBeUndefined()
+    expect(md(crepe)).toBe('![[Sketch.excalidraw|640x360]]\n\n![[CloudFront.drawio]]\n')
+
+    // Change .drawio embed from App default -> Center, then back to App default (no dangling `|`).
+    fakes.list[1]!.host.onContextMenu!(new MouseEvent('contextmenu', { clientX: 5, clientY: 5 }))
+    ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item--parent')].find((b) => b.textContent === 'Position')!.click()
+    ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')].find((b) => b.textContent === 'Center')!.click()
+    expect(boxes[1]!.dataset.align).toBe('center')
+    expect(md(crepe)).toBe('![[Sketch.excalidraw|640x360]]\n\n![[CloudFront.drawio|align=center]]\n')
+
+    fakes.list[1]!.host.onContextMenu!(new MouseEvent('contextmenu', { clientX: 5, clientY: 5 }))
+    ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item--parent')].find((b) => b.textContent === 'Position')!.click()
+    ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')].find((b) => b.textContent === 'App default')!.click()
+    expect(boxes[1]!.dataset.align).toBeUndefined()
+    expect(md(crepe)).toBe('![[Sketch.excalidraw|640x360]]\n\n![[CloudFront.drawio]]\n')
   })
 })

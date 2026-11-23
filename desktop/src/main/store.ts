@@ -136,6 +136,7 @@ import {
   addOpen,
   addRecentRoot,
   cleanVaultKey,
+  cleanVaultLauncher,
   cleanUpNextTaken,
   cleanCardsAdded,
   cleanVaultName,
@@ -205,6 +206,7 @@ import {
   type Theme,
   type TocLines,
   type TocSource,
+  type VaultLauncherInfo,
   type VaultSet,
   type WindowBounds,
   type WindowEntry,
@@ -388,6 +390,8 @@ export interface Store {
   removeVaultSet(id: string): void
   /** The set was just used (S65): `lastUsed` is `now`, and it moves to the front. An unknown `id` is a no-op. */
   touchVaultSet(id: string, now?: number): void
+  /** Set or clear (`null`) the macOS `.app` launcher metadata on a saved workspace (`VaultSet`). An unknown `id` is a no-op. */
+  setVaultSetLauncher(id: string, launcher: VaultLauncherInfo | null): void
   /**
    * Save `tabs` as a session (YAZ-3147 D2) and answer it. The tabs are cut at MAX_SESSION_TABS, and only
    * the vaults of `roots` that hold a tab are kept. A new session goes to the front. With `replaceId`
@@ -782,6 +786,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableStickyHeader: (v): v is boolean => typeof v === 'boolean',
   tableTextInCells: (v): v is TableTextInCells => typeof v === 'string' && (TABLE_TEXT_IN_CELLS as readonly string[]).includes(v),
   tablePosition: (v): v is TablePosition => typeof v === 'string' && (TABLE_POSITIONS as readonly string[]).includes(v),
+  drawingPosition: (v): v is TablePosition => typeof v === 'string' && (TABLE_POSITIONS as readonly string[]).includes(v),
   tableNowMark: (v): v is TableNowMark => typeof v === 'string' && (TABLE_NOW_MARKS as readonly string[]).includes(v),
   tableNextShade: (v): v is boolean => typeof v === 'boolean',
   tableNextColour: isBandColour,
@@ -1123,6 +1128,9 @@ function sanitizeSwitches(raw: unknown): Record<string, boolean> {
 
 function sanitizeFolder(raw: unknown): FolderState | null {
   if (!isRecord(raw)) return null
+  const upNext = cleanUpNextTaken(raw.upNext)
+  const added = cleanCardsAdded(raw.added)
+  const launcher = cleanVaultLauncher(raw.launcher)
   return {
     // Tree expansion is SESSION state (YAZ-1642): never restored, never written (`toDisk`).
     // A relaunch starts every tree collapsed; a pre-1642 file's leftover lists are ignored.
@@ -1143,9 +1151,11 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     // "A folder of <vault>" (YAZ-4922 D3): kept only as an absolute path; whether it holds the bucket is `sanitizeFolders`'.
     ...(typeof raw.in === 'string' && isAbsolute(raw.in) && { in: stripSlash(raw.in) }),
     // "Up next a day" (YAZ-5028): today's taken marks; a junk entry is none.
-    ...(cleanUpNextTaken(raw.upNext) !== null && { upNext: cleanUpNextTaken(raw.upNext)! }),
+    ...(upNext !== null && { upNext }),
     // "Add more for today" (YAZ-5042): the day's added numbers; a junk entry is none.
-    ...(cleanCardsAdded(raw.added) !== null && { added: cleanCardsAdded(raw.added)! }),
+    ...(added !== null && { added }),
+    // macOS Vault App launcher metadata (YAZ-5967, YAZ-6374): a junk entry is dropped.
+    ...(launcher !== null && { launcher }),
   }
 }
 
@@ -1186,7 +1196,8 @@ function sanitizeVaultSets(raw: unknown): VaultSet[] {
     const roots = cleanSetRoots(s.roots)
     if (name === null || roots.length < 2) continue
     seen.add(s.id)
-    out.push({ id: s.id, name, roots, lastUsed: isFiniteNumber(s.lastUsed) ? s.lastUsed : 0 })
+    const launcher = cleanVaultLauncher(s.launcher)
+    out.push({ id: s.id, name, roots, lastUsed: isFiniteNumber(s.lastUsed) ? s.lastUsed : 0, ...(launcher !== null ? { launcher } : {}) })
   }
   return out.slice(0, MAX_VAULT_SETS)
 }
@@ -1571,6 +1582,13 @@ export function createStore(filePath: string): Store {
         // "Add more for today" (YAZ-5042): the renderer hands in the day's numbers whole; a junk value changes nothing.
         ...(patch.added !== undefined && cleanCardsAdded(patch.added) !== null ? { added: cleanCardsAdded(patch.added)! } : {}),
       }
+      // macOS Vault App launcher metadata (YAZ-5967, YAZ-6374): null deletes, valid sets, junk changes nothing.
+      if (patch.launcher === null) {
+        delete next.launcher
+      } else if (patch.launcher !== undefined) {
+        const launcher = cleanVaultLauncher(patch.launcher)
+        if (launcher !== null) next.launcher = launcher
+      }
       // One vault per number (YAZ-2555 D2): the same commit takes it from the vault that had it.
       commit({ ...state, folders: { ...(key == null ? state.folders : freeVaultKey(state.folders, key)), [root]: next } })
     },
@@ -1899,7 +1917,13 @@ export function createStore(filePath: string): Store {
       const existing = state.vaultSets.find((s) => s.name === name)
       // R12 counts sets, so a save under a name that exists is never the one refused.
       if (existing === undefined && state.vaultSets.length >= MAX_VAULT_SETS) return null
-      const saved: VaultSet = { id: existing?.id ?? randomUUID(), name, roots, lastUsed: now }
+      const saved: VaultSet = {
+        id: existing?.id ?? randomUUID(),
+        name,
+        roots,
+        lastUsed: now,
+        ...(existing?.launcher !== undefined ? { launcher: existing.launcher } : {}),
+      }
       commit({ ...state, vaultSets: [saved, ...state.vaultSets.filter((s) => s !== existing)] })
       return saved
     },
@@ -1921,6 +1945,20 @@ export function createStore(filePath: string): Store {
       const set = state.vaultSets.find((s) => s.id === id)
       if (set === undefined || (state.vaultSets[0] === set && set.lastUsed === now)) return
       commit({ ...state, vaultSets: [{ ...set, lastUsed: now }, ...state.vaultSets.filter((s) => s !== set)] })
+    },
+
+    setVaultSetLauncher(id, rawLauncher) {
+      const set = state.vaultSets.find((s) => s.id === id)
+      if (set === undefined) return
+      if (rawLauncher === null) {
+        if (set.launcher === undefined) return
+        const { launcher: _removed, ...rest } = set
+        commit({ ...state, vaultSets: state.vaultSets.map((s) => (s === set ? rest : s)) })
+        return
+      }
+      const launcher = cleanVaultLauncher(rawLauncher)
+      if (launcher === null) return
+      commit({ ...state, vaultSets: state.vaultSets.map((s) => (s === set ? { ...s, launcher } : s)) })
     },
 
     saveSession(rawName, rawTabs, rawRoots, replaceId, now = Date.now()) {

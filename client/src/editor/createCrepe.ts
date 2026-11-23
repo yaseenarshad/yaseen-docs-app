@@ -265,6 +265,7 @@ import { readOnlyKeys } from './readOnlyKeys'
 import { createBlockHandleMenu } from './blockHandleMenu'
 import { breakMarks } from './breakMarks'
 import { BOARD_VIEW_META, createBoardEmbed } from './drawing/boardEmbed'
+import { drawingPositionRows } from './drawing/drawingAlign'
 import { inlineDrawingPlugins, type InlineDrawingDeps } from './drawing/inlineDrawingView'
 import { flushBoardWindows } from './embed/hostWindow'
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
@@ -1005,7 +1006,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // buttons and T in one strip, YAZ-3727 D13, D14), its children (Number children, when it has any), its
   // own numbered list as bullets with written numbers (YAZ-3727 D12),
   // then a line's pickers (YAZ-3164 D3), or a table's settings (YAZ-3767 D7). A new row joins its group.
-  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...turnIntoRows(view, target, ctx), ...numberChildrenRow(view, target, ctx), ...writtenNumbersRow(view, target, ctx), ...foldAllRows(view, target, ctx), ...lineRows(view, target, ctx), ...tableRows(view, target, ctx)]))
+  crepe.editor.use(createBlockHandleMenu((view, target, ctx) => [...openBulletRow(view, target, opts.zoom?.onOpen), ...turnIntoRows(view, target, ctx), ...numberChildrenRow(view, target, ctx), ...writtenNumbersRow(view, target, ctx), ...foldAllRows(view, target, ctx), ...lineRows(view, target, ctx), ...tableRows(view, target, ctx), ...drawingPositionRows(view, target, ctx)]))
   crepe.editor.use(multiBlockDrag)
   // Before outlinerKeymap on purpose: both bind Enter at priority 100 and KeymapManager runs
   // equal priorities in addition order — an OPEN [[ picker takes Enter, closed falls through.

@@ -62,26 +62,42 @@ export function splitLink(inner: string, isPage?: (page: string) => boolean): Li
   const right = inner.slice(pipe + 1)
   const l = sideOf(left)
   const r = sideOf(right)
-  // A file on the left is always the page; a file on the right is the page when the left is an ID (a name stays left).
-  const pageFirst = isFileName(r.page)
-    ? !isPageId(l.page)
-    : isFileName(l.page) || isPageId(l.page) || !isPageId(r.page) || (isPage !== undefined && l.page !== '' && isPage(l.page))
+  // Left wins if it is a file or ID (except a file on the right beats an ID on the left, YAZ-4954 part 2).
+  // Else if right is a file or ID, left wins only when it resolves (`isPage(left)`).
+  // Else (two plain names), left wins unless left misses and right resolves (YAZ-6352).
+  const pageFirst = isFileName(l.page)
+    ? true
+    : isFileName(r.page)
+      ? !isPageId(l.page) && isPage !== undefined && l.page !== '' && isPage(l.page)
+      : isPageId(l.page)
+        ? true
+        : isPageId(r.page)
+          ? isPage !== undefined && l.page !== '' && isPage(l.page)
+          : (isPage !== undefined && l.page !== '' && isPage(l.page)) || !(isPage !== undefined && r.page !== '' && isPage(r.page))
   return pageFirst ? { ...l, head: left, words: right, pipe, pageFirst } : { ...r, head: right, words: left, pipe, pageFirst }
 }
 
 /**
- * Only the shape picked the right side, and the left side names a page too (`Covid pages|COVID-19`): which side is the
- * page depends on the vault's pages (YAZ-4954). For parts split without `isPage`. False when the left side is empty or
- * an ID, the shape kept the left side, or the right side is a file (`isFileName`), which is always the page.
+ * Both sides are non-empty and the left side is neither a file nor an ID (YAZ-4954, YAZ-6352): which side is the page
+ * depends on the vault's pages. For parts split without `isPage`.
  */
-export const undecided = (parts: LinkParts): boolean => !parts.pageFirst && parts.words !== null && sideOf(parts.words).page !== '' && !isFileName(parts.page)
+export const undecided = (parts: LinkParts): boolean => {
+  if (parts.words === null) return false
+  const left = parts.pageFirst ? parts.page : sideOf(parts.words).page
+  const right = parts.pageFirst ? sideOf(parts.words).page : parts.page
+  return left !== '' && right !== '' && !isFileName(left) && !isPageId(left)
+}
 
 /**
- * The target the index keeps for the text inside `[[…]]` (YAZ-4954): the page, without its `#…`. When the link is
- * `undecided`, BOTH page sides as `left|right` (`Covid pages|COVID-19`): the scan knows no pages, so the resolver picks
- * when it reads the target. `splitLink` reads that pair as it reads the link, so every reader of the pair agrees.
+ * The target the index keeps for the text inside `[[…]]` (YAZ-4954, YAZ-6352): the page, without its `#…`. When the
+ * link is `undecided`, BOTH page sides as `left|right` (`Covid pages|COVID-19`, `Alias|Target`): the scan knows no
+ * pages, so the resolver picks when it reads the target. `splitLink` reads that pair as it reads the link, so every
+ * reader of the pair agrees.
  */
 export function indexTarget(inner: string): string {
   const parts = splitLink(inner)
-  return undecided(parts) ? `${sideOf(parts.words ?? '').page}|${parts.page}` : parts.page
+  if (!undecided(parts)) return parts.page
+  const left = parts.pageFirst ? parts.page : sideOf(parts.words ?? '').page
+  const right = parts.pageFirst ? sideOf(parts.words ?? '').page : parts.page
+  return `${left}|${right}`
 }

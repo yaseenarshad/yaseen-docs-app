@@ -34,6 +34,7 @@ import { embedFolds, toggleOutlineFold } from '../outline/outlineFolding'
 import { tellReadOnlyEdit } from '../readOnlyEdit'
 import { vaultUnit } from '../../vault/unitWord'
 import { BOARD_EMBED_CLASS, BOARD_VIEW_META } from './boardEmbed'
+import { positionMenuRow, setInlineDrawingAlign, syncAlignAttr } from './drawingAlign'
 import { landOnInlineDrawing, landWhenShown, takeInlineDrawingLanding, watchInlineDrawingLanding } from './inlineDrawingLand'
 import { drawingOptionsOf, isInlineDrawingNode } from './inlineDrawingLine'
 import './boardEmbed.css'
@@ -133,6 +134,7 @@ export class InlineDrawingView implements NodeView {
     this.dom = document.createElement('div')
     this.dom.className = `${BOARD_EMBED_CLASS} ${INLINE_DRAWING_CLASS}`
     this.dom.contentEditable = 'false'
+    syncAlignAttr(this.dom, drawingOptionsOf(this.node)?.align)
 
     this.head = document.createElement('div')
     this.head.className = 'inline-drawing__head'
@@ -452,7 +454,17 @@ export class InlineDrawingView implements NodeView {
           }
         : null,
     ])
-    group(this.handle?.menuRows().map(menuRowOf) ?? [])
+    const liveForAlign = this.liveNode()
+    const currentAlign = liveForAlign === null ? null : (drawingOptionsOf(liveForAlign.node)?.align ?? null)
+    group([
+      ...(this.handle?.menuRows().map(menuRowOf) ?? []),
+      editable
+        ? positionMenuRow(currentAlign, (align) => {
+            const live = this.liveNode()
+            if (live !== null) setInlineDrawingAlign(this.view, live.pos, align)
+          })
+        : null,
+    ])
     group([
       editable
         ? {
@@ -475,8 +487,11 @@ export class InlineDrawingView implements NodeView {
     if (!isInlineDrawingNode(nextNode)) return false
     const prev = this.node
     this.node = nextNode
-    if (nextNode.attrs.drawingLine !== prev.attrs.drawingLine && document.activeElement !== this.titleInput) {
-      this.titleInput.value = drawingTitleOf(nextNode.attrs.drawingLine)
+    if (nextNode.attrs.drawingLine !== prev.attrs.drawingLine) {
+      syncAlignAttr(this.dom, drawingOptionsOf(nextNode)?.align)
+      if (document.activeElement !== this.titleInput) {
+        this.titleInput.value = drawingTitleOf(nextNode.attrs.drawingLine)
+      }
     }
     if (nextNode.textContent !== prev.textContent || nextNode.attrs.drawingLine !== prev.attrs.drawingLine) {
       this.handle?.update({ ref: this.refOf(nextNode), options: drawingOptionsOf(nextNode) })

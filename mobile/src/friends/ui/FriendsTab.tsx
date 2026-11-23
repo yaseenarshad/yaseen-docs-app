@@ -378,7 +378,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
     allSharedCards.filter((x) => x.card.status === 'pending').length +
     allSharedFolders.reduce((acc, x) => acc + x.folder.cards.filter((c) => c.status === 'pending').length, 0)
 
-  // YAZ-6222: auto-accept any invite link stashed on /friend#<code> or /group#<code> before GitHub sign-in.
+  // YAZ-6222 / YAZ-6372: auto-accept any invite link stashed on /friend#<code> or /group#<code> before GitHub sign-in.
   const pendingChecked = useRef(false)
   useEffect(() => {
     if (pendingChecked.current) return
@@ -387,15 +387,10 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
     if (pending === null) return
     void service
       .paste(pending.url)
-      .then(async (ans) => {
-        if ('kind' in ans && (ans.kind === 'added' || ans.kind === 'already')) {
-          setSaid(pasteMessage(ans))
-        } else if ('kind' in ans && ans.kind === 'joined') {
-          setSaid(joinMessage(ans))
-        } else {
-          setSaid(pending.kind === 'group' ? 'Could not join group from invite link.' : 'Could not add friend from invite link.')
-        }
-        await refresh()
+      .then((ans) => {
+        setSaid(pasteWords(ans))
+        // Keep refresh outside the accept catch so a refresh hiccup never overwrites a successful join with an error.
+        void refresh().catch(() => undefined)
       })
       .catch(() => {
         setSaid('Could not accept invite link. Try pasting it from +.')

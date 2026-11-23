@@ -1487,6 +1487,18 @@ button {
   white-space: nowrap;
 }
 
+.welcome__recent-name--with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.welcome__vault-icon {
+  flex: none;
+  border-radius: 5px;
+  object-fit: cover;
+}
+
 .welcome__recent-when {
   align-self: center;
   font-size: 12px;
@@ -2059,7 +2071,7 @@ body.drag-held iframe {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 12px 4px 10px 14px;
@@ -2088,6 +2100,8 @@ body.drag-held iframe {
 }
 
 .sidebar__root-name {
+  flex: 1;
+  min-width: 0;
   font-weight: 600;
   font-size: 13px;
   overflow: hidden;
@@ -2097,6 +2111,13 @@ body.drag-held iframe {
 
 /* The switcher's chevron (YAZ-1767 D6): Octicons triangle-down — the one GitHub Desktop's repository
    button wears — pointing up while the panel is open; one line, so the header keeps its height. */
+.sidebar__root-icon {
+  flex: none;
+  align-self: center;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
 .sidebar__root-hint {
   flex: none;
   display: inline-flex;
@@ -2145,6 +2166,18 @@ body.drag-held iframe {
   min-width: 0;
   font-weight: 600;
   overflow-wrap: anywhere; /* never cut: past the panel's cap a name wraps (YAZ-1974 D7) */
+}
+
+.vault-switcher__name--with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.vault-switcher__icon {
+  flex: none;
+  border-radius: 4px;
+  object-fit: cover;
 }
 
 .vault-switcher__when {
