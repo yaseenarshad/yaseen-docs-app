@@ -60,29 +60,59 @@ function parseScene(text: string): Scene | null {
 }
 
 /**
- * Structural equality for plain data, whatever the order of its keys: the app's writer keeps its order, but a shape the
- * engine restored and the same shape an AI wrote need not share one (YAZ-4279).
- */
-export const same = (a: unknown, b: unknown): boolean => JSON.stringify(a, inOrder) === JSON.stringify(b, inOrder)
-
-/** A `JSON.stringify` replacer: each object's keys in one order. */
-function inOrder(_key: string, value: unknown): unknown {
-  if (!isRecord(value)) return value
-  const out: Record<string, unknown> = {}
-  for (const k of Object.keys(value).sort()) out[k] = value[k]
-  return out
-}
-
-/**
  * The engine's own stamps (YAZ-4279 D1). A version bump that moved nothing is no edit: the engine bumps them on load, and an
  * AI that writes the JSON leaves them as they were. So no side is picked by them, except as `newer`'s tie-break. `seed` is
  * the hand-drawn wobble: the engine's restore gives a shape that has none a random one, so it differs between two restores
  * of one file and is never an edit (4A-6).
  */
 const STAMPS: ReadonlySet<string> = new Set(['version', 'versionNonce', 'updated', 'seed'])
-const unstamped = (e: Element | undefined): string | undefined => (e === undefined ? undefined : JSON.stringify(e, (key, value) => (STAMPS.has(key) ? undefined : inOrder(key, value))))
+
+/**
+ * Fast structural equality for plain JSON data, key-order independent, without allocating sorted JSON strings (YAZ-4279 item 8).
+ * Matches `JSON.stringify` semantics for plain objects (keys with `undefined` values are ignored).
+ */
+function sameValue(a: unknown, b: unknown, skipStamps: boolean): boolean {
+  if (a === b) return true
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) {
+      if (!sameValue(a[i], b[i], skipStamps)) return false
+    }
+    return true
+  }
+  if (Array.isArray(b)) return false
+  const ao = a as Record<string, unknown>
+  const bo = b as Record<string, unknown>
+  const aKeys = Object.keys(ao)
+  const bKeys = Object.keys(bo)
+  let aCount = 0
+  for (let i = 0; i < aKeys.length; i++) {
+    const k = aKeys[i]
+    if (skipStamps && STAMPS.has(k)) continue
+    const av = ao[k]
+    if (av === undefined) continue
+    aCount++
+    const bv = bo[k]
+    if (bv === undefined || !sameValue(av, bv, skipStamps)) return false
+  }
+  let bCount = 0
+  for (let i = 0; i < bKeys.length; i++) {
+    const k = bKeys[i]
+    if (skipStamps && STAMPS.has(k)) continue
+    if (bo[k] !== undefined) bCount++
+  }
+  return aCount === bCount
+}
+
+/**
+ * Structural equality for plain data, whatever the order of its keys: the app's writer keeps its order, but a shape the
+ * engine restored and the same shape an AI wrote need not share one (YAZ-4279).
+ */
+export const same = (a: unknown, b: unknown): boolean => sameValue(a, b, false)
+
 /** One shape's content on two sides is the same, the stamps aside. */
-export const sameShape = (a: Element | undefined, b: Element | undefined): boolean => unstamped(a) === unstamped(b)
+export const sameShape = (a: Element | undefined, b: Element | undefined): boolean => sameValue(a, b, true)
 
 export const alive = (e: Element | undefined): e is Element => e !== undefined && e.isDeleted !== true
 
@@ -100,7 +130,7 @@ function newer(theirs: Element, mine: Element): Element {
 const byId = (elements: readonly Element[]): Map<string, Element> => new Map(elements.map((e) => [e.id, e]))
 
 /** Every id in first-seen order across the sides — theirs first, so a board's order follows the remote when `index` cannot decide. */
-function idsInOrder(...sides: readonly Element[][]): string[] {
+function idsInOrder(...sides: readonly (readonly Element[])[]): string[] {
   const ids = new Set<string>()
   for (const side of sides) for (const e of side) ids.add(e.id)
   return [...ids]
@@ -128,14 +158,30 @@ function mergeRecord(base: Record<string, unknown>, theirs: Record<string, unkno
 
 const recordOf = (v: unknown): Record<string, unknown> => (isRecord(v) ? v : {})
 
+/** Fold state on text elements (YAZ-4277): `foldedLines` and `foldedLineTexts` are one atomic pair (YAZ-4279 item 2). */
+const FOLD_KEYS = ['foldedLines', 'foldedLineTexts'] as const
+const FOLD_KEY_SET: ReadonlySet<string> = new Set(FOLD_KEYS)
+
 /**
  * One shape both sides changed, for an open board (YAZ-4279 D4): each property from the side that changed it, the bindings of
  * both. Null when both changed one property to different values — only the user can settle that (the conflict bar).
  */
 function mergeShape(was: Element, theirs: Element, mine: Element): Element | null {
   const out: Element = { ...mine }
+
+  // Atomic fold-pair merge (item 2): treat foldedLines + foldedLineTexts as one unit.
+  const theirsFoldChanged = !same(theirs.foldedLines, was.foldedLines) || !same(theirs.foldedLineTexts, was.foldedLineTexts)
+  const mineFoldChanged = !same(mine.foldedLines, was.foldedLines) || !same(mine.foldedLineTexts, was.foldedLineTexts)
+  if (theirsFoldChanged && !(same(theirs.foldedLines, mine.foldedLines) && same(theirs.foldedLineTexts, mine.foldedLineTexts))) {
+    if (mineFoldChanged) return null
+    for (const fk of FOLD_KEYS) {
+      if (theirs[fk] === undefined) delete out[fk]
+      else out[fk] = theirs[fk]
+    }
+  }
+
   for (const key of new Set([...Object.keys(was), ...Object.keys(theirs), ...Object.keys(mine)])) {
-    if (STAMPS.has(key) || same(theirs[key], was[key]) || same(theirs[key], mine[key])) continue
+    if (STAMPS.has(key) || FOLD_KEY_SET.has(key) || same(theirs[key], was[key]) || same(theirs[key], mine[key])) continue
     if (same(mine[key], was[key])) {
       if (theirs[key] === undefined) delete out[key]
       else out[key] = theirs[key]
@@ -175,7 +221,7 @@ export function mergeElements(base: readonly Element[], theirs: readonly Element
   const conflicts: string[] = []
   let clashes = 0
 
-  for (const id of idsInOrder([...theirs], [...mine])) {
+  for (const id of idsInOrder(theirs, mine)) {
     const was = b.get(id)
     const tv = t.get(id)
     const mv = m.get(id)

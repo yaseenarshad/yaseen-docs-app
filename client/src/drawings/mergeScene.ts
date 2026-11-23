@@ -1,5 +1,6 @@
 import { alive, mergeElements, same, type Element } from '@shared/boardMerge'
 import type { ExcalidrawModule } from './engine'
+import { sanitizeElements } from './sanitizeScene'
 
 /**
  * AN OUTSIDE SAVE, ON THE CANVAS (YAZ-4279 D1, D4). An AI or another app saved the board this tab shows. `base` is the scene
@@ -40,6 +41,7 @@ export interface SceneClash {
 }
 
 const restore = (engine: Engine, elements: readonly unknown[]): Shape[] => engine.restoreElements(elements as never, null) as unknown as Shape[]
+const randInt = (): number => Math.floor(Math.random() * 2 ** 31)
 
 export function mergeLiveScene(engine: Engine, base: SceneSide, disk: SceneSide, live: SceneSide, boardKeys: readonly string[]): SceneMerge | SceneClash {
   // A key missing from the base is the engine's default, as the canvas holds it (4A-8); one missing from the file says
@@ -52,7 +54,8 @@ export function mergeLiveScene(engine: Engine, base: SceneSide, disk: SceneSide,
     appState[key] = theirs[key]
   }
 
-  const [baseEls, diskEls] = [restore(engine, base.elements), restore(engine, disk.elements)]
+  const sanitizedDisk = sanitizeElements(disk.elements).elements
+  const [baseEls, diskEls] = [restore(engine, base.elements), restore(engine, sanitizedDisk)]
   newWords(baseEls, diskEls)
   const liveEls = live.elements as readonly Shape[]
   const merged = mergeElements(baseEls, diskEls, liveEls, 'per-property')
@@ -72,9 +75,178 @@ export function mergeLiveScene(engine: Engine, base: SceneSide, disk: SceneSide,
     const was = onCanvas.get(e.id)
     if (alive(took)) (alive(was) ? changed : added).push(e.id)
     // Above the canvas's version, as an edit: the engine redraws it, and the next save counts it.
-    return { ...took, version: Math.max(was?.version ?? 0, took.version ?? 0) + 1, versionNonce: Math.floor(Math.random() * 2 ** 31), updated: now }
+    return { ...took, version: Math.max(was?.version ?? 0, took.version ?? 0) + 1, versionNonce: randInt(), updated: now }
   })
   return { elements, appState, added, changed }
+}
+
+/**
+ * Item 4 (YAZ-4279): Prepare a disk scene that is replacing the canvas wholesale (e.g., "Use external" / reload).
+ * Sanitizes corruption, bumps versions, restores via the engine, re-measures all alive text elements, and ensures
+ * fresh version/versionNonce stamps so Excalidraw's ShapeCache invalidates cleanly.
+ */
+export function prepareReplacedScene(engine: Engine, disk: SceneSide): { elements: Shape[] } {
+  const { elements: sanitized } = sanitizeElements(disk.elements, { bumpVersions: true })
+  const restored = restore(engine, sanitized)
+  const aliveTexts = new Map<string, Shape>()
+  for (const e of restored) {
+    if (alive(e) && e.type === 'text') aliveTexts.set(e.id, e)
+  }
+  const remeasured = aliveTexts.size > 0 ? measured(engine, restored, aliveTexts) : new Map<string, Shape>()
+  const now = Date.now()
+  const elements = restored.map((e) => {
+    const pick = remeasured.get(e.id) ?? e
+    return {
+      ...pick,
+      version: Math.max(e.version ?? 1, pick.version ?? 1),
+      versionNonce: randInt(),
+      updated: now,
+    }
+  })
+  return { elements }
+}
+
+/**
+ * Item 12-core (YAZ-4279): "Keep both" conflict resolution. Merges all non-clashing shapes normally; for every
+ * clashing shape id, keeps the user's live version (if alive) and, if the disk version is alive, appends a clean,
+ * offset duplicate (`+40, +40`) with a fresh unique id (`${id}-ai-${suffix}`), cleared bindings/container, and fresh
+ * stamps. Re-measures any added, changed, or duplicated text elements.
+ */
+export function keepBothLiveScene(
+  engine: Engine,
+  base: SceneSide,
+  disk: SceneSide,
+  live: SceneSide,
+  boardKeys: readonly string[],
+): SceneMerge & { duplicated: string[] } {
+  const [wasApp, theirsApp] = [
+    engine.restoreAppState(base.appState as never, null) as unknown as Record<string, unknown>,
+    engine.restoreAppState(disk.appState as never, null) as unknown as Record<string, unknown>,
+  ]
+  const appState: Record<string, unknown> = {}
+  for (const key of boardKeys) {
+    if (!(key in disk.appState) || same(theirsApp[key], wasApp[key]) || same(theirsApp[key], live.appState[key])) continue
+    if (!same(live.appState[key], wasApp[key])) continue
+    appState[key] = theirsApp[key]
+  }
+
+  const sanitizedDisk = sanitizeElements(disk.elements).elements
+  const [baseEls, diskEls] = [restore(engine, base.elements), restore(engine, sanitizedDisk)]
+  newWords(baseEls, diskEls)
+  const liveEls = live.elements as readonly Shape[]
+
+  const firstPass = mergeElements(baseEls, diskEls, liveEls, 'per-property')
+  const conflicts = 'conflicts' in firstPass ? firstPass.conflicts : []
+  let mergedElements: Element[]
+
+  if (conflicts.length === 0) {
+    mergedElements = (firstPass as { elements: Element[] }).elements
+  } else {
+    // Neutralize clashing ids on the disk side to match `base` so `mergeElements` merges all non-clashing shapes
+    // normally while preserving the user's live version for every clashing id.
+    const conflictSet = new Set(conflicts)
+    const baseById = new Map(baseEls.map((e) => [e.id, e]))
+    const diskNonClashing: Shape[] = []
+    for (const e of diskEls) {
+      if (conflictSet.has(e.id)) {
+        const wasEl = baseById.get(e.id)
+        if (wasEl !== undefined) diskNonClashing.push(wasEl)
+      } else {
+        diskNonClashing.push(e)
+      }
+    }
+    for (const id of conflicts) {
+      if (!diskEls.some((e) => e.id === id)) {
+        const wasEl = baseById.get(id)
+        if (wasEl !== undefined) diskNonClashing.push(wasEl)
+      }
+    }
+    const secondPass = mergeElements(baseEls, diskNonClashing, liveEls, 'per-property')
+    mergedElements = 'elements' in secondPass ? secondPass.elements : [...liveEls]
+  }
+
+  const onCanvas = new Map(liveEls.map((e) => [e.id, e]))
+  const taken = new Map<string, Shape>()
+  for (const e of mergedElements) {
+    if (e !== onCanvas.get(e.id)) taken.set(e.id, e as Shape)
+  }
+
+  const diskById = new Map(diskEls.map((e) => [e.id, e]))
+  const usedIds = new Set<string>()
+  for (const e of mergedElements) usedIds.add(e.id)
+  for (const e of diskEls) usedIds.add(e.id)
+  for (const e of liveEls) usedIds.add(e.id)
+
+  let maxIndex: string | null = null
+  for (const e of mergedElements) {
+    if (typeof e.index === 'string' && (maxIndex === null || maxIndex < e.index)) maxIndex = e.index
+  }
+
+  const now = Date.now()
+  const duplicated: string[] = []
+  const dupIdSet = new Set<string>()
+  const dups: Shape[] = []
+
+  for (const id of conflicts) {
+    const diskEl = diskById.get(id)
+    if (!alive(diskEl)) continue
+    let suffix = 1
+    let dupId = `${diskEl.id}-ai-${suffix}`
+    while (usedIds.has(dupId)) {
+      suffix++
+      dupId = `${diskEl.id}-ai-${suffix}`
+    }
+    usedIds.add(dupId)
+    const x = typeof diskEl.x === 'number' && Number.isFinite(diskEl.x) ? diskEl.x : 0
+    const y = typeof diskEl.y === 'number' && Number.isFinite(diskEl.y) ? diskEl.y : 0
+    const dup: Shape = {
+      ...diskEl,
+      id: dupId,
+      x: x + 40,
+      y: y + 40,
+      boundElements: null,
+      containerId: null,
+      version: 1,
+      versionNonce: randInt(),
+      seed: randInt(),
+      updated: now,
+    }
+    if (maxIndex !== null) {
+      maxIndex = `${maxIndex}V`
+      dup.index = maxIndex
+    }
+    dups.push(dup)
+    taken.set(dupId, dup)
+    duplicated.push(dupId)
+    dupIdSet.add(dupId)
+  }
+
+  const allElements: Element[] = dups.length > 0 ? [...mergedElements, ...dups] : mergedElements
+  if (taken.size === 0) return { elements: allElements as Shape[], appState, added: [], changed: [], duplicated: [] }
+
+  for (const [id, text] of measured(engine, allElements, taken)) taken.set(id, text)
+
+  const added: string[] = []
+  const changed: string[] = []
+  const elements = allElements.map((e) => {
+    const took = taken.get(e.id)
+    if (took === undefined) return e as Shape
+    if (dupIdSet.has(e.id)) {
+      added.push(e.id)
+      return {
+        ...took,
+        version: 1,
+        versionNonce: randInt(),
+        seed: typeof took.seed === 'number' ? took.seed : randInt(),
+        updated: now,
+      }
+    }
+    const was = onCanvas.get(e.id)
+    if (alive(took)) (alive(was) ? changed : added).push(e.id)
+    return { ...took, version: Math.max(was?.version ?? 0, took.version ?? 0) + 1, versionNonce: randInt(), updated: now }
+  })
+
+  return { elements, appState, added, changed, duplicated }
 }
 
 /**
