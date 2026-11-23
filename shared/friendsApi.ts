@@ -205,7 +205,7 @@ export interface FriendsApiClient {
   unsubscribePush(endpoint: string): Promise<{ ok: true }>
   getNotificationPrefs(): Promise<{ prefs: NotificationPrefs; subscribedCount: number }>
   updateNotificationPrefs(patch: Partial<NotificationPrefs>): Promise<{ ok: true; prefs: NotificationPrefs }>
-  sendTestPush(): Promise<{ ok: true; sent: number; failed: number }>
+  sendTestPush(endpoint?: string): Promise<{ ok: true; sent: number; failed: number; failedStatuses?: number[] }>
   deleteMe(): Promise<{ ok: true; deleted: true }>
 }
 
@@ -474,8 +474,14 @@ export function createFriendsApiClient(opts: FriendsApiClientOptions): FriendsAp
       })
       return res.data!
     },
-    async sendTestPush() {
-      const res = await authed<{ ok: true; sent: number; failed: number }>('/api/friends/push/test', { method: 'POST' })
+    async sendTestPush(endpoint) {
+      const res = await authed<{ ok: true; sent: number; failed: number; failedStatuses?: number[] }>(
+        '/api/friends/push/test',
+        {
+          method: 'POST',
+          ...(endpoint ? { body: JSON.stringify({ endpoint }) } : {}),
+        },
+      )
       return res.data!
     },
     async deleteMe() {

@@ -912,7 +912,28 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
     }
     const testRes = await handle(req('/api/friends/push/test', { method: 'POST', headers: auth }), env, pushFetch)
     expect(testRes.status).toBe(200)
-    expect(await testRes.json()).toEqual({ ok: true, sent: 1, failed: 1 })
+    expect(await testRes.json()).toEqual({ ok: true, sent: 1, failed: 1, failedStatuses: [410] })
+
+    // 6b. Targeted test push sends only to the requested device endpoint
+    const targetedRes = await handle(
+      req('/api/friends/push/test', { method: 'POST', headers: auth, body: JSON.stringify({ endpoint: ep1 }) }),
+      env,
+      pushFetch,
+    )
+    expect(targetedRes.status).toBe(200)
+    expect(await targetedRes.json()).toEqual({ ok: true, sent: 1, failed: 0 })
+
+    const missingTargetRes = await handle(
+      req('/api/friends/push/test', {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ endpoint: 'https://web.push.apple.com/not-registered' }),
+      }),
+      env,
+      pushFetch,
+    )
+    expect(missingTargetRes.status).toBe(200)
+    expect(await missingTargetRes.json()).toEqual({ ok: true, sent: 0, failed: 0 })
 
     const prefsGet2 = (await (await handle(req('/api/friends/push/prefs', { method: 'GET', headers: auth }), env, ghFetch)).json()) as {
       subscribedCount: number

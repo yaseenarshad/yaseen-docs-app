@@ -64,7 +64,7 @@ function safeParseStats(raw: unknown): FriendStats | null {
   }
 }
 
-/** Sends `payload` to all registered push subscriptions for `userId` and prunes any 404/410 subscriptions. */
+/** Sends `payload` to registered push subscriptions for `userId` (optionally a single `endpoint`) and prunes 404/410 rows. */
 export async function notifyUser(
   env: WebPushEnv,
   db: D1Database,
@@ -72,17 +72,24 @@ export async function notifyUser(
   payload: WebPushPayload,
   fetchFn: Fetch = (u, init) => globalThis.fetch(u, init),
   nowMs: number = Date.now(),
-): Promise<{ sent: number; failed: number }> {
+  onlyEndpoint?: string,
+): Promise<{ sent: number; failed: number; failedStatuses: number[] }> {
   if (!env.VAPID_PUBLIC_KEY?.trim() || !env.VAPID_PRIVATE_KEY?.trim()) {
-    return { sent: 0, failed: 0 }
+    return { sent: 0, failed: 0, failedStatuses: [] }
   }
-  const rows = await db
-    .prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?')
-    .bind(userId)
-    .all<{ id: string; endpoint: string; p256dh: string; auth: string }>()
+  const rows = onlyEndpoint
+    ? await db
+        .prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? AND endpoint = ?')
+        .bind(userId, onlyEndpoint)
+        .all<{ id: string; endpoint: string; p256dh: string; auth: string }>()
+    : await db
+        .prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?')
+        .bind(userId)
+        .all<{ id: string; endpoint: string; p256dh: string; auth: string }>()
 
   let sent = 0
   let failed = 0
+  const failedStatuses: number[] = []
   const goneIds: string[] = []
 
   for (const row of rows.results) {
@@ -100,6 +107,7 @@ export async function notifyUser(
       sent++
     } else {
       failed++
+      failedStatuses.push(res.status)
       if (res.gone) goneIds.push(String(row.id))
     }
   }
@@ -108,7 +116,7 @@ export async function notifyUser(
     await db.batch(goneIds.map((id) => db.prepare('DELETE FROM push_subscriptions WHERE id = ?').bind(id)))
   }
 
-  return { sent, failed }
+  return { sent, failed, failedStatuses }
 }
 
 /**

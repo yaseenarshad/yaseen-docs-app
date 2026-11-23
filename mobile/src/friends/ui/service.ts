@@ -118,7 +118,7 @@ type PushApiMethods = {
   unsubscribePush?: (endpoint: string) => Promise<{ ok: true }>
   getNotificationPrefs?: () => Promise<{ prefs: NotificationPrefs; subscribedCount: number }>
   updateNotificationPrefs?: (patch: Partial<NotificationPrefs>) => Promise<{ ok: true; prefs: NotificationPrefs }>
-  sendTestPush?: () => Promise<{ ok: true; sent: number; failed: number }>
+  sendTestPush?: (endpoint?: string) => Promise<{ ok: true; sent: number; failed: number; failedStatuses?: number[] }>
 }
 
 export interface FriendsService {
@@ -181,7 +181,7 @@ export interface FriendsService {
   unsubscribePush?(endpoint: string): Promise<{ ok: true } | { ok: false; error: string }>
   getNotificationPrefs?(): Promise<{ prefs: NotificationPrefs; subscribedCount: number } | null>
   updateNotificationPrefs?(patch: Partial<NotificationPrefs>): Promise<{ ok: true; prefs: NotificationPrefs } | { ok: false; error: string }>
-  sendTestPush?(): Promise<{ ok: true; sent: number; failed: number } | { ok: false; error: string }>
+  sendTestPush?(endpoint?: string): Promise<{ ok: true; sent: number; failed: number; failedStatuses?: number[] } | { ok: false; error: string }>
 }
 
 /** Strips any `@branch` suffix and lowercases to canonical `owner/repo`. */
@@ -1610,11 +1610,11 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
         return { ok: false, error: err instanceof Error ? err.message : 'prefs_failed' }
       }
     },
-    async sendTestPush() {
+    async sendTestPush(endpoint?: string) {
       try {
         const ext = api as FriendsApiClient & PushApiMethods
         if (!ext.sendTestPush) return { ok: false, error: 'push_unsupported' }
-        return await ext.sendTestPush()
+        return await ext.sendTestPush(endpoint)
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'test_push_failed' }
       }
