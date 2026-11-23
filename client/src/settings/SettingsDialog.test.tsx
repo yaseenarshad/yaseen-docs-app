@@ -175,7 +175,7 @@ const TABLES_GROUPS = ['All tables', 'Cell notes', 'Calendar tables']
  */
 const CANVAS_ROWS = [...['gridModeEnabled', 'objectsSnapModeEnabled', 'snapGapStyle', 'snapColor', 'showResizeSizeBadge', 'measureDistancesInfo', 'snapToMidpoints', 'arrowBinding', 'selectOn', 'hoverOutline', 'textEdgeDoubleClick', 'toolLock', 'zenModeEnabled', 'writingMode', 'framesVisible', 'newElementStyle', 'newShapesMatchZoom', 'fillSetsTextColor', 'writingStrokeWidth', 'vectorStrokeWidth', 'defaultFontFamily', 'newTextScreenSize', 'newTextWrapMargin', 'defaultRoughness', 'defaultTextAlign', 'foldArrowsOpen', 'foldArrowSize', 'foldArrowThickness', 'foldArrowMinSize'].map((k) => `canvas.${k}`), 'embedRestSeconds', 'newPageDrawing', 'newBoardFolder', 'drawingPosition', 'diagramDarkColors']
 /** Settings › Images (YAZ-3038): the Pixabay key, the library folder and the favorites (YAZ-4363), then the icon packs (YAZ-4359). */
-const IMAGES_ROWS = ['pixabayApiKey', 'libraryFolder', 'favoriteCopies', 'iconPacks', 'mediaHoverZoom', 'mediaHoverZoomSize']
+const IMAGES_ROWS = ['imagePosition', 'pixabayApiKey', 'libraryFolder', 'favoriteCopies', 'iconPacks', 'mediaHoverZoom', 'mediaHoverZoomSize']
 /** Settings › Files & Links: the first group, then Preview on hover (YAZ-3403) — the master switch and one row per place. */
 // Daily pages (YAZ-3607 D12): off by default, so its group shows the switch alone.
 // New boards keep pictures and Allowed picture folders (YAZ-3943 demo 2, round 3); Links in drawings and diagrams (demo 2).

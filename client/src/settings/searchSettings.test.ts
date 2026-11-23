@@ -161,7 +161,8 @@ describe('settingCandidates', () => {
       'drawingPosition',
       // Its last group, draw.io diagrams (YAZ-4748 D11: "Drawings and diagrams"; before, Appearance's last row).
       'diagramDarkColors',
-      // Settings › Images (YAZ-3038).
+      // Settings › Images (YAZ-3038; Pictures in pages YAZ-6420).
+      'imagePosition',
       'pixabayApiKey',
       'libraryFolder',
       // The favorites and their copies (YAZ-4363).

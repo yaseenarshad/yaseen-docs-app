@@ -451,6 +451,17 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, mediaHoverZoomSize: 2 })).toBe(false)
   })
 
+  it('Picture position (YAZ-6420): a file from before it reads left; center survives a restart; junk reads left', async () => {
+    const { imagePosition: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    expect(DEFAULT_SETTINGS.imagePosition).toBe('left')
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.imagePosition).toBe('left')
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, imagePosition: 'center' } }))
+    expect(createStore(file).get().settings.imagePosition).toBe('center')
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, imagePosition: 'right' }).imagePosition).toBe('left')
+    expect(isSettings({ ...DEFAULT_SETTINGS, imagePosition: 'right' })).toBe(false)
+  })
+
   it('outsideChangeGlow (YAZ-3704 D5): a file from before it reads Until I check it; each value survives a restart; junk reads the default', async () => {
     const { outsideChangeGlow: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     expect(DEFAULT_SETTINGS.outsideChangeGlow).toBe('until-checked')

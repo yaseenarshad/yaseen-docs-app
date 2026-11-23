@@ -77,6 +77,39 @@ function type(input: HTMLInputElement, value: string) {
   })
 }
 
+describe('Settings › Images › Pictures in pages › Picture position (YAZ-6420)', () => {
+  const choice = () => rowButtons('imagePosition').map((b) => [b.textContent, b.getAttribute('aria-pressed')])
+
+  it('defaults to Left and reflects Center when set', async () => {
+    await mountImages()
+    expect(choice()).toEqual([
+      ['Left', 'true'],
+      ['Center', 'false'],
+    ])
+    act(() => root?.unmount())
+    el.remove()
+    await mountImages({ ...DEFAULT_SETTINGS, imagePosition: 'center' })
+    expect(choice()).toEqual([
+      ['Left', 'false'],
+      ['Center', 'true'],
+    ])
+  })
+
+  it('clicking Center updates imagePosition', async () => {
+    await mountImages()
+    act(() => rowButtons('imagePosition')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, imagePosition: 'center' })
+  })
+
+  it('search finds it by picture, image, and centre keywords', async () => {
+    const { searchSettings, settingCandidates } = await import('./searchSettings')
+    const candidates = settingCandidates({ settings: { ...DEFAULT_SETTINGS }, onChange })
+    for (const words of ['picture position', 'image', 'centre']) {
+      expect(searchSettings(candidates, words).map((h) => h.item.id)).toContain('imagePosition')
+    }
+  })
+})
+
 describe('Settings › Images › Add panel › Hover zoom (YAZ-4447, D34)', () => {
   const choice = () => rowButtons('mediaHoverZoom').map((b) => [b.textContent, b.getAttribute('aria-checked') ?? b.getAttribute('aria-pressed')])
   it("shows the value the Add panel's Filter menu writes: On by default, Off when it is off", async () => {

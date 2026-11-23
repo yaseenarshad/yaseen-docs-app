@@ -60,6 +60,7 @@ export function tablePositionVars(s: SettingsState): Record<string, string> {
     ...(card === 'left' && { '--card-table-inline': '0' }),
     ...(card === 'center' && { '--card-table-inline': 'auto' }),
     ...((s as Partial<SettingsState>).drawingPosition === 'center' && { '--drawing-align-start': 'auto', '--drawing-align-end': 'auto' }),
+    ...((s as Partial<SettingsState>).imagePosition === 'center' && { '--image-align-start': 'auto', '--image-align-end': 'auto' }),
   }
 }
 

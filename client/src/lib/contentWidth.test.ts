@@ -26,7 +26,7 @@ describe('Content width and Card width (YAZ-5144)', () => {
     expect(tp({ tablePosition: 'center', cardTablePosition: 'left' })).toEqual({ '--page-table-inline': 'auto', '--card-table-inline': '0' })
     expect(tp({ cardTablePosition: 'center' })).toEqual({ '--card-table-inline': 'auto' })
     // From a main process older than the fields: nothing, the look before.
-    const { tablePosition: _a, cardTablePosition: _b, drawingPosition: _c, ...older } = DEFAULT_SETTINGS
+    const { tablePosition: _a, cardTablePosition: _b, drawingPosition: _c, imagePosition: _d, ...older } = DEFAULT_SETTINGS
     expect(tablePositionVars(older as SettingsState)).toEqual({})
   })
 
@@ -38,6 +38,19 @@ describe('Content width and Card width (YAZ-5144)', () => {
       '--page-table-inline': 'auto',
       '--drawing-align-start': 'auto',
       '--drawing-align-end': 'auto',
+    })
+  })
+
+  it('YAZ-6420: Picture position Center emits --image-align-start and --image-align-end; Left emits neither', () => {
+    const tp = (over: Partial<SettingsState>) => tablePositionVars({ ...DEFAULT_SETTINGS, ...over })
+    expect(tp({ imagePosition: 'left' })).toEqual({})
+    expect(tp({ imagePosition: 'center' })).toEqual({ '--image-align-start': 'auto', '--image-align-end': 'auto' })
+    expect(tp({ tablePosition: 'center', drawingPosition: 'center', imagePosition: 'center' })).toEqual({
+      '--page-table-inline': 'auto',
+      '--drawing-align-start': 'auto',
+      '--drawing-align-end': 'auto',
+      '--image-align-start': 'auto',
+      '--image-align-end': 'auto',
     })
   })
 
