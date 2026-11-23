@@ -110,9 +110,12 @@ export function linkedBasenames(records: readonly IndexRecord[]): Set<string> {
   for (const record of records) {
     for (const target of referenceTargets(record)) {
       named.add(targetBasename(target))
-      // A target that keeps both sides (`Covid pages|COVID-19`, YAZ-4954) can name either page: both basenames count.
+      // A target that keeps both sides (`Covid pages|COVID-19`, `Alias|Target`, YAZ-4954, YAZ-6352) can name either page: both basenames count.
       const pipe = target.indexOf('|')
-      if (pipe > 0) named.add(targetBasename(target.slice(0, pipe)))
+      if (pipe > 0) {
+        named.add(targetBasename(target.slice(0, pipe)))
+        named.add(targetBasename(target.slice(pipe + 1)))
+      }
     }
   }
   return named

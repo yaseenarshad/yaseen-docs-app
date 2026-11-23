@@ -63,7 +63,7 @@ describe('right-click a [[link]] › Pill style (YAZ-4924 round 5)', () => {
   it('is a flyout in the link menu, before Edit link: Text (B I U S), Highlight (None, yellow, the named colours), Back to the vault\'s look', async () => {
     const { root, view } = await mount('pad [[Known]] tail\n')
     rightClick(span(root, 'Known'))
-    expect(topRows(view)).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Pill style', 'Edit link', 'Remove link'])
+    expect(topRows(view)).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Pill style', 'Add alias', 'Edit link', 'Remove link'])
     const sub = flyout(view)
     expect(Array.from(sub.querySelectorAll('.ctx-menu__heading')).map((h) => h.textContent)).toEqual(['Text', 'Highlight'])
     expect(subRows(sub)).toEqual(['Bold', 'Italic', 'Underline', 'Strikethrough', 'None ✓', 'Yellow', 'Green', 'Blue', 'Pink', 'Orange', 'Purple', 'Red', 'Gray', "↺ Back to the vault's look (off)"])

@@ -32,6 +32,7 @@ import { linkClickAction } from './linkGesture'
 import type { LinkWhere } from './wikilink/wikilinkClick'
 import { fileLabel } from '../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkActions, type LinkMenu } from './linkMenu'
+import { openAliasBox } from '../drawings/editLinkBox'
 import { followDrag, nearerEdge } from './wikilink/wikilinkClick'
 import { NO_LINK_PILLS } from '@shared/linkPills'
 import { headKey, headSpan, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, tailKey, tailSpan, type PillMeta } from './wikilink/linkPillLook'
@@ -241,9 +242,24 @@ export function markdownLinkMenuOf(href: string, nav: MarkdownLinkNav, follow: (
  * has the place rows (Show in sidebar, Copy path, Focus, Favorites, "Open in ▸"). Any other link opens only through
  * the OS, and "Copy address" copies its href.
  */
-function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, follow: (href: string, where: LinkWhere) => void, keep: (run: () => void) => () => void, allowHighlight = true): LinkMenu {
+function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, follow: (href: string, where: LinkWhere) => void, keep: (run: () => void) => () => void, allowHighlight = true, openAlias?: (current: string, done: (next: string) => void) => void): LinkMenu {
   const path = nav.vaultPath?.(hit.href) ?? null
   const name = path === null ? null : fileLabel(path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1))
+  const currentText = view.state.doc.textBetween(hit.from, hit.to)
+  const defaultLabel = name !== null && name !== '' ? name : hit.href
+  const alias =
+    view.editable && path !== null && openAlias !== undefined
+      ? {
+          has: currentText !== defaultLabel,
+          run: () =>
+            openAlias(currentText, (next) => {
+              const trimmed = next.trim()
+              const replacement = trimmed === '' ? defaultLabel : trimmed
+              view.dispatch(view.state.tr.replaceWith(hit.from, hit.to, view.state.schema.text(replacement, [hit.mark])))
+              view.focus()
+            }),
+        }
+      : undefined
   return {
     ...markdownLinkMenuOf(hit.href, nav, follow),
     // A drawing's or a diagram's link (YAZ-4829 D8): the image node of the same address, `![name](href)` — a window (2B).
@@ -251,6 +267,7 @@ function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, 
     showAsEmbed: view.editable && path !== null && isBoardSrc(hit.href) && !inCellOrPage(view.state.doc.resolve(hit.from)) ? () => view.dispatch(view.state.tr.replaceWith(hit.from, hit.to, imageSchema.type(ctx).create({ src: hit.href, alt: newEmbedAlt(name ?? ''), title: '' }))) : undefined,
     // This pill's own style (YAZ-4924 round 5): the toolbar's marks around the whole link. A web link is no pill: none.
     pillStyle: path === null ? undefined : pillStyleRow(view, hit.from, hit.to, keep, allowHighlight),
+    alias,
     edit: view.editable ? () => ctx.get(linkTooltipAPI.key).editLink(hit.mark, hit.from, hit.to) : undefined,
     remove: view.editable ? () => ctx.get(linkTooltipAPI.key).removeLink(hit.from, hit.to) : undefined,
   }
@@ -396,7 +413,10 @@ export const createMarkdownLink = (nav: MarkdownLinkNav, source?: WikilinkResolv
             if (parent === null) return false
             event.preventDefault()
             close()
-            const rows = () => linkMenuRows(menuOf(view, hit, ctx, nav, follow, keep, allowHighlight))
+            const openAlias = (current: string, done: (next: string) => void) => {
+              close = openAliasBox(parent, event.clientX, event.clientY, current, done)
+            }
+            const rows = () => linkMenuRows(menuOf(view, hit, ctx, nav, follow, keep, allowHighlight, openAlias))
             close = openMenuAt(parent, event.clientX, event.clientY, rows(), rows)
             return true
           },

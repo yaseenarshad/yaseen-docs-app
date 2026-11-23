@@ -346,7 +346,7 @@ describe('right-click menu', () => {
     })
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
     // No App doors here: of the place rows only Copy path (YAZ-3740; with the doors: `linkMenu.test.ts`).
-    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Pill style', 'Edit link', 'Remove link'])
+    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Pill style', 'Edit alias', 'Edit link', 'Remove link'])
     expect(rowsOf(view).some((row) => row.disabled)).toBe(false)
     rowNamed(view, 'Open in new tab').click()
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
@@ -410,6 +410,37 @@ describe('right-click menu', () => {
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
     rowNamed(view, 'Remove link').click()
     expect(getMarkdownForSave(crepe)).toBe('**Bold** label\n')
+  })
+
+  it('YAZ-6353: Add alias / Edit alias on a Markdown link pill updates text in place and clearing restores default label', async () => {
+    const { crepe, root, view } = await mount('[Plan](../Other/Plan.md)\n', {
+      inApp: () => '/Other/Plan.md',
+      vaultPath: () => '/Other/Plan.md',
+      icon: () => ({ class: 'file-icon' }),
+    })
+    // Text equals default file label ("Plan") -> shows "Add alias"
+    mouse(anchorOf(root), 'contextmenu', { button: 2 })
+    rowNamed(view, 'Add alias').click()
+    const input1 = view.dom.parentElement!.querySelector<HTMLInputElement>('.drawing-link-edit input')!
+    expect(input1.value).toBe('Plan')
+    input1.value = 'Q4 Roadmap'
+    input1.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    expect(getMarkdownForSave(crepe)).toBe('[Q4 Roadmap](../Other/Plan.md)\n')
+
+    // Text differs from default file label -> shows "Edit alias"; empty restores default label
+    mouse(anchorOf(root), 'contextmenu', { button: 2 })
+    rowNamed(view, 'Edit alias').click()
+    const input2 = view.dom.parentElement!.querySelector<HTMLInputElement>('.drawing-link-edit input')!
+    expect(input2.value).toBe('Q4 Roadmap')
+    input2.value = ''
+    input2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    expect(getMarkdownForSave(crepe)).toBe('[Plan](../Other/Plan.md)\n')
+
+    // Read-only omits Add alias / Edit alias
+    crepe.setReadonly(true)
+    mouse(anchorOf(root), 'contextmenu', { button: 2 })
+    expect(rowsOf(view).map((row) => row.textContent)).not.toContain('Add alias')
+    expect(rowsOf(view).map((row) => row.textContent)).not.toContain('Edit alias')
   })
 
   it.each([
