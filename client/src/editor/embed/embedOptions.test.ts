@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { formatEmbedOptions, isBoardTarget, movedEnough, newEmbed, newEmbedAlt, optionsSuffix, parseEmbedOptions, splitEmbed, type EmbedOptions } from '@shared/embedOptions'
 import { rewriteBodyLinks } from '@shared/linkRewrite'
 
-const base: EmbedOptions = { width: 640, height: 360, view: { x: 120, y: -40, zoom: 0.8 }, locked: false, page: null, rest: [] }
+const base: EmbedOptions = { width: 640, height: 360, view: { x: 120, y: -40, zoom: 0.8 }, locked: false, page: null, align: null, rest: [] }
 
 describe('embed options (YAZ-4820 1A)', () => {
   it('reads every word and writes the same text back', () => {
@@ -24,7 +24,7 @@ describe('embed options (YAZ-4820 1A)', () => {
 
   it('reads Obsidian`s width alone (`|300`, A7): the height is the board`s, and it writes back as it was', () => {
     const parsed = parseEmbedOptions('300')
-    expect(parsed).toEqual({ width: 300, height: null, view: null, locked: false, page: null, rest: [] })
+    expect(parsed).toEqual({ width: 300, height: null, view: null, locked: false, page: null, align: null, rest: [] })
     expect(formatEmbedOptions(parsed!)).toBe('300')
     expect(formatEmbedOptions(parseEmbedOptions('300 locked')!)).toBe('300 locked')
     // The first write with a height keeps the user's width.
@@ -32,7 +32,7 @@ describe('embed options (YAZ-4820 1A)', () => {
   })
 
   it('a new embed`s `locked` alone (YAZ-2571 round 7): no size, so the window takes its own; it writes back as it was', () => {
-    expect(parseEmbedOptions('locked')).toEqual({ width: null, height: null, view: null, locked: true, page: null, rest: [] })
+    expect(parseEmbedOptions('locked')).toEqual({ width: null, height: null, view: null, locked: true, page: null, align: null, rest: [] })
     expect(formatEmbedOptions(parseEmbedOptions('locked')!)).toBe('locked')
     expect(splitEmbed('CloudFront.drawio|locked')).toEqual({ target: 'CloudFront.drawio', options: 'locked' })
     expect(splitEmbed('CloudFront.drawio|My name|locked')).toEqual({ target: 'CloudFront.drawio', options: 'locked' })
@@ -91,5 +91,28 @@ describe('embed options (YAZ-4820 1A)', () => {
     const body = 'See ![[Old.drawio|640x360 view=1,2,1 locked]] and [[Old.drawio]].'
     const out = rewriteBodyLinks(body, (t) => t === 'Old.drawio', () => 'New.drawio')
     expect(out).toBe('See ![[New.drawio|640x360 view=1,2,1 locked]] and [[New.drawio]].')
+  })
+
+  it('YAZ-6354: parses, formats, and round-trips align=left|center|right, ignores invalid values into rest, and triggers movedEnough', () => {
+    for (const align of ['left', 'center', 'right'] as const) {
+      const text = `640x360 locked align=${align}`
+      const parsed = parseEmbedOptions(text)
+      expect(parsed).toEqual({ width: 640, height: 360, view: null, locked: true, page: null, align, rest: [] })
+      expect(formatEmbedOptions(parsed!)).toBe(text)
+      expect(parseEmbedOptions(`align=${align}`)).toEqual({ width: null, height: null, view: null, locked: false, page: null, align, rest: [] })
+      expect(formatEmbedOptions({ width: null, height: null, view: null, locked: false, page: null, align, rest: [] })).toBe(`align=${align}`)
+    }
+    // Null align is omitted when formatting; empty options produce an empty suffix (no dangling `|`).
+    expect(formatEmbedOptions({ ...base, align: null })).toBe('640x360 view=120,-40,0.8')
+    expect(optionsSuffix({ width: null, height: null, view: null, locked: false, page: null, align: null, rest: [] })).toBe('')
+    // Invalid align values stay in rest.
+    const invalid = parseEmbedOptions('640x360 align=top')
+    expect(invalid?.align).toBeNull()
+    expect(invalid?.rest).toEqual(['align=top'])
+    expect(formatEmbedOptions(invalid!)).toBe('640x360 align=top')
+    // movedEnough treats align changes as changed.
+    expect(movedEnough(base, { ...base, align: 'center' })).toBe(true)
+    expect(movedEnough({ ...base, align: 'center' }, { ...base, align: 'right' })).toBe(true)
+    expect(movedEnough({ ...base, align: 'center' }, { ...base, align: 'center' })).toBe(false)
   })
 })

@@ -48,4 +48,28 @@ describe('the board window`s CSS', () => {
     const box = rules(windowCss, '.board-window__icon').find((r) => r.selector.endsWith('.board-window__icon'))!
     expect(box.body).toMatch(/width:\s*14px/)
   })
+
+  it('YAZ-6354 / YAZ-6350: drawings and diagrams align via --drawing-align-start/end, guard bullet nesting, and honor data-align overrides', () => {
+    const framed = rules(windowCss, '.board-embed.inline-drawing').find((r) => /margin-inline:\s*var\(--drawing-align-start,\s*0\)\s*var\(--drawing-align-end,\s*auto\)/.test(r.body))
+    expect(framed).toBeDefined()
+    expect(framed!.body).not.toContain('!important')
+
+    const unframed = rules(windowCss, '.board-embed > .board-window').find((r) => /margin-inline:\s*var\(--drawing-align-start,\s*0\)\s*var\(--drawing-align-end,\s*auto\)/.test(r.body))
+    expect(unframed).toBeDefined()
+
+    const bulletGuard = rules(windowCss, 'li .board-embed:not([data-align])').find((r) => /margin-inline:\s*0 auto/.test(r.body))
+    expect(bulletGuard).toBeDefined()
+    expect(beats(specificity(bulletGuard!.selector), specificity(framed!.selector))).toBe(true)
+
+    for (const [align, expected] of [
+      ['left', /margin-inline:\s*0 auto/],
+      ['center', /margin-inline:\s*auto/],
+      ['right', /margin-inline:\s*auto 0/],
+    ] as const) {
+      const override = rules(windowCss, `[data-align='${align}']`).find((r) => expected.test(r.body))
+      expect(override).toBeDefined()
+      expect(override!.body).not.toContain('!important')
+      expect(windowCss.indexOf(override!.selector)).toBeGreaterThan(windowCss.indexOf(framed!.selector))
+    }
+  })
 })

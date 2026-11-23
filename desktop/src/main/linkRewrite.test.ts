@@ -1,7 +1,7 @@
 // The ONE rewrite of an ID to a new ID in a file's text (YAZ-2677 D5, D6, D7): a clash fix, a change
 // of the vault's letters and the backfill of old IDs all go through `rewriteIds`.
 import { describe, expect, it } from 'vitest'
-import { exactLinkTarget, rewriteIds } from '@shared/linkRewrite'
+import { exactLinkTarget, rewriteBodyLinks, rewriteIds, rewriteInner, rewritePageLinks } from '@shared/linkRewrite'
 
 const ONE = new Map([['YAZ-1', 'YAZ-9']])
 
@@ -116,7 +116,7 @@ describe('exactLinkTarget: a settings link leaf follows the rule of YAZ-4935 (YA
     expect(exactLinkTarget('[[Covid pages|COVID-19]]')).toBe('Covid pages|COVID-19')
     expect(exactLinkTarget('[[COVID-19|Covid pages]]')).toBe('COVID-19')
     expect(exactLinkTarget('[[staging|WIKI-116]]')).toBe('staging|WIKI-116')
-    expect(exactLinkTarget('[[Postgres|database]]')).toBe('Postgres')
+    expect(exactLinkTarget('[[Postgres|database]]')).toBe('Postgres|database')
     expect(exactLinkTarget('[[|WIKI-116]]')).toBe('WIKI-116')
   })
 
@@ -128,5 +128,19 @@ describe('exactLinkTarget: a settings link leaf follows the rule of YAZ-4935 (YA
   it('no exact link, or an empty page: null', () => {
     expect(exactLinkTarget('Covid pages')).toBeNull()
     expect(exactLinkTarget('[[#Intro]]')).toBeNull()
+  })
+})
+
+describe('rewriteInner / rewritePageLinks with vault-wide isPage (YAZ-6365)', () => {
+  it('keeps [[Page A|Page B]] untouched when both pages exist and Page B is renamed', () => {
+    const resolvesB = (t: string) => t === 'Page B'
+    const isPage = (t: string) => t === 'Page A' || t === 'Page B'
+    const toB2 = () => 'Page B2'
+    expect(rewriteInner('Page A|Page B', resolvesB, toB2, isPage)).toBeNull()
+    expect(rewriteInner('Alias|Page B', resolvesB, toB2, isPage)).toBe('Alias|Page B2')
+    expect(rewriteBodyLinks('[[Page A|Page B]] and [[Page B]] and [[Alias|Page B]]', resolvesB, toB2, isPage)).toBe('[[Page A|Page B]] and [[Page B2]] and [[Alias|Page B2]]')
+    expect(rewritePageLinks('---\nref: "[[Page A|Page B]]"\n---\nSee [[Page A|Page B]] and [[Page B]].\n', resolvesB, toB2, isPage)).toBe(
+      '---\nref: "[[Page A|Page B]]"\n---\nSee [[Page A|Page B]] and [[Page B2]].\n',
+    )
   })
 })

@@ -54,10 +54,10 @@ describe('linkResolver: a board by its ID (YAZ-3943 4C)', () => {
     const resolve = linkResolver([rec('/vault/DEM-6.md'), rec('/vault/Page.md')], '/vault', DIRS, [], ['DEM'], boards)
     expect(resolve('DEM-5')).toBe('/vault/A/Plan copy.excalidraw')
     expect(resolve('[[dem-6|the sketch]]')).toBe('/vault/Sketch.excalidraw')
-    // YAZ-4935: the ID on either side of the `|`; two plain words keep the left side.
+    // YAZ-4935 / YAZ-6352: target on either side of the `|`; left wins when both resolve.
     expect(resolve('[[the sketch|dem-6]]')).toBe('/vault/Sketch.excalidraw')
     expect(resolve('the sketch|DEM-6#Top')).toBe('/vault/Sketch.excalidraw')
-    expect(resolve('[[the work|Projects]]')).toBeNull()
+    expect(resolve('[[the work|Projects]]')).toBe('/vault/Projects')
     expect(resolve('Page')).toBe('/vault/Page.md')
     expect(resolve('Projects')).toBe('/vault/Projects')
     expect(resolve('DEM-7')).toBeNull()

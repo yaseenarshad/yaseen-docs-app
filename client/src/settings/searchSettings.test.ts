@@ -154,6 +154,7 @@ describe('settingCandidates', () => {
       'embedRestSeconds',
       'newPageDrawing',
       'newBoardFolder',
+      'drawingPosition',
       // Its last group, draw.io diagrams (YAZ-4748 D11: "Drawings and diagrams"; before, Appearance's last row).
       'diagramDarkColors',
       // Settings › Images (YAZ-3038).

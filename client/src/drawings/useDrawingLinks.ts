@@ -15,7 +15,7 @@ import { linkMenuRows, openMenuAt, type LinkActions } from '../editor/linkMenu'
 import { wikilinkFollower, type WikilinkNav } from '../editor/wikilink/wikilinkClick'
 import { linkMenuOf } from '../editor/wikilink/wikilinkMenu'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
-import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { linkSplit, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
 import { VaultLinksContext } from '../links/vaultLinks'
@@ -25,7 +25,7 @@ import type { AnchorRect } from '../sidebar/previewPlacement'
 import { useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import { createDrawingLinkPicker, createLinkedPage } from './drawingLinkPicker'
 import { drawingDropLinks, drawingHostLinks, drawingPasteLink, drawingVaultOf, linkVault, mountDrawingVault, openShapeLink, redrawWindowLinks, setWindowLinkIcons, windowFollow, type DrawingLinkDeps } from './drawingLinks'
-import { openEditLinkBox } from './editLinkBox'
+import { openAliasBox, openEditLinkBox } from './editLinkBox'
 import type { DrawingSurfaceLinks } from './ExcalidrawSurface'
 
 /** What a board's host passes for its links: the props a page's editor gets for its `[[links]]`. */
@@ -167,8 +167,20 @@ export function useDrawingLinks(host: DrawingLinkHost) {
         const replace = live.current.readOnly ? undefined : hit.replace
         if (parent === null) return
         const owner = linkVault(hit.inner) ?? { source: wikilinks, viewOnly: viewOnlyLinks }
+        const { head: target, words } = linkSplit(hit.inner, owner.source)
+        const alias =
+          replace === undefined
+            ? undefined
+            : {
+                has: words !== null && words.trim() !== '',
+                run: () =>
+                  (closeMenu.current = openAliasBox(parent, event.clientX, event.clientY, words ?? '', (next) => {
+                    const cleaned = next.trim().replace(/[[\]|]/g, '').trim()
+                    replace(cleaned === '' ? `[[${target}]]` : `[[${target}|${cleaned}]]`)
+                  })),
+              }
         const edit = replace === undefined ? undefined : () => (closeMenu.current = openEditLinkBox(parent, event.clientX, event.clientY, hit.inner, (next) => replace(`[[${next}]]`)))
-        closeMenu.current = openMenuAt(parent, event.clientX, event.clientY, linkMenuRows(linkMenuOf(hit.inner, owner.source, nav, follow, owner.viewOnly, undefined, edit, replace)))
+        closeMenu.current = openMenuAt(parent, event.clientX, event.clientY, linkMenuRows(linkMenuOf(hit.inner, owner.source, nav, follow, owner.viewOnly, undefined, edit, replace, alias)))
       },
       picker,
       pasteLink,

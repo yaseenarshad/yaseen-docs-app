@@ -109,7 +109,7 @@ describe('the moved helpers keep their rules', () => {
   it('extractTags, extractAliases, extractLinks, extractEmbeds and linkTarget answer from `shared/`', () => {
     expect(extractTags({ tags: 'x, y' }, '`#code` #kept')).toEqual(['x', 'y', 'kept'])
     expect(extractAliases({ aliases: 'One, two' })).toEqual(['One, two'])
-    expect(extractLinks({ aliases: '[[Me]]', up: '[[Up]]' }, '[[a|words]] ![[e]]')).toEqual(['Up', 'a'])
+    expect(extractLinks({ aliases: '[[Me]]', up: '[[Up]]' }, '[[a|words]] ![[e]]')).toEqual(['Up', 'a|words'])
     expect(extractEmbeds('![[e#part]] [[x]]')).toEqual(['e'])
     expect(linkTarget('Page#heading|words')).toBe('Page')
   })
@@ -174,17 +174,17 @@ describe('extractAliases (GRO-2214)', () => {
 })
 
 describe('extractLinks / extractEmbeds', () => {
-  it('strips alias, heading and block refs; trims', () => {
-    expect(extractLinks({}, '[[A|alias]] [[B#Heading]] [[C#^blk]] [[ D ]]')).toEqual(['A', 'B', 'C', 'D'])
+  it('strips heading and block refs; keeps both sides of plain piped links; trims', () => {
+    expect(extractLinks({}, '[[A|alias]] [[B#Heading]] [[C#^blk]] [[ D ]]')).toEqual(['A|alias', 'B', 'C', 'D'])
   })
 
-  it('YAZ-4935: the page is the one side that is an ID, in either order — so Linked mentions find both', () => {
-    // Words first keeps both sides (YAZ-4954): the resolver picks the right side when the left side is no page.
+  it('YAZ-4935 / YAZ-6352: either side of `|` can be the page — so Linked mentions find both', () => {
+    // Words first keeps both sides (YAZ-4954 / YAZ-6352): the resolver picks the right side when the left side is no page.
     expect(extractLinks({}, '[[WIKI-116|staging]] and [[staging|WIKI-116]]')).toEqual(['WIKI-116', 'staging|WIKI-116'])
     expect(extractLinks({}, '[[staging|WIKI-116#Intro]] [[WIKI-116#Intro|staging]]')).toEqual(['staging|WIKI-116', 'WIKI-116'])
     expect(extractLinks({}, '[[the plan|k3m9x2pq7abc]]')).toEqual(['the plan|k3m9x2pq7abc'])
     expect(extractLinks({}, '[[|WIKI-116]]')).toEqual(['WIKI-116'])
-    expect(extractLinks({}, '[[Postgres|database]] [[WIKI-116|WIKI-117]]')).toEqual(['Postgres', 'WIKI-116'])
+    expect(extractLinks({}, '[[Postgres|database]] [[WIKI-116|WIKI-117]]')).toEqual(['Postgres|database', 'WIKI-116'])
     expect(extractLinks({ related: '[[staging|WIKI-116]]' }, '')).toEqual(['staging|WIKI-116'])
     expect(extractEmbeds('![[EMB-40|640x360 view=120,-40,0.8]]')).toEqual(['EMB-40'])
   })
@@ -203,11 +203,11 @@ describe('extractLinks / extractEmbeds', () => {
   it('embeds are not links and vice versa', () => {
     const body = '![[img.png]] [[Page]] ![[Other#sec|x]]'
     expect(extractLinks({}, body)).toEqual(['Page'])
-    expect(extractEmbeds(body)).toEqual(['img.png', 'Other'])
+    expect(extractEmbeds(body)).toEqual(['img.png', 'Other|x'])
   })
 
   it('frontmatter string values (top-level and in lists) matching exactly [[…]] count as links', () => {
-    expect(extractLinks({ related: '[[X]]', list: ['[[Y|y]]', 'plain', 7], page: 'see [[Z]]' }, '')).toEqual(['X', 'Y'])
+    expect(extractLinks({ related: '[[X]]', list: ['[[Y|y]]', 'plain', 7], page: 'see [[Z]]' }, '')).toEqual(['X', 'Y|y'])
   })
 
   it('`aliases` values are NEVER links, whatever they look like (GRO-2214)', () => {
@@ -220,7 +220,7 @@ describe('extractLinks / extractEmbeds', () => {
 
   it('a link in a folder’s value (`[[id]]`, `[[Name]]`, or a list of them) is in the page’s links, exactly as a top-level whole-value link is', () => {
     const props = { related: '[[Top]]', in: { '3y7505rsr6fd': { owner: '[[k3m9x2pq7abc]]', Status: 'Interview', team: ['[[Sam|S]]', 'plain', 7] }, mzf9cjhn02vm: { lead: '[[Road#Scope]]' } } }
-    expect(extractLinks(props, '[[Body]]')).toEqual(['Top', 'k3m9x2pq7abc', 'Sam', 'Road', 'Body'])
+    expect(extractLinks(props, '[[Body]]')).toEqual(['Top', 'k3m9x2pq7abc', 'Sam|S', 'Road', 'Body'])
   })
 
   it('a non-link string in a folder’s value that merely contains `[[x]]` inside other text is not a link', () => {

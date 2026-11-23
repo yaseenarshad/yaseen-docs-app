@@ -688,7 +688,7 @@ class BoardWindow implements BoardWindowHandle {
     const base = this.lastWritten ?? this.host.options
     // A view moved in a read-only host stays out of the text (YAZ-4942): a later write (a lock, a resize) keeps the saved one.
     const view = this.viewReadOnly ? (base?.view ?? null) : this.fitted || this.view === null ? null : roundView(this.view)
-    return { width: this.width, height: this.height, view, locked: this.locked, page: this.page, rest: base?.rest ?? [] }
+    return { width: this.width, height: this.height, view, locked: this.locked, page: this.page, align: base?.align ?? null, rest: base?.rest ?? [] }
   }
 
   private scheduleWrite(): void {

@@ -38,7 +38,7 @@ export const NEW_INLINE_DRAWING_LINE = '<!-- drawing: locked -->'
 const DRAWING_LINE_RE = /^<!--\s*drawing:\s*(.*?)\s*-->$/
 const TITLE_PREFIX_RE = /^title\s+"((?:\\.|[^"\\])*)"(?:\s*,\s*|\s*$)/
 
-const EMPTY_EMBED_OPTIONS: EmbedOptions = { width: null, height: null, view: null, locked: false, page: null, rest: [] }
+const EMPTY_EMBED_OPTIONS: EmbedOptions = { width: null, height: null, view: null, locked: false, page: null, align: null, rest: [] }
 
 const unescapeTitle = (raw: string): string => raw.replace(/\\(["\\])/g, '$1')
 const escapeTitle = (raw: string): string =>

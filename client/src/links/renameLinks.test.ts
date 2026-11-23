@@ -320,6 +320,17 @@ describe('updateLinksAfterRename', () => {
     expect(files['/v/A.md'].content).toBe('See [[Covid 2020|COVID-19]].\n')
   })
 
+  it('YAZ-6352: linkedBasenames includes both sides of plain-name `Alias|Target` and rename rewrites alias-first links', async () => {
+    const files = { '/v/A.md': { content: "See [[AR's V3 Roadmap|V3 full plan]].\n", mtime: 10 } }
+    installBridge(files)
+    const records = [rec('/v/A.md', { links: ["AR's V3 Roadmap|V3 full plan"] }), rec('/v/V3 full plan.md')]
+    expect([...linkedBasenames(records)].sort()).toEqual(["ar's v3 roadmap", 'v3 full plan'])
+    const move = { ids: true, root, oldPath: '/v/V3 full plan.md', newPath: '/v/V4 full plan.md', records }
+    expect(await countLinkReferences(move)).toBe(1)
+    expect(await updateLinksAfterRename(move)).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe("See [[AR's V3 Roadmap|V4 full plan]].\n")
+  })
+
   it('a CONFLICT re-reads once and retries; a second conflict skips the file', async () => {
     const files = { '/v/A.md': { content: '[[B]]\n', mtime: 10 } }
     const bridge = installBridge(files)
@@ -950,5 +961,51 @@ describe('countLinkReferences (the banner N — the exact referencing-set filter
     const summary = await updateLinksAfterRename({ ids: true, root, oldPath: '/v/B.md', newPath: '/v/B2.md', records })
     expect(n).toBe(2)
     expect(summary).toEqual({ updated: n, skipped: 0 })
+  })
+
+  it('YAZ-6365: renaming Page B leaves [[Page A|Page B]] untouched when both Page A and Page B exist', async () => {
+    const files = {
+      '/v/Note.md': { content: 'See [[Page A|Page B]] and [[Page B]] and [[My alias|Page B]].\n', mtime: 1 },
+      '/v/OnlyLeft.md': { content: 'Only [[Page A|Page B]].\n', mtime: 1 },
+    }
+    installBridge(files)
+    const records = [
+      rec('/v/Note.md', { links: ['Page A|Page B', 'Page B', 'My alias|Page B'] }),
+      rec('/v/OnlyLeft.md', { links: ['Page A|Page B'] }),
+      rec('/v/Page A.md'),
+      rec('/v/Page B.md'),
+    ]
+    expect(countLinkReferences({ ids: true, root, oldPath: '/v/Page B.md', records })).toBe(1)
+    const summary = await updateLinksAfterRename({ ids: true, root, oldPath: '/v/Page B.md', newPath: '/v/Page B2.md', records })
+    expect(summary).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/Note.md'].content).toBe('See [[Page A|Page B]] and [[Page B2]] and [[My alias|Page B2]].\n')
+    expect(files['/v/OnlyLeft.md'].content).toBe('Only [[Page A|Page B]].\n')
+  })
+
+  it('YAZ-6365: renaming Page B.excalidraw leaves [[Page A|Page B.excalidraw]] untouched when Page A exists', async () => {
+    const files = {
+      '/v/Note.md': { content: 'See [[Page A|Page B.excalidraw]] and [[Sketch|Page B.excalidraw]].\n', mtime: 1 },
+    }
+    installBridge(files)
+    const tree: TreeNode[] = [
+      { type: 'file', name: 'Page A.md', path: '/v/Page A.md', kind: 'markdown', size: 1, mtime: 1 },
+      { type: 'file', name: 'Page B.excalidraw', path: '/v/Page B.excalidraw', kind: 'drawing', size: 1, mtime: 1 },
+      { type: 'file', name: 'Note.md', path: '/v/Note.md', kind: 'markdown', size: 1, mtime: 1 },
+    ]
+    const viewOnlyCatalog = buildViewOnlyCatalog(root, tree)
+    const records = [
+      rec('/v/Note.md', { links: ['Page A|Page B.excalidraw', 'Sketch|Page B.excalidraw'] }),
+      rec('/v/Page A.md'),
+    ]
+    const summary = await updateLinksAfterRename({
+      ids: true,
+      root,
+      oldPath: '/v/Page B.excalidraw',
+      newPath: '/v/Page B2.excalidraw',
+      records,
+      viewOnlyCatalog,
+    })
+    expect(summary).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/Note.md'].content).toBe('See [[Page A|Page B.excalidraw]] and [[Sketch|Page B2.excalidraw]].\n')
   })
 })

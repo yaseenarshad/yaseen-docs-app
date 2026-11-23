@@ -27,9 +27,10 @@ import { isStringArray } from '@shared/guards'
  * C1): a page that starts with a BOM has its block read (its properties were body text). 22 (YAZ-5673): a card line's
  * review time without seconds or milliseconds, or with an offset, is read (those cards were cached as New). 23 (YAZ-6143):
  * inline Excalidraw drawings (`inlineDrawings`) are indexed on `IndexRecord`. 24 (YAZ-6165): frontmatter `created` and
- * card-file card `created` override `record.ctime`.
+ * card-file card `created` override `record.ctime`. 25 (YAZ-6352): plain-name piped links keep both sides in `links` / `embeds`
+ * so alias-first links resolve when the vault index is known.
  */
-export const CACHE_VERSION = 24
+export const CACHE_VERSION = 25
 /** Trailing debounce per root; bursts (a big paste, a sync tool landing) coalesce into one write. */
 const PERSIST_DEBOUNCE_MS = 5000
 /**

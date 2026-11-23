@@ -23,6 +23,8 @@ export interface EmbedView {
   zoom: number
 }
 
+export type EmbedAlign = 'left' | 'center' | 'right'
+
 export interface EmbedOptions {
   /** The window's size in CSS pixels. Null: no size stored (a new embed's `|locked`), so the window takes a new one's. */
   width: number | null
@@ -34,12 +36,14 @@ export interface EmbedOptions {
   locked: boolean
   /** A draw.io page id (D6); null = the first page. */
   page: string | null
+  /** Per-drawing horizontal position override (`align=left|center|right`); null = App default. */
+  align?: EmbedAlign | null
   /** Words this build does not know, in their order, kept byte-for-byte. */
   rest: string[]
 }
 
 const SIZE_RE = /^(\d{1,5})(?:x(\d{1,5}))?$/
-const KNOWN = new Set(['view', 'locked', 'page'])
+const KNOWN = new Set(['view', 'locked', 'page', 'align'])
 
 /** `.excalidraw` or `.drawio`, case-insensitive: the only targets that get a window. */
 export function isBoardTarget(target: string): boolean {
@@ -81,7 +85,7 @@ export function parseEmbedOptions(text: string): EmbedOptions | null {
   const width = size === null ? null : Number(size[1])
   const height = size?.[2] === undefined ? null : Number(size[2])
   if (width === 0 || height === 0) return null
-  const out: EmbedOptions = { width, height, view: null, locked: false, page: null, rest: [] }
+  const out: EmbedOptions = { width, height, view: null, locked: false, page: null, align: null, rest: [] }
   for (const word of size === null ? words : words.slice(1)) {
     const eq = word.indexOf('=')
     const key = eq < 0 ? word : word.slice(0, eq)
@@ -89,6 +93,7 @@ export function parseEmbedOptions(text: string): EmbedOptions | null {
     if (!KNOWN.has(key)) out.rest.push(word)
     else if (key === 'locked' && eq < 0) out.locked = true
     else if (key === 'page' && value !== '') out.page = value
+    else if (key === 'align' && (value === 'left' || value === 'center' || value === 'right')) out.align = value
     else if (key === 'view') out.view = parseView(value) ?? out.view
     else out.rest.push(word)
   }
@@ -116,22 +121,24 @@ export function formatEmbedOptions(options: EmbedOptions): string {
   }
   if (options.locked) words.push('locked')
   if (options.page !== null) words.push(`page=${options.page}`)
+  if (options.align != null) words.push(`align=${options.align}`)
   return [...words, ...options.rest].join(' ')
 }
 
-/** The `|…` part to write: the size and the rest, `|` included. */
+/** The `|…` part to write: the size and the rest, `|` included (or `''` when all options are empty). */
 export function optionsSuffix(options: EmbedOptions): string {
-  return `|${formatEmbedOptions(options)}`
+  const formatted = formatEmbedOptions(options)
+  return formatted === '' ? '' : `|${formatted}`
 }
 
 /** The smallest move worth a write (item 18): more than 4 screen pixels, or more than 2% of the zoom. */
 export const MIN_MOVE_PX = 4
 export const MIN_ZOOM_CHANGE = 0.02
 
-/** True when `next` moved far enough from `prev` (the view last written) to write it. A size, lock or page change always counts. */
+/** True when `next` moved far enough from `prev` (the view last written) to write it. A size, lock, page or align change always counts. */
 export function movedEnough(prev: EmbedOptions | null, next: EmbedOptions): boolean {
   if (prev === null) return true
-  if (prev.width !== next.width || prev.height !== next.height || prev.locked !== next.locked || prev.page !== next.page) return true
+  if (prev.width !== next.width || prev.height !== next.height || prev.locked !== next.locked || prev.page !== next.page || (prev.align ?? null) !== (next.align ?? null)) return true
   if (prev.view === null || next.view === null) return prev.view !== next.view
   const zoom = next.view.zoom
   if (Math.abs(next.view.zoom - prev.view.zoom) / prev.view.zoom > MIN_ZOOM_CHANGE) return true

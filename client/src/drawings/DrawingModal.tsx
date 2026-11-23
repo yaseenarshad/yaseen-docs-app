@@ -622,7 +622,13 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
   }
 
   const onTitleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === 'Enter' || e.key === 'Escape') {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      e.stopPropagation()
+      e.currentTarget.blur()
+      if (surface.current !== null) surface.current.focus()
+      else overlayRef.current?.focus()
+    } else if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
       e.currentTarget.blur()

@@ -42,6 +42,8 @@ vi.mock('../api', async (original) => ({
 const seam = vi.hoisted(() => ({
   props: null as DrawingSurfaceProps | null,
   mounts: 0,
+  provideApi: true,
+  focus: vi.fn(),
   openImageExport: vi.fn(),
   exportScene: vi.fn(async () => '{"type":"excalidraw","elements":[],"files":{}}\n'),
   openAddSearch: vi.fn(),
@@ -52,18 +54,20 @@ vi.mock('./ExcalidrawSurface', () => ({
   ExcalidrawSurface: (props: DrawingSurfaceProps) => {
     seam.props = props
     seam.mounts += 1
-    props.onApi?.({
-      refresh: () => undefined,
-      focus: () => undefined,
-      openAddSearch: seam.openAddSearch,
-      openComponentsPanel: seam.openComponentsPanel,
-      openImageExport: seam.openImageExport,
-      setCanvasBackground: () => undefined,
-      exportScene: seam.exportScene,
-      pictures: () => ({ bytes: 0, count: 0, missing: 0 }),
-      replaceScene: () => 0,
-      canvas: () => ({ scrollX: 0, scrollY: 0, zoom: 1 }),
-    } satisfies DrawingSurfaceApi)
+    if (seam.provideApi) {
+      props.onApi?.({
+        refresh: () => undefined,
+        focus: seam.focus,
+        openAddSearch: seam.openAddSearch,
+        openComponentsPanel: seam.openComponentsPanel,
+        openImageExport: seam.openImageExport,
+        setCanvasBackground: () => undefined,
+        exportScene: seam.exportScene,
+        pictures: () => ({ bytes: 0, count: 0, missing: 0 }),
+        replaceScene: () => 0,
+        canvas: () => ({ scrollX: 0, scrollY: 0, zoom: 1 }),
+      } satisfies DrawingSurfaceApi)
+    }
     return <div className="fake-surface" />
   },
 }))
@@ -100,6 +104,8 @@ let outside: HTMLElement | null = null
 beforeEach(() => {
   seam.props = null
   seam.mounts = 0
+  seam.provideApi = true
+  seam.focus.mockReset()
   seam.openImageExport.mockReset()
   seam.exportScene.mockReset()
   seam.exportScene.mockResolvedValue('{"type":"excalidraw","elements":[],"files":{}}\n')
@@ -1349,5 +1355,59 @@ describe('YAZ-6342: per-drawing settings in inline DrawingModal', () => {
     expect(seam.props?.foldArrows).toBeUndefined()
     expect(seam.props?.hoverOutline).toBeUndefined()
     expect(JSON.parse(onSave.mock.calls[4][0] as string).yaseendraw).toBeUndefined()
+  })
+})
+
+describe('YAZ-6351: inline drawing default title selection and Enter focus', () => {
+  const emptyJson = '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}'
+
+  it('autoFocusTitle selects the full prefilled title and Enter blurs title and focuses the canvas surface', async () => {
+    const { onClose } = await open('ok', 100, {
+      inline: { json: emptyJson, pagePath: '/v/Auth Flow.md', title: 'Auth Flow', autoFocusTitle: true, onSave: vi.fn() },
+    })
+
+    const titleInput = container!.querySelector<HTMLInputElement>('.drawing-modal__title-input')!
+    expect(titleInput.value).toBe('Auth Flow')
+    expect(document.activeElement).toBe(titleInput)
+    expect(titleInput.selectionStart).toBe(0)
+    expect(titleInput.selectionEnd).toBe(9)
+
+    await act(async () => {
+      titleInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    })
+    expect(document.activeElement).not.toBe(titleInput)
+    expect(seam.focus).toHaveBeenCalledTimes(1)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('Enter falls back to focusing the overlay when the canvas surface is not ready yet', async () => {
+    seam.provideApi = false
+    const { overlay, onClose } = await open('ok', 100, {
+      inline: { json: emptyJson, pagePath: '/v/Auth Flow.md', title: 'Auth Flow', autoFocusTitle: true, onSave: vi.fn() },
+    })
+
+    const titleInput = container!.querySelector<HTMLInputElement>('.drawing-modal__title-input')!
+    expect(document.activeElement).toBe(titleInput)
+
+    await act(async () => {
+      titleInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    })
+    expect(document.activeElement).toBe(overlay)
+    expect(seam.focus).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('Escape in the title input blurs to the overlay without closing the modal', async () => {
+    const { overlay, onClose } = await open('ok', 100, {
+      inline: { json: emptyJson, pagePath: '/v/Auth Flow.md', title: 'Auth Flow', autoFocusTitle: true, onSave: vi.fn() },
+    })
+
+    const titleInput = container!.querySelector<HTMLInputElement>('.drawing-modal__title-input')!
+    expect(document.activeElement).toBe(titleInput)
+
+    await escOn(titleInput)
+    expect(document.activeElement).toBe(overlay)
+    expect(seam.focus).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
   })
 })
