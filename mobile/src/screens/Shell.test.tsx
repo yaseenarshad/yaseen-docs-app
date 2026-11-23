@@ -140,7 +140,7 @@ describe('each sign-in result has plain words and a way forward', () => {
     expect(text).toContain('Set up your phone')
     expect(text).toContain('one GitHub account and one token')
     expect(text).toContain('Contents: Read and write')
-    expect(text).toContain('Gists: Read and write')
+    expect(text).not.toContain('Gists: Read and write')
     expect(text).toContain('Add to Home Screen')
     // YAZ-5443: VoiceOver reads the ☰ as "the three lines", not "trigram for heaven".
     const glyphs = [...h.host.querySelectorAll('.guide-steps li')].filter((li) => li.textContent!.includes('☰'))

@@ -55,7 +55,7 @@ export function GithubTokenControl() {
         <ol className="settings__steps">
           <li>On GitHub, open Settings › Developer settings › Personal access tokens › Fine-grained tokens, and click Generate new token.</li>
           <li>Give it access to your vault repos.</li>
-          <li>Give it two permissions: Contents (Read and write) and Gists (Read and write).</li>
+          <li>Give it one permission: Contents (Read and write).</li>
           <li>Copy the token and paste it here.</li>
         </ol>
       )}

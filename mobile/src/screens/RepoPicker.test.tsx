@@ -65,8 +65,8 @@ describe('the token comes first (YAZ-5408)', () => {
     const before = h.github.calls.length
     await h.click('yaseen/vault, private, a vault')
     await h.settle()
-    // The existing check of 3E, in its order: the user, the repo, the branch, the vault, the write probe, Gists.
-    expect(paths(h).slice(before)).toEqual(['GET /user', 'GET /repos/yaseen/vault', 'GET /repos/yaseen/vault/branches/main', 'GET /repos/yaseen/vault/contents/.yaseendocs', 'POST /repos/yaseen/vault/git/blobs', 'POST /gists'])
+    // The existing check of 3E, in its order: the user, the repo, the branch, the vault, the write probe (no Gists probe).
+    expect(paths(h).slice(before)).toEqual(['GET /user', 'GET /repos/yaseen/vault', 'GET /repos/yaseen/vault/branches/main', 'GET /repos/yaseen/vault/contents/.yaseendocs', 'POST /repos/yaseen/vault/git/blobs'])
     expect(tabs(h)).toEqual(['Friends', 'Review', 'Search'])
     expect(await h.tokens.read('yaseen/vault@main')).toBe(GOOD)
     expect(h.host.innerHTML).not.toContain(GOOD)
@@ -203,7 +203,8 @@ describe('the picker calls GitHub once for each thing (YAZ-5441, YAZ-5442)', () 
     expect(after.filter((p) => p === 'GET /user')).toHaveLength(1)
     expect(after.filter((p) => p === 'GET /repos/yaseen/vault')).toHaveLength(1)
     expect(after.filter((p) => p === 'GET /repos/yaseen/second')).toHaveLength(0)
-    expect(after.filter((p) => p === 'POST /gists')).toHaveLength(1)
+    expect(after.filter((p) => p === 'POST /repos/yaseen/vault/git/blobs')).toHaveLength(1)
+    expect(after.filter((p) => p === 'POST /gists')).toHaveLength(0)
   })
 
   it('the first 12 looks run at most 4 at a time', async () => {
