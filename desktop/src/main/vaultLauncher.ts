@@ -34,8 +34,10 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
 export interface InstallVaultLauncherOptions {
   /** Display / bundle name (without `.app`). Sanitized before use. */
   name: string
-  /** Absolute path to the vault folder. */
+  /** Absolute path to the vault folder (or stable identifier such as `workspace:<id>` for collision/remove guards). */
   vaultPath: string
+  /** Optional deep-link URL to write as `YaseenDocsVaultURL` (overrides `fileLink(vaultPath, openTarget)`). */
+  vaultUrl?: string
   /** 512×512 PNG buffer encoded into `Contents/Resources/AppIcon.icns`. */
   iconPng: Buffer
   /** Optional target view when opening the vault (`'inbox'` or `'today'`). */
@@ -259,7 +261,7 @@ function isLauncherForVault(info: LauncherPlistInfo | null, normalizedVaultPath:
 export async function installVaultLauncher(opts: InstallVaultLauncherOptions, deps: VaultLauncherDeps): Promise<InstallVaultLauncherResult> {
   const name = sanitizeBundleName(opts.name)
   const normalizedVaultPath = stripSlash(opts.vaultPath)
-  const vaultUrl = fileLink(normalizedVaultPath, opts.openTarget === undefined ? undefined : { open: opts.openTarget })
+  const vaultUrl = opts.vaultUrl ?? fileLink(normalizedVaultPath, opts.openTarget === undefined ? undefined : { open: opts.openTarget })
   const bundleId = launcherBundleId(normalizedVaultPath, name)
   const icns = encodeIcnsFromPng(opts.iconPng)
 

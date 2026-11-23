@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { rootOfPath, stripSlash, type AppState } from '@shared/types'
+import { rootOfPath, sameVaults, stripSlash, type AppState } from '@shared/types'
 import type { Store } from './store'
 
 /**
@@ -22,12 +22,19 @@ export function defaultDockIconPath(opts: { isPackaged: boolean; resourcesPath: 
  *   no focused window, no launcher, or a launcher removed in Finder).
  */
 function resolveLauncherCandidate(
-  state: Pick<AppState, 'windows' | 'folders'>,
+  state: Pick<AppState, 'windows' | 'folders' | 'vaultSets'>,
   focusedWinId: string | null | undefined,
 ): { appPath: string; iconPath: string } | null {
   if (focusedWinId == null) return null
   const entry = state.windows.find((w) => w.id === focusedWinId)
   if (entry === undefined) return null
+  // Workspace icon wins over single-vault icons when the window matches a saved workspace with a launcher.
+  if (entry.roots.length >= 2) {
+    const ws = state.vaultSets.find((set) => set.launcher !== undefined && sameVaults(entry.roots, set.roots))
+    if (ws?.launcher !== undefined) {
+      return { appPath: ws.launcher.appPath, iconPath: ws.launcher.iconPath }
+    }
+  }
   const activeVault = (entry.file !== null ? rootOfPath(entry.roots, entry.file) : null) ?? entry.root
   if (activeVault === null) return null
   const launcher = state.folders[activeVault]?.launcher ?? state.folders[stripSlash(activeVault)]?.launcher
@@ -36,7 +43,7 @@ function resolveLauncherCandidate(
 }
 
 export function resolveDockIconPath(
-  state: Pick<AppState, 'windows' | 'folders'>,
+  state: Pick<AppState, 'windows' | 'folders' | 'vaultSets'>,
   focusedWinId: string | null | undefined,
   exists: (path: string) => boolean,
 ): string | null {

@@ -203,6 +203,7 @@ import {
   type Theme,
   type TocLines,
   type TocSource,
+  type VaultLauncherInfo,
   type VaultSet,
   type WindowBounds,
   type WindowEntry,
@@ -386,6 +387,8 @@ export interface Store {
   removeVaultSet(id: string): void
   /** The set was just used (S65): `lastUsed` is `now`, and it moves to the front. An unknown `id` is a no-op. */
   touchVaultSet(id: string, now?: number): void
+  /** Set or clear (`null`) the macOS `.app` launcher metadata on a saved workspace (`VaultSet`). An unknown `id` is a no-op. */
+  setVaultSetLauncher(id: string, launcher: VaultLauncherInfo | null): void
   /**
    * Save `tabs` as a session (YAZ-3147 D2) and answer it. The tabs are cut at MAX_SESSION_TABS, and only
    * the vaults of `roots` that hold a tab are kept. A new session goes to the front. With `replaceId`
@@ -1184,7 +1187,8 @@ function sanitizeVaultSets(raw: unknown): VaultSet[] {
     const roots = cleanSetRoots(s.roots)
     if (name === null || roots.length < 2) continue
     seen.add(s.id)
-    out.push({ id: s.id, name, roots, lastUsed: isFiniteNumber(s.lastUsed) ? s.lastUsed : 0 })
+    const launcher = cleanVaultLauncher(s.launcher)
+    out.push({ id: s.id, name, roots, lastUsed: isFiniteNumber(s.lastUsed) ? s.lastUsed : 0, ...(launcher !== null ? { launcher } : {}) })
   }
   return out.slice(0, MAX_VAULT_SETS)
 }
@@ -1904,7 +1908,13 @@ export function createStore(filePath: string): Store {
       const existing = state.vaultSets.find((s) => s.name === name)
       // R12 counts sets, so a save under a name that exists is never the one refused.
       if (existing === undefined && state.vaultSets.length >= MAX_VAULT_SETS) return null
-      const saved: VaultSet = { id: existing?.id ?? randomUUID(), name, roots, lastUsed: now }
+      const saved: VaultSet = {
+        id: existing?.id ?? randomUUID(),
+        name,
+        roots,
+        lastUsed: now,
+        ...(existing?.launcher !== undefined ? { launcher: existing.launcher } : {}),
+      }
       commit({ ...state, vaultSets: [saved, ...state.vaultSets.filter((s) => s !== existing)] })
       return saved
     },
@@ -1926,6 +1936,20 @@ export function createStore(filePath: string): Store {
       const set = state.vaultSets.find((s) => s.id === id)
       if (set === undefined || (state.vaultSets[0] === set && set.lastUsed === now)) return
       commit({ ...state, vaultSets: [{ ...set, lastUsed: now }, ...state.vaultSets.filter((s) => s !== set)] })
+    },
+
+    setVaultSetLauncher(id, rawLauncher) {
+      const set = state.vaultSets.find((s) => s.id === id)
+      if (set === undefined) return
+      if (rawLauncher === null) {
+        if (set.launcher === undefined) return
+        const { launcher: _removed, ...rest } = set
+        commit({ ...state, vaultSets: state.vaultSets.map((s) => (s === set ? rest : s)) })
+        return
+      }
+      const launcher = cleanVaultLauncher(rawLauncher)
+      if (launcher === null) return
+      commit({ ...state, vaultSets: state.vaultSets.map((s) => (s === set ? { ...s, launcher } : s)) })
     },
 
     saveSession(rawName, rawTabs, rawRoots, replaceId, now = Date.now()) {

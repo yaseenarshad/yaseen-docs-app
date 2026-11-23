@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CONTRACT } from '@shared/ipc'
 import { isRecord } from '@shared/guards'
+import { workspaceLink } from '@shared/links'
 import {
   cleanVaultLauncher,
   cleanVaultName,
@@ -25,6 +26,7 @@ const DATA_URL_PREFIX = /^data:image\/png;base64,/i
 
 export interface VaultLauncherInstallParams {
   root: string
+  vaultUrl?: string
   name: string
   png: Buffer
   iconPath: string
@@ -46,6 +48,21 @@ export interface VaultLauncherBackend {
 export function vaultLauncherIconPath(userData: string, root: string): string {
   const hash = createHash('sha256').update(root).digest('hex').slice(0, 16)
   return join(userData, 'vault-icons', `${hash}.png`)
+}
+
+/** Deterministic cached icon path under `<userData>/vault-icons/ws-<sha256(id).slice(0,16)>.png`. */
+export function workspaceLauncherIconPath(userData: string, workspaceId: string): string {
+  const hash = createHash('sha256').update(workspaceId).digest('hex').slice(0, 16)
+  return join(userData, 'vault-icons', `ws-${hash}.png`)
+}
+
+const workspaceVaultPath = (workspaceId: string): string => `workspace:${workspaceId}`
+
+function requireWorkspaceId(raw: unknown): string {
+  if (typeof raw !== 'string' || raw.trim().length === 0) {
+    throw new BridgeFailure('BAD_REQUEST', "'workspaceId' must be a non-empty string")
+  }
+  return raw.trim()
 }
 
 /** Decodes and validates a base64 PNG payload (max 2 MiB decoded, valid 8-byte PNG signature). */
@@ -254,6 +271,118 @@ export function registerVaultLauncherIpc(
         if (!backend.exists(launcher.appPath)) return
         const dataUrl = await readIconDataUrl(launcher.iconPath)
         if (dataUrl !== null) out[root] = dataUrl
+      }),
+    )
+    return out
+  })
+
+  handle(CONTRACT.vaultLauncher.workspaceStatus, async (rawId: unknown): Promise<VaultLauncherStatus> => {
+    const workspaceId = requireWorkspaceId(rawId)
+    const launcher = store.get().vaultSets.find((s) => s.id === workspaceId)?.launcher ?? null
+    const exists = launcher !== null && backend.exists(launcher.appPath)
+    const iconDataUrl = launcher !== null ? await readIconDataUrl(launcher.iconPath) : null
+    return {
+      supported: backend.supported,
+      launcher,
+      exists,
+      iconDataUrl,
+    }
+  })
+
+  handle(CONTRACT.vaultLauncher.createWorkspace, async (rawReq: unknown): Promise<VaultLauncherStatus> => {
+    if (!backend.supported) {
+      throw new BridgeFailure('BAD_REQUEST', 'Vault launchers are only supported on macOS')
+    }
+    if (!isRecord(rawReq)) {
+      throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
+    }
+    const workspaceId = requireWorkspaceId(rawReq.workspaceId)
+    const set = store.get().vaultSets.find((s) => s.id === workspaceId)
+    if (set === undefined) {
+      throw new BridgeFailure('NOT_FOUND', 'Workspace not found')
+    }
+    const name = cleanVaultName(rawReq.name)
+    if (name === null) {
+      throw new BridgeFailure('BAD_REQUEST', "'name' must be a non-empty string")
+    }
+    const png = decodeLauncherPng(rawReq.pngBase64)
+    const badge = parseOptionalBadge(rawReq.badge)
+
+    const iconPath = workspaceLauncherIconPath(userData, workspaceId)
+    const previousAppPath = set.launcher?.appPath
+    const installed = await backend.install({
+      root: workspaceVaultPath(workspaceId),
+      vaultUrl: workspaceLink(workspaceId),
+      name,
+      png,
+      iconPath,
+      previousAppPath,
+    })
+    await atomicWriteBuffer(iconPath, png)
+
+    const installedName = installed.name !== undefined ? (cleanVaultName(installed.name) ?? name) : name
+    const launcher: VaultLauncherInfo | null = cleanVaultLauncher({
+      name: installedName,
+      appPath: installed.appPath,
+      iconPath,
+      ...(badge !== undefined ? { badge } : {}),
+    })
+    if (launcher === null) {
+      throw new BridgeFailure('IO_ERROR', 'Installed launcher metadata was invalid')
+    }
+
+    store.setVaultSetLauncher(workspaceId, launcher)
+    onIconChanged?.(iconPath)
+
+    return {
+      supported: backend.supported,
+      launcher,
+      exists: backend.exists(installed.appPath),
+      iconDataUrl: `data:image/png;base64,${png.toString('base64')}`,
+    }
+  })
+
+  handle(CONTRACT.vaultLauncher.removeWorkspace, async (rawId: unknown): Promise<void> => {
+    const workspaceId = requireWorkspaceId(rawId)
+    const launcher = store.get().vaultSets.find((s) => s.id === workspaceId)?.launcher ?? null
+    if (launcher === null) return
+
+    if (backend.exists(launcher.appPath)) {
+      await backend.remove(launcher.appPath, workspaceVaultPath(workspaceId))
+    }
+    await rm(launcher.iconPath, { force: true }).catch(() => undefined)
+    store.setVaultSetLauncher(workspaceId, null)
+    onIconChanged?.(launcher.iconPath)
+  })
+
+  handle(CONTRACT.vaultLauncher.revealWorkspace, async (rawId: unknown): Promise<void> => {
+    const workspaceId = requireWorkspaceId(rawId)
+    const launcher = store.get().vaultSets.find((s) => s.id === workspaceId)?.launcher ?? null
+    if (launcher === null || !backend.exists(launcher.appPath)) {
+      throw new BridgeFailure('NOT_FOUND', 'Workspace launcher app not found', { path: launcher?.appPath })
+    }
+    await backend.reveal(launcher.appPath)
+  })
+
+  handle(CONTRACT.vaultLauncher.testWorkspace, async (rawId: unknown): Promise<void> => {
+    const workspaceId = requireWorkspaceId(rawId)
+    const launcher = store.get().vaultSets.find((s) => s.id === workspaceId)?.launcher ?? null
+    if (launcher === null || !backend.exists(launcher.appPath)) {
+      throw new BridgeFailure('NOT_FOUND', 'Workspace launcher app not found', { path: launcher?.appPath })
+    }
+    await backend.launch(launcher.appPath)
+  })
+
+  handle(CONTRACT.vaultLauncher.workspaceIcons, async (): Promise<Record<string, string>> => {
+    const out: Record<string, string> = {}
+    const sets = store.get().vaultSets
+    await Promise.all(
+      sets.map(async (set) => {
+        const launcher = set.launcher
+        if (launcher === undefined) return
+        if (!backend.exists(launcher.appPath)) return
+        const dataUrl = await readIconDataUrl(launcher.iconPath)
+        if (dataUrl !== null) out[set.id] = dataUrl
       }),
     )
     return out

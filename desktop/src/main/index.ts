@@ -9,7 +9,7 @@ import { enableCompileCache } from 'node:module'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { fileLink, isAppLink, parseFileLink } from '@shared/links'
+import { fileLink, isAppLink, parseFileLink, parseWorkspaceLink } from '@shared/links'
 import { FILES_PREVIEW_FRAME, GITHUB_TOKEN_SECRET, MEMORY_SAMPLE_MS, placeVaults, type ClipboardPasteRequest, type FileKind, type WindowEntry } from '@shared/types'
 import { DRAWIO_HOST } from '@shared/drawio'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
@@ -120,6 +120,12 @@ function handleLink(url: string): void {
       }
       return
     }
+  }
+  const wsId = parseWorkspaceLink(url)
+  if (wsId !== null) {
+    const res = manager.openVaultSet(wsId)
+    if (!res.opened) manager.linkNotice(`Can't open workspace: ${wsId}`)
+    return
   }
   const parsed = parseFileLink(url)
   if (parsed === null) {
@@ -552,6 +558,7 @@ app.whenReady().then(() => {
               {
                 name: params.name,
                 vaultPath: params.root,
+                vaultUrl: params.vaultUrl,
                 iconPng: params.png,
                 openTarget: params.target === 'inbox' || params.target === 'today' ? params.target : undefined,
                 previousAppPath: params.previousAppPath,
@@ -657,6 +664,8 @@ app.whenReady().then(() => {
   // each waiting link belongs to. A plain launch follows the setting (D2), and a request that cannot
   // open is not a request (A6): a link that cannot be read, or a path `rootFor` has no vault for.
   const asked = links.pending().flatMap((url) => {
+    const wsId = parseWorkspaceLink(url)
+    if (wsId !== null) return store.get().vaultSets.find((s) => s.id === wsId)?.roots ?? []
     const link = parseFileLink(url)
     return (link === null ? null : manager.rootFor(link.path, link.root)) ?? []
   })

@@ -346,6 +346,38 @@ describe('installVaultLauncher & removeVaultLauncher', () => {
     await expect(removeVaultLauncher(thirdParty, '/Users/me/VaultA', { trashItem })).rejects.toThrow(/Refusing to remove/)
   })
 
+  it('supports optional vaultUrl override (for workspace launchers) while preserving vaultPath guards', async () => {
+    const trashItem = vi.fn(async () => {})
+    const deps = { appDirs: [primaryApps], trashItem, execFile: async () => {} }
+    const res = await installVaultLauncher(
+      {
+        name: 'Work Suite',
+        vaultPath: 'workspace:ws-42',
+        vaultUrl: 'yaseendocs://workspace/ws-42',
+        iconPng: FAKE_PNG,
+        binaryPath: fakeBinary,
+      },
+      deps,
+    )
+    expect(res.vaultUrl).toBe('yaseendocs://workspace/ws-42')
+    expect(await readLauncherPlist(res.appPath)).toEqual({
+      bundleId: res.bundleId,
+      vaultPath: 'workspace:ws-42',
+      vaultUrl: 'yaseendocs://workspace/ws-42',
+    })
+    // Collision guard blocks another workspace with the same name.
+    await expect(
+      installVaultLauncher(
+        { name: 'Work Suite', vaultPath: 'workspace:ws-99', vaultUrl: 'yaseendocs://workspace/ws-99', iconPng: FAKE_PNG, binaryPath: fakeBinary },
+        deps,
+      ),
+    ).rejects.toThrow(/Cannot overwrite/)
+    // Remove guard enforces matching workspace vaultPath.
+    await expect(removeVaultLauncher(res.appPath, 'workspace:ws-99', { trashItem })).rejects.toThrow(/Refusing to remove/)
+    await expect(removeVaultLauncher(res.appPath, 'workspace:ws-42', { trashItem })).resolves.toBe(true)
+    expect(trashItem).toHaveBeenCalledWith(res.appPath)
+  })
+
   it.skipIf(process.platform !== 'darwin')('produces a codesign-verified .app bundle with the real compiled Swift binary on macOS', async () => {
     const binPath = resolve(import.meta.dirname, '..', '..', 'build', 'bin', 'vault-launcher')
     const res = await installVaultLauncher(

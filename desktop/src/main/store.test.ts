@@ -3619,4 +3619,41 @@ describe('FolderState.launcher (YAZ-6374)', () => {
     await s2.flush()
     expect((await onDisk()).folders['/vaults/work']?.launcher).toBeUndefined()
   })
+
+  it('persists, sanitizes on load, preserves on replace, and deletes VaultSet.launcher via setVaultSetLauncher', async () => {
+    const launcher = {
+      name: 'Work Suite',
+      appPath: '/Applications/Work Suite.app',
+      iconPath: '/userData/vault-icons/ws-abc.png',
+      badge: { kind: 'emoji' as const, value: '🗂️', color: '#1d4ed8' },
+    }
+    const s1 = createStore(file)
+    const ws = s1.saveVaultSet('Work Suite', ['/vaults/a', '/vaults/b'], 10)!
+    const wsBad = s1.saveVaultSet('Bad Suite', ['/vaults/c', '/vaults/d'], 11)!
+
+    s1.setVaultSetLauncher(ws.id, launcher)
+    expect(s1.get().vaultSets.find((s) => s.id === ws.id)?.launcher).toEqual(launcher)
+    // Unknown id is a no-op.
+    s1.setVaultSetLauncher('does-not-exist', launcher)
+    // Replacing the same-named workspace preserves its launcher.
+    s1.saveVaultSet('Work Suite', ['/vaults/a', '/vaults/b', '/vaults/e'], 12)
+    expect(s1.get().vaultSets.find((s) => s.id === ws.id)?.launcher).toEqual(launcher)
+    await s1.flush()
+
+    // Reloading from disk keeps valid launcher and drops junk launcher on other sets.
+    const raw = await onDisk()
+    const badEntry = raw.vaultSets.find((s: { id: string }) => s.id === wsBad.id) as unknown as Record<string, unknown>
+    badEntry.launcher = { name: 'Bad', appPath: 'relative.app', iconPath: '/x.png' }
+    await seed(raw)
+
+    const s2 = createStore(file)
+    expect(s2.get().vaultSets.find((s) => s.id === ws.id)?.launcher).toEqual(launcher)
+    expect(s2.get().vaultSets.find((s) => s.id === wsBad.id)?.launcher).toBeUndefined()
+
+    // Clearing with null deletes launcher cleanly.
+    s2.setVaultSetLauncher(ws.id, null)
+    expect(s2.get().vaultSets.find((s) => s.id === ws.id)?.launcher).toBeUndefined()
+    await s2.flush()
+    expect((await onDisk()).vaultSets.find((s: { id: string }) => s.id === ws.id)?.launcher).toBeUndefined()
+  })
 })

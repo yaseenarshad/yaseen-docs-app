@@ -14,7 +14,8 @@ import { api } from '../api'
 const VaultLauncherModal = lazy(() => import('./VaultLauncherModal').then((m) => ({ default: m.VaultLauncherModal })))
 
 export interface VaultLauncherControlProps {
-  root: string
+  root?: string
+  workspaceId?: string
   defaultName: string
   onChanged?: () => void
 }
@@ -25,7 +26,8 @@ function targetBadgeLabel(target?: VaultLauncherTarget): string | null {
   return null
 }
 
-export function VaultLauncherControl({ root, defaultName, onChanged }: VaultLauncherControlProps) {
+export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged }: VaultLauncherControlProps) {
+  const isWorkspace = workspaceId !== undefined
   const [status, setStatus] = useState<VaultLauncherStatus | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -34,35 +36,35 @@ export function VaultLauncherControl({ root, defaultName, onChanged }: VaultLaun
   useEffect(() => {
     let live = true
     setError(null)
-    if (typeof window.yaseenDocs?.vaultLauncher?.status !== 'function') {
+    const statusFn = isWorkspace ? window.yaseenDocs?.vaultLauncher?.workspaceStatus : window.yaseenDocs?.vaultLauncher?.status
+    if (typeof statusFn !== 'function' || (!isWorkspace && root === undefined)) {
       setStatus({ supported: false, launcher: null, exists: false, iconDataUrl: null })
       return
     }
-    void api.vaultLauncher
-      .status(root)
-      .then(
-        (res) => {
-          if (live) setStatus(res)
-        },
-        () => {
-          if (live) setStatus({ supported: false, launcher: null, exists: false, iconDataUrl: null })
-        },
-      )
+    const req = isWorkspace ? api.vaultLauncher.workspaceStatus(workspaceId) : api.vaultLauncher.status(root!)
+    void req.then(
+      (res) => {
+        if (live) setStatus(res)
+      },
+      () => {
+        if (live) setStatus({ supported: false, launcher: null, exists: false, iconDataUrl: null })
+      },
+    )
     return () => {
       live = false
     }
-  }, [root])
+  }, [isWorkspace, root, workspaceId])
 
   if (status === null || !status.supported) return null
 
   const { launcher, exists, iconDataUrl } = status
-  const targetLabel = targetBadgeLabel(launcher?.target)
+  const targetLabel = isWorkspace ? null : targetBadgeLabel(launcher?.target)
 
   const handleRemove = async (): Promise<void> => {
     setBusy(true)
     setError(null)
     try {
-      await api.vaultLauncher.remove(root)
+      await (isWorkspace ? api.vaultLauncher.removeWorkspace(workspaceId) : api.vaultLauncher.remove(root!))
       setStatus({ supported: true, launcher: null, exists: false, iconDataUrl: null })
       onChanged?.()
     } catch (err: unknown) {
@@ -74,7 +76,7 @@ export function VaultLauncherControl({ root, defaultName, onChanged }: VaultLaun
 
   const refreshAfterMissing = async (err: unknown): Promise<void> => {
     try {
-      const fresh = await api.vaultLauncher.status(root)
+      const fresh = await (isWorkspace ? api.vaultLauncher.workspaceStatus(workspaceId) : api.vaultLauncher.status(root!))
       if (!fresh.exists) {
         setStatus(fresh)
         return
@@ -88,7 +90,7 @@ export function VaultLauncherControl({ root, defaultName, onChanged }: VaultLaun
   const handleReveal = async (): Promise<void> => {
     setError(null)
     try {
-      await api.vaultLauncher.reveal(root)
+      await (isWorkspace ? api.vaultLauncher.revealWorkspace(workspaceId) : api.vaultLauncher.reveal(root!))
     } catch (err: unknown) {
       await refreshAfterMissing(err)
     }
@@ -97,7 +99,7 @@ export function VaultLauncherControl({ root, defaultName, onChanged }: VaultLaun
   const handleTest = async (): Promise<void> => {
     setError(null)
     try {
-      await api.vaultLauncher.test(root)
+      await (isWorkspace ? api.vaultLauncher.testWorkspace(workspaceId) : api.vaultLauncher.test(root!))
     } catch (err: unknown) {
       await refreshAfterMissing(err)
     }
@@ -166,6 +168,7 @@ export function VaultLauncherControl({ root, defaultName, onChanged }: VaultLaun
         <Suspense fallback={null}>
           <VaultLauncherModal
             root={root}
+            workspaceId={workspaceId}
             defaultName={defaultName}
             initial={launcher}
             initialIconDataUrl={iconDataUrl}

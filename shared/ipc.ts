@@ -15,7 +15,7 @@ import type { FoundPage } from './pageBirth'
 import type { CardSkillDuplicate, CardSkillFormats } from './cardSkillFolder'
 import type { CoursePatch } from './courseState'
 import type { CourseAudioChange, CourseAudioSound } from './courseAudio'
-import type { AddToAutoSyncResult, AutoSyncStatus, ConnectRepoResult, CopyAsMode, CopyAsRich, CreateVaultLauncherRequest, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, GithubAuthStatus, GithubInstalledRepo, ListScope, PageMenuAction, PageMenuArg, MemoryTabFacts, VaultLauncherStatus } from './types'
+import type { AddToAutoSyncResult, AutoSyncStatus, ConnectRepoResult, CopyAsMode, CopyAsRich, CreateVaultLauncherRequest, CreateWorkspaceLauncherRequest, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, GithubAuthStatus, GithubInstalledRepo, ListScope, PageMenuAction, PageMenuArg, MemoryTabFacts, VaultLauncherStatus } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
 import type { IconPackInfo, IconPacksRequest, IconPacksStatus } from './iconPacks'
@@ -897,7 +897,7 @@ export const CONTRACT = {
     /** Fired in every window when the colour changes: a new Highlight colour, or a change of the Mac's or the app's appearance. */
     onSelectionColour: push<string | null>('app:selection-colour-changed'),
   },
-  /** macOS Vault App launchers (YAZ-5967, YAZ-6374): per-vault `.app` bundles, cached PNG icons, and Dock icon updates. */
+  /** macOS Vault App launchers (YAZ-5967, YAZ-6374): per-vault and per-workspace `.app` bundles, cached PNG icons, and Dock icon updates. */
   vaultLauncher: {
     status: invoke<[root: string], VaultLauncherStatus>('vault-launcher:status', 1),
     create: invoke<[req: CreateVaultLauncherRequest], VaultLauncherStatus>('vault-launcher:create', 1),
@@ -905,6 +905,12 @@ export const CONTRACT = {
     reveal: invoke<[root: string], void>('vault-launcher:reveal', 1),
     test: invoke<[root: string], void>('vault-launcher:test', 1),
     icons: invoke<[], Record<string, string>>('vault-launcher:icons', 0),
+    workspaceStatus: invoke<[workspaceId: string], VaultLauncherStatus>('vault-launcher:workspace-status', 1),
+    createWorkspace: invoke<[req: CreateWorkspaceLauncherRequest], VaultLauncherStatus>('vault-launcher:create-workspace', 1),
+    removeWorkspace: invoke<[workspaceId: string], void>('vault-launcher:remove-workspace', 1),
+    revealWorkspace: invoke<[workspaceId: string], void>('vault-launcher:reveal-workspace', 1),
+    testWorkspace: invoke<[workspaceId: string], void>('vault-launcher:test-workspace', 1),
+    workspaceIcons: invoke<[], Record<string, string>>('vault-launcher:workspace-icons', 0),
   },
   /** The updater (YAZ-2976 D2): main owns it, and every window reads the same state. */
   update: {
