@@ -287,7 +287,13 @@ function FriendsPart() {
         const board = await svc?.board().catch(() => null)
         if (board && board.kind === 'ok') remoteNickname = board.me.nickname
       }
-      if (!live || remoteNickname === undefined) return
+      if (!live) return
+      // Re-read excluded vaults after board() hydrated canonical D1 prefs.
+      const hydratedExcluded = await app.services.store.getState<string[]>(PHONE, EXCLUDED_VAULTS_KEY).catch(() => undefined)
+      if (live && Array.isArray(hydratedExcluded)) {
+        setExcludedVaults(hydratedExcluded.filter((s): s is string => typeof s === 'string'))
+      }
+      if (remoteNickname === undefined) return
       setHydratedNickname(remoteNickname)
       if (remoteNickname !== null) {
         setNickname((prev) => (prev === '' ? remoteNickname : prev))
@@ -308,8 +314,12 @@ function FriendsPart() {
       ? excludedVaults
       : [...excludedVaults, currentVault.repo]
     setExcludedVaults(next)
+    const nextExcludedSet = new Set(next.map((s) => s.toLowerCase()))
+    const allIds = app.list.vaults.map(vaultId)
+    const countedIds = app.list.vaults.filter((v) => !nextExcludedSet.has(v.repo.toLowerCase())).map(vaultId)
     void app.services.store
       .setState(PHONE, EXCLUDED_VAULTS_KEY, next)
+      .then(() => app.saveFriendsSettings({ ...app.friendsSettings, vaults: countedIds.length === allIds.length ? null : countedIds }))
       .then(() => app.services.friends.syncVaultExclusion?.())
       .catch(() => undefined)
   }
@@ -336,6 +346,9 @@ function FriendsPart() {
   const setCounts = (id: string, on: boolean) => {
     const all = app.list.vaults.map(vaultId)
     const now = all.filter((v) => (v === id ? on : counts(v)))
+    const nextExcluded = app.list.vaults.filter((v) => !now.includes(vaultId(v))).map((v) => v.repo)
+    setExcludedVaults(nextExcluded)
+    void app.services.store.setState(PHONE, EXCLUDED_VAULTS_KEY, nextExcluded).catch(() => undefined)
     void app.saveFriendsSettings({ ...app.friendsSettings, vaults: now.length === all.length ? null : now })
   }
 

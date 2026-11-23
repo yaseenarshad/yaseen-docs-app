@@ -1048,7 +1048,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
         const payload = await api.board()
         const settings = await local.settings()
         const myLocal = await computeMyStats(settings)
-        return payload.groups.map((g) => toGroupView(g, payload.me.id, myLocal.stats ?? payload.me.stats, now()))
+        return payload.groups.map((g) => toGroupView(g, payload.me.id, payload.me.stats ?? myLocal.stats, now()))
       } catch (err) {
         return mapApiError(err)
       }
@@ -1171,7 +1171,36 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
         const force = forceNextBoard
         forceNextBoard = false
         const payload = await api.board(force)
-        const meStats = demoMode ? payload.me.stats ?? myLocal.stats : myLocal.stats ?? payload.me.stats
+        // Hydrate canonical vault preferences from D1 so Phone A, Phone B, and Desktop agree on which vaults count.
+        if (!demoMode && Array.isArray(payload.me.vaults) && payload.me.vaults.length > 0) {
+          const remoteSet = new Set(payload.me.vaults.map((v) => canonicalVaultRepo(v)).filter(Boolean))
+          const phone = await loadVaultList(store)
+          if (remoteSet.size > 0 && phone.vaults.length > 0) {
+            const nextExcluded = phone.vaults
+              .filter((v) => !remoteSet.has(canonicalVaultRepo(v.repo)))
+              .map((v) => v.repo)
+            const curExcluded = await loadExcludedVaults()
+            const nextExcludedSet = new Set(nextExcluded.map((r) => r.toLowerCase()))
+            const excludedChanged =
+              curExcluded.size !== nextExcludedSet.size || [...nextExcludedSet].some((r) => !curExcluded.has(r))
+            if (excludedChanged) {
+              await store.setState(PHONE, EXCLUDED_VAULTS_KEY, nextExcluded).catch(() => undefined)
+            }
+            const matchedIds = phone.vaults.filter((v) => remoteSet.has(canonicalVaultRepo(v.repo))).map(vaultId)
+            const nextVaults = matchedIds.length === phone.vaults.length ? null : matchedIds
+            const curVaults = settings.vaults
+            const vaultsChanged =
+              (curVaults === null) !== (nextVaults === null) ||
+              (curVaults !== null &&
+                nextVaults !== null &&
+                (curVaults.length !== nextVaults.length || curVaults.some((id, idx) => id !== nextVaults[idx])))
+            if (vaultsChanged) {
+              await local.saveSettings({ ...settings, vaults: nextVaults }).catch(() => undefined)
+            }
+          }
+        }
+        // Prefer D1's canonical `me.stats` when online so all devices show the exact same "Today complete" & numbers.
+        const meStats = payload.me.stats ?? myLocal.stats
         const meRaw = payload.me as FriendsBoardPayload['me'] & { hasCustomAvatar?: boolean }
         const me: Me = {
           name: gistText(meRaw.nickname ?? meRaw.name ?? meRaw.login) || myLocal.name,
