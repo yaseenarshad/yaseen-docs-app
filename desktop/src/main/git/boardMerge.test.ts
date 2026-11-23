@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mergeBoards, mergeElements } from '@shared/boardMerge'
+import { mergeBoards, mergeElements, same, sameShape } from '@shared/boardMerge'
 import { boardFoldArrowsOf, boardHoverOutlineOf, hoverLinksOff, picturesOut, withBoardFoldArrows, withBoardHoverOutline, withHoverLinks, withPicturesOut } from '@shared/drawingAssets'
 import { isDrawingReadOnly, withDrawingReadOnly } from '@shared/readOnly'
 
@@ -337,6 +337,44 @@ describe('mergeElements — an open board (YAZ-4279 D4: per property, never a si
     const { link: _l, ...unlinked } = linked
     expect(byIdOf(open([linked], [unlinked as El], [edit(linked, 40)])?.elements, '1')).not.toHaveProperty('link')
   })
+
+  it('item 2: foldedLines + foldedLineTexts merge as one atomic pair', () => {
+    const txt = shape('t1', { type: 'text', text: 'a\nb\nc', foldedLines: [0], foldedLineTexts: ['b'] })
+
+    // Only theirs changed fold pair, mine moved x -> takes BOTH fold keys from theirs
+    const theirsOnly = open([txt], [set(txt, { foldedLines: [0, 1], foldedLineTexts: ['b', 'c'] })], [edit(txt, 40)])
+    expect(byIdOf(theirsOnly?.elements, 't1')).toMatchObject({ x: 40, foldedLines: [0, 1], foldedLineTexts: ['b', 'c'] })
+
+    // Only theirs unfolded (removed both keys), mine moved x -> removes BOTH fold keys
+    const { foldedLines: _fl, foldedLineTexts: _flt, ...unfolded } = txt
+    const theirsUnfolded = open([txt], [unfolded as El], [edit(txt, 40)])
+    const elUnfolded = byIdOf(theirsUnfolded?.elements, 't1')
+    expect(elUnfolded).toMatchObject({ x: 40 })
+    expect(elUnfolded).not.toHaveProperty('foldedLines')
+    expect(elUnfolded).not.toHaveProperty('foldedLineTexts')
+
+    // Only mine changed fold pair, theirs changed strokeColor -> keeps BOTH fold keys from mine
+    const mineOnly = open([txt], [set(txt, { strokeColor: 'red' })], [set(txt, { foldedLines: [1], foldedLineTexts: ['c'] })])
+    expect(byIdOf(mineOnly?.elements, 't1')).toMatchObject({ strokeColor: 'red', foldedLines: [1], foldedLineTexts: ['c'] })
+
+    // Both sides changed fold pair to different values -> conflict
+    expect(
+      open([txt], [set(txt, { foldedLines: [0, 1], foldedLineTexts: ['b', 'c'] })], [set(txt, { foldedLines: [1], foldedLineTexts: ['c'] })]),
+    ).toEqual({ conflicts: ['t1'] })
+
+    // Disjoint keys within the pair (theirs changed foldedLines, mine changed foldedLineTexts) -> still a conflict!
+    expect(
+      open([txt], [set(txt, { foldedLines: [0, 1] })], [set(txt, { foldedLineTexts: ['x'] })]),
+    ).toEqual({ conflicts: ['t1'] })
+
+    // Both sides converged to the same fold pair while editing other disjoint props -> clean merge
+    const samePair = open(
+      [txt],
+      [set(txt, { strokeColor: 'blue', foldedLines: [1], foldedLineTexts: ['c'] })],
+      [set(txt, { x: 25, foldedLines: [1], foldedLineTexts: ['c'] })],
+    )
+    expect(byIdOf(samePair?.elements, 't1')).toMatchObject({ x: 25, strokeColor: 'blue', foldedLines: [1], foldedLineTexts: ['c'] })
+  })
 })
 
 describe('mergeBoards — the engine\'s stamps (YAZ-4279 D1)', () => {
@@ -345,5 +383,60 @@ describe('mergeBoards — the engine\'s stamps (YAZ-4279 D1)', () => {
     const m = merge([r1], [bumped], [edit(r1, 13, 1500)])
     expect(m.get('1')?.x).toBe(13)
     expect(m.clashes).toBe(0)
+  })
+})
+
+describe('mergeElements — large-board performance & fast equality (YAZ-4279 item 8)', () => {
+  it('same and sameShape preserve key-order independence, undefined-key omission, and stamp ignoring', () => {
+    expect(same({ a: 1, b: { c: 2, d: 3 } }, { b: { d: 3, c: 2 }, a: 1 })).toBe(true)
+    expect(same({ a: 1, b: undefined }, { a: 1 })).toBe(true)
+    expect(same({ a: 1 }, { a: 1, b: null })).toBe(false)
+    expect(same([1, { x: 2, y: 3 }], [1, { y: 3, x: 2 }])).toBe(true)
+    expect(same([1, 2], { 0: 1, 1: 2 })).toBe(false)
+
+    const s1 = shape('1', { x: 10, version: 1, versionNonce: 11, updated: 100, seed: 5 })
+    const s2 = shape('1', { x: 10, version: 9, versionNonce: 99, updated: 999, seed: 42 })
+    expect(sameShape(s1, s2)).toBe(true)
+    expect(sameShape(s1, { ...s2, x: 11 })).toBe(false)
+    expect(sameShape(undefined, undefined)).toBe(true)
+    expect(sameShape(s1, undefined)).toBe(false)
+  })
+
+  it('merges 1,500 shapes in under 50 ms', () => {
+    const count = 1500
+    const base: El[] = []
+    for (let i = 0; i < count; i++) {
+      base.push(
+        shape(`el-${i}`, {
+          x: i * 10,
+          y: i * 5,
+          width: 120,
+          height: 60,
+          strokeColor: '#1e1e1e',
+          backgroundColor: 'transparent',
+          roughness: 1,
+          opacity: 100,
+          index: `a${String(i).padStart(5, '0')}`,
+          boundElements: i % 10 === 0 ? [{ id: `el-${i + 1}`, type: 'arrow' }] : null,
+        }),
+      )
+    }
+    // Clone with bumped stamps on live and a handful of edits on each side
+    const theirs = base.map((e, i) => (i % 100 === 0 ? { ...e, strokeColor: '#ff0000' } : { ...e }))
+    const mine = base.map((e, i) => (i % 100 === 50 ? { ...e, x: (e.x as number) + 25, version: 2, updated: 2000 } : { ...e, version: 2, versionNonce: 99, updated: 2000 }))
+
+    // Warm up JIT slightly, then time
+    mergeElements(base, theirs, mine, 'per-property')
+    const t0 = performance.now()
+    const out = mergeElements(base, theirs, mine, 'per-property')
+    const elapsed = performance.now() - t0
+
+    expect('elements' in out).toBe(true)
+    if ('elements' in out) {
+      expect(out.elements).toHaveLength(count)
+      expect(out.elements[0]?.strokeColor).toBe('#ff0000')
+      expect(out.elements[50]?.x).toBe(50 * 10 + 25)
+    }
+    expect(elapsed).toBeLessThan(50)
   })
 })
