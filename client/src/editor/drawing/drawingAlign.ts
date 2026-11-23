@@ -9,16 +9,17 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { optionsSuffix, parseEmbedOptions, type EmbedAlign, type EmbedOptions } from '@shared/embedOptions'
 import { drawingTitleOf, formatDrawingLine } from '@shared/inlineDrawing'
 import type { MenuRow, RowProvider } from '../blockHandleMenu'
+import { tablerIcon, type TablerIcon } from '../table/tableIcons'
 import { boardCheckOf, boardEmbedsIn, cardCheckOf, type BoardEmbedMatch } from './boardEmbedScan'
 import { drawingOptionsOf, isInlineDrawingNode } from './inlineDrawingLine'
 
 const EMPTY_OPTIONS: EmbedOptions = { width: null, height: null, view: null, locked: false, page: null, align: null, rest: [] }
 
-const POSITION_CHOICES: ReadonlyArray<{ label: string; value: EmbedAlign | null }> = [
+const POSITION_CHOICES: ReadonlyArray<{ label: string; value: EmbedAlign | null; icon?: TablerIcon }> = [
   { label: 'App default', value: null },
-  { label: 'Left', value: 'left' },
-  { label: 'Center', value: 'center' },
-  { label: 'Right', value: 'right' },
+  { label: 'Left', value: 'left', icon: 'alignLeft' },
+  { label: 'Center', value: 'center', icon: 'alignCenter' },
+  { label: 'Right', value: 'right', icon: 'alignRight' },
 ]
 
 /** Syncs `data-align` on a `.board-embed` element; removes it when `align` is null/undefined (App default). */
@@ -32,15 +33,25 @@ export function withAlign(current: EmbedOptions | null, align: EmbedAlign | null
   return { ...(current ?? EMPTY_OPTIONS), align }
 }
 
-/** Builds the `Position ▸` flyout row (`App default`, `Left`, `Center`, `Right`) with `✓` on the active choice. */
+const alignIcon = (name: TablerIcon) => (): SVGElement => {
+  const svg = tablerIcon(name)()
+  svg.setAttribute('width', '14')
+  svg.setAttribute('height', '14')
+  return svg
+}
+
+/** Builds the `Position ▸` flyout row (`App default`, `Left`, `Center`, `Right`) with Tabler icons and `✓` on the active choice. */
 export function positionMenuRow(current: EmbedAlign | null, onPick: (align: EmbedAlign | null) => void, group?: string): MenuRow {
+  const parentIcon: TablerIcon = current === 'center' ? 'alignCenter' : current === 'right' ? 'alignRight' : 'alignLeft'
   return {
     label: 'Position',
+    icon: alignIcon(parentIcon),
     ...(group === undefined ? {} : { group }),
     run: () => {},
     children: [
       POSITION_CHOICES.map((choice) => ({
         label: choice.label,
+        ...(choice.icon === undefined ? {} : { icon: alignIcon(choice.icon) }),
         hint: current === choice.value ? '✓' : undefined,
         run: () => onPick(choice.value),
       })),
