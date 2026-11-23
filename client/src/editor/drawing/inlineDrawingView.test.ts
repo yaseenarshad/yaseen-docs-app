@@ -111,6 +111,7 @@ describe('InlineDrawingView + inlineDrawingPlugins', () => {
       view: null,
       locked: true,
       page: null,
+      align: null,
       rest: [],
     })
     expect(root.querySelector(`.${INLINE_DRAWING_CLASS}`)).not.toBeNull()
@@ -225,14 +226,14 @@ describe('InlineDrawingView + inlineDrawingPlugins', () => {
     // Header "⋯" button opens the menu.
     root.querySelector<HTMLButtonElement>('.inline-drawing__more')?.click()
     const labels = [...document.querySelectorAll('.ctx-menu__item')].map((el) => el.textContent?.trim())
-    expect(labels).toEqual(['Edit drawing', 'Rename', 'Open in new tab', 'Move to its own file', 'Copy path', 'Fit whole drawing', 'Delete drawing'])
+    expect(labels).toEqual(['Edit drawing', 'Rename', 'Open in new tab', 'Move to its own file', 'Copy path', 'Fit whole drawing', 'Position', 'Delete drawing'])
 
     // Right-clicking the header bar opens the drawing menu (and does not bubble to PageMenu).
     const parentCtx = vi.fn()
     root.addEventListener('contextmenu', parentCtx)
     root.querySelector<HTMLElement>('.inline-drawing__head')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 40 }))
     expect(parentCtx).not.toHaveBeenCalled()
-    expect(document.querySelectorAll('.ctx-menu__item').length).toBe(7)
+    expect(document.querySelectorAll('.ctx-menu__item').length).toBe(8)
     root.removeEventListener('contextmenu', parentCtx)
 
     // Click "Rename" -> focuses the title input.
@@ -452,5 +453,39 @@ describe('landOnInlineDrawing (Show in page)', () => {
     } finally {
       landSpy.mockRestore()
     }
+  })
+
+  it('YAZ-6354: syncs data-align and updates alignment via the Position flyout menu', async () => {
+    const md = `\`\`\`excalidraw\n${EMPTY_INLINE_SCENE_JSON}\n\`\`\`\n<!-- drawing: 640x360 locked align=center -->\n`
+    const { crepe, root } = await mount(md, { inlineDrawing: { root: '/vault' } })
+    await flushMicrotasks()
+
+    const dom = root.querySelector<HTMLElement>(`.${INLINE_DRAWING_CLASS}`)!
+    expect(dom.dataset.align).toBe('center')
+
+    // Open menu -> open Position flyout -> verify active checkmark on Center.
+    root.querySelector<HTMLButtonElement>('.inline-drawing__more')!.click()
+    const posBtn = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item--parent')].find((b) => b.textContent === 'Position')!
+    expect(posBtn).toBeDefined()
+    posBtn.click()
+    const subItems = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')]
+    expect(subItems.map((b) => [b.textContent, b.dataset.hint])).toEqual([
+      ['App default', undefined],
+      ['Left', undefined],
+      ['Center', '✓'],
+      ['Right', undefined],
+    ])
+
+    // Pick Right -> updates data-align and drawingLine.
+    subItems.find((b) => b.textContent === 'Right')!.click()
+    expect(dom.dataset.align).toBe('right')
+    expect(getMarkdownForSave(crepe)).toContain('<!-- drawing: 640x360 locked align=right -->')
+
+    // Pick App default -> removes data-align and omits align from drawingLine.
+    root.querySelector<HTMLButtonElement>('.inline-drawing__more')!.click()
+    ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item--parent')].find((b) => b.textContent === 'Position')!.click()
+    ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')].find((b) => b.textContent === 'App default')!.click()
+    expect(dom.dataset.align).toBeUndefined()
+    expect(getMarkdownForSave(crepe)).toContain('<!-- drawing: 640x360 locked -->')
   })
 })

@@ -773,6 +773,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableStickyHeader: (v): v is boolean => typeof v === 'boolean',
   tableTextInCells: (v): v is TableTextInCells => typeof v === 'string' && (TABLE_TEXT_IN_CELLS as readonly string[]).includes(v),
   tablePosition: (v): v is TablePosition => typeof v === 'string' && (TABLE_POSITIONS as readonly string[]).includes(v),
+  drawingPosition: (v): v is TablePosition => typeof v === 'string' && (TABLE_POSITIONS as readonly string[]).includes(v),
   tableNowMark: (v): v is TableNowMark => typeof v === 'string' && (TABLE_NOW_MARKS as readonly string[]).includes(v),
   tableNextShade: (v): v is boolean => typeof v === 'boolean',
   tableNextColour: isBandColour,

@@ -54,6 +54,7 @@ import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from '../wikilink/viewOnl
 import { linkPath, missingId, type LinkLook, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { boardEmbedAt, boardEmbedKey, boardEmbedsIn, embedRevealed, type BoardEmbedMatch, type CardCheck } from './boardEmbedScan'
 import { boardEmbedName, hasIdEmbed, isIdTarget, type BoardCheck } from './boardEmbedText'
+import { positionMenuRow, setBoardEmbedAlign, syncAlignAttr } from './drawingAlign'
 import { isBoardTarget } from '@shared/embedOptions'
 import { embedCard, loadCardEmbed, type CardEmbedDoors, type CardEmbedHandle } from '../card/embedCard'
 import { vaultUnit } from '../../vault/unitWord'
@@ -354,7 +355,16 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
         const kept = list.filter((row): row is MenuRow => row !== null)
         if (kept.length > 0) rows.push({ ...kept[0]!, divider: true }, ...kept.slice(1))
       }
-      group(mount.handle?.menuRows().map(menuRowOf) ?? [])
+      const currentAlign = parseOptions(m.options)?.align ?? null
+      group([
+        ...(mount.handle?.menuRows().map(menuRowOf) ?? []),
+        view.editable
+          ? positionMenuRow(currentAlign, (align) => {
+              const now = matchOf(view, mount)
+              if (now !== null) setBoardEmbedAlign(view, now, align)
+            })
+          : null,
+      ])
       const live = () => matchOf(view, mount)
       const replace = (text: string) => {
         const now = live()
@@ -400,6 +410,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       const latest = pending.get(fact.id) ?? fact
       if (opts.cards !== undefined && isCardEmbed(latest.target.split('#')[0]!.trim())) return cardBoxFor(view, dom, getPos, fact.id, latest, opts.cards)
       const ref = refOf(latest.target)
+      syncAlignAttr(dom, parseOptions(latest.options)?.align)
       const mount: Mount = { id: fact.id, dom, getPos, target: latest.target, options: latest.options, handle: null, isCard: false, card: null, refKey: keyOf(ref), selected: false, fold: firstFold(latest.cell), cell: latest.cell }
       mounts.set(dom, mount)
       byId.set(fact.id, mount)
@@ -667,7 +678,9 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
               }
               if (mount.options !== fact.options) {
                 mount.options = fact.options
-                mount.handle?.update({ options: parseOptions(fact.options) })
+                const parsed = parseOptions(fact.options)
+                syncAlignAttr(mount.dom, parsed?.align)
+                mount.handle?.update({ options: parsed })
               }
             }
             pending.clear()

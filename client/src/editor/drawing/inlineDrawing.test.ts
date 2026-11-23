@@ -26,7 +26,7 @@ const SAMPLE_SCENE = JSON.stringify({
 describe('shared/inlineDrawing', () => {
   it('parses and formats drawing option lines', () => {
     const opts = parseDrawingLine('<!-- drawing: 640x360 view=10,-20,1.5 locked -->')
-    expect(opts).toEqual({ width: 640, height: 360, view: { x: 10, y: -20, zoom: 1.5 }, locked: true, page: null, rest: [] })
+    expect(opts).toEqual({ width: 640, height: 360, view: { x: 10, y: -20, zoom: 1.5 }, locked: true, page: null, align: null, rest: [] })
     expect(formatDrawingLine(opts)).toBe('<!-- drawing: 640x360 view=10,-20,1.5 locked -->')
     expect(cleanDrawingLine('  <!-- drawing: locked -->  ')).toBe('<!-- drawing: locked -->')
     expect(cleanDrawingLine('<!-- card: GEO-1 -->')).toBeNull()
@@ -102,12 +102,12 @@ describe('shared/inlineDrawing', () => {
     const line = '<!-- drawing: title "Auth \\"Flow\\"", 640x360 locked -->'
     expect(cleanDrawingLine(line)).toBe(line)
     expect(drawingTitleOf(line)).toBe('Auth "Flow"')
-    expect(parseDrawingLine(line)).toEqual({ width: 640, height: 360, view: null, locked: true, page: null, rest: [] })
+    expect(parseDrawingLine(line)).toEqual({ width: 640, height: 360, view: null, locked: true, page: null, align: null, rest: [] })
 
     const titleOnly = '<!-- drawing: title "Solo" -->'
     expect(cleanDrawingLine(titleOnly)).toBe(titleOnly)
     expect(drawingTitleOf(titleOnly)).toBe('Solo')
-    expect(parseDrawingLine(titleOnly)).toEqual({ width: null, height: null, view: null, locked: false, page: null, rest: [] })
+    expect(parseDrawingLine(titleOnly)).toEqual({ width: null, height: null, view: null, locked: false, page: null, align: null, rest: [] })
 
     expect(withDrawingTitle('<!-- drawing: 640x360 locked -->', 'My Diagram')).toBe('<!-- drawing: title "My Diagram", 640x360 locked -->')
     expect(withDrawingTitle(line, '')).toBe('<!-- drawing: 640x360 locked -->')

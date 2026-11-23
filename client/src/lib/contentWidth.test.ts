@@ -26,8 +26,19 @@ describe('Content width and Card width (YAZ-5144)', () => {
     expect(tp({ tablePosition: 'center', cardTablePosition: 'left' })).toEqual({ '--page-table-inline': 'auto', '--card-table-inline': '0' })
     expect(tp({ cardTablePosition: 'center' })).toEqual({ '--card-table-inline': 'auto' })
     // From a main process older than the fields: nothing, the look before.
-    const { tablePosition: _a, cardTablePosition: _b, ...older } = DEFAULT_SETTINGS
+    const { tablePosition: _a, cardTablePosition: _b, drawingPosition: _c, ...older } = DEFAULT_SETTINGS
     expect(tablePositionVars(older as SettingsState)).toEqual({})
+  })
+
+  it('YAZ-6354: Drawing position Center emits --drawing-align-start and --drawing-align-end; Left emits neither', () => {
+    const tp = (over: Partial<SettingsState>) => tablePositionVars({ ...DEFAULT_SETTINGS, ...over })
+    expect(tp({ drawingPosition: 'left' })).toEqual({})
+    expect(tp({ drawingPosition: 'center' })).toEqual({ '--drawing-align-start': 'auto', '--drawing-align-end': 'auto' })
+    expect(tp({ tablePosition: 'center', drawingPosition: 'center' })).toEqual({
+      '--page-table-inline': 'auto',
+      '--drawing-align-start': 'auto',
+      '--drawing-align-end': 'auto',
+    })
   })
 
   it('a field a main process older than it did not send, or a value it would not take, reads the default', () => {
