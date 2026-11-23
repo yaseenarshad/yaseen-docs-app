@@ -271,7 +271,13 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   // YAZ-6220: Friends in-place toggle inside CardInbox (zero extra sidebar rows).
   const [showFriendsBtn, setShowFriendsBtn] = useState(() => FRIENDS_ENABLED && readShowFriendsInInbox())
   const [friendsOpen, setFriendsOpen] = useState(false)
-  const [pendingInvite, setPendingInvite] = useState<{ kind: 'friend' | 'group'; code: string } | null>(null)
+  const [pendingInvite, setPendingInvite] = useState<{
+    kind: 'friend' | 'group'
+    code: string
+    status?: 'accepted' | 'pending-auth' | 'error'
+    result?: unknown
+    error?: string
+  } | null>(null)
   const [shareCard, setShareCard] = useState<{ title: string; markdown: string } | null>(null)
   const [friendsMeta, setFriendsMeta] = useState<{ friendsCount: number; finishedToday: number; myStreak: number } | null>(null)
 

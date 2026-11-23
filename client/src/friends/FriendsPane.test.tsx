@@ -17,7 +17,7 @@ import type { FriendsBoardPayload } from '@shared/friendsApi'
 import type { FriendDay, FriendStats } from '@shared/friendStatsFormat'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { api } from '../api'
-import { FriendsPane } from './FriendsPane'
+import { FriendsPane, friendlyInviteError, friendlyInviteSuccess } from './FriendsPane'
 import { AcceptCardSheet, LAST_IMPORT_DIR_KEY } from './AcceptCardSheet'
 import { CardInboxBar } from '../review/CardInboxBar'
 import { CardInbox, type CardInboxProps } from '../review/CardInbox'
@@ -993,5 +993,40 @@ describe('Desktop Friends UI (YAZ-6220 / YAZ-6222)', () => {
       'https://avatars.githubusercontent.com/u/1',
     )
     expect([...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Reset to GitHub photo')).toBeUndefined()
+  })
+
+  it('handles auto-accepted deep-link invites without reopening the Paste modal and maps error codes to plain words (YAZ-6372)', async () => {
+    friendsMock.board.mockResolvedValue({ ok: true, board: makeBoard() })
+    const onNotice = vi.fn()
+    const onClearPendingInvite = vi.fn()
+
+    act(() =>
+      root!.render(
+        <FriendsPane
+          vaultRoot="/vault"
+          onBack={vi.fn()}
+          onNotice={onNotice}
+          pendingInvite={{
+            kind: 'group',
+            code: 'p7m2s9m8ak',
+            status: 'accepted',
+            result: { kind: 'group', groupId: 'g1', status: 'active', name: 'Founders', alreadyMember: false },
+          }}
+          onClearPendingInvite={onClearPendingInvite}
+        />,
+      ),
+    )
+    await flush(6)
+
+    expect(onNotice).toHaveBeenCalledWith('Joined Founders.')
+    expect(onClearPendingInvite).toHaveBeenCalledTimes(1)
+    expect(el.querySelector('.fr-modal-backdrop')).toBeNull()
+
+    expect(friendlyInviteSuccess({ kind: 'group', name: 'Founders', alreadyMember: true })).toBe('You are already in Founders.')
+    expect(friendlyInviteSuccess({ kind: 'friend', friendId: 42, alreadyFriends: false })).toBe('Friend added!')
+    expect(friendlyInviteSuccess({ kind: 'friend', friendId: 42, alreadyFriends: true })).toBe('You are already friends.')
+    expect(friendlyInviteError('invite_not_found')).toBe('This invite link is no longer valid. Ask for a new one.')
+    expect(friendlyInviteError('self_invite')).toBe('That is your own invite link.')
+    expect(friendlyInviteError('banned')).toBe('You cannot join this group.')
   })
 })

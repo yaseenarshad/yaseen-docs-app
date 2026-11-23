@@ -16,8 +16,9 @@ const MIGRATION_0003_SQL = readFileSync(join(__dirname, 'migrations/0003_shared_
 const MIGRATION_0004_SQL = readFileSync(join(__dirname, 'migrations/0004_custom_avatar.sql'), 'utf8')
 const MIGRATION_0005_SQL = readFileSync(join(__dirname, 'migrations/0005_push_notifications.sql'), 'utf8')
 const MIGRATION_0006_SQL = readFileSync(join(__dirname, 'migrations/0006_push_dedupe.sql'), 'utf8')
+const MIGRATION_0007_SQL = readFileSync(join(__dirname, 'migrations/0007_invite_redemption.sql'), 'utf8')
 
-/** Real SQLite-backed D1 adapter executing the exact production migrations (0001..0006). */
+/** Real SQLite-backed D1 adapter executing the exact production migrations (0001..0007). */
 function makeSqliteD1(): D1Database {
   const sqlite = new DatabaseSync(':memory:')
   sqlite.exec(MIGRATION_SQL)
@@ -26,6 +27,7 @@ function makeSqliteD1(): D1Database {
   sqlite.exec(MIGRATION_0004_SQL)
   sqlite.exec(MIGRATION_0005_SQL)
   sqlite.exec(MIGRATION_0006_SQL)
+  sqlite.exec(MIGRATION_0007_SQL)
 
   const makeStmt = (sql: string, params: unknown[] = []): D1PreparedStatement => {
     const cleanParams = () => params.map((p) => (p === undefined ? null : p)) as (string | number | Uint8Array | null)[]
@@ -175,9 +177,19 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
     const invRes = (await (await handle(req('/api/friends/invites', { method: 'POST', headers: authA }), env, ghFetch)).json()) as { code: string }
     const accRes = await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authB, body: JSON.stringify({ code: invRes.code }) }), env, ghFetch)
     expect(accRes.status).toBe(200)
-    // Single-use: second accept fails 404
+    expect(await accRes.json()).toMatchObject({ kind: 'friend', friendId: 1, alreadyFriends: false })
+    // YAZ-6372: Same-user retry/double-accept is idempotent (200 alreadyFriends: true), never 404
+    const accSameUserAgain = await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authB, body: JSON.stringify({ code: invRes.code }) }), env, ghFetch)
+    expect(accSameUserAgain.status).toBe(200)
+    expect(await accSameUserAgain.json()).toMatchObject({ kind: 'friend', friendId: 1, alreadyFriends: true })
+    // Single-use for others: another user still gets 404
     const accAgain = await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authC, body: JSON.stringify({ code: invRes.code }) }), env, ghFetch)
     expect(accAgain.status).toBe(404)
+    // Redeemed invite is hidden from creator's active invites list
+    const boardAAfterRedeem = (await (await handle(req('/api/friends/board', { method: 'GET', headers: authA }), env, ghFetch)).json()) as {
+      invites: { code: string }[]
+    }
+    expect(boardAAfterRedeem.invites.map((i) => i.code)).not.toContain(invRes.code)
 
     // 1-on-1 card share from Alice to Bob -> increments sharedCardCount
     const directShare = await handle(
@@ -220,7 +232,11 @@ describe('Cloudflare Worker /api/friends/* (YAZ-6216)', () => {
     // Charlie joins late -> instant active join (no pending approval needed!) -> Charlie immediately sees the Biochem folder!
     const joinRes = await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authC, body: JSON.stringify({ code: grp.inviteCode }) }), env, ghFetch)
     expect(joinRes.status).toBe(200)
-    expect(await joinRes.json()).toMatchObject({ kind: 'group', groupId: grp.id, status: 'active' })
+    expect(await joinRes.json()).toMatchObject({ kind: 'group', groupId: grp.id, status: 'active', alreadyMember: false })
+    // YAZ-6372: Re-accepting the group invite returns alreadyMember: true
+    const joinAgain = await handle(req('/api/friends/invites/accept', { method: 'POST', headers: authC, body: JSON.stringify({ code: grp.inviteCode }) }), env, ghFetch)
+    expect(joinAgain.status).toBe(200)
+    expect(await joinAgain.json()).toMatchObject({ kind: 'group', groupId: grp.id, status: 'active', alreadyMember: true })
 
     const boardC = (await (await handle(req('/api/friends/board', { method: 'GET', headers: authC }), env, ghFetch)).json()) as {
       groups: { pending: unknown[]; banned: unknown[]; sharedFolders: { id: string; name: string; cards: { id: string; status: string }[] }[] }[]

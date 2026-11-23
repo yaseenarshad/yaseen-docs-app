@@ -402,7 +402,9 @@ export async function joinGroup(api: GistsApi, handle: IndexHandle, text: string
 export function joinMessage(result: JoinResult): string {
   switch (result.kind) {
     case 'joined':
-      return `You asked to join ${result.name}. Send your join link to the group's admin: their app adds you.`
+      return result.sendToAdmin === ''
+        ? `Joined ${result.name}.`
+        : `You asked to join ${result.name}. Send your join link to the group's admin: their app adds you.`
     case 'already':
       return result.sendToAdmin === null ? `You are already in ${result.name}.` : `You asked to join ${result.name}. Send your join link to the group's admin.`
     case 'own-group':
