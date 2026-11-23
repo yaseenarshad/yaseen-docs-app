@@ -8,6 +8,19 @@ import Foundation
 
 if let raw = Bundle.main.object(forInfoDictionaryKey: "YaseenDocsVaultURL") as? String,
    let url = URL(string: raw) {
-  _ = NSWorkspace.shared.open(url)
+  let workspace = NSWorkspace.shared
+  // Target Yaseen Docs directly by bundle ID so dev Electron binaries never hijack yaseendocs:// (YAZ-6367).
+  if let appURL = workspace.urlForApplication(withBundleIdentifier: "com.yasinarshad.yaseendocs") {
+    let group = DispatchGroup()
+    group.enter()
+    let config = NSWorkspace.OpenConfiguration()
+    config.activates = true
+    workspace.open([url], withApplicationAt: appURL, configuration: config) { _, _ in
+      group.leave()
+    }
+    _ = group.wait(timeout: .now() + 5)
+  } else {
+    _ = workspace.open(url)
+  }
 }
 exit(0)

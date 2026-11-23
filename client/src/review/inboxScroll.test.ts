@@ -79,3 +79,27 @@ it('YAZ-6058: spaceMove("end") pages down in ~70% chunks on long tails and snaps
   el.scrollTop = 1100
   expect(spaceMove(el, 'end')).toBe(400)
 })
+
+it('YAZ-6393: arrowGlide returns true when scrolling and false when already at the edge', () => {
+  const short = document.createElement('div')
+  Object.defineProperty(short, 'clientHeight', { value: 500, configurable: true })
+  Object.defineProperty(short, 'scrollHeight', { value: 500, configurable: true })
+  Object.defineProperty(short, 'scrollTop', { value: 0, writable: true, configurable: true })
+  short.scrollTo = vi.fn() as unknown as typeof short.scrollTo
+  expect(arrowGlide(short, 1)).toBe(false)
+
+  const tall = document.createElement('div')
+  Object.defineProperty(tall, 'clientHeight', { value: 500, configurable: true })
+  Object.defineProperty(tall, 'scrollHeight', { value: 900, configurable: true })
+  Object.defineProperty(tall, 'scrollTop', { value: 0, writable: true, configurable: true })
+  tall.scrollTo = vi.fn() as unknown as typeof tall.scrollTo
+  expect(arrowGlide(tall, 1)).toBe(true)
+
+  const atBottom = document.createElement('div')
+  Object.defineProperty(atBottom, 'clientHeight', { value: 500, configurable: true })
+  Object.defineProperty(atBottom, 'scrollHeight', { value: 900, configurable: true })
+  Object.defineProperty(atBottom, 'scrollTop', { value: 400, writable: true, configurable: true })
+  atBottom.scrollTo = vi.fn() as unknown as typeof atBottom.scrollTo
+  expect(arrowGlide(atBottom, 1)).toBe(false)
+  expect(arrowGlide(atBottom, -1)).toBe(true)
+})

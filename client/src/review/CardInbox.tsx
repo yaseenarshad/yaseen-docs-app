@@ -491,7 +491,11 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
         return
       }
       if (key.kind === 'scroll') {
-        if (!moreOpen && rootRef.current !== null) arrowGlide(rootRef.current, key.delta)
+        if (!moreOpen && rootRef.current !== null) {
+          const moved = arrowGlide(rootRef.current, key.delta)
+          // YAZ-6393: a fresh Down tap at the bottom opens the next side (keeps Space for hidden blanks).
+          if (!moved && key.delta > 0 && !event.repeat && live.current.steps.nextSide) advance('key')
+        }
         return
       }
       if (key.kind === 'answer') {
