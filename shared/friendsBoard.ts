@@ -429,7 +429,7 @@ export function buildPeriodGoalHero(
   let heroPrimary: string
   let heroParen: string | null = null
   let heroDone = false
-  const metaParts = [`${cards.toLocaleString()} cards`, durationText]
+  const metaParts = [`${cards.toLocaleString()} ${cards === 1 ? 'card' : 'cards'}`, durationText]
 
   if (c.priorFinishedDays !== null && c.priorFinishedDays > 0) {
     const remainingPossible = c.daysLeftInPeriod + (stats?.days.some((d) => d.day === ctx.toDay && d.done) ? 0 : 1)
