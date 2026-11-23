@@ -4058,6 +4058,8 @@ export function App() {
       hotkeysAside: settings.hotkeysAside,
       // YAZ-3704 D5: how long the words an outside save changed glow, a SETTING; it reaches the editor through a channel, never a rebuild.
       outsideChangeGlow: settings.outsideChangeGlow,
+      outsideOutlineThickness: settings.outsideOutlineThickness,
+      outsideOutlineColors: settings.outsideOutlineColors,
       // YAZ-4787: what ⌘F does with folds; a page's own `find-folds` wins.
       findFolds: settings.findFolds,
       outsideListPinned: settings.outsideListPinned,

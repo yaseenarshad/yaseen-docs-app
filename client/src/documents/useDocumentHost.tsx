@@ -18,6 +18,13 @@
  * bar, and `Autosave` blocks further writes until one of the two buttons answers it. Two windows
  * on one document is exactly this rule seen from both sides.
  *
+ * ⚡ AMENDED by YAZ-4279 D3 (the notes' rule, YAZ-3837): an engine that can MERGE (`merge`) takes EVERY outside change —
+ * with unsaved edits or none (4A-4: an edit made while a clean reload loads is never dropped), and a refused save. The bar
+ * shows only when it answers 'conflict'; 'reload' (nothing unsaved, but only a reload brings the file in) is `reload`. One
+ * merge runs at a time; changes that arrive meanwhile get one more merge, of the latest file (item 4, 4A-2). With the bar
+ * up, a later change tries again, and a merge that lands takes the bar down (item 10). `reload` is then the bar's Reload
+ * alone, which drops the edits. The code tab has no `merge`: a clean tab reloads and a dirty one shows the bar, as before.
+ *
  * RENAME AND DELETE. The host registers the shell's rename-continuity handle for its path, so a
  * rename flushes these bytes before the file moves and a DELETE retires the controller — without
  * which closing the tab would flush on unmount and resurrect the file that was just trashed. A
@@ -57,6 +64,7 @@ import { VaultReadOnly } from '../vault/readOnlyVault'
 import { pageBoardSaved } from '../share/liveShare'
 import { BOARD_COMMAND_EVENT, type BoardCommand } from './boardCommand'
 import { ConflictBar } from './ConflictBar'
+import { oneAtATime } from './oneAtATime'
 
 /** What every document editor is handed for its document, and hands on to `useDocumentHost` as is. */
 export interface DocumentHostProps {
@@ -76,6 +84,19 @@ export interface DocumentHostOptions extends DocumentHostProps {
    * Answers the file's read-only switch as it now reads (YAZ-3076 D1); nothing = unchanged.
    */
   reload: (autosave: Autosave<number>) => Promise<boolean | void>
+  /**
+   * A newer file (YAZ-4279 D3): merge it into the live document, edits or none. 'merged': the engine holds the file and any
+   * unsaved edits; the autosave is reset (none) or rebased (edits) to it. 'conflict': nothing changed, and the bar shows.
+   * 'reload': nothing is unsaved, but only `reload` brings the file in. Absent (the code tab): the old rule.
+   */
+  merge?: (autosave: Autosave<number>) => Promise<'merged' | 'conflict' | 'reload'>
+  /** "Keep both" on a conflict (YAZ-4279 item 12): merges non-clashing shapes and duplicates clashing ones. True clears the bar. */
+  keepBoth?: (autosave: Autosave<number>) => Promise<boolean>
+  /**
+   * Cheap disk mtime check run on window focus or tab reveal (YAZ-4279 item 6) to catch missed fs-watcher events.
+   * Returns current disk mtime, or null if unreadable.
+   */
+  checkDisk?: () => Promise<number | null>
   /** "Keep mine" is about to overwrite a version this tab did not write: what the engine knows of the file is stale (YAZ-4071 7H). */
   onKeepMine?: () => void
   /** The loaded file's read-only switch (YAZ-3076 D1): `isDrawingReadOnly` / `isDiagramReadOnly` of what the shell loaded. */
@@ -151,11 +172,28 @@ export function useDocumentHost(options: DocumentHostOptions) {
     [],
   )
 
+  /** YAZ-4279 D3: the engine merges, or the bar shows. The two doors of the module doc use it, one merge at a time (item 4). */
+  const [mergeOrConflict] = useState(() =>
+    oneAtATime(async (mtime) => {
+      const a = autosave.current
+      const merge = engine.current.merge
+      if (a === null || retired.current) return
+      if (merge === undefined) return setConflictMtime(mtime)
+      const answer = await merge(a).catch((err: unknown) => {
+        // A merge that throws is a bug or a file that will not read: the bar keeps the edits, and the console says why.
+        console.error('merge', err)
+        return 'conflict' as const
+      })
+      if (answer === 'reload') return reload()
+      setConflictMtime(answer === 'conflict' ? mtime : null)
+    }),
+  )
+
   const start = useCallback(
     (content: number, mtime: number) => {
-      autosave.current = new Autosave<number>({ content, mtime, delayMs: 500, save, onStatus: (status) => chips.set({ status }), onConflict: setConflictMtime })
+      autosave.current = new Autosave<number>({ content, mtime, delayMs: 500, save, onStatus: (status) => chips.set({ status }), onConflict: (m) => void mergeOrConflict(m) })
     },
-    [chips, save],
+    [chips, save, mergeOrConflict],
   )
 
   /** Disk truth into the engine, then a fresh baseline: the clean editor's answer to a change. */
@@ -181,11 +219,11 @@ export function useDocumentHost(options: DocumentHostOptions) {
         if (a === null || retired.current) return
         void a.settled().then(() => {
           if (ev.mtime === a.mtime) return // the echo of our own write
-          if (a.dirty) setConflictMtime(ev.mtime)
+          if (a.dirty || engine.current.merge !== undefined) void mergeOrConflict(ev.mtime)
           else void reload()
         })
       }),
-    [watch, path, reload],
+    [watch, path, reload, mergeOrConflict],
   )
 
   const keepMine = useCallback(() => {
@@ -195,6 +233,50 @@ export function useDocumentHost(options: DocumentHostOptions) {
     engine.current.onKeepMine?.()
     void a.adopt(conflictMtime)
   }, [conflictMtime])
+
+  const keepBoth = useCallback(() => {
+    const a = autosave.current
+    const fn = engine.current.keepBoth
+    if (a === null || retired.current || conflictMtime === null || fn === undefined) return
+    void fn(a)
+      .then((ok) => {
+        if (ok) setConflictMtime(null)
+      })
+      .catch((err: unknown) => {
+        console.error('keepBoth', err)
+      })
+  }, [conflictMtime])
+
+  // YAZ-4279 item 6: check disk mtime on window focus and tab reveal (throttled to at most once per 1s)
+  // so an outside write whose fs-watcher event was missed still lands cleanly.
+  const lastDiskCheck = useRef(0)
+  const diskCheckInFlight = useRef(false)
+  const checkDiskNow = useCallback(() => {
+    const a = autosave.current
+    const check = engine.current.checkDisk
+    if (a === null || retired.current || check === undefined || diskCheckInFlight.current) return
+    const now = Date.now()
+    if (now - lastDiskCheck.current < 1000) return
+    lastDiskCheck.current = now
+    diskCheckInFlight.current = true
+    void a
+      .settled()
+      .then(() => check().catch(() => null))
+      .then((mtime) => {
+        if (mtime === null || autosave.current !== a || retired.current || mtime === a.mtime) return
+        if (a.dirty || engine.current.merge !== undefined) void mergeOrConflict(mtime)
+        else void reload()
+      })
+      .finally(() => {
+        diskCheckInFlight.current = false
+      })
+  }, [mergeOrConflict, reload])
+
+  useEffect(() => {
+    const onFocus = (): void => checkDiskNow()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [checkDiskNow])
 
   // The close/quit handshake (main holds the window until this settles, 5 s cap) and the unmount
   // flush. A retired host does neither — that is what keeps a delete deleted.
@@ -256,11 +338,12 @@ export function useDocumentHost(options: DocumentHostOptions) {
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((e) => e.isIntersecting)) return
       engine.current.onShown?.()
+      checkDiskNow()
       if (mayTakeFocus(document.activeElement, host.closest('.tabstack'))) engine.current.focus()
     })
     observer.observe(host)
     return () => observer.disconnect()
-  }, [])
+  }, [checkDiskNow])
 
   const flush = useCallback(() => {
     if (!retired.current) void autosave.current?.flush()
@@ -317,7 +400,7 @@ export function useDocumentHost(options: DocumentHostOptions) {
     [chips, setReadOnly, allowFor, lock],
   )
 
-  const conflictBar = conflictMtime !== null && <ConflictBar onReload={() => void reload()} onKeepMine={keepMine} />
+  const conflictBar = conflictMtime !== null && <ConflictBar onReload={() => void reload()} onKeepBoth={options.keepBoth !== undefined ? keepBoth : undefined} onKeepMine={keepMine} />
   return { hostRef, autosave, retired, start, flush, reload, chips, conflictBar, readOnly, switchOn }
 }
 

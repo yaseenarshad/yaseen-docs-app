@@ -112,7 +112,7 @@ export function useInlineDrawing(host: InlineDrawingHost): {
   unitRef.current = unit
 
   const openSeq = useRef(0)
-  const [openInline, setOpenInline] = useState<{ id: number; pos: number; json: string; title: string; autoFocusTitle?: boolean } | null>(null)
+  const [openInline, setOpenInline] = useState<{ id: number; pos: number; index: number; json: string; title: string; autoFocusTitle?: boolean } | null>(null)
   const liveSession = useRef<{ pos: number; json: string } | null>(null)
   const [sizeNudge, setSizeNudge] = useState<{ pos: number; bytes: number } | null>(null)
   const [askSheet, setAskSheet] = useState<SheetPrompt | null>(null)
@@ -120,10 +120,11 @@ export function useInlineDrawing(host: InlineDrawingHost): {
 
   const openEdit = useCallback((pos: number, json: string, autoFocusTitle = false) => {
     const view = hostRef.current.getView()
-    const node = view !== null && !view.isDestroyed ? findInlineNode(view.state.doc, pos, json)?.node : null
-    const title = drawingTitleOf(node?.attrs.drawingLine)
+    const found = view !== null && !view.isDestroyed ? findInlineNode(view.state.doc, pos, json) : null
+    const title = drawingTitleOf(found?.node.attrs.drawingLine)
+    const index = view !== null && !view.isDestroyed && found !== null ? inlineDrawingIndexAt(view.state.doc, found.pos) : 0
     liveSession.current = { pos, json }
-    setOpenInline({ id: ++openSeq.current, pos, json, title, autoFocusTitle })
+    setOpenInline({ id: ++openSeq.current, pos, index: Math.max(0, index), json, title, autoFocusTitle })
   }, [])
 
   const saveInlineTitle = useCallback((fallbackPos: number, nextTitle: string) => {
@@ -334,6 +335,7 @@ export function useInlineDrawing(host: InlineDrawingHost): {
       inline: {
         json: openInline.json,
         pagePath: host.path,
+        index: openInline.index,
         title: openInline.title,
         autoFocusTitle: openInline.autoFocusTitle,
         onTitleChange: (nextTitle) => saveInlineTitle(openInline.pos, nextTitle),

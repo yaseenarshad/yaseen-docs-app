@@ -18,10 +18,11 @@ vi.mock('./engine', () => {
   const mod = {
     Excalidraw,
     restoreElements: (elements: unknown) => elements,
+    CaptureUpdateAction: { IMMEDIATELY: 'IMMEDIATELY', NEVER: 'NEVER', EVENTUALLY: 'EVENTUALLY' },
     Fonts: { loadElementsFonts: async () => [] },
     restoreAppState: () => ({}),
     getSceneVersion: () => 0,
-    serializeAsJSON: vi.fn((elements: unknown) => JSON.stringify({ elements, appState: {} })),
+    serializeAsJSON: vi.fn((elements: unknown) => JSON.stringify({ elements, appState: { viewBackgroundColor: '#ffffff' } })),
     // YAZ-4277 D18: the fold switch point's save step; with folding on nothing is aside (`foldsOff.test.tsx` runs the real one)
     withFoldsPutBack: (elements: unknown) => elements,
   }
@@ -318,13 +319,35 @@ describe('a reload from disk drops the images nothing shows (YAZ-3737 D14)', () 
       root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onApi={(api) => (handle = api as never)} />)
     })
     const order: string[] = []
-    const raw = { getAppState: () => ({}), updateFrameRendering: () => undefined, updateScene: vi.fn(() => void order.push('scene')), addFiles: vi.fn(() => void order.push('files')), pruneFiles: vi.fn(() => void order.push('prune')) }
+    const raw = { getAppState: () => ({}), getFiles: () => ({ held: {} }), updateFrameRendering: () => undefined, updateScene: vi.fn(() => void order.push('scene')), addFiles: vi.fn(() => void order.push('files')), pruneFiles: vi.fn(() => void order.push('prune')) }
     act(() => (last().onExcalidrawAPI as (api: unknown) => void)(raw))
     const file = { id: 'img', mimeType: 'image/png', dataURL: 'data:image/png;base64,AA==', created: 1 }
-    handle!.replaceScene({ elements: [], appState: {}, files: { img: file } })
+    // YAZ-4279 item 5: a picture the engine holds is not handed again (an id is its bytes').
+    handle!.replaceScene({ elements: [], appState: {}, files: { img: file, held: { ...file, id: 'held' } } })
     expect(raw.addFiles).toHaveBeenCalledExactlyOnceWith([file])
     expect(raw.pruneFiles).toHaveBeenCalledOnce()
     expect(order).toEqual(['scene', 'files', 'prune'])
+  })
+
+  it('YAZ-4279: the file\'s scene never joins ⌘Z: a reload and a merge both go in with `captureUpdate: NEVER`', async () => {
+    let handle: { replaceScene(scene: unknown): number; mergeScene(base: unknown, disk: unknown): unknown } | null = null
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onApi={(api) => (handle = api as never)} />)
+    })
+    const box = { id: 'b', type: 'rectangle', x: 0, version: 1 }
+    const raw = { getAppState: () => ({}), getFiles: () => ({}), getSceneElementsIncludingDeleted: () => [box], updateFrameRendering: () => undefined, updateScene: vi.fn(), addFiles: vi.fn(), pruneFiles: vi.fn() }
+    act(() => (last().onExcalidrawAPI as (api: unknown) => void)(raw))
+    handle!.replaceScene({ elements: [box], appState: {}, files: {} })
+    expect(raw.updateScene).toHaveBeenLastCalledWith(expect.objectContaining({ captureUpdate: 'NEVER' }))
+    // The board's own settings in the file come in with the reload: the next save must not write the old background back.
+    handle!.replaceScene({ elements: [box], appState: { viewBackgroundColor: '#000' }, files: {} })
+    expect(raw.updateScene).toHaveBeenLastCalledWith(expect.objectContaining({ appState: { viewBackgroundColor: '#000' } }))
+    const merged = handle!.mergeScene({ elements: [box], appState: {} }, { elements: [{ ...box, strokeColor: 'red' }], appState: {}, files: {} })
+    expect(merged).toMatchObject({ version: expect.any(Number) })
+    expect(raw.updateScene).toHaveBeenLastCalledWith(expect.objectContaining({ captureUpdate: 'NEVER', elements: [expect.objectContaining({ id: 'b', strokeColor: 'red', version: 2 })] }))
   })
 })
 
@@ -444,5 +467,191 @@ describe('the engine props of the round 1 switches', () => {
     expect((last().initialData as { appState: Record<string, unknown> }).appState).not.toHaveProperty('textEdgeDoubleClick')
     await mountWith({ ...DEFAULT_CANVAS_PREFS, textEdgeDoubleClick: 'fit' })
     expect(last().textEdgeDoubleClick).toBe('fit')
+  })
+})
+
+describe('YAZ-4279 UI/UX: ResizeObserver refresh, scrollToElements, repairScene, keepBothScene', () => {
+  it('item 3: schedules a single requestAnimationFrame calling api.refresh() when .drawing-surface resizes, and cleans up on unmount', async () => {
+    let resizeCb: ResizeObserverCallback | null = null
+    const observe = vi.fn()
+    const disconnect = vi.fn()
+    const origRO = globalThis.ResizeObserver
+    const origRAF = globalThis.requestAnimationFrame
+    const origCancelRAF = globalThis.cancelAnimationFrame
+    const rafCallbacks: FrameRequestCallback[] = []
+    globalThis.ResizeObserver = class {
+      constructor(cb: ResizeObserverCallback) {
+        resizeCb = cb
+      }
+      observe = observe
+      unobserve = vi.fn()
+      disconnect = disconnect
+    } as unknown as typeof ResizeObserver
+    globalThis.requestAnimationFrame = vi.fn((cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb)
+      return rafCallbacks.length
+    })
+    globalThis.cancelAnimationFrame = vi.fn()
+
+    try {
+      await render(undefined)
+      const refresh = vi.fn()
+      const fakeApi = {
+        refresh,
+        getAppState: () => ({}),
+        getSceneElements: () => [],
+        getSceneElementsIncludingDeleted: () => [],
+        getSceneElementsMapIncludingDeleted: () => new Map(),
+        getFiles: () => ({}),
+        updateScene: vi.fn(),
+        updateFrameRendering: vi.fn(),
+        addFiles: vi.fn(),
+        pruneFiles: vi.fn(),
+        setViewport: vi.fn(),
+      }
+      await act(async () => {
+        ;(last().onExcalidrawAPI as (api: unknown) => void)(fakeApi)
+      })
+      expect(observe).toHaveBeenCalledTimes(1)
+      expect(resizeCb).not.toBeNull()
+
+      // Multiple resize notifications coalesce into a single rAF.
+      resizeCb!([], {} as ResizeObserver)
+      resizeCb!([], {} as ResizeObserver)
+      expect(globalThis.requestAnimationFrame).toHaveBeenCalledTimes(1)
+      expect(refresh).not.toHaveBeenCalled()
+
+      rafCallbacks[0](16)
+      expect(refresh).toHaveBeenCalledTimes(1)
+
+      // Schedule another resize and unmount before rAF fires: observer disconnects and rAF cancels.
+      resizeCb!([], {} as ResizeObserver)
+      act(() => root?.unmount())
+      root = null
+      expect(disconnect).toHaveBeenCalledTimes(1)
+      expect(globalThis.cancelAnimationFrame).toHaveBeenCalledTimes(1)
+    } finally {
+      globalThis.ResizeObserver = origRO
+      globalThis.requestAnimationFrame = origRAF
+      globalThis.cancelAnimationFrame = origCancelRAF
+    }
+  })
+
+  it('item 10: scrollToElements calls api.setViewport with matching element ids', async () => {
+    let handle: import('./ExcalidrawSurface').DrawingSurfaceApi | null = null
+    container ??= document.createElement('div')
+    document.body.appendChild(container)
+    root ??= createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onApi={(a) => (handle = a)} />)
+    })
+    const updateScene = vi.fn()
+    const elA = { id: 'a', type: 'rectangle', x: 0, y: 0, width: 100, height: 80 }
+    const elB = { id: 'b', type: 'rectangle', x: 2000, y: 1000, width: 200, height: 100 }
+    await act(async () => {
+      ;(last().onExcalidrawAPI as (api: unknown) => void)({
+        refresh: vi.fn(),
+        getAppState: () => ({ width: 1000, height: 800, zoom: { value: 1 }, scrollX: 0, scrollY: 0 }),
+        getSceneElements: () => [elA, elB],
+        getSceneElementsIncludingDeleted: () => [elA, elB],
+        getSceneElementsMapIncludingDeleted: () => new Map(),
+        getFiles: () => ({}),
+        updateScene,
+        updateFrameRendering: vi.fn(),
+        addFiles: vi.fn(),
+        pruneFiles: vi.fn(),
+        setViewport: vi.fn(),
+      })
+    })
+    updateScene.mockClear()
+    handle!.scrollToElements!(['b'])
+    expect(updateScene).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appState: expect.objectContaining({
+          scrollX: -1600,
+          scrollY: -650,
+          zoom: { value: 1 },
+        }),
+      }),
+    )
+  })
+
+  it('item 11: repairScene drops tombstones, deduplicates ids, fixes broken bindings and originalText, and updates immediately', async () => {
+    let handle: import('./ExcalidrawSurface').DrawingSurfaceApi | null = null
+    container ??= document.createElement('div')
+    document.body.appendChild(container)
+    root ??= createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onApi={(a) => (handle = a)} />)
+    })
+    const updateScene = vi.fn()
+    const rawElements = [
+      { id: 'dead', type: 'rectangle', isDeleted: true, version: 1 },
+      { id: 'box', type: 'rectangle', version: 2, boundElements: [{ id: 'missing-arrow', type: 'arrow' }, { id: 'lbl', type: 'text' }] },
+      { id: 'box', type: 'rectangle', version: 3, boundElements: [{ id: 'missing-arrow', type: 'arrow' }, { id: 'lbl', type: 'text' }] },
+      { id: 'lbl', type: 'text', version: 1, text: 'Hello', originalText: 'Old', containerId: 'ghost-box', frameId: 'ghost-frame' },
+    ]
+    await act(async () => {
+      ;(last().onExcalidrawAPI as (api: unknown) => void)({
+        refresh: vi.fn(),
+        getAppState: () => ({}),
+        getSceneElements: () => rawElements.filter((e) => !e.isDeleted),
+        getSceneElementsIncludingDeleted: () => rawElements,
+        getSceneElementsMapIncludingDeleted: () => new Map(),
+        getFiles: () => ({}),
+        updateScene,
+        updateFrameRendering: vi.fn(),
+        addFiles: vi.fn(),
+        pruneFiles: vi.fn(),
+        setViewport: vi.fn(),
+      })
+    })
+    const result = handle!.repairScene!()
+    expect(result.removedDeleted).toBe(1)
+    expect(result.repairedCount).toBeGreaterThanOrEqual(2)
+    expect(updateScene).toHaveBeenCalledWith(expect.objectContaining({ captureUpdate: 'IMMEDIATELY' }))
+    const updatedElements = updateScene.mock.calls[0][0].elements as Array<Record<string, unknown>>
+    expect(updatedElements.map((e) => e.id)).toEqual(['box', 'lbl'])
+    expect(updatedElements[0].boundElements).toEqual([{ id: 'lbl', type: 'text' }])
+    expect(updatedElements[0].version).toBe(4)
+    expect(updatedElements[1].containerId).toBeNull()
+    expect(updatedElements[1].frameId).toBeNull()
+    expect(updatedElements[1].originalText).toBe('Hello')
+  })
+
+  it('item 12: keepBothScene duplicates clashing disk elements at +40,+40 with fresh ids', async () => {
+    let handle: import('./ExcalidrawSurface').DrawingSurfaceApi | null = null
+    container ??= document.createElement('div')
+    document.body.appendChild(container)
+    root ??= createRoot(container)
+    await act(async () => {
+      root?.render(<ExcalidrawSurface scene={SCENE} theme="light" onSnapshot={() => undefined} onFailed={() => undefined} onApi={(a) => (handle = a)} />)
+    })
+    const updateScene = vi.fn()
+    const baseEl = { id: 'r1', type: 'rectangle', x: 10, y: 20, width: 100, height: 50, version: 1 }
+    const liveEl = { id: 'r1', type: 'rectangle', x: 10, y: 20, width: 120, height: 50, version: 2 }
+    const diskEl = { id: 'r1', type: 'rectangle', x: 10, y: 20, width: 200, height: 50, version: 2 }
+    await act(async () => {
+      ;(last().onExcalidrawAPI as (api: unknown) => void)({
+        refresh: vi.fn(),
+        getAppState: () => ({}),
+        getSceneElements: () => [liveEl],
+        getSceneElementsIncludingDeleted: () => [liveEl],
+        getSceneElementsMapIncludingDeleted: () => new Map([['r1', liveEl]]),
+        getFiles: () => ({}),
+        updateScene,
+        updateFrameRendering: vi.fn(),
+        addFiles: vi.fn(),
+        pruneFiles: vi.fn(),
+        setViewport: vi.fn(),
+      })
+    })
+    const res = handle!.keepBothScene!({ elements: [baseEl], appState: {} }, { elements: [diskEl], appState: {}, files: {} }, 'until-checked')
+    expect(res.duplicated).toBe(1)
+    const updatedElements = updateScene.mock.calls[0][0].elements as Array<Record<string, unknown>>
+    expect(updatedElements).toHaveLength(2)
+    expect(updatedElements[0]).toMatchObject({ id: 'r1', width: 120 })
+    expect(updatedElements[1].id).not.toBe('r1')
+    expect(updatedElements[1]).toMatchObject({ x: 50, y: 60, width: 200 })
   })
 })

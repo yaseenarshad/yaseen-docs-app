@@ -17,7 +17,13 @@
  * change on a clean tab; our PostConfig.js keeps the page, the zoom and the scroll — YAZ-3420 D2),
  * `{ action: 'invokeAction', actionName: 'darkMode' | 'lightMode' }` (the app's theme, live) and
  * `{ action: 'yaseenAdaptiveColors', value }` (the dark-mode colour setting, live — ours, answered
- * by our PostConfig.js, because draw.io has no embed action for it).
+ * by our PostConfig.js, because draw.io has no embed action for it), and
+ * `{ action: 'yaseenMerge', id, base, xml, glow }` (YAZ-4279 D2: an outside save, merged by draw.io's own `mergeFile`
+ * against the host's base — ours; `{ action: 'yaseenMergeCancel', id }` takes back one not begun). Once the user's
+ * gesture ends, the overlay says `{ event: 'yaseenMerging', id }`, draw.io posts the page on screen as its own
+ * `autosave`, and the overlay answers `{ event: 'yaseenMerge', id, xml }` with the whole merged file, or
+ * `{ event: 'yaseenMerge', id, conflict: true }` for a clash (D4). `{ action: 'yaseenClearClash' }` takes the red
+ * outlines of a clash away (Keep mine).
  */
 import { DRAWIO_ORIGIN } from '@shared/drawio'
 import { HOTKEY_COMMANDS, appKeyId, drawioChordFor, keyFor, parseAccelerator, toAccelerator, type DrawioChord, type HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -251,6 +257,9 @@ export type DrawioMessage =
   | { event: 'load'; xml?: string }
   | { event: 'autosave'; xml: string }
   | { event: 'save'; xml: string }
+  | { event: 'yaseenMerging'; id: number }
+  | { event: 'yaseenMerge'; id: number; conflict: true }
+  | { event: 'yaseenMerge'; id: number; conflict?: false; xml?: string; changedIds?: string[]; groups?: string[][]; offscreen?: boolean }
   | DrawioLinkMessage
 
 /**
@@ -347,7 +356,7 @@ export function readDrawioMessage(ev: { source: unknown; origin: string; data: u
     return null
   }
   if (typeof msg !== 'object' || msg === null) return null
-  const { event, xml } = msg as Record<string, unknown>
+  const { event, xml, conflict, id } = msg as Record<string, unknown>
   switch (event) {
     case 'yaseenReady':
     case 'configure':
@@ -358,6 +367,20 @@ export function readDrawioMessage(ev: { source: unknown; origin: string; data: u
     case 'autosave':
     case 'save':
       return typeof xml === 'string' ? { event, xml } : null
+    case 'yaseenMerging':
+      return typeof id === 'number' ? { event, id } : null
+    case 'yaseenMerge': {
+      if (typeof id !== 'number') return null
+      if (conflict === true) return { event, id, conflict }
+      const raw = msg as Record<string, unknown>
+      const changedIds = Array.isArray(raw.changedIds) && raw.changedIds.every(isString) ? raw.changedIds : undefined
+      const groups =
+        Array.isArray(raw.groups) && raw.groups.every((g) => Array.isArray(g) && g.every(isString))
+          ? (raw.groups as string[][])
+          : undefined
+      const offscreen = typeof raw.offscreen === 'boolean' ? raw.offscreen : undefined
+      return { event, id, ...(typeof xml === 'string' && { xml }), ...(changedIds !== undefined && { changedIds }), ...(groups !== undefined && { groups }), ...(offscreen !== undefined && { offscreen }) }
+    }
     default:
       return readLinkMessage(msg as Record<string, unknown>)
   }

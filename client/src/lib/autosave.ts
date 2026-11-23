@@ -13,7 +13,7 @@
  *    (Crepe's first serialisation is a normalised rewrite — never save it);
  *  - save `delayMs` after the last change, with `expectedMtime` = mtime of the
  *    last read/write; a CONFLICT rejection is reported via `onConflict` and
- *    saving pauses until `reset()` (reload) or `adopt()` (overwrite);
+ *    saving pauses until `reset()` (reload), `adopt()` (overwrite) or `rebase()` (merged, YAZ-4279);
  *  - `flush()` saves immediately (file switch / beforeunload).
  */
 export type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'error'
@@ -182,6 +182,21 @@ export class Autosave<C = string> {
     )
     await this.inflight
     if (failure !== null) throw (failure as { err: unknown }).err
+  }
+
+  /**
+   * The disk moved under unsaved edits and the editor merged it in (YAZ-4279 D3): the file is the new baseline's mtime, and
+   * the edits stay pending, now saved against `mtime`. It ends a refused save's block, as `adopt` does, but schedules the
+   * save rather than flushing at once: the merged content reaches the editor's next `update` first.
+   */
+  rebase(mtime: number): void {
+    if (this.disposed) return
+    this.mtime = mtime
+    this.blocked = false
+    if (this.pending !== null) {
+      this.clearTimer()
+      this.schedule()
+    }
   }
 
   /** Keep the editor's content and overwrite the newer disk version. */

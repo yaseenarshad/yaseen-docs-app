@@ -23,3 +23,7 @@ A card is drawn (`renderCard`), not edited, so the decorations above cannot reac
 ## Why there is no `prosemirror-collab`
 
 `prosemirror-collab` is built for edits that arrive as steps from a server, with a version number and a client id. Here every outside edit arrives as a whole file, so the edit is a diff of two files either way, and the file's mtime is the only version. ProseMirror's history already maps your undo steps through an `addToHistory: false` transaction, so ⌘Z keeps undoing only your typing. If edits ever arrive as steps (an edit tool that talks to the app, a live cursor), port `prosemirror-collab` then and replace `mergeExternal.ts`: the other two parts stay.
+
+## Boards (YAZ-4279)
+
+Drawings (`.excalidraw`) and diagrams (`.drawio`) follow the same idea: a base, the user's edits and the outside edit, merged three ways, and the conflict bar only for a real clash. The parts are their own, because a board is shapes, not text: `shared/boardMerge.ts` `mergeElements` (one property at a time) with `client/src/drawings/mergeScene.ts` for a drawing, draw.io's own `mergeFile` behind our overlay's `yaseenMerge` for a diagram, and `useDocumentHost`'s `merge` option as the one door. The outlines (`client/src/drawings/outsideMarks.ts`, the overlay's `markCells`) are timed by the same Glow setting. See rules 36, 37 and 44 in `docs/CONTRACTS.md`.

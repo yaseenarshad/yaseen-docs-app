@@ -115,6 +115,21 @@ describe('Autosave', () => {
     expect(a.dirty).toBe(false)
   })
 
+  it('rebase() after a merge (YAZ-4279 D3): the edits stay pending, the block ends, and the save waits its delay with the merged mtime', async () => {
+    const { a, save } = setup(async (_c, m) => {
+      if (m === 100) throw new SaveConflict(300)
+      return { mtime: 400 }
+    })
+    a.update('mine')
+    await a.flush()
+    expect(a.dirty).toBe(true)
+    a.rebase(300)
+    expect(save).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(save).toHaveBeenLastCalledWith('mine', 300)
+    expect(a.isClean()).toBe(true)
+  })
+
   it('reset() after a reload clears pending content and the conflict block', async () => {
     const { a, save } = setup(() => Promise.reject(new SaveConflict(150)))
     a.update('a')

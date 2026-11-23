@@ -2443,6 +2443,10 @@ export interface SettingsState {
   findFolds: FindFolds
   /** Settings › Editor › Outside changes (YAZ-3704 D5): how long the words that an AI or another app changed in an open page glow. `off`: no glow and no one-line note; the merge still runs. */
   outsideChangeGlow: OutsideChangeGlow
+  /** Settings › Editor › Outside changes (YAZ-6398): thickness of outside-change outlines on boards. */
+  outsideOutlineThickness: OutsideOutlineThickness
+  /** Settings › Editor › Outside changes (YAZ-6398): hex colors for added, changed, and clashing shapes on boards. */
+  outsideOutlineColors: OutsideOutlineColors
   /** Settings › Editor › Outside changes › Pin default (YAZ-3704 demo): the numbered list of the changes sits left of the page; off, it opens from the bar's count. The list's own Pin and Unpin write it. */
   outsideListPinned: boolean
   /**
@@ -2854,6 +2858,20 @@ export const FIND_FOLDS: readonly FindFolds[] = ['current', 'all', 'keep']
 /** The glow of outside changes (YAZ-3704 D5): timed, until checked, or off. 10 seconds went in the YAZ-4272 demo: too quick to read. */
 export type OutsideChangeGlow = 'until-checked' | '60s' | '5m' | 'off'
 export const OUTSIDE_CHANGE_GLOWS: readonly OutsideChangeGlow[] = ['until-checked', '60s', '5m', 'off']
+/** Outside-change outline thickness on drawings/diagrams (YAZ-6398). */
+export type OutsideOutlineThickness = 'thin' | 'normal' | 'thick'
+export const OUTSIDE_OUTLINE_THICKNESSES: readonly OutsideOutlineThickness[] = ['thin', 'normal', 'thick']
+/** Outside-change outline hex colors on drawings/diagrams (YAZ-6398). */
+export interface OutsideOutlineColors {
+  added: string
+  changed: string
+  clash: string
+}
+export const DEFAULT_OUTSIDE_OUTLINE_COLORS: OutsideOutlineColors = {
+  added: '#16a34a',
+  changed: '#d97706',
+  clash: '#dc2626',
+}
 /** Where a calendar table's "All notes" opens (YAZ-4276 A1): the time block of the cell you came from, or now's. */
 export type AllNotesOpensAt = 'cell' | 'now'
 export const ALL_NOTES_OPENS_AT: readonly AllNotesOpensAt[] = ['cell', 'now']
@@ -3261,6 +3279,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tocLines: 'hover',
   findFolds: 'current',
   outsideChangeGlow: 'until-checked',
+  outsideOutlineThickness: 'normal',
+  outsideOutlineColors: { ...DEFAULT_OUTSIDE_OUTLINE_COLORS },
   outsideListPinned: false,
   codeBlockWidth: null,
   tableWidth: null,

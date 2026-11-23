@@ -69,13 +69,16 @@ import { tellReadOnlyEdit } from '../editor/readOnlyEdit'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { picturesSize, referencedFileIds, type DrawingFileData } from '@shared/drawingAssets'
 import { appStateToPrefs, changedPrefKeys, foldArrowsOf, NEW_ELEMENT_DEFAULT_KEYS, prefsEqual, prefsToAppState, type EngineAppStateSlice } from '@shared/canvasPrefs'
-import { CANVAS_PANEL_DEFAULT_W, CANVAS_PANEL_MAX_W, CANVAS_PANEL_MIN_W, DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type FoldArrowMode, type PageView } from '@shared/types'
+import { CANVAS_PANEL_DEFAULT_W, CANVAS_PANEL_MAX_W, CANVAS_PANEL_MIN_W, DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, DEFAULT_OUTSIDE_OUTLINE_COLORS, type CanvasPanelState, type CanvasPanelTab, type CanvasPrefs, type FoldArrowMode, type OutsideChangeGlow, type OutsideOutlineColors, type OutsideOutlineThickness, type PageView } from '@shared/types'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside, MouseMods } from '@shared/keys'
 import { holdColResize } from '../lib/colResize'
 import { namingTab } from '../lib/focusHandoff'
 import { appStateEdits, boardAppStateKeys } from './boardAppState'
 import { contentVersion } from './contentVersion'
+import { keepBothLiveScene, mergeLiveScene, prepareReplacedScene, type SceneSide } from './mergeScene'
+import { OutsideMarks } from './outsideMarks'
+import './outsideMarks.css'
 import { CANVAS_SIDEBAR, CanvasSidebar, openCanvasTab } from './CanvasSidebar'
 import { imageStudioSession, pickChip } from '../image-studio/imageStudioSession'
 import { openViewport, type DrawingScene } from './drawingScene'
@@ -125,11 +128,36 @@ export interface DrawingSurfaceApi {
   /** The cog's size row (YAZ-3943 D5): the pictures the canvas uses now, and those with no bytes (1F), counted when asked (`picturesSize`). */
   pictures(): { bytes: number; count: number; missing: number }
   /**
-   * Replace what the canvas shows (the file changed on disk under a clean tab). Returns the
+   * Replace what the canvas shows (Reload from the bar: the disk's version, the canvas's edits dropped). Returns the
    * version the engine will report for it — the host's new clean baseline — computed from the
    * RESTORED elements handed in, never read back (a read-back races the engine's own commit).
    */
   replaceScene(scene: DrawingScene): number
+  /**
+   * An outside save, merged into the canvas (YAZ-4279 D1, D4; `mergeLiveScene`): `base` is the scene as the host last loaded
+   * or saved it. A clash (`conflicts`) leaves the canvas as it was and outlines the shapes red; otherwise the canvas holds
+   * the file and any unsaved edits, and the answer is the version the engine will report for it. Never in ⌘Z's history:
+   * the file's change is not the user's. What the file added or changed is outlined for `glow` (D5).
+   */
+  mergeScene(base: SceneSide, disk: DrawingScene, glow: OutsideChangeGlow): { version: number; changedIds?: string[] } | { conflicts: string[] }
+  /** Pan/scroll to bring the given element ids into view without over-zooming past current zoom (YAZ-4279 item 10, YAZ-6396). */
+  scrollToElements?(ids: readonly string[]): void
+  /** Group nearby element ids (within ~300 px) into ordered spatial stops for 1/N cycling (YAZ-6402). */
+  clusterElements?(ids: readonly string[]): string[][]
+  /** True when at least one of the given element ids lies outside the current visible viewport (YAZ-6396). */
+  areAnyOffscreen?(ids: readonly string[]): boolean
+  /** Restore a previously saved pan/zoom view (YAZ-6396 Back button). */
+  restoreCanvas?(view: NonNullable<PageView['canvas']>): void
+  /** Clear all green/amber outside-change outlines on the canvas (YAZ-6399 Mark checked). */
+  clearOutsideMarks?(): void
+  /** Drop tombstones, deduplicate ids, fix broken bindings, and re-measure alive text in place (YAZ-4279 item 11). */
+  repairScene?(): { removedDeleted: number; repairedCount: number }
+  /** Keep both sides on a conflict: merge non-clashing shapes and duplicate clashing disk shapes at +40,+40 (YAZ-4279 item 12). */
+  keepBothScene?(base: SceneSide, disk: DrawingScene, glow: OutsideChangeGlow): { version: number; duplicated: number }
+  /** The shapes the conflict bar is about, outlined red (item 8); empty: the bar went. */
+  clash(ids: readonly string[]): void
+  /** True when no drag, resize, drawing or text edit is in flight (YAZ-4279): a merge waits for it. False: the canvas went first. */
+  whenIdle(): Promise<boolean>
   /** The pan and zoom now (YAZ-3737 D13): what a tab that goes to sleep, or is copied, starts on again. */
   canvas(): NonNullable<PageView['canvas']>
 }
@@ -209,6 +237,12 @@ export interface DrawingSurfaceProps {
   foldArrows?: FoldArrowMode
   /** The board's own "Hover outline" (YAZ-4469 demo), from its `yaseendraw` block; absent: the app's setting. */
   hoverOutline?: boolean
+  /** Called when an outside merge adds or updates shapes on the canvas (YAZ-4279 item 10). */
+  onOutsideChange?: (ids: string[]) => void
+  /** Settings › Editor › Outside changes › Board border thickness (YAZ-6398). */
+  outsideOutlineThickness?: OutsideOutlineThickness
+  /** Settings › Editor › Outside changes › Board border colors (YAZ-6398). */
+  outsideOutlineColors?: OutsideOutlineColors
 }
 
 /**
@@ -296,6 +330,9 @@ export function ExcalidrawSurface({
   onExportPdf,
   foldArrows: boardFoldArrows,
   hoverOutline: boardHoverOutline,
+  onOutsideChange,
+  outsideOutlineThickness = 'normal',
+  outsideOutlineColors = DEFAULT_OUTSIDE_OUTLINE_COLORS,
 }: DrawingSurfaceProps) {
   const [engine, setEngine] = useState<ExcalidrawModule | null>(null)
   // YAZ-4277 D1: one text box editor for the surface's life, on the loaded engine's box rules (the prop-stability rule);
@@ -308,6 +345,24 @@ export function ExcalidrawSurface({
   const engineRef = useRef<ExcalidrawModule | null>(null)
   /** The board's own appState edits (see the module doc), counted from the engine's first `onChange`. */
   const countEdits = useRef<ReturnType<typeof appStateEdits> | null>(null)
+  /** The board's own appState keys (`boardAppStateKeys`), read once the engine is in: what a merge takes from the file. */
+  const boardKeys = useRef<readonly string[]>([])
+  /** `whenIdle`'s callers, answered by the first `onChange` with no gesture in flight, and false when the canvas goes (4A-20). */
+  const idleWaiters = useRef<((idle: boolean) => void)[]>([])
+  /** The outlines of what changed outside (YAZ-4279 D5); made with the engine's handle. */
+  const marks = useRef<OutsideMarks | null>(null)
+  const outlineStyleRef = useRef({ thickness: outsideOutlineThickness, colors: outsideOutlineColors })
+  outlineStyleRef.current = { thickness: outsideOutlineThickness, colors: outsideOutlineColors }
+  useEffect(() => {
+    marks.current?.setStyle(outsideOutlineThickness, outsideOutlineColors)
+  }, [outsideOutlineThickness, outsideOutlineColors])
+  useEffect(
+    () => () => {
+      marks.current?.dispose()
+      for (const done of idleWaiters.current.splice(0)) done(false)
+    },
+    [],
+  )
   /** The elements' share of the key: a version bump that moved no content is not counted (YAZ-3210). */
   const countVersion = useRef(contentVersion())
   const emitRef = useRef(onSnapshot)
@@ -359,6 +414,9 @@ export function ExcalidrawSurface({
   /** Read by `onLinkOpen`, which is made once. */
   const linksRef = useRef(links)
   linksRef.current = links
+  /** Read by `mergeScene`, which is made once (YAZ-4279 item 10). */
+  const outsideChangeRef = useRef(onOutsideChange)
+  outsideChangeRef.current = onOutsideChange
   /** The PDF button (YAZ-3943 D6): one engine prop for the surface's life, or none; the host's latest callback through a ref. */
   const exportPdfRef = useRef(onExportPdf)
   exportPdfRef.current = onExportPdf
@@ -687,17 +745,21 @@ export function ExcalidrawSurface({
     // ⚡ Draw's YAZ-1775 R4/R5: the engine reads its styles-panel mode out of localStorage at mount, so the
     // one mode this app ships lands there before every mount.
     applyToolbarMode()
-    Promise.all([loadExcalidraw(), loadTextBoxEditor()]).then(
+    const fontsReady = typeof document !== 'undefined' && document.fonts?.ready !== undefined ? document.fonts.ready.catch(() => undefined) : Promise.resolve()
+    Promise.all([loadExcalidraw(), loadTextBoxEditor(), fontsReady]).then(
       ([mod, box]) => {
         if (!live) return
         engineRef.current = mod
         setTextEditor(box.createTextBoxEditor(mod))
-        countEdits.current = appStateEdits(boardAppStateKeys(mod))
-        // Folding off (D18): no fold reaches the engine, and each folded box shows all its lines.
+        boardKeys.current = boardAppStateKeys(mod)
+        countEdits.current = appStateEdits(boardKeys.current)
+        // YAZ-6397: re-measure text dimensions on initial open (after fonts load) so AI-edited text boxes with
+        // guessed widths never open clipped until double-clicked.
         const opened = openedOn.current
-        let mounted = opened.scene
+        const measuredInitial = mod.restoreElements(opened.scene.elements as ChangeArgs[0], null, { repairBindings: true, refreshDimensions: true })
+        let mounted = { ...opened.scene, elements: measuredInitial as readonly unknown[] }
         if (foldsOffAt.current) {
-          const { elements, aside } = mod.takeFoldsAside(mod.restoreElements(opened.scene.elements as ChangeArgs[0], null))
+          const { elements, aside } = mod.takeFoldsAside(measuredInitial)
           hiddenFolds.current = aside
           mounted = { ...opened.scene, elements }
         }
@@ -725,6 +787,9 @@ export function ExcalidrawSurface({
       const mod = engineRef.current
       const edits = countEdits.current
       if (mod !== null && edits !== null) emitRef.current(snapshotOf(countVersion.current, mod, elements, appState, files, edits(appState as unknown as Record<string, unknown>), hiddenFolds.current))
+      if (idleWaiters.current.length > 0 && !inGesture(appState as unknown as Record<string, unknown>)) for (const done of idleWaiters.current.splice(0)) done(true)
+      const selected = (appState as unknown as { selectedElementIds: Record<string, unknown> }).selectedElementIds
+      marks.current?.seen(selected, (id) => rawApiRef.current?.getSceneElementsMapIncludingDeleted().get(id as never))
       if (withPanel) {
         // The canvas panel's open tab: the rail's emphasis, the triggers' opacity, and the memory
         // the hamburger opens on next time; and the selection gate of "Save selection".
@@ -743,6 +808,28 @@ export function ExcalidrawSurface({
     [withPanel, rail, rememberPanel, reportPrefs],
   )
 
+  // YAZ-4279 item 3: whenever `.drawing-surface` resizes (sidebar toggle, conflict bar open/close, window resize),
+  // schedule a single animation frame to re-measure Excalidraw's canvas offsets so zoom-at-cursor stays aligned.
+  const surfaceReady = engine !== null && initialData !== null
+  useEffect(() => {
+    if (!surfaceReady || typeof ResizeObserver === 'undefined') return
+    const root = rootRef.current
+    if (root === null) return
+    let rafId: number | null = null
+    const observer = new ResizeObserver(() => {
+      if (rafId !== null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        rawApiRef.current?.refresh()
+      })
+    })
+    observer.observe(root)
+    return () => {
+      observer.disconnect()
+      if (rafId !== null) cancelAnimationFrame(rafId)
+    }
+  }, [surfaceReady])
+
   /** The imperative handle, wrapped once into the engine-free API the host sees. */
   const onExcalidrawAPI = useCallback((api: ImperativeApi | null) => {
     // The engine hands null on unmount; the host's ref keeps the last live handle, which it never
@@ -750,6 +837,10 @@ export function ExcalidrawSurface({
     if (api === null || engineRef.current === null) return
     const mod = engineRef.current
     rawApiRef.current = api
+    marks.current?.dispose()
+    // Out of the engine's own `onChange` turn: a mark that goes there must not update the scene inside it.
+    marks.current = new OutsideMarks((collaborators) => queueMicrotask(() => api.updateScene({ collaborators: collaborators as never, captureUpdate: mod.CaptureUpdateAction.NEVER })))
+    marks.current.setStyle(outlineStyleRef.current.thickness, outlineStyleRef.current.colors)
     // Frames are never appState (🔒 D9): applied the moment the engine can take them.
     applyFramesVisibility(api, appliedRef.current.framesVisible)
     if (withPanel) {
@@ -785,7 +876,8 @@ export function ExcalidrawSurface({
         }),
       pictures: () => picturesSize(api.getSceneElements() as readonly unknown[], api.getFiles() as unknown as Record<string, unknown>),
       replaceScene: (next) => {
-        let restored = mod.restoreElements(next.elements as ChangeArgs[0], null)
+        // YAZ-4279 item 4: sanitize, re-measure text, and bump versionNonce so ShapeCache never stays stale on Reload.
+        let restored = prepareReplacedScene(mod, next).elements as unknown as ChangeArgs[0]
         // Folding off (D18): the new scene's folds go aside; the old scene's are gone.
         if (foldsOffAt.current) {
           const taken = mod.takeFoldsAside(restored)
@@ -795,13 +887,209 @@ export function ExcalidrawSurface({
         // A new scene, a new count: computed BEFORE the engine reports it, so its first `onChange` agrees.
         countVersion.current = contentVersion()
         const version = countVersion.current(restored)
-        api.updateScene({ elements: restored })
-        const entries = Object.values(next.files ?? {}) as Parameters<ImperativeApi['addFiles']>[0]
-        if (entries.length > 0) api.addFiles(entries)
+        // The board's own settings the file holds come in too (YAZ-4279): left out, the next save wrote the old background back.
+        const settings = Object.fromEntries(boardKeys.current.filter((k) => next.appState[k] !== undefined).map((k) => [k, next.appState[k]]))
+        // The file's change is not the user's: the default (EVENTUALLY) folded it into the next ⌘Z step (YAZ-4279).
+        api.updateScene({ elements: restored, ...(Object.keys(settings).length > 0 && { appState: settings as unknown as EngineAppState }), captureUpdate: mod.CaptureUpdateAction.NEVER })
+        addNewFiles(api, next.files)
         // The engine's files only grew: drop what neither the new scene nor undo can show (YAZ-3737 D14).
         api.pruneFiles()
+        // The file is on the canvas: any clash is answered, and nothing on it is news.
+        marks.current?.clash([])
+        marks.current?.clearNews()
         return version
       },
+      mergeScene: (base, disk, glow) => {
+        // YAZ-4277 D18: put hidden folds back before merging so live and disk compare with real fold state.
+        const liveWithFolds = mod.withFoldsPutBack(api.getSceneElementsIncludingDeleted() as ChangeArgs[0], hiddenFolds.current) as readonly unknown[]
+        const merged = mergeLiveScene(mod, base, disk, { elements: liveWithFolds, appState: api.getAppState() as unknown as Record<string, unknown> }, boardKeys.current)
+        if ('conflicts' in merged) {
+          marks.current?.clash(merged.conflicts)
+          return merged
+        }
+        let elements = merged.elements as unknown as ChangeArgs[0]
+        if (foldsOffAt.current) {
+          const taken = mod.takeFoldsAside(elements)
+          elements = taken.elements as typeof elements
+          hiddenFolds.current = taken.aside
+        }
+        const version = countVersion.current(elements)
+        api.updateScene({ elements, ...(Object.keys(merged.appState).length > 0 && { appState: merged.appState as unknown as EngineAppState }), captureUpdate: mod.CaptureUpdateAction.NEVER })
+        addNewFiles(api, disk.files)
+        marks.current?.clash([])
+        marks.current?.mark(merged.added, merged.changed, merged.elements, glow)
+        const changedIds = [...merged.added, ...merged.changed]
+        if (changedIds.length > 0) outsideChangeRef.current?.(changedIds)
+        return { version, changedIds }
+      },
+      scrollToElements: (ids) => {
+        if (ids.length === 0) return
+        const want = new Set(ids)
+        const matching = api.getSceneElements().filter((el) => want.has(el.id))
+        if (matching.length === 0) return
+        const app = api.getAppState()
+        const viewW = app.width || 800
+        const viewH = app.height || 600
+        const curZoom = app.zoom?.value || 1
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+        for (const el of matching) {
+          const x1 = el.x, y1 = el.y, x2 = el.x + (el.width ?? 0), y2 = el.y + (el.height ?? 0)
+          if (x1 < minX) minX = x1
+          if (y1 < minY) minY = y1
+          if (x2 > maxX) maxX = x2
+          if (y2 > maxY) maxY = y2
+        }
+        const boxW = Math.max(1, maxX - minX)
+        const boxH = Math.max(1, maxY - minY)
+        const fitZoom = Math.min((viewW * 0.78) / boxW, (viewH * 0.78) / boxH)
+        // YAZ-6396: never zoom IN past the user's current zoom; only zoom out if needed to fit the changed shapes.
+        const nextZoom = Math.max(0.1, Math.min(curZoom, fitZoom))
+        const cx = (minX + maxX) / 2
+        const cy = (minY + maxY) / 2
+        api.updateScene({
+          appState: {
+            scrollX: viewW / (2 * nextZoom) - cx,
+            scrollY: viewH / (2 * nextZoom) - cy,
+            zoom: { value: nextZoom as never },
+          } as unknown as EngineAppState,
+          captureUpdate: mod.CaptureUpdateAction.NEVER,
+        })
+      },
+      clusterElements: (ids) => {
+        if (ids.length === 0) return []
+        const want = new Set(ids)
+        const els = api.getSceneElements().filter((el) => want.has(el.id))
+        if (els.length <= 1) return els.length === 1 ? [[els[0].id]] : []
+        const PAD = 300
+        const visited = new Uint8Array(els.length)
+        const clusters: { ids: string[]; minX: number; minY: number }[] = []
+        const near = (a: (typeof els)[number], b: (typeof els)[number]) =>
+          a.x - PAD <= b.x + (b.width ?? 0) &&
+          b.x - PAD <= a.x + (a.width ?? 0) &&
+          a.y - PAD <= b.y + (b.height ?? 0) &&
+          b.y - PAD <= a.y + (a.height ?? 0)
+        for (let i = 0; i < els.length; i++) {
+          if (visited[i]) continue
+          visited[i] = 1
+          const queue = [i]
+          const groupIds: string[] = []
+          let minX = Infinity, minY = Infinity
+          while (queue.length > 0) {
+            const cur = queue.pop()!
+            const el = els[cur]
+            groupIds.push(el.id)
+            if (el.x < minX) minX = el.x
+            if (el.y < minY) minY = el.y
+            for (let j = 0; j < els.length; j++) {
+              if (!visited[j] && near(el, els[j])) {
+                visited[j] = 1
+                queue.push(j)
+              }
+            }
+          }
+          clusters.push({ ids: groupIds, minX, minY })
+        }
+        clusters.sort((a, b) => Math.round(a.minY / 200) - Math.round(b.minY / 200) || a.minX - b.minX)
+        return clusters.map((c) => c.ids)
+      },
+      areAnyOffscreen: (ids) => {
+        if (ids.length === 0) return false
+        const want = new Set(ids)
+        const matching = api.getSceneElements().filter((el) => want.has(el.id))
+        if (matching.length === 0) return false
+        const app = api.getAppState()
+        const z = app.zoom?.value || 1
+        const viewW = app.width || 800
+        const viewH = app.height || 600
+        const vx1 = -app.scrollX
+        const vy1 = -app.scrollY
+        const vx2 = vx1 + viewW / z
+        const vy2 = vy1 + viewH / z
+        const pad = 24 / z
+        return matching.some((el) => el.x < vx1 + pad || el.y < vy1 + pad || el.x + (el.width ?? 0) > vx2 - pad || el.y + (el.height ?? 0) > vy2 - pad)
+      },
+      restoreCanvas: (view) => {
+        api.updateScene({
+          appState: { scrollX: view.scrollX, scrollY: view.scrollY, zoom: { value: view.zoom as never } } as unknown as EngineAppState,
+          captureUpdate: mod.CaptureUpdateAction.NEVER,
+        })
+      },
+      clearOutsideMarks: () => {
+        marks.current?.clearNews()
+      },
+      repairScene: () => {
+        const raw = api.getSceneElementsIncludingDeleted() as readonly RepairableElement[]
+        let removedDeleted = 0
+        let repairedCount = 0
+        const byId = new Map<string, RepairableElement>()
+        for (const el of raw) {
+          if (el.isDeleted === true) {
+            removedDeleted += 1
+            continue
+          }
+          const prev = byId.get(el.id)
+          if (prev !== undefined) {
+            repairedCount += 1
+            if ((el.version ?? 0) >= (prev.version ?? 0)) byId.set(el.id, el)
+          } else {
+            byId.set(el.id, el)
+          }
+        }
+        const survivingIds = new Set(byId.keys())
+        const now = Date.now()
+        const cleaned: RepairableElement[] = []
+        for (const el of byId.values()) {
+          let dirty = false
+          const next: RepairableElement = { ...el }
+          if (typeof next.containerId === 'string' && !survivingIds.has(next.containerId)) {
+            next.containerId = null
+            dirty = true
+          }
+          if (typeof next.frameId === 'string' && !survivingIds.has(next.frameId)) {
+            next.frameId = null
+            dirty = true
+          }
+          if (Array.isArray(next.boundElements)) {
+            const valid = next.boundElements.filter((b) => typeof b?.id === 'string' && survivingIds.has(b.id))
+            if (valid.length !== next.boundElements.length) {
+              next.boundElements = valid.length > 0 ? valid : null
+              dirty = true
+            }
+          }
+          if (next.type === 'text' && typeof next.text === 'string' && next.originalText !== next.text) {
+            next.originalText = next.text
+            dirty = true
+          }
+          if (dirty) repairedCount += 1
+          next.version = (next.version ?? 0) + 1
+          next.versionNonce = Math.floor(Math.random() * 2 ** 31)
+          next.updated = now
+          cleaned.push(next)
+        }
+        const restored = mod.restoreElements(cleaned as unknown as ChangeArgs[0], null, { repairBindings: true, refreshDimensions: true }) as ChangeArgs[0]
+        api.updateScene({ elements: restored, captureUpdate: mod.CaptureUpdateAction.IMMEDIATELY })
+        return { removedDeleted, repairedCount }
+      },
+      keepBothScene: (base, disk, glow) => {
+        const liveWithFolds = mod.withFoldsPutBack(api.getSceneElementsIncludingDeleted() as ChangeArgs[0], hiddenFolds.current) as readonly unknown[]
+        const kept = keepBothLiveScene(mod, base, disk, { elements: liveWithFolds, appState: api.getAppState() as unknown as Record<string, unknown> }, boardKeys.current)
+        let elements = kept.elements as unknown as ChangeArgs[0]
+        if (foldsOffAt.current) {
+          const taken = mod.takeFoldsAside(elements)
+          elements = taken.elements as typeof elements
+          hiddenFolds.current = taken.aside
+        }
+        const version = countVersion.current(elements)
+        api.updateScene({ elements, ...(Object.keys(kept.appState).length > 0 && { appState: kept.appState as unknown as EngineAppState }), captureUpdate: mod.CaptureUpdateAction.IMMEDIATELY })
+        addNewFiles(api, disk.files)
+        marks.current?.clash([])
+        marks.current?.mark(kept.added, kept.changed, kept.elements, glow)
+        const changedIds = [...kept.added, ...kept.changed]
+        if (changedIds.length > 0) outsideChangeRef.current?.(changedIds)
+        return { version, duplicated: kept.duplicated.length }
+      },
+      clash: (ids) => marks.current?.clash(ids),
+      whenIdle: () => (inGesture(api.getAppState() as unknown as Record<string, unknown>) ? new Promise<boolean>((done) => idleWaiters.current.push(done)) : Promise.resolve(true)),
       canvas: () => {
         const { scrollX, scrollY, zoom } = api.getAppState()
         return { scrollX, scrollY, zoom: zoom.value }
@@ -962,6 +1250,35 @@ const BUSY_APP_STATE_KEYS = [
   'editingTextElement',
   'openDialog',
 ] as const
+
+/** A gesture a merge must not land in (YAZ-4279): the busy set less an open dialog and a selected line, which can last. */
+const inGesture = (appState: Record<string, unknown>): boolean =>
+  BUSY_APP_STATE_KEYS.some((k) => k !== 'openDialog' && k !== 'selectedLinearElement' && Boolean(appState[k])) || (appState.selectedLinearElement as { isDragging?: boolean } | null | undefined)?.isDragging === true
+
+/** Minimal shape fields inspected by `repairScene` and `keepBothScene` without importing engine element types. */
+interface RepairableElement {
+  id: string
+  type?: string
+  isDeleted?: boolean
+  version?: number
+  versionNonce?: number
+  updated?: number
+  x?: number
+  y?: number
+  containerId?: string | null
+  frameId?: string | null
+  boundElements?: readonly { id: string; type?: string }[] | null
+  text?: string
+  originalText?: string
+  [key: string]: unknown
+}
+
+/** Item 5: only the pictures the engine does not hold yet — a picture's id is its content's, so a held id is the same bytes. */
+function addNewFiles(api: ImperativeApi, files: Record<string, unknown> | null): void {
+  const held = api.getFiles() as unknown as Record<string, unknown>
+  const entries = Object.entries(files ?? {}).filter(([id]) => !(id in held)).map(([, entry]) => entry) as Parameters<ImperativeApi['addFiles']>[0]
+  if (entries.length > 0) api.addFiles(entries)
+}
 
 /** One snapshot from the engine's own utilities; the only place they are called. */
 function snapshotOf(

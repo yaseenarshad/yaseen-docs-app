@@ -51,4 +51,24 @@ describe('ConflictBar', () => {
     expect(onKeepMine).toHaveBeenCalledOnce()
     expect(onReload).not.toHaveBeenCalled()
   })
+
+  it('renders Keep theirs, Keep both, and Keep mine when onKeepBoth is provided', () => {
+    const onReload = vi.fn()
+    const onKeepBoth = vi.fn()
+    const onKeepMine = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<ConflictBar onReload={onReload} onKeepBoth={onKeepBoth} onKeepMine={onKeepMine} />))
+    const buttons = [...container.querySelectorAll('button')]
+    expect(buttons.map((b) => [b.textContent, b.type])).toEqual([
+      ['Keep theirs', 'button'],
+      ['Keep both', 'button'],
+      ['Keep mine', 'button'],
+    ])
+    act(() => buttons[1].click())
+    expect(onKeepBoth).toHaveBeenCalledOnce()
+    expect(onReload).not.toHaveBeenCalled()
+    expect(onKeepMine).not.toHaveBeenCalled()
+  })
 })

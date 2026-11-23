@@ -156,7 +156,7 @@ const SIDEBAR_ROWS_BARE = SIDEBAR_ROWS.filter((id) => !id.startsWith('sidebarIco
 const SIDEBAR_ROWS_REVIEW = SIDEBAR_ROWS.flatMap((id) => (id === 'sidebarIconColors.page' ? [id, 'sidebarIconColors.card'] : [id]))
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'pageBulletIndent', 'pageBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'typingArrows', 'enterKeepsStylePages', 'enterKeepsStyleBoxes', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'findFolds', 'outsideChangeGlow', 'outsideListPinned', 'codeBlockWidth']
+const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'pageBulletIndent', 'pageBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'typingArrows', 'enterKeepsStylePages', 'enterKeepsStyleBoxes', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'findFolds', 'outsideChangeGlow', 'outsideListPinned', 'outsideOutlineThickness', 'outsideOutlineColors', 'codeBlockWidth']
 /**
  * Settings › Tables (YAZ-4775), after Editor: the page tables' rows, moved off the Editor page with their keys. "All tables"
  * starts with Header row (YAZ-4774) and Width (YAZ-4783); Cell notes with the "+" (YAZ-4790).
@@ -204,7 +204,7 @@ const THREADING_HINT = 'The coloured path from each list down to the bullet at t
 const OUTLINE_HINT = 'Lines and folding for bullets. A page can change each one in its cog.'
 const TEXT_FORMATTING_HINT = 'How text looks in every page of this vault.'
 const TOC_HINT = 'The headings or the bullets of a page, at its right edge.'
-const OUTSIDE_CHANGES_HINT = 'Text that an AI or another app changed in an open page.'
+const OUTSIDE_CHANGES_HINT = 'What an AI or another app changed in an open page, drawing or diagram.'
 const SECTION_INDENT_HINT = 'Text stands below its heading, with lines that show the sections. Turn it on for a page from the page cog. The purple path uses the Bullet threading settings above.'
 
 describe('SettingsDialog shell (D1)', () => {

@@ -49,7 +49,7 @@
  * opens naming an outside folder this Mac has not approved asks once to allow it (`usePicturesFolderAllow`).
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse, FoldArrowMode, PageView } from '@shared/types'
+import type { CanvasPanelState, CanvasPrefs, DrawingLoadResponse, FoldArrowMode, OutsideChangeGlow, OutsideOutlineColors, OutsideOutlineThickness, PageView } from '@shared/types'
 import { missingPicturesNotice, missingPicturesText, picturesFolderOutside, picturesMissingRefusal, picturesSize, unpersistedFiles, withHomeTilde } from '@shared/drawingAssets'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
@@ -66,12 +66,15 @@ import type { PageSwitch } from '../editor/PageSettings'
 import { CardPreviewHost } from '../tabs/cardPreview'
 import { exportFileName } from './exportDrawing'
 import { parseSceneText, type DrawingScene } from './drawingScene'
+import type { SceneSide } from './mergeScene'
+import { sideOf, takeFromDisk } from './takeFromDisk'
 import { ExcalidrawSurface, type DrawingSnapshot, type DrawingSurfaceApi } from './ExcalidrawSurface'
 import { pressed } from './drawingKeys'
 import { PICTURES_MOVED_OUT } from './saveDrawing'
 import { usePicturesFolderAllow } from './usePicturesFolderAllow'
 import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
-import { EXPORT_DRAWING_HINT, EXPORT_IMAGE_HINT, foldArrowsHint, hoverOutlineHint, linkPreviewHint, PICTURE_HINTS, readOnlyHint } from './cogHints'
+import { EXPORT_DRAWING_HINT, EXPORT_IMAGE_HINT, foldArrowsHint, hoverOutlineHint, linkPreviewHint, PICTURE_HINTS, readOnlyHint, RELOAD_DISK_HINT, REPAIR_DRAWING_HINT } from './cogHints'
+import { OutsideUpdateChip } from './OutsideUpdateChip'
 import './drawingEditor.css'
 
 /** What a document that will not open says — one message for its three causes (missing, corrupt, empty). */
@@ -110,7 +113,7 @@ export const HOVER_OUTLINE_CHOICES: readonly { value: 'app' | boolean; label: st
   { value: false, label: 'Off', title: 'No outline on hover' },
 ]
 
-export function drawingCogRows({ includeReadOnly = true, pictures, out, folder, home = '', folderAllowed, onAllowFolder, readOnly, onMovePictures, onExportImage, onExportDrawing, hoverLinks, onHoverLinks, foldArrows, onFoldArrows, appFoldArrows, hoverOutline, onHoverOutline, appHoverOutline }: {
+export function drawingCogRows({ includeReadOnly = true, pictures, out, folder, home = '', folderAllowed, onAllowFolder, readOnly, onMovePictures, onExportImage, onExportDrawing, onReload, onRepair, hoverLinks, onHoverLinks, foldArrows, onFoldArrows, appFoldArrows, hoverOutline, onHoverOutline, appHoverOutline }: {
   /** Omit the Read only slot (inline drawings inherit their host page's read-only state). */
   includeReadOnly?: boolean
   pictures: { bytes: number; count: number; missing?: number }
@@ -127,6 +130,10 @@ export function drawingCogRows({ includeReadOnly = true, pictures, out, folder, 
   onMovePictures: (to: PicturesPlace) => void
   onExportImage: () => void
   onExportDrawing: () => void
+  /** Re-read the drawing from disk (YAZ-4279 item 6). */
+  onReload?: () => void
+  /** Drop tombstones, fix broken bindings, re-measure text, and save (YAZ-4279 item 11). */
+  onRepair?: () => void
   /** The board's own "Link preview on hover" (YAZ-3943 demo 2), under Read only; absent: no row. */
   hoverLinks?: boolean
   onHoverLinks?: () => void
@@ -202,6 +209,8 @@ export function drawingCogRows({ includeReadOnly = true, pictures, out, folder, 
     { label: 'Export Image or PDF…', hint: EXPORT_IMAGE_HINT, onToggle: onExportImage, divider: true },
     { label: 'Export Excalidraw Drawing…', hint: EXPORT_DRAWING_HINT, onToggle: onExportDrawing },
   )
+  if (onReload !== undefined) rows.push({ label: 'Reload from disk', hint: RELOAD_DISK_HINT, onToggle: onReload, divider: true })
+  if (onRepair !== undefined) rows.push({ label: 'Repair drawing file', hint: REPAIR_DRAWING_HINT, onToggle: onRepair, disabled: readOnly, divider: onReload === undefined })
   return rows
 }
 
@@ -255,6 +264,12 @@ export interface DrawingEditorProps extends DocumentHostProps, DrawingLinkProps 
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
+  /** Settings › Outside changes › Glow (YAZ-4279 D5): how long a shape the file changed stays outlined. Absent → until checked. */
+  outsideChangeGlow?: OutsideChangeGlow
+  /** Settings › Outside changes › Board border thickness (YAZ-6398). */
+  outsideOutlineThickness?: OutsideOutlineThickness
+  /** Settings › Outside changes › Board border colors (YAZ-6398). */
+  outsideOutlineColors?: OutsideOutlineColors
   /** The page view a woken tab or a copy starts with (YAZ-3737 D13): only its `canvas`, the pan and zoom, counts here. */
   startView?: PageView
 }
@@ -300,13 +315,18 @@ interface DrawingHostProps extends DrawingEditorProps {
 const FORGET_PANEL = (): void => undefined
 
 /** Mounts exactly one canvas for `loaded`; its board document owns everything that writes. */
-function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, hotkeys, hotkeysAside, onFailed, startView, ...linkProps }: DrawingHostProps) {
+function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, onNotice, hotkeys, hotkeysAside, onFailed, startView, outsideChangeGlow = 'until-checked', outsideOutlineThickness, outsideOutlineColors, ...linkProps }: DrawingHostProps) {
   const theme = useAppliedTheme()
   /** The latest snapshot; read only when a save fires (see the module doc). */
   const snapshot = useRef<DrawingSnapshot | null>(null)
   const surface = useRef<DrawingSurfaceApi | null>(null)
   /** Set by a reload; the next snapshot is consumed as the new baseline, not as a change. */
   const reloadedTo = useRef<number | null>(null)
+  /**
+   * The scene as this tab last loaded or saved it: a merge's base (YAZ-4279 D1). A save keeps its text and parses it only
+   * when a merge needs it, so a save costs no second parse.
+   */
+  const base = useRef<SceneSide | string>(sideOf(loaded.scene))
   /** Ids main holds: load's `stored`, grown by every save's `persisted` (🔒 YAZ-1775 D3), or replaced by an inside save's. */
   const persisted = useRef(new Set(loaded.stored))
   /** `"pictures": "assets"` as the file last said it (YAZ-3943 D5): the load, each reload, the 50 MB rule, the cog's button. */
@@ -324,6 +344,42 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
   const [boardFoldArrows, setBoardFoldArrows] = useState<FoldArrowMode | undefined>(loaded.scene.foldArrows)
   /** The board's own "Hover outline" (YAZ-4469 demo) as the file last said it; absent: the app setting. */
   const [boardHoverOutline, setBoardHoverOutline] = useState<boolean | undefined>(loaded.scene.hoverOutline)
+  /** YAZ-4279 item 10 / YAZ-6396 / YAZ-6402: shapes added/changed by the latest outside merge, grouped into spatial stops. */
+  const [outsideUpdate, setOutsideUpdate] = useState<{ ids: string[]; groups: string[][]; index: number; seq: number; offscreen: boolean; backView: NonNullable<PageView['canvas']> | null } | null>(null)
+  const outsideSeq = useRef(0)
+  const onOutsideChange = useCallback((ids: string[]) => {
+    if (ids.length > 0 && outsideChangeGlow !== 'off') {
+      const offscreen = surface.current?.areAnyOffscreen?.(ids) ?? true
+      const groups = surface.current?.clusterElements?.(ids)
+      const normalized = groups !== undefined && groups.length > 0 ? groups : [ids]
+      setOutsideUpdate({ ids, groups: normalized, index: -1, seq: ++outsideSeq.current, offscreen, backView: null })
+    }
+  }, [outsideChangeGlow])
+  const jumpOutsideGroup = useCallback((delta: number) => {
+    setOutsideUpdate((cur) => {
+      if (cur === null || cur.groups.length === 0) return null
+      const prev = cur.backView ?? surface.current?.canvas() ?? null
+      const total = cur.groups.length
+      const nextIdx = cur.index < 0 ? (delta < 0 ? total - 1 : 0) : (cur.index + delta + total) % total
+      surface.current?.scrollToElements?.(cur.groups[nextIdx])
+      return { ...cur, index: nextIdx, seq: ++outsideSeq.current, backView: prev }
+    })
+  }, [])
+  const showOutsideUpdate = useCallback(() => jumpOutsideGroup(0), [jumpOutsideGroup])
+  const prevOutsideUpdate = useCallback(() => jumpOutsideGroup(-1), [jumpOutsideGroup])
+  const nextOutsideUpdate = useCallback(() => jumpOutsideGroup(1), [jumpOutsideGroup])
+  const backOutsideUpdate = useCallback(() => {
+    setOutsideUpdate((cur) => {
+      if (cur?.backView != null) surface.current?.restoreCanvas?.(cur.backView)
+      return cur === null ? null : { ...cur, index: -1, backView: null }
+    })
+  }, [])
+  const clearOutsideUpdate = useCallback(() => {
+    surface.current?.clearOutsideMarks?.()
+    setOutsideUpdate(null)
+  }, [])
+  const dismissOutsideUpdate = useCallback(() => setOutsideUpdate(null), [])
+  const chipAutoDismissMs = outsideChangeGlow === '60s' ? 60_000 : outsideChangeGlow === '5m' ? 300_000 : 0
 
   // Fresh closures every render are fine: the hook reads them through its `engine` ref, never stale.
   const board = useDocumentHost({
@@ -340,6 +396,7 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       const { json, files, referenced } = current.serialize()
       const newFiles = unpersistedFiles(files, referenced, persisted.current)
       const res = await api.drawing.save({ root, path, json, expectedMtime, newFiles })
+      base.current = json
       // An inside save names every picture the file holds now; a deleted one is not there (6A item 1). So does a save
       // that moved them out by the 50 MB rule: the store holds exactly those (YAZ-4071 7H).
       if (res.inside === true || res.movedOut === true) persisted.current = new Set(res.persisted)
@@ -354,6 +411,8 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     // YAZ-4071 7H: the other writer's version may lack a picture this canvas uses, so the next save ships them all.
     onKeepMine: () => {
       persisted.current = new Set()
+      setOutsideUpdate(null)
+      surface.current?.clash([])
     },
     reload: async (a) => {
       const s = surface.current
@@ -361,18 +420,47 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
       try {
         const doc = toDocument(await api.drawing.load({ root, path }))
         reloadedTo.current = doc.mtime
-        persisted.current = new Set(doc.stored)
-        setPicturesOut(doc.scene.picturesOut === true)
-        setPicturesFolder(doc.scene.picturesFolder ?? null)
-        setHoverLinksOff(doc.scene.hoverLinksOff === true)
-        setBoardFoldArrows(doc.scene.foldArrows)
-        setBoardHoverOutline(doc.scene.hoverOutline)
+        tookFile(doc)
+        setOutsideUpdate(null)
         a.reset(s.replaceScene(doc.scene), doc.mtime)
         return doc.scene.readOnly === true
       } catch (err) {
         reloadedTo.current = null
         throw err
       }
+    },
+    // YAZ-4279 item 6: cheap disk mtime check on window focus / tab reveal to catch missed watcher events.
+    checkDisk: async () => {
+      try {
+        const head = await api.boardHead(path)
+        return head.mtime
+      } catch {
+        return null
+      }
+    },
+    // YAZ-4279: every outside save, merged into the canvas (`takeFromDisk`, the popup's too).
+    merge: async (a) => {
+      const s = surface.current
+      if (s === null) return 'conflict'
+      const doc = toDocument(await api.drawing.load({ root, path }))
+      const answer = await takeFromDisk({ surface: s, autosave: a, base: base.current, disk: doc, readOnly: readOnlyRef.current, glow: outsideChangeGlow, baselineAt: (mtime) => (reloadedTo.current = mtime) })
+      if (answer === 'merged') tookFile(doc)
+      return answer
+    },
+    // YAZ-4279 item 12: Keep both on a conflict — merge non-clashing shapes and duplicate clashing disk shapes.
+    keepBoth: async (a) => {
+      const s = surface.current
+      if (s === null || s.keepBothScene === undefined) return false
+      const doc = toDocument(await api.drawing.load({ root, path }))
+      const currentBase = typeof base.current === 'string' ? parseSceneText(base.current) : base.current
+      const res = s.keepBothScene(currentBase, doc.scene, outsideChangeGlow)
+      tookFile(doc)
+      persisted.current = new Set()
+      setOutsideUpdate(null)
+      a.rebase(doc.mtime)
+      a.update(res.version)
+      if (res.duplicated > 0) onNotice?.(`Kept both: ${res.duplicated} ${res.duplicated === 1 ? 'shape' : 'shapes'} duplicated.`)
+      return true
     },
     // The application menu's three canvas items (Draw's 🔒 YAZ-1775 D10; the items are YAZ-3037's); a
     // host whose engine has not handed its API over yet simply has nothing to do.
@@ -387,6 +475,16 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     onShown: () => surface.current?.refresh(),
     focus: () => surface.current?.focus(),
   })
+  /** A file this tab now holds as its base: its pictures and switches as the file says them (a reload, a merge). */
+  function tookFile(doc: LoadedDocument): void {
+    base.current = sideOf(doc.scene)
+    persisted.current = new Set(doc.stored)
+    setPicturesOut(doc.scene.picturesOut === true)
+    setPicturesFolder(doc.scene.picturesFolder ?? null)
+    setHoverLinksOff(doc.scene.hoverLinksOff === true)
+    setBoardFoldArrows(doc.scene.foldArrows)
+    setBoardHoverOutline(doc.scene.hoverOutline)
+  }
   const { autosave, start, chips, readOnly, reload } = board
   // The hover preview: the app's "Links in drawings and diagrams" AND this board's own switch (YAZ-3943 demo 2); clicks stay.
   const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path, readOnly, hotkeys, onNotice, hostRef: board.hostRef, props: { ...linkProps, hoverLinks: linkProps.hoverLinks === true && !hoverLinksOff } })
@@ -576,6 +674,20 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
     }
   }
 
+  const reloadFromDisk = async (): Promise<void> => {
+    if (board.retired.current) return
+    await reload()
+    onNotice?.('Reloaded from disk.')
+  }
+
+  const repairDrawing = (): void => {
+    if (board.retired.current || readOnlyRef.current) return
+    const s = surface.current
+    if (s === null || s.repairScene === undefined) return
+    s.repairScene()
+    onNotice?.('Drawing repaired and saved.')
+  }
+
   // The cog's rows (YAZ-3943 D5, D13), set from here because `renderTopRight` is made once. The rows are
   // made while the cog is open, never on a keystroke; the clicks read this render's handlers through a ref.
   // Read when the cog opens, so a Settings change never rebuilds the chips.
@@ -583,8 +695,8 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
   appFoldArrowsRef.current = canvasPrefs?.foldArrowsOpen
   const appHoverOutlineRef = useRef(canvasPrefs?.hoverOutline)
   appHoverOutlineRef.current = canvasPrefs?.hoverOutline
-  const cogActions = useRef({ askMovePictures, exportDrawing, setHoverLinks, setFoldArrows, setHoverOutline, askAllow })
-  cogActions.current = { askMovePictures, exportDrawing, setHoverLinks, setFoldArrows, setHoverOutline, askAllow }
+  const cogActions = useRef({ askMovePictures, exportDrawing, setHoverLinks, setFoldArrows, setHoverOutline, askAllow, reloadFromDisk, repairDrawing })
+  cogActions.current = { askMovePictures, exportDrawing, setHoverLinks, setFoldArrows, setHoverOutline, askAllow, reloadFromDisk, repairDrawing }
   useLayoutEffect(
     () =>
       chips.set({
@@ -601,6 +713,8 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
             // The same handlers as ⌘⇧E and ⌘⇧S (`onCommand`).
             onExportImage: () => surface.current?.openImageExport(),
             onExportDrawing: () => void cogActions.current.exportDrawing(),
+            onReload: () => void cogActions.current.reloadFromDisk(),
+            onRepair: () => cogActions.current.repairDrawing(),
             hoverLinks: !hoverLinksOff,
             onHoverLinks: () => void cogActions.current.setHoverLinks(hoverLinksOff),
             foldArrows: boardFoldArrows ?? 'app',
@@ -658,7 +772,27 @@ function DrawingHost({ root, path, loaded, watch, sync, onSyncNow, canvasPrefs, 
           onExportPdf={exportPdf}
           foldArrows={boardFoldArrows}
           hoverOutline={boardHoverOutline}
+          onOutsideChange={onOutsideChange}
+          outsideOutlineThickness={outsideOutlineThickness}
+          outsideOutlineColors={outsideOutlineColors}
         />
+        {outsideUpdate !== null && outsideChangeGlow !== 'off' && (
+          <OutsideUpdateChip
+            count={outsideUpdate.ids.length}
+            seq={outsideUpdate.seq}
+            canShow={outsideUpdate.offscreen}
+            onShow={showOutsideUpdate}
+            step={
+              outsideUpdate.groups.length >= 2
+                ? { index: outsideUpdate.index, total: outsideUpdate.groups.length, onPrev: prevOutsideUpdate, onNext: nextOutsideUpdate }
+                : undefined
+            }
+            onBack={outsideUpdate.backView !== null ? backOutsideUpdate : undefined}
+            onClear={clearOutsideUpdate}
+            onDismiss={dismissOutsideUpdate}
+            autoDismissMs={chipAutoDismissMs}
+          />
+        )}
       </div>
       <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={linkProps.previewScope} diagramDarkColors={linkProps.diagramDarkColors ?? 'adapt'} />
       {allowSheet}

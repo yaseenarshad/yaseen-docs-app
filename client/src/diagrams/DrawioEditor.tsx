@@ -14,7 +14,7 @@ import { DRAWIO_ORIGIN } from '@shared/drawio'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { boardBaseName } from '@shared/fileKind'
 import { isDiagramHoverLinksOff, isDiagramReadOnly, setDiagramHoverLinksOff, setDiagramReadOnly } from '@shared/readOnly'
-import type { DiagramDarkColors } from '@shared/types'
+import type { DiagramDarkColors, OutsideChangeGlow } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, exportWithNotice, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
@@ -24,7 +24,8 @@ import { storage } from '../lib/storage'
 import { basename } from '../lib/paths'
 import { useAppliedTheme } from '../lib/theme'
 import { useDrawingLinks, type DrawingLinkProps } from '../drawings/useDrawingLinks'
-import { linkPreviewHint, readOnlyHint } from '../drawings/cogHints'
+import { OutsideUpdateChip } from '../drawings/OutsideUpdateChip'
+import { linkPreviewHint, readOnlyHint, RELOAD_DISK_HINT } from '../drawings/cogHints'
 import { CardPreviewHost } from '../tabs/cardPreview'
 import { useDrawioLinkBridge } from './drawioLinkBridge'
 import { drawioAdaptiveColors, drawioConfig, drawioFrameUrl, readDrawioMessage } from './drawioProtocol'
@@ -42,6 +43,13 @@ const EXPORT_EMPTY = 'This draw.io diagram is empty, so there is no image to exp
  * anyway — a missing overlay must cost the keymap, never the document.
  */
 const READY_FALLBACK_MS = 3000
+/** A `yaseenMerge` the overlay never answers is a conflict (YAZ-4279). Long: the overlay first waits for a label being typed to end. */
+const MERGE_TIMEOUT_MS = 60_000
+
+/** The overlay's answer to a `yaseenMerge`, and whether the tab had unsaved edits when draw.io began it. */
+type MergeAnswer =
+  | { conflict: true; dirty: boolean }
+  | { conflict: false; dirty: boolean; xml?: string; changedIds?: string[]; groups?: string[][]; offscreen?: boolean }
 
 export interface DrawioEditorProps extends DocumentHostProps, DrawingLinkProps {
   /** 🔒 YAZ-1802 D16: the app's dark-mode colour setting, applied live (see the module doc). */
@@ -50,6 +58,8 @@ export interface DrawioEditorProps extends DocumentHostProps, DrawingLinkProps {
   hotkeys?: HotkeyOverrides
   /** The window's ONE passive notice: where an exported image landed, or why it did not. */
   onNotice?: (text: string, icon?: NoticeKind) => void
+  /** Settings › Outside changes › Glow (YAZ-4279 D5): how long a cell the file changed stays outlined. Absent → until checked. */
+  outsideChangeGlow?: OutsideChangeGlow
 }
 
 interface LoadedDiagram {
@@ -78,13 +88,25 @@ interface DiagramHostProps extends DrawioEditorProps {
 }
 
 /** Mounts exactly one draw.io iframe for `loaded`; its board document owns everything that writes. */
-function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, onNotice, hotkeys, ...linkProps }: DiagramHostProps) {
+function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, onNotice, outsideChangeGlow = 'until-checked', hotkeys, ...linkProps }: DiagramHostProps) {
   const theme = useAppliedTheme()
   const frameRef = useRef<HTMLIFrameElement>(null)
   /** The URL is fixed at mount: a theme flip is a message, never a reload of the editor. */
   const [src] = useState(() => drawioFrameUrl(theme))
   /** The XML draw.io last posted — what the next save writes. */
   const latestXml = useRef(loaded.xml)
+  /** The XML as this tab last loaded or saved it: a merge's base (YAZ-4279 D2). */
+  const baseXml = useRef(loaded.xml)
+  /** The one `yaseenMerge` in flight (YAZ-4279): its id, its answer, and whether the tab had edits as draw.io began it. */
+  const merging = useRef<{ id: number; answer: (a: MergeAnswer) => void; dirty: boolean } | null>(null)
+  const mergeIds = useRef(0)
+  /** The Glow setting as of now: what the overlay outlines what the file changed for (D5). */
+  const glowRef = useRef(outsideChangeGlow)
+  glowRef.current = outsideChangeGlow
+  /** YAZ-6416: floating bottom-center OutsideUpdateChip state (Show, 1/N cycling, Back, Mark checked) for full parity with Excalidraw. */
+  const [outsideUpdate, setOutsideUpdate] = useState<{ ids: string[]; groups: string[][]; index: number; seq: number; offscreen: boolean; hasBack: boolean } | null>(null)
+  const outsideSeq = useRef(0)
+  const chipAutoDismissMs = outsideChangeGlow === '60s' ? 60_000 : outsideChangeGlow === '5m' ? 300_000 : 0
   /** Bumped on every draw.io change; `Autosave` compares these, never the XML. */
   const version = useRef(0)
   /** The mtime of the document a `load` action carried, until draw.io answers `load`. */
@@ -126,6 +148,7 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     (xml: string, mtime: number, keepView = false) => {
       pendingLoad.current = mtime
       latestXml.current = xml
+      baseXml.current = xml
       post({ action: 'load', xml, autosave: 1, title: boardBaseName(basename(path)), yaseenKeepFocus: namingTab(document.activeElement), yaseenKeepView: keepView })
     },
     [post, path],
@@ -162,6 +185,32 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     post({ action: 'yaseenReadOnly', value: wantedLock.current })
   }, [post])
 
+  /**
+   * YAZ-4279 D2: the file's `xml` merged into the canvas by our PostConfig.js's `yaseenMerge`. A clash, an overlay that
+   * does not answer in time (the request is then cancelled, so it never lands later), or one not listening yet is a
+   * conflict, and the canvas is as it was. The host's queue (`oneAtATime`) asks one at a time; an answer of another id is
+   * not this one's (4A-2).
+   */
+  const askMerge = useCallback(
+    (xml: string, dirty: boolean): Promise<MergeAnswer> =>
+      new Promise((done) => {
+        if (!handshake.current.initialised) return done({ conflict: true, dirty: false })
+        const id = ++mergeIds.current
+        const late = setTimeout(() => {
+          post({ action: 'yaseenMergeCancel', id })
+          answer({ conflict: true, dirty: false })
+        }, MERGE_TIMEOUT_MS)
+        const answer = (a: MergeAnswer): void => {
+          clearTimeout(late)
+          if (merging.current?.id === id) merging.current = null
+          done(a)
+        }
+        merging.current = { id, answer, dirty }
+        post({ action: 'yaseenMerge', id, base: baseXml.current, xml, glow: glowRef.current })
+      }),
+    [post],
+  )
+
   /** File › Export Image… (🔒 D9): the XML draw.io last posted, unsaved edits included, drawn before the sheet opens because the pick decides the format. */
   const exportImage = (): Promise<void> =>
     exportWithNotice(
@@ -194,15 +243,55 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     onNotice,
     // A change draw.io queued before "on" landed saves after it: it keeps the switches, which draw.io's
     // XML never carries (it drops attributes it does not know — YAZ-3116 A3; the hover switch, YAZ-4748 D10).
-    write: (expectedMtime) =>
-      api.diagram.save({ root, path, xml: setDiagramHoverLinksOff(setDiagramReadOnly(latestXml.current, wantedReadOnly.current), keptHoverLinksOff.current), expectedMtime }),
+    write: async (expectedMtime) => {
+      const xml = latestXml.current
+      const res = await api.diagram.save({ root, path, xml: setDiagramHoverLinksOff(setDiagramReadOnly(xml, wantedReadOnly.current), keptHoverLinksOff.current), expectedMtime })
+      baseXml.current = xml
+      return res
+    },
+    // Reload from the bar, and the stray-change reload at "Allow edits": the disk back over the canvas, with a `load`.
     reload: async (a) => {
       const res = await api.diagram.load({ root, path })
       a.reset(version.current, res.mtime)
+      setOutsideUpdate(null)
       sendLoad(res.xml, res.mtime, true)
       keptHoverLinksOff.current = isDiagramHoverLinksOff(res.xml)
       setHoverLinksOff(keptHoverLinksOff.current)
       return isDiagramReadOnly(res.xml)
+    },
+    // YAZ-4279 item 6: cheap disk mtime check on window focus / tab reveal to catch missed watcher events.
+    checkDisk: async () => {
+      try {
+        const head = await api.boardHead(path)
+        return head.mtime
+      } catch {
+        return null
+      }
+    },
+    // YAZ-4279 D2, D3, item 1: every outside save, merged in draw.io — edits or none, so a clean tab keeps its undo history,
+    // selection and view (draw.io's `load` clears undo). A read-only switch the file changed is the user's to settle under
+    // edits; with none, a reload brings it in. A clean merge draw.io refuses falls back to that reload too.
+    merge: async (a) => {
+      const res = await api.diagram.load({ root, path })
+      if (isDiagramReadOnly(res.xml) !== wantedReadOnly.current) return a.dirty ? 'conflict' : 'reload'
+      const answer = await askMerge(res.xml, a.dirty)
+      if (answer.conflict) return answer.dirty || a.dirty ? 'conflict' : 'reload'
+      baseXml.current = res.xml
+      // The whole merged file (4A-3): draw.io's `autosave` posts only the page on screen.
+      if (answer.xml !== undefined) latestXml.current = answer.xml
+      // Edits as draw.io began the merge (a label typed while it waited counts, 4A-1) stay pending; none: the merge is clean.
+      if (answer.dirty) a.rebase(res.mtime)
+      else a.reset(version.current, res.mtime)
+      if (answer.changedIds !== undefined && answer.changedIds.length > 0 && glowRef.current !== 'off') {
+        const groups = answer.groups !== undefined && answer.groups.length > 0 ? answer.groups : [answer.changedIds]
+        setOutsideUpdate({ ids: answer.changedIds, groups, index: -1, seq: ++outsideSeq.current, offscreen: answer.offscreen ?? true, hasBack: false })
+      }
+      return 'merged'
+    },
+    // Keep mine answers the bar: the overlay's red outlines of the clash go (item 8).
+    onKeepMine: () => {
+      setOutsideUpdate(null)
+      post({ action: 'yaseenClearClash' })
     },
     // Export Image… is the one board command a diagram answers.
     onCommand: (command) => {
@@ -248,14 +337,25 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
       onNotice?.(err instanceof BridgeRequestError && err.message !== '' ? err.message : "The switch couldn't be saved.", 'error')
     }
   }
+  const reloadFromDisk = async (): Promise<void> => {
+    if (retired.current) return
+    await board.reload()
+    onNotice?.('Reloaded from disk.')
+  }
   const setHoverLinksNow = useRef(setHoverLinks)
   setHoverLinksNow.current = setHoverLinks
-  // The cog: "Read only", then this diagram's own row, greyed out by Read only, as a board's (D10).
+  const reloadFromDiskNow = useRef(reloadFromDisk)
+  reloadFromDiskNow.current = reloadFromDisk
+  // The cog: "Read only", then this diagram's own row, greyed out by Read only, as a board's (D10), plus Reload from disk (YAZ-4279 item 6).
   const { chips } = board
   useLayoutEffect(
     () =>
       chips.set({
-        pageRows: () => [{ label: 'Read only', readOnlySlot: true, hint: readOnlyHint('diagram') }, { label: 'Link preview on hover', hint: linkPreviewHint('diagram'), on: !hoverLinksOff, onToggle: () => void setHoverLinksNow.current(hoverLinksOff), disabled: board.readOnly }],
+        pageRows: () => [
+          { label: 'Read only', readOnlySlot: true, hint: readOnlyHint('diagram') },
+          { label: 'Link preview on hover', hint: linkPreviewHint('diagram'), on: !hoverLinksOff, onToggle: () => void setHoverLinksNow.current(hoverLinksOff), disabled: board.readOnly },
+          { label: 'Reload from disk', hint: RELOAD_DISK_HINT, onToggle: () => void reloadFromDiskNow.current(), divider: true },
+        ],
       }),
     [chips, hoverLinksOff, board.readOnly],
   )
@@ -313,6 +413,21 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
           if (msg.event === 'save') void a.flush()
           return
         }
+        case 'yaseenMerging':
+          // draw.io begins the merge: every edit of the user's is in by now (they come before this message).
+          if (merging.current?.id === msg.id) merging.current.dirty ||= autosave.current?.dirty === true
+          return
+        case 'yaseenMerge': {
+          const m = merging.current
+          if (m?.id === msg.id) {
+            m.answer(
+              msg.conflict === true
+                ? { conflict: true, dirty: m.dirty }
+                : { conflict: false, dirty: m.dirty, xml: msg.xml, changedIds: msg.changedIds, groups: msg.groups, offscreen: msg.offscreen },
+            )
+          }
+          return
+        }
         default:
           bridgeNow.current.onMessage(msg)
       }
@@ -351,11 +466,53 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
     syncColors()
   }, [darkColors, syncColors])
 
+  const jumpOutsideGroup = useCallback(
+    (delta: number) => {
+      setOutsideUpdate((cur) => {
+        if (cur === null || cur.groups.length === 0) return null
+        const total = cur.groups.length
+        const nextIdx = cur.index < 0 ? (delta < 0 ? total - 1 : 0) : (cur.index + delta + total) % total
+        post({ action: 'yaseenShowCells', ids: cur.groups[nextIdx] })
+        return { ...cur, index: nextIdx, seq: ++outsideSeq.current, hasBack: true }
+      })
+    },
+    [post],
+  )
+  const showOutsideUpdate = useCallback(() => jumpOutsideGroup(0), [jumpOutsideGroup])
+  const prevOutsideUpdate = useCallback(() => jumpOutsideGroup(-1), [jumpOutsideGroup])
+  const nextOutsideUpdate = useCallback(() => jumpOutsideGroup(1), [jumpOutsideGroup])
+  const backOutsideUpdate = useCallback(() => {
+    post({ action: 'yaseenRestoreView' })
+    setOutsideUpdate((cur) => (cur === null ? null : { ...cur, index: -1, hasBack: false }))
+  }, [post])
+  const clearOutsideUpdate = useCallback(() => {
+    post({ action: 'yaseenClearOutsideMarks' })
+    setOutsideUpdate(null)
+  }, [post])
+  const dismissOutsideUpdate = useCallback(() => setOutsideUpdate(null), [])
+
   return (
     <div className="drawio-editor" ref={board.hostRef}>
       {board.conflictBar}
       <DocumentChips store={board.chips} className="drawio-editor__chips" />
       <iframe ref={frameRef} className="drawio-editor__frame" src={src} title={`${boardBaseName(basename(path))} — draw.io`} />
+      {outsideUpdate !== null && outsideChangeGlow !== 'off' && (
+        <OutsideUpdateChip
+          count={outsideUpdate.ids.length}
+          seq={outsideUpdate.seq}
+          canShow={outsideUpdate.offscreen}
+          onShow={showOutsideUpdate}
+          step={
+            outsideUpdate.groups.length >= 2
+              ? { index: outsideUpdate.index, total: outsideUpdate.groups.length, onPrev: prevOutsideUpdate, onNext: nextOutsideUpdate }
+              : undefined
+          }
+          onBack={outsideUpdate.hasBack ? backOutsideUpdate : undefined}
+          onClear={clearOutsideUpdate}
+          onDismiss={dismissOutsideUpdate}
+          autoDismissMs={chipAutoDismissMs}
+        />
+      )}
       <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={linkProps.previewScope} diagramDarkColors={darkColors} />
     </div>
   )

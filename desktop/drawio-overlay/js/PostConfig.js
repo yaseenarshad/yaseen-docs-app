@@ -255,6 +255,8 @@ window.ICON_SERVICE_PATH = null;
 		// flags that one load, and the flag ends once draw.io's own handler has run.
 		if (msg != null && msg.action == 'load')
 		{
+			// YAZ-4279 D5: a new document on screen; no outline is about it.
+			clearMarks(null);
 			keepHostFocus = msg.yaseenKeepFocus === true;
 			keptView = (msg.yaseenKeepView === true) ? currentView(editorUi) : null;
 			window.setTimeout(function()
@@ -292,7 +294,582 @@ window.ICON_SERVICE_PATH = null;
 			editorUi.setAdaptiveColors((graph.adaptiveColors != null) ? graph.adaptiveColors : 'default');
 			graph.refresh();
 		}
+
+		// YAZ-4279 D2: an outside save of this diagram, merged by draw.io's own merge (the one its cloud files use). Not
+		// draw.io's embed `merge`: it diffs against the last `load`, and the host's saves since never moved that, so
+		// they would read as the other side's edits. Ours diffs against the HOST's base.
+		// Only the LATEST request runs once the gesture ends (4A-2), and one the host gave up on never runs.
+		if (msg != null && msg.action == 'yaseenMerge')
+		{
+			evt.stopImmediatePropagation();
+			mergeWanted = msg;
+
+			if (!mergeWaiting)
+			{
+				mergeWaiting = true;
+				whenIdle(function()
+				{
+					var wanted = mergeWanted;
+					mergeWaiting = false;
+					mergeWanted = null;
+
+					if (wanted != null)
+					{
+						mergeOutside(wanted);
+					}
+				});
+			}
+		}
+
+		if (msg != null && msg.action == 'yaseenMergeCancel')
+		{
+			evt.stopImmediatePropagation();
+
+			if (mergeWanted != null && mergeWanted.id == msg.id)
+			{
+				mergeWanted = null;
+			}
+		}
+
+		// YAZ-4279 item 8: Keep mine answered the bar, so the red outlines of the clash go.
+		if (msg != null && msg.action == 'yaseenClearClash')
+		{
+			evt.stopImmediatePropagation();
+			clearMarks('clash');
+		}
+
+		// YAZ-6416: OutsideUpdateChip parity for draw.io (Show, 1/N cycling, Back, Mark checked).
+		if (msg != null && msg.action == 'yaseenShowCells')
+		{
+			evt.stopImmediatePropagation();
+			showCells(Array.isArray(msg.ids) ? msg.ids : []);
+		}
+
+		if (msg != null && msg.action == 'yaseenRestoreView')
+		{
+			evt.stopImmediatePropagation();
+			restoreBackView();
+		}
+
+		if (msg != null && msg.action == 'yaseenClearOutsideMarks')
+		{
+			evt.stopImmediatePropagation();
+			savedBackView = null;
+			clearMarks('outside');
+		}
 	});
+
+	/** The one `yaseenMerge` waiting for the gesture to end, and whether a wait runs. */
+	var mergeWanted = null;
+	var mergeWaiting = false;
+
+	/** YAZ-4279 item 2: a label being typed, or a drag, ends first; a merge under it would end it for the user. */
+	function whenIdle(then)
+	{
+		var graph = editorUi.editor.graph;
+
+		if (!graph.isEditing() && !graph.isMouseDown)
+		{
+			then();
+		}
+		else
+		{
+			window.setTimeout(function()
+			{
+				whenIdle(then);
+			}, 150);
+		}
+	}
+
+	/**
+	 * The merge (D2, D4). A field both sides changed, or a cell one side removed and the other changed, is the user's
+	 * to settle: the answer is a conflict, and nothing changes. draw.io alone would keep ours in silence
+	 * (`DrawioFile.LAST_WRITE_WINS`). Undo, the selection and the view stay. Just before the merge, `yaseenMerging` tells
+	 * the host that every edit of the user's is in (4A-1: a label typed while it waited came first). draw.io's own
+	 * `autosave` then posts the page on screen; the answer carries the whole merged file, because a change to another page
+	 * posts no `autosave` (4A-3).
+	 */
+	function mergeOutside(msg)
+	{
+		var answer = function(extra)
+		{
+			extra.event = 'yaseenMerge';
+			extra.id = msg.id;
+			postToHost(extra);
+		};
+
+		try
+		{
+			var file = editorUi.getCurrentFile();
+
+			if (file == null)
+			{
+				answer({conflict: true});
+
+				return;
+			}
+
+			var base = editorUi.getPagesForXml(msg.base);
+			var theirs = editorUi.diffPages(base, editorUi.getPagesForXml(msg.xml));
+			var clash = clashes(editorUi.diffPages(base, editorUi.pages), theirs);
+
+			clearMarks('clash');
+
+			if (clash != null)
+			{
+				markCells(clash, 'clash', null);
+				answer({conflict: true});
+
+				return;
+			}
+
+			postToHost({event: 'yaseenMerging', id: msg.id});
+			file.setShadowPages(base);
+			file.mergeFile(new LocalFile(editorUi, msg.xml), function()
+			{
+				var changed = changedCells(theirs);
+				clearMarks('outside');
+				savedBackView = null;
+				markCells(changed.added, 'added', msg.glow);
+				markCells(changed.changed, 'changed', msg.glow);
+				var allIds = changed.added.concat(changed.changed);
+				var graph = editorUi.editor.graph;
+				answer({
+					xml: embedXml(),
+					changedIds: allIds,
+					groups: clusterCellIds(graph, allIds),
+					offscreen: areCellsOffscreen(graph, allIds)
+				});
+			}, function()
+			{
+				answer({conflict: true});
+			});
+		}
+		catch (e)
+		{
+			console.error('yaseenMerge', e);
+			answer({conflict: true});
+		}
+	}
+
+	/** The file as the embed's own `autosave` posts it (its `y()`): every page, or the one graph of a one-page file. */
+	function embedXml()
+	{
+		return ('0' != urlParams['pages'] || (editorUi.pages != null && editorUi.pages.length > 1)) ? editorUi.getFileData(true) : mxUtils.getXml(editorUi.editor.getGraphXml());
+	}
+
+	/**
+	 * Two of draw.io's diffs (`EditorUi.diffPages`) touch one thing: a page or cell removed on one side and changed on the
+	 * other, a cell added into a parent or onto an end the other side removed, one field changed on both (a label is one
+	 * field, `value` or `xmlValue`), or a page renamed or re-boxed on both (4A-9). Null: no clash; otherwise the cells
+	 * that clash (item 8), none for a page.
+	 */
+	function clashes(mine, theirs)
+	{
+		var mu = mine.u || {}, tu = theirs.u || {}, ids = [], clash = false;
+
+		if (removedChanged(mine.r, tu).length > 0 || removedChanged(theirs.r, mu).length > 0)
+		{
+			clash = true;
+		}
+
+		for (var id in tu)
+		{
+			var m = mu[id], t = tu[id];
+
+			if (m == null)
+			{
+				continue;
+			}
+
+			if (differs(t.name, m.name) || differs(t.viewBox, m.viewBox) || bothChanged(t.view, m.view))
+			{
+				clash = true;
+			}
+
+			var tc = t.cells || {}, mc = m.cells || {}, tcu = tc.u || {}, mcu = mc.u || {};
+			ids = ids.concat(removedChanged(tc.r, mcu), removedChanged(mc.r, tcu), addedOnto(tc.i, mc.r), addedOnto(mc.i, tc.r));
+
+			for (var cell in tcu)
+			{
+				if (bothChanged(tcu[cell], mcu[cell]))
+				{
+					ids.push(cell);
+				}
+			}
+
+			// One cell id added on both sides, with two contents.
+			var added = {};
+			(mc.i || []).forEach(function(c) { added[c.id] = JSON.stringify(c); });
+			(tc.i || []).forEach(function(c)
+			{
+				if (added[c.id] != null && added[c.id] != JSON.stringify(c))
+				{
+					ids.push(c.id);
+				}
+			});
+		}
+
+		return (clash || ids.length > 0) ? ids : null;
+	}
+
+	function differs(a, b)
+	{
+		return a != null && b != null && a != b;
+	}
+
+	/** The cells one side added into a parent, or onto a source or target, that the other side removed. */
+	function addedOnto(inserted, removed)
+	{
+		var gone = {};
+		(removed || []).forEach(function(id) { gone[id] = true; });
+
+		return (inserted || []).filter(function(c) { return gone[c.parent] || gone[c.source] || gone[c.target]; }).map(function(c) { return c.id; });
+	}
+
+	/** The ids removed on one side that the other side changed. */
+	function removedChanged(removed, changed)
+	{
+		return (removed || []).filter(function(id) { return changed[id] != null; });
+	}
+
+	function bothChanged(a, b)
+	{
+		if (a == null || b == null)
+		{
+			return false;
+		}
+
+		a = oneLabel(a);
+		b = oneLabel(b);
+
+		for (var key in a)
+		{
+			if (key in b && JSON.stringify(a[key]) != JSON.stringify(b[key]))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/** draw.io keeps a label as `xmlValue` once its cell has attributes: one field, whatever its name. */
+	function oneLabel(fields)
+	{
+		if (!('xmlValue' in fields))
+		{
+			return fields;
+		}
+
+		var out = {};
+
+		for (var key in fields)
+		{
+			out[(key == 'xmlValue') ? 'value' : key] = fields[key];
+		}
+
+		return out;
+	}
+
+	/**
+	 * YAZ-4279 D5, items 7 and 8: the outlines on the page on screen — green for a cell the outside save added, amber for one
+	 * it changed (Version history's colours), red for a clash while the bar shows. draw.io's own highlight, so they follow
+	 * the zoom and scroll; never in the model, so never in the file or undo. The Glow setting times the green and amber:
+	 * "Until I check it" — until that cell is selected or changed — 10 s, 1 min, or not at all.
+	 */
+	var MARK_COLORS = {added: '#2f9e44', changed: '#f08c00', clash: '#e03131'};
+	var marks = [];
+	var marksWatched = false;
+	var savedBackView = null;
+
+	function cellRect(graph, id)
+	{
+		var cell = graph.model.getCell(id);
+		var state = (cell != null) ? graph.view.getState(cell) : null;
+
+		if (state == null)
+		{
+			return null;
+		}
+
+		return {id: id, x: state.x, y: state.y, width: state.width, height: state.height};
+	}
+
+	function clusterCellIds(graph, ids)
+	{
+		var rects = [];
+
+		for (var i = 0; i < ids.length; i++)
+		{
+			var r = cellRect(graph, ids[i]);
+
+			if (r != null)
+			{
+				rects.push(r);
+			}
+		}
+
+		if (rects.length <= 1)
+		{
+			return rects.length == 1 ? [[rects[0].id]] : [];
+		}
+
+		var pad = 300 * (graph.view.scale || 1);
+		var visited = {};
+		var clusters = [];
+
+		for (var a = 0; a < rects.length; a++)
+		{
+			if (visited[a])
+			{
+				continue;
+			}
+
+			visited[a] = true;
+			var queue = [a];
+			var groupIds = [];
+			var minX = Infinity, minY = Infinity;
+
+			while (queue.length > 0)
+			{
+				var cur = queue.pop();
+				var el = rects[cur];
+				groupIds.push(el.id);
+
+				if (el.x < minX) minX = el.x;
+				if (el.y < minY) minY = el.y;
+
+				for (var b = 0; b < rects.length; b++)
+				{
+					if (!visited[b])
+					{
+						var other = rects[b];
+
+						if (el.x - pad <= other.x + other.width &&
+							other.x - pad <= el.x + el.width &&
+							el.y - pad <= other.y + other.height &&
+							other.y - pad <= el.y + el.height)
+						{
+							visited[b] = true;
+							queue.push(b);
+						}
+					}
+				}
+			}
+
+			clusters.push({ids: groupIds, minX: minX, minY: minY});
+		}
+
+		clusters.sort(function(x, y)
+		{
+			return Math.round(x.minY / 200) - Math.round(y.minY / 200) || x.minX - y.minX;
+		});
+
+		return clusters.map(function(c) { return c.ids; });
+	}
+
+	function areCellsOffscreen(graph, ids)
+	{
+		var container = graph.container;
+
+		if (container == null || ids.length == 0)
+		{
+			return false;
+		}
+
+		var vx1 = container.scrollLeft;
+		var vy1 = container.scrollTop;
+		var vx2 = vx1 + container.clientWidth;
+		var vy2 = vy1 + container.clientHeight;
+		var pad = 24;
+
+		for (var i = 0; i < ids.length; i++)
+		{
+			var r = cellRect(graph, ids[i]);
+
+			if (r != null && (r.x < vx1 + pad || r.y < vy1 + pad || r.x + r.width > vx2 - pad || r.y + r.height > vy2 - pad))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	function showCells(ids)
+	{
+		var graph = editorUi.editor.graph;
+		var container = graph.container;
+
+		if (container == null || ids.length == 0)
+		{
+			return;
+		}
+
+		if (savedBackView == null)
+		{
+			savedBackView = currentView(editorUi);
+		}
+
+		var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, found = false;
+
+		for (var i = 0; i < ids.length; i++)
+		{
+			var r = cellRect(graph, ids[i]);
+
+			if (r != null)
+			{
+				found = true;
+				if (r.x < minX) minX = r.x;
+				if (r.y < minY) minY = r.y;
+				if (r.x + r.width > maxX) maxX = r.x + r.width;
+				if (r.y + r.height > maxY) maxY = r.y + r.height;
+			}
+		}
+
+		if (!found)
+		{
+			return;
+		}
+
+		var cx = (minX + maxX) / 2;
+		var cy = (minY + maxY) / 2;
+		container.scrollLeft = Math.max(0, Math.round(cx - container.clientWidth / 2));
+		container.scrollTop = Math.max(0, Math.round(cy - container.clientHeight / 2));
+	}
+
+	function restoreBackView()
+	{
+		if (savedBackView == null)
+		{
+			return;
+		}
+
+		var view = savedBackView;
+		savedBackView = null;
+		var page = editorUi.getPageById(view.pageId) || editorUi.pages[view.pageIndex];
+
+		if (page != null && page != editorUi.currentPage)
+		{
+			editorUi.selectPage(page, true);
+		}
+
+		editorUi.editor.graph.view.setScale(view.scale);
+		editorUi.restoreScrollState(view.scroll);
+	}
+
+	function markCells(ids, kind, glow)
+	{
+		var graph = editorUi.editor.graph;
+
+		if (glow == 'off' || ids.length == 0)
+		{
+			return;
+		}
+
+		watchMarks(graph);
+
+		for (var i = 0; i < ids.length; i++)
+		{
+			var cell = graph.model.getCell(ids[i]);
+			var state = (cell != null) ? graph.view.getState(cell) : null;
+
+			if (state != null)
+			{
+				var highlight = new mxCellHighlight(graph, MARK_COLORS[kind], 3, false);
+				highlight.highlight(state);
+				marks.push({id: ids[i], kind: kind, glow: glow, highlight: highlight});
+			}
+		}
+
+		var ms = (glow == '60s') ? 60000 : ((glow == '5m') ? 300000 : ((glow == '10s') ? 10000 : null));
+
+		if (ms != null)
+		{
+			var timed = marks.filter(function(mark) { return mark.kind == kind; });
+
+			window.setTimeout(function()
+			{
+				dropMarks(function(mark) { return timed.indexOf(mark) >= 0; });
+			}, ms);
+		}
+	}
+
+	/** `which`: 'clash', 'outside' (green and amber), or null for all. */
+	function clearMarks(which)
+	{
+		dropMarks(function(mark)
+		{
+			return which == null || (which == 'clash') == (mark.kind == 'clash');
+		});
+	}
+
+	function dropMarks(match)
+	{
+		marks = marks.filter(function(mark)
+		{
+			if (!match(mark))
+			{
+				return true;
+			}
+
+			mark.highlight.destroy();
+
+			return false;
+		});
+	}
+
+	/** "Until I check it": a marked cell the user selects, or changes, is checked. */
+	function watchMarks(graph)
+	{
+		if (marksWatched)
+		{
+			return;
+		}
+
+		marksWatched = true;
+		var checked = function(ids)
+		{
+			dropMarks(function(mark)
+			{
+				return mark.kind != 'clash' && mark.glow == 'until-checked' && ids[mark.id] === true;
+			});
+		};
+
+		graph.getSelectionModel().addListener(mxEvent.CHANGE, function()
+		{
+			var ids = {};
+			graph.getSelectionCells().forEach(function(cell) { ids[cell.getId()] = true; });
+			checked(ids);
+		});
+		graph.model.addListener(mxEvent.CHANGE, function(sender, evt)
+		{
+			var edit = evt.getProperty('edit'), ids = {};
+			((edit != null) ? edit.changes : []).forEach(function(change)
+			{
+				var cell = change.cell || change.child;
+
+				if (cell != null)
+				{
+					ids[cell.getId()] = true;
+				}
+			});
+			checked(ids);
+		});
+	}
+
+	/** The cells of the page on screen that the outside save added and changed (D5 outlines them). */
+	function changedCells(theirs)
+	{
+		var page = (theirs.u || {})[editorUi.currentPage.getId()];
+		var cells = (page != null && page.cells != null) ? page.cells : {};
+
+		return {
+			added: (cells.i || []).map(function(c) { return c.id; }),
+			changed: Object.keys(cells.u || {})
+		};
+	}
 
 	// 🔒 YAZ-1802 D12a: right-clicking EMPTY canvas offers draw.io's own Grid toggle (with its check
 	// mark), beside the menu's zoom items. Wrapped last, so it lands at the end of the menu.

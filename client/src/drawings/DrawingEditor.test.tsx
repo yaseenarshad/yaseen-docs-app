@@ -61,6 +61,16 @@ const surface = {
   pictures: { bytes: 0, count: 0, missing: 0 },
   /** The pan and zoom the engine is on (YAZ-3737 D13). */
   canvas: { scrollX: 0, scrollY: 0, zoom: 1 },
+  /** What `mergeScene` answers (YAZ-4279): a clash by default, so a dirty tab meets the bar as before. */
+  nextMerge: { conflicts: [] } as { version: number } | { conflicts: string[] },
+  /** The red outlines the host asked for (item 8). */
+  clashes: [] as (readonly string[])[],
+  merged: [] as { base: unknown; disk: unknown }[],
+  /** What `whenIdle` waits on: a gesture in flight until the test resolves it. */
+  idle: Promise.resolve(true),
+  scrolledTo: [] as (readonly string[])[],
+  repaired: 0,
+  keepBothCalls: 0,
 }
 
 vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
@@ -92,6 +102,25 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
       },
       pictures: () => surface.pictures,
       canvas: () => surface.canvas,
+      mergeScene: (base, disk) => {
+        surface.merged.push({ base, disk })
+        return surface.nextMerge
+      },
+      whenIdle: () => surface.idle,
+      clash: (ids) => {
+        surface.clashes.push(ids)
+      },
+      scrollToElements: (ids) => {
+        surface.scrolledTo.push(ids)
+      },
+      repairScene: () => {
+        surface.repaired += 1
+        return { removedDeleted: 1, repairedCount: 1 }
+      },
+      keepBothScene: () => {
+        surface.keepBothCalls += 1
+        return { version: 99, duplicated: 2 }
+      },
     } satisfies DrawingSurfaceApi)
     // The real engine renders this into its own top-right row; the stub just puts it on screen,
     // because WHERE the chips go is the surface's business and WHAT they say is the host's.
@@ -168,6 +197,10 @@ beforeEach(() => {
   surface.nextReplaceVersion = 0
   surface.commands = []
   surface.pictures = { bytes: 0, count: 0, missing: 0 }
+  surface.nextMerge = { conflicts: [] }
+  surface.merged = []
+  surface.clashes = []
+  surface.idle = Promise.resolve(true)
   Object.defineProperty(window, 'yaseenDocs', {
     configurable: true,
     writable: true,
@@ -325,6 +358,169 @@ describe('external changes', () => {
       vi.advanceTimersByTime(1000)
     })
     expect(save).not.toHaveBeenCalled()
+  })
+})
+
+/** A board whose file says Read only (YAZ-3076 D1). */
+const LOCKED_SCENE = `${JSON.stringify({ yaseendraw: { createdAt: 1, updatedAt: 2, readonly: true }, type: 'excalidraw', version: 2, elements: [], appState: {}, files: {} })}\n`
+
+describe('YAZ-4279 — an outside save over unsaved edits merges into the canvas', () => {
+  const MERGED = { version: 30 }
+  const bar = (): boolean => chips().includes('File changed on disk.')
+  const refused = (mtime: number) => new BridgeRequestError('CONFLICT', 'file changed on disk since last read', mtime, PATH)
+
+  it('merges the file into a dirty tab (base: the scene as loaded), shows no bar, and saves the merge against the new mtime', async () => {
+    load.mockResolvedValue(loaded({ json: scene([{ id: 'a', x: 1 }]) }))
+    render()
+    await flush()
+    emit(1)
+    emit(2)
+    load.mockResolvedValue(loaded({ json: scene([{ id: 'a', x: 1, strokeColor: 'red' }]), mtime: 400 }))
+    surface.nextMerge = MERGED
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    expect(surface.merged).toHaveLength(1)
+    expect(surface.merged[0].base).toMatchObject({ elements: [{ id: 'a', x: 1 }] })
+    expect(surface.merged[0].disk).toMatchObject({ elements: [{ id: 'a', x: 1, strokeColor: 'red' }] })
+    expect(bar()).toBe(false)
+    emit(30) // the engine's answer to the merge: still an edit
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ expectedMtime: 400 }))
+  })
+
+  it('a clash keeps the bar; a later outside save that merges takes the bar down (item 10)', async () => {
+    render()
+    await flush()
+    emit(1)
+    emit(2)
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    expect(bar()).toBe(true)
+    surface.nextMerge = MERGED
+    load.mockResolvedValue(loaded({ mtime: 500 }))
+    watcherSaw({ type: 'change', path: PATH, mtime: 500 })
+    await flush()
+    expect(surface.merged).toHaveLength(2)
+    expect(bar()).toBe(false)
+  })
+
+  it('a save the disk refuses merges too, then saves the merge against the mtime the disk answered (D3: the second door)', async () => {
+    render()
+    await flush()
+    emit(1)
+    save.mockRejectedValueOnce(refused(400))
+    load.mockResolvedValue(loaded({ mtime: 400 }))
+    surface.nextMerge = MERGED
+    emit(2)
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+    })
+    await flush()
+    expect(surface.merged).toHaveLength(1)
+    expect(bar()).toBe(false)
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ expectedMtime: 400 }))
+  })
+
+  it('after a save, the base is what the save wrote', async () => {
+    render()
+    await flush()
+    emit(1)
+    emit(2, scene([{ id: 'saved' }]))
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+    })
+    emit(3)
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    expect(surface.merged[0].base).toMatchObject({ elements: [{ id: 'saved' }] })
+  })
+
+  it('a read-only switch the file changed is the user\'s to settle: the bar, and no merge', async () => {
+    render()
+    await flush()
+    emit(1)
+    emit(2)
+    load.mockResolvedValue(loaded({ json: LOCKED_SCENE, mtime: 400 }))
+    surface.nextMerge = MERGED
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    expect(surface.merged).toHaveLength(0)
+    expect(bar()).toBe(true)
+  })
+
+  it('waits for a gesture to end; a burst of outside saves meanwhile is ONE more merge, of the latest file (item 4)', async () => {
+    let endGesture = (): void => undefined
+    surface.idle = new Promise<boolean>((done) => (endGesture = () => done(true)))
+    surface.nextMerge = MERGED
+    render()
+    await flush()
+    emit(1)
+    emit(2)
+    for (const mtime of [400, 410, 420]) watcherSaw({ type: 'change', path: PATH, mtime })
+    await flush()
+    expect(surface.merged).toHaveLength(0)
+    load.mockResolvedValue(loaded({ mtime: 420 }))
+    surface.idle = Promise.resolve(true)
+    await act(async () => endGesture())
+    await flush()
+    await flush()
+    expect(surface.merged).toHaveLength(2)
+  })
+})
+
+describe('YAZ-4279 — a clean tab merges the file too (4A-4)', () => {
+  it('a clean tab MERGES (no replace), and the merge is the clean baseline: nothing is written back', async () => {
+    render()
+    await flush()
+    emit(1)
+    load.mockResolvedValue(loaded({ json: scene([{ id: 'a', strokeColor: 'red' }]), mtime: 400 }))
+    surface.nextMerge = { version: 11 }
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    expect(surface.merged).toHaveLength(1)
+    expect(surface.replaced).toHaveLength(0)
+    emit(11) // the engine's answer to the merge: the baseline
+    await act(async () => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('an edit made while the file loads is kept: it merges, and saves against the new mtime', async () => {
+    let read = (_v: DrawingLoadResponse): void => undefined
+    render()
+    await flush()
+    emit(1)
+    load.mockReturnValueOnce(new Promise((done) => (read = done)))
+    surface.nextMerge = { version: 31 }
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    emit(2) // the user's stroke, while the file loads
+    await act(async () => read(loaded({ mtime: 400 })))
+    await flush()
+    expect(surface.replaced).toHaveLength(0)
+    emit(31)
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ expectedMtime: 400 }))
+  })
+
+  it('a clean merge the canvas refuses reloads the file instead (no bar)', async () => {
+    render()
+    await flush()
+    emit(1)
+    load.mockResolvedValue(loaded({ mtime: 400 }))
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await flush()
+    await flush()
+    expect(surface.replaced).toHaveLength(1)
+    expect(chips()).not.toContain('File changed on disk.')
   })
 })
 
@@ -737,15 +933,15 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
   it('in this order: Read only, Link preview on hover, the count and size of the pictures in words (YAZ-4110 5B), the moves to the other places, then the two exports', async () => {
     surface.pictures = { bytes: 3.3 * MB, count: 6, missing: 0 }
     await openCog()
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '6 pictures in this file (3.3 MB)', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
-    // YAZ-4277 D5: a line above the fold arrow rows too, and above the hover outline's (YAZ-4469 demo).
-    expect(menuIn(container)?.querySelectorAll(':scope > .page-settings__divider') ?? []).toHaveLength(4)
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '6 pictures in this file (3.3 MB)', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…', 'Reload from disk', 'Repair drawing file'])
+    // YAZ-4277 D5: a line above the fold arrow rows too, above hover outline (YAZ-4469 demo), and above Reload from disk (YAZ-4279).
+    expect(menuIn(container)?.querySelectorAll(':scope > .page-settings__divider') ?? []).toHaveLength(5)
     expect(row('6 pictures in this file (3.3 MB)')!.className).not.toContain('warn')
   })
 
   it('no picture: no size row and no move; from 20 MB the size is amber; a "pictures out" board says where they are: the assets folder, or its own folder by its last name with the whole path on hover', async () => {
     await openCog()
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', 'Export Image or PDF…', 'Export Excalidraw Drawing…', 'Reload from disk', 'Repair drawing file'])
     act(() => cog().click())
     surface.pictures = { bytes: 20 * MB, count: 2, missing: 0 }
     act(() => cog().click())
@@ -755,12 +951,12 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
 
     surface.pictures = { bytes: 1000, count: 1, missing: 0 }
     await openCog({ json: withBlock({ pictures: 'assets' }) })
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in the assets folder (1000 B)', 'Keep pictures inside', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in the assets folder (1000 B)', 'Keep pictures inside', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…', 'Reload from disk', 'Repair drawing file'])
     act(() => root?.unmount())
     root = createRoot(container)
 
     await openCog({ json: withBlock({ pictures: 'assets', picturesFolder: 'Projects/Board pictures' }) })
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in Board pictures (1000 B)', 'Keep pictures inside', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in Board pictures (1000 B)', 'Keep pictures inside', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…', 'Reload from disk', 'Repair drawing file'])
     expect(row('1 picture in Board pictures (1000 B)')!.title).toBe('Projects/Board pictures')
   })
 
@@ -843,12 +1039,12 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
   it('YAZ-3943 1F: pictures in neither the file, its folder nor assets/ are an amber row after the size, with the moves after them; all missing: the row alone', async () => {
     surface.pictures = { bytes: 1000, count: 1, missing: 3 }
     await openCog()
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in this file (1000 B)', '3 pictures are missing', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in this file (1000 B)', '3 pictures are missing', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…', 'Reload from disk', 'Repair drawing file'])
     expect(row('3 pictures are missing')!.className).toContain('page-settings__warn')
     act(() => cog().click())
     surface.pictures = { bytes: 0, count: 0, missing: 1 }
     act(() => cog().click())
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture is missing', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture is missing', 'Export Image or PDF…', 'Export Excalidraw Drawing…', 'Reload from disk', 'Repair drawing file'])
   })
 
   it('YAZ-4074 6A item 2: with a used picture missing, a move says why and opens no box and no folder window', async () => {
@@ -883,7 +1079,7 @@ describe('YAZ-3943 1B — the cog on a drawing: the pictures and the exports (D5
     expect(sheet()).toBeNull()
     expect(allow).not.toHaveBeenCalled()
     act(() => cog().click())
-    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in Boards (1000 B)', 'Folder not allowed on this Mac', 'Allow…', 'Keep pictures inside', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…'])
+    expect(rows().map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', 'Fold arrows', 'Hover outline', '1 picture in Boards (1000 B)', 'Folder not allowed on this Mac', 'Allow…', 'Keep pictures inside', 'Move to the assets folder', 'Choose a folder…', 'Export Image or PDF…', 'Export Excalidraw Drawing…', 'Reload from disk', 'Repair drawing file'])
     expect(row('Folder not allowed on this Mac')!.className).toContain('page-settings__warn')
     act(() => row('Allow…')!.click())
     await act(async () => sheetButton('Allow').click())
@@ -1153,5 +1349,89 @@ describe('YAZ-3943 demo round 3 — what the confirm box before a picture move s
     expect(OUTSIDE_FOLDER_WARNING).toBe('This folder is outside the vault. Your other Macs, Version history and copies of the vault will not have these pictures unless you sync this folder yourself.')
     // A folder outside the home folder shows its whole path.
     expect(picturesMoveAsk('folder', { count: 1, bytes: 1 }, 'x', '/Volumes/Disk/pics', '/Users/me').body).toContain('to /Volumes/Disk/pics.')
+  })
+})
+
+describe('YAZ-4279 UI/UX: OutsideUpdateChip, Reload from disk, Repair drawing file, and Keep both', () => {
+  it('item 10 / YAZ-6399: OutsideUpdateChip appears on onOutsideChange, Show pans to updated shapes, stays open on until-checked, and auto-dismisses on 60s', async () => {
+    surface.scrolledTo = []
+    render({ outsideChangeGlow: 'until-checked' })
+    await flush()
+    emit(1)
+    expect(container.querySelector('.outside-update-chip')).toBeNull()
+
+    act(() => surface.props!.onOutsideChange!(['s1', 's2']))
+    const chip = container.querySelector('.outside-update-chip')
+    expect(chip).not.toBeNull()
+    expect(chip!.textContent).toContain('Outside update: 2 shapes changed')
+
+    act(() => chip!.querySelector<HTMLButtonElement>('.outside-update-chip__show')!.click())
+    expect(surface.scrolledTo).toEqual([['s1', 's2']])
+
+    // Until-checked stays open past 12s until dismissed or marked checked.
+    await act(async () => {
+      vi.advanceTimersByTime(12_000)
+    })
+    expect(container.querySelector('.outside-update-chip')).not.toBeNull()
+
+    act(() => chip!.querySelector<HTMLButtonElement>('.outside-update-chip__dismiss')!.click())
+    expect(container.querySelector('.outside-update-chip')).toBeNull()
+
+    // With 60s glow, chip auto-dismisses after 60s.
+    render({ outsideChangeGlow: '60s' })
+    act(() => surface.props!.onOutsideChange!(['s3']))
+    expect(container.querySelector('.outside-update-chip')!.textContent).toContain('1 shape changed')
+    await act(async () => {
+      vi.advanceTimersByTime(60_000)
+    })
+    expect(container.querySelector('.outside-update-chip')).toBeNull()
+  })
+
+  it('items 6 & 11: Reload from disk and Repair drawing file cog rows invoke their actions and emit notices', async () => {
+    const onNotice = vi.fn()
+    surface.repaired = 0
+    render({ onNotice })
+    await flush()
+    emit(1)
+
+    act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    const repairRow = [...(menuIn(container)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])].find((b) => b.textContent === 'Repair drawing file')!
+    expect(repairRow.disabled).toBe(false)
+    act(() => repairRow.click())
+    expect(surface.repaired).toBe(1)
+    expect(onNotice).toHaveBeenCalledWith('Drawing repaired and saved.')
+
+    load.mockResolvedValueOnce(loaded({ mtime: 300 }))
+    act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    const reloadRow = [...(menuIn(container)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])].find((b) => b.textContent === 'Reload from disk')!
+    await act(async () => {
+      reloadRow.click()
+      await Promise.resolve()
+    })
+    await flush()
+    expect(onNotice).toHaveBeenCalledWith('Reloaded from disk.')
+  })
+
+  it('item 12: Keep both on ConflictBar runs keepBothScene, clears the bar, and notifies', async () => {
+    const onNotice = vi.fn()
+    surface.keepBothCalls = 0
+    surface.nextMerge = { conflicts: ['r1'] }
+    render({ onNotice })
+    await flush()
+    emit(1)
+    emit(2)
+    load.mockResolvedValue(loaded({ mtime: 200 }))
+    watcherSaw({ type: 'change', path: PATH, mtime: 200 })
+    await flush()
+    const keepBothBtn = [...container.querySelectorAll<HTMLButtonElement>('.conflict-bar button')].find((b) => b.textContent === 'Keep both')
+    expect(keepBothBtn).toBeDefined()
+    await act(async () => {
+      keepBothBtn!.click()
+      await Promise.resolve()
+    })
+    await flush()
+    expect(surface.keepBothCalls).toBe(1)
+    expect(container.querySelector('.conflict-bar')).toBeNull()
+    expect(onNotice).toHaveBeenCalledWith('Kept both: 2 shapes duplicated.')
   })
 })

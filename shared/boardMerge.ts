@@ -30,6 +30,11 @@ import { isFiniteNumber, isRecord } from './guards'
  *
  * Pure and engine-free: it runs in the main process in the middle of a rebase. Answers null for
  * anything it must not merge — a side that is not a scene — and the caller keeps both copies.
+ *
+ * ⚡ YAZ-4279 D1, D4: the shapes' loop is `mergeElements`, which an OPEN board shares with another rule, 'per-property':
+ * a shape both sides changed takes each property from the side that changed it, and one property changed on both sides,
+ * a delete against an edit, or one id added on both sides is a clash only the user settles (the conflict bar). Both rules
+ * ignore the engine's stamps: a version bump that moved nothing is no edit.
  */
 
 interface BoardMerge {
@@ -39,7 +44,7 @@ interface BoardMerge {
   clashes: number
 }
 
-type Element = Record<string, unknown> & { id: string }
+export type Element = Record<string, unknown> & { id: string }
 type Scene = Record<string, unknown> & { elements: Element[] }
 
 function parseScene(text: string): Scene | null {
@@ -54,10 +59,62 @@ function parseScene(text: string): Scene | null {
   return raw as Scene
 }
 
-/** Structural equality for values that came out of `JSON.parse` — the app's writer keeps key order stable. */
-const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+/**
+ * The engine's own stamps (YAZ-4279 D1). A version bump that moved nothing is no edit: the engine bumps them on load, and an
+ * AI that writes the JSON leaves them as they were. So no side is picked by them, except as `newer`'s tie-break. `seed` is
+ * the hand-drawn wobble: the engine's restore gives a shape that has none a random one, so it differs between two restores
+ * of one file and is never an edit (4A-6).
+ */
+const STAMPS: ReadonlySet<string> = new Set(['version', 'versionNonce', 'updated', 'seed'])
 
-const alive = (e: Element | undefined): e is Element => e !== undefined && e.isDeleted !== true
+/**
+ * Fast structural equality for plain JSON data, key-order independent, without allocating sorted JSON strings (YAZ-4279 item 8).
+ * Matches `JSON.stringify` semantics for plain objects (keys with `undefined` values are ignored).
+ */
+function sameValue(a: unknown, b: unknown, skipStamps: boolean): boolean {
+  if (a === b) return true
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) {
+      if (!sameValue(a[i], b[i], skipStamps)) return false
+    }
+    return true
+  }
+  if (Array.isArray(b)) return false
+  const ao = a as Record<string, unknown>
+  const bo = b as Record<string, unknown>
+  const aKeys = Object.keys(ao)
+  const bKeys = Object.keys(bo)
+  let aCount = 0
+  for (let i = 0; i < aKeys.length; i++) {
+    const k = aKeys[i]
+    if (skipStamps && STAMPS.has(k)) continue
+    const av = ao[k]
+    if (av === undefined) continue
+    aCount++
+    const bv = bo[k]
+    if (bv === undefined || !sameValue(av, bv, skipStamps)) return false
+  }
+  let bCount = 0
+  for (let i = 0; i < bKeys.length; i++) {
+    const k = bKeys[i]
+    if (skipStamps && STAMPS.has(k)) continue
+    if (bo[k] !== undefined) bCount++
+  }
+  return aCount === bCount
+}
+
+/**
+ * Structural equality for plain data, whatever the order of its keys: the app's writer keeps its order, but a shape the
+ * engine restored and the same shape an AI wrote need not share one (YAZ-4279).
+ */
+export const same = (a: unknown, b: unknown): boolean => sameValue(a, b, false)
+
+/** One shape's content on two sides is the same, the stamps aside. */
+export const sameShape = (a: Element | undefined, b: Element | undefined): boolean => sameValue(a, b, true)
+
+export const alive = (e: Element | undefined): e is Element => e !== undefined && e.isDeleted !== true
 
 const num = (v: unknown): number => (isFiniteNumber(v) ? v : 0)
 
@@ -73,7 +130,7 @@ function newer(theirs: Element, mine: Element): Element {
 const byId = (elements: readonly Element[]): Map<string, Element> => new Map(elements.map((e) => [e.id, e]))
 
 /** Every id in first-seen order across the sides — theirs first, so a board's order follows the remote when `index` cannot decide. */
-function idsInOrder(...sides: readonly Element[][]): string[] {
+function idsInOrder(...sides: readonly (readonly Element[])[]): string[] {
   const ids = new Set<string>()
   for (const side of sides) for (const e of side) ids.add(e.id)
   return [...ids]
@@ -101,38 +158,102 @@ function mergeRecord(base: Record<string, unknown>, theirs: Record<string, unkno
 
 const recordOf = (v: unknown): Record<string, unknown> => (isRecord(v) ? v : {})
 
-export function mergeBoards(baseText: string, theirsText: string, mineText: string): BoardMerge | null {
-  const base = parseScene(baseText)
-  const theirs = parseScene(theirsText)
-  const mine = parseScene(mineText)
-  if (base === null || theirs === null || mine === null) return null
+/** Fold state on text elements (YAZ-4277): `foldedLines` and `foldedLineTexts` are one atomic pair (YAZ-4279 item 2). */
+const FOLD_KEYS = ['foldedLines', 'foldedLineTexts'] as const
+const FOLD_KEY_SET: ReadonlySet<string> = new Set(FOLD_KEYS)
 
-  const b = byId(base.elements)
-  const t = byId(theirs.elements)
-  const m = byId(mine.elements)
+/**
+ * One shape both sides changed, for an open board (YAZ-4279 D4): each property from the side that changed it, the bindings of
+ * both. Null when both changed one property to different values — only the user can settle that (the conflict bar).
+ */
+function mergeShape(was: Element, theirs: Element, mine: Element): Element | null {
+  const out: Element = { ...mine }
+
+  // Atomic fold-pair merge (item 2): treat foldedLines + foldedLineTexts as one unit.
+  const theirsFoldChanged = !same(theirs.foldedLines, was.foldedLines) || !same(theirs.foldedLineTexts, was.foldedLineTexts)
+  const mineFoldChanged = !same(mine.foldedLines, was.foldedLines) || !same(mine.foldedLineTexts, was.foldedLineTexts)
+  if (theirsFoldChanged && !(same(theirs.foldedLines, mine.foldedLines) && same(theirs.foldedLineTexts, mine.foldedLineTexts))) {
+    if (mineFoldChanged) return null
+    for (const fk of FOLD_KEYS) {
+      if (theirs[fk] === undefined) delete out[fk]
+      else out[fk] = theirs[fk]
+    }
+  }
+
+  for (const key of new Set([...Object.keys(was), ...Object.keys(theirs), ...Object.keys(mine)])) {
+    if (STAMPS.has(key) || FOLD_KEY_SET.has(key) || same(theirs[key], was[key]) || same(theirs[key], mine[key])) continue
+    if (same(mine[key], was[key])) {
+      if (theirs[key] === undefined) delete out[key]
+      else out[key] = theirs[key]
+    } else if (key === 'boundElements') out[key] = unionBindings(theirs[key], mine[key])
+    else return null
+  }
+  return out
+}
+
+/** Git sync keeps the newest of a shape both sides edited; an open board merges it per property or refuses (YAZ-4279 D4). */
+export type ClashRule = 'newest' | 'per-property'
+
+export interface ElementsMerge {
+  elements: Element[]
+  /** Shapes BOTH sides edited (a delete is not an edit) whose newest version was kept: always 0 for 'per-property'. */
+  clashes: number
+}
+
+/** What only the user can settle (YAZ-4279 D4): the ids of the shapes that clash, for the conflict bar's red outline (item 8). */
+export interface ElementsClash {
+  conflicts: string[]
+}
+
+/**
+ * The shapes alone, 3-way (YAZ-4279 D1): git sync and an open board share it. 'per-property' answers the clash for what only
+ * the user can settle — one property changed on both sides, a delete against an edit, or one id added on both sides.
+ */
+export function mergeElements(base: readonly Element[], theirs: readonly Element[], mine: readonly Element[], rule: 'newest'): ElementsMerge
+export function mergeElements(base: readonly Element[], theirs: readonly Element[], mine: readonly Element[], rule: ClashRule): ElementsMerge | ElementsClash
+export function mergeElements(base: readonly Element[], theirs: readonly Element[], mine: readonly Element[], rule: ClashRule): ElementsMerge | ElementsClash {
+  const b = byId(base)
+  const t = byId(theirs)
+  const m = byId(mine)
   const merged = new Map<string, Element>()
-  const clashed = new Set<string>()
+  /** Shapes taken from both sides at once: they keep both sides' bindings below. */
+  const both = new Set<string>()
+  const conflicts: string[] = []
+  let clashes = 0
 
-  for (const id of idsInOrder(theirs.elements, mine.elements)) {
+  for (const id of idsInOrder(theirs, mine)) {
     const was = b.get(id)
     const tv = t.get(id)
     const mv = m.get(id)
     let pick: Element | undefined
-    if (same(tv, was)) pick = mv
-    else if (same(mv, was) || same(tv, mv)) pick = tv
-    else if (alive(tv) !== alive(mv)) pick = alive(tv) ? tv : mv // an edit beats a delete
-    else if (tv === undefined || mv === undefined) pick = tv ?? mv // gone on one side, a tombstone on the other
+    if (sameShape(tv, was)) pick = mv
+    else if (sameShape(mv, was) || sameShape(tv, mv)) pick = tv
+    else if (!alive(tv) && !alive(mv)) pick = tv === undefined || mv === undefined ? (tv ?? mv) : newer(tv, mv) // deleted on both
+    else if (rule === 'per-property') {
+      const shape = alive(tv) && alive(mv) && was !== undefined ? mergeShape(was, tv, mv) : null
+      if (shape === null) {
+        conflicts.push(id)
+        continue
+      }
+      pick = shape
+      both.add(id)
+    } else if (alive(tv) !== alive(mv)) pick = alive(tv) ? tv : mv // an edit beats a delete
     else {
-      pick = newer(tv, mv)
-      if (alive(tv)) clashed.add(id)
+      pick = newer(tv as Element, mv as Element)
+      both.add(id)
+      clashes++
     }
     if (pick !== undefined) merged.set(id, pick)
   }
 
-  // A clashing shape keeps every binding either side gave it, as long as the bound element survived.
-  for (const id of clashed) {
+  if (conflicts.length > 0) return { conflicts }
+
+  // A shape both sides edited keeps every binding either side gave it ('newest'), or the ones `mergeShape` chose
+  // ('per-property'), as long as the bound element survived.
+  for (const id of both) {
     const pick = merged.get(id) as Element
-    const bindings = unionBindings(t.get(id)?.boundElements, m.get(id)?.boundElements).filter((x) => alive(merged.get(x.id as string)))
+    const kept = rule === 'newest' ? unionBindings(t.get(id)?.boundElements, m.get(id)?.boundElements) : unionBindings(pick.boundElements, null)
+    const bindings = kept.filter((x) => alive(merged.get(x.id as string)))
     merged.set(id, { ...pick, boundElements: bindings.length > 0 ? bindings : null })
   }
 
@@ -157,6 +278,15 @@ export function mergeBoards(baseText: string, theirsText: string, mineText: stri
   if (elements.every((e) => typeof e.index === 'string')) {
     elements = elements.sort((x, y) => (x.index === y.index ? (x.id < y.id ? -1 : 1) : (x.index as string) < (y.index as string) ? -1 : 1))
   }
+  return { elements, clashes }
+}
+
+export function mergeBoards(baseText: string, theirsText: string, mineText: string): BoardMerge | null {
+  const base = parseScene(baseText)
+  const theirs = parseScene(theirsText)
+  const mine = parseScene(mineText)
+  if (base === null || theirs === null || mine === null) return null
+  const { elements, clashes } = mergeElements(base.elements, theirs.elements, mine.elements, 'newest')
 
   // The rest of the top level, per key — without the parts merged on their own (and without stringifying every shape again).
   const rest = ({ elements: _e, appState: _a, files: _f, [BOARD_META_KEY]: _m, ...other }: Scene): Record<string, unknown> => other
@@ -165,7 +295,7 @@ export function mergeBoards(baseText: string, theirsText: string, mineText: stri
   const doc: Record<string, unknown> = { ...(meta === null ? {} : { [BOARD_META_KEY]: meta }), ...top, elements }
   if ('appState' in mine || 'appState' in theirs) doc.appState = mergeRecord(recordOf(base.appState), recordOf(theirs.appState), recordOf(mine.appState))
   if ('files' in mine || 'files' in theirs) doc.files = { ...recordOf(theirs.files), ...recordOf(mine.files) }
-  return { json: `${JSON.stringify(doc, null, 2)}\n`, clashes: clashed.size }
+  return { json: `${JSON.stringify(doc, null, 2)}\n`, clashes }
 }
 
 /**

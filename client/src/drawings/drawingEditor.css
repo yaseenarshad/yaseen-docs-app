@@ -30,7 +30,7 @@
 }
 
 /* Whatever the surface mounts fills the frame — an engine container measures its parent. */
-.drawing-editor__canvas > div {
+.drawing-editor__canvas > div:not(.outside-update-chip) {
   width: 100%;
   height: 100%;
 }

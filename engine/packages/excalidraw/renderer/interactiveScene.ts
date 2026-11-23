@@ -1031,6 +1031,7 @@ type ElementSelectionBorder = {
   cy: number;
   activeEmbeddable: boolean;
   padding?: number;
+  strokeWidth?: number;
 };
 
 const renderSelectionBorder = (
@@ -1062,7 +1063,7 @@ const renderSelectionBorder = (
 
   context.save();
   context.translate(appState.scrollX, appState.scrollY);
-  context.lineWidth = (activeEmbeddable ? 4 : 1) / appState.zoom.value;
+  context.lineWidth = (elementProperties.strokeWidth ?? (activeEmbeddable ? 4 : 1)) / appState.zoom.value;
 
   const count = selectionColors.length;
   for (let index = 0; index < count; ++index) {
@@ -1866,6 +1867,7 @@ const _renderInteractiveScene = ({
 
       for (const element of elementsMap.values()) {
         const selectionColors = [];
+        let remoteStrokeWidth: number | undefined;
         const remoteClients = renderConfig.remoteSelectedElementIds.get(
           element.id,
         );
@@ -1890,11 +1892,16 @@ const _renderInteractiveScene = ({
           if (remoteClients) {
             selectionColors.push(
               ...remoteClients.map((socketId) => {
-                const background = getClientColor(
-                  socketId,
-                  appState.collaborators.get(socketId),
-                );
-                return background;
+                const collab = appState.collaborators.get(socketId) as
+                  | (typeof appState.collaborators extends Map<any, infer V> ? V & { strokeWidth?: number } : any)
+                  | undefined;
+                if (typeof collab?.strokeWidth === "number") {
+                  remoteStrokeWidth = Math.max(remoteStrokeWidth ?? 0, collab.strokeWidth);
+                }
+                if (typeof collab?.color?.stroke === "string") {
+                  return collab.color.stroke;
+                }
+                return getClientColor(socketId, collab);
               }),
             );
           }
@@ -1922,7 +1929,10 @@ const _renderInteractiveScene = ({
               element.id === appState.croppingElementId ||
               isImageElement(element)
                 ? 0
+                : remoteStrokeWidth !== undefined
+                ? 6
                 : undefined,
+            strokeWidth: remoteStrokeWidth,
           });
         }
       }

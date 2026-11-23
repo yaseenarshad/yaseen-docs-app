@@ -64,6 +64,8 @@ let root: Root | null = null
 let container: HTMLElement
 /** Everything the host posted into the iframe, parsed. */
 let posted: Array<Record<string, unknown>> = []
+/** How the fake draw.io answers a `yaseenMerge` (YAZ-4279): merged (after its own `autosave`), a clash, or not at all. */
+let mergeReply: 'merged' | 'conflict' | 'none' = 'merged'
 
 function render(darkColors: DiagramDarkColors = 'adapt'): void {
   act(() => root?.render(<DrawioEditor root={ROOT} path={PATH} watch={watch} darkColors={darkColors} onNotice={notice} />))
@@ -82,7 +84,22 @@ const frame = (): HTMLIFrameElement | null => container.querySelector('iframe')
 function tapFrame(): void {
   const win = frame()?.contentWindow
   if (!win) throw new Error('no iframe')
-  Object.defineProperty(win, 'postMessage', { configurable: true, value: (data: string, origin: string) => posted.push({ ...(JSON.parse(data) as Record<string, unknown>), _origin: origin }) })
+  Object.defineProperty(win, 'postMessage', {
+    configurable: true,
+    value: (data: string, origin: string) => {
+      const msg = JSON.parse(data) as Record<string, unknown>
+      posted.push({ ...msg, _origin: origin })
+      if (msg.action !== 'yaseenMerge' || mergeReply === 'none') return
+      const reply = mergeReply
+      queueMicrotask(() => {
+        if (reply === 'conflict') return drawio({ event: 'yaseenMerge', id: msg.id, conflict: true })
+        // The overlay says the merge begins; draw.io's model listener posts the page on screen inside it; the answer has the whole file.
+        drawio({ event: 'yaseenMerging', id: msg.id })
+        drawio({ event: 'autosave', xml: `${String(msg.xml)}<!--merged-->` })
+        drawio({ event: 'yaseenMerge', id: msg.id, xml: `${String(msg.xml)}<!--merged--><!--every page-->` })
+      })
+    },
+  })
 }
 
 /** draw.io speaking: a JSON string, from the iframe's window, from the drawio origin (unless told otherwise). */
@@ -114,6 +131,7 @@ async function appTheme(theme: 'light' | 'dark'): Promise<void> {
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   posted = []
+  mergeReply = 'merged'
   Object.defineProperty(window, 'yaseenDocs', {
     configurable: true,
     writable: true,
@@ -323,20 +341,142 @@ describe('saving', () => {
 })
 
 describe('changes on disk', () => {
-  it('a CLEAN tab reloads the disk into draw.io, keeping the page and the view; its answer is the new baseline, not an edit', async () => {
+  it('YAZ-4279 item 1: a CLEAN tab MERGES the disk (draw.io keeps undo, the selection and the view); draw.io\'s autosave of it is the baseline, not an edit', async () => {
     await opened()
     load.mockResolvedValue({ path: PATH, xml: EDITED, mtime: 300, size: 1 })
     watcherSaw({ type: 'change', path: PATH, mtime: 300 })
     await settle()
-    // YAZ-3420 D2: our PostConfig.js keeps the page, the zoom and the scroll for this load.
-    expect(posted.at(-1)).toMatchObject({ action: 'load', xml: EDITED, yaseenKeepView: true })
-    drawio({ event: 'load', xml: EDITED })
+    await settle()
+    expect(posted.filter((m) => m.action === 'yaseenMerge')).toEqual([{ action: 'yaseenMerge', id: 1, base: XML, xml: EDITED, glow: 'until-checked', _origin: DRAWIO_ORIGIN }])
+    expect(posted.some((m) => m.action === 'load' && m.xml === EDITED)).toBe(false)
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    expect(save).not.toHaveBeenCalled()
     drawio({ event: 'autosave', xml: `${EDITED} ` })
     await act(async () => {
       vi.advanceTimersByTime(600)
     })
     await settle()
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ expectedMtime: 300 }))
+  })
+
+  it('a clean merge draw.io refuses falls back to the load that keeps the page and the view (YAZ-3420 D2)', async () => {
+    await opened()
+    mergeReply = 'conflict'
+    load.mockResolvedValue({ path: PATH, xml: EDITED, mtime: 300, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await settle()
+    await settle()
+    expect(posted.at(-1)).toMatchObject({ action: 'load', xml: EDITED, yaseenKeepView: true })
+  })
+
+  it('YAZ-4279 D2: unsaved edits meet a newer file: merged in draw.io, no bar, and the merge saves against the new mtime', async () => {
+    await opened()
+    drawio({ event: 'autosave', xml: EDITED })
+    load.mockResolvedValue({ path: PATH, xml: `${XML}<!--ai-->`, mtime: 300, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await settle()
+    await settle()
+    expect(posted.filter((m) => m.action === 'yaseenMerge')).toEqual([{ action: 'yaseenMerge', id: 1, base: XML, xml: `${XML}<!--ai-->`, glow: 'until-checked', _origin: DRAWIO_ORIGIN }])
+    expect(text()).not.toContain('File changed on disk.')
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    await settle()
+    // 4A-3: the save writes the whole merged file the answer carried, not only draw.io's page on screen.
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ expectedMtime: 300, xml: `${XML}<!--ai--><!--merged--><!--every page-->` }))
+  })
+
+  it('YAZ-4279 D4: a clash in draw.io is the bar; Reload from the bar puts the disk back with a load, never a merge', async () => {
+    await opened()
+    mergeReply = 'conflict'
+    drawio({ event: 'autosave', xml: EDITED })
+    load.mockResolvedValue({ path: PATH, xml: `${XML}<!--ai-->`, mtime: 300, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await settle()
+    await settle()
+    expect(text()).toContain('File changed on disk.')
+    const merges = posted.filter((m) => m.action === 'yaseenMerge').length
+    await act(async () => [...container.querySelectorAll('button')].find((b) => b.textContent === 'Reload')!.click())
+    await settle()
+    expect(posted.filter((m) => m.action === 'yaseenMerge')).toHaveLength(merges)
+    expect(posted.at(-1)).toMatchObject({ action: 'load', xml: `${XML}<!--ai-->` })
+  })
+
+  it('4A-1: a label typed while draw.io waits to merge (a clean tab then) is kept: it saves with the merge', async () => {
+    await opened()
+    mergeReply = 'none'
+    load.mockResolvedValue({ path: PATH, xml: `${XML}<!--ai-->`, mtime: 300, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await settle()
+    await settle()
+    const ask = posted.filter((m) => m.action === 'yaseenMerge').at(-1)!
+    // The label ends: draw.io posts it, then the overlay begins the merge.
+    drawio({ event: 'autosave', xml: `${XML}<!--label-->` })
+    drawio({ event: 'yaseenMerging', id: ask.id })
+    drawio({ event: 'autosave', xml: `${XML}<!--label--><!--ai-->` })
+    drawio({ event: 'yaseenMerge', id: ask.id, xml: `${XML}<!--label--><!--ai-->` })
+    await settle()
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    await settle()
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ expectedMtime: 300, xml: `${XML}<!--label--><!--ai-->` }))
+  })
+
+  it('4A-2: an answer to another request is not this one\'s; a burst asks one at a time, then once more for the latest', async () => {
+    await opened()
+    mergeReply = 'none'
+    load.mockResolvedValue({ path: PATH, xml: `${XML}<!--1-->`, mtime: 300, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await settle()
+    await settle()
+    load.mockResolvedValue({ path: PATH, xml: `${XML}<!--2-->`, mtime: 310, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 310 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 320 })
+    await settle()
+    expect(posted.filter((m) => m.action === 'yaseenMerge')).toHaveLength(1)
+    drawio({ event: 'yaseenMerge', id: 99, conflict: true }) // not this request's
+    await settle()
+    expect(text()).not.toContain('File changed on disk.')
+    drawio({ event: 'yaseenMerging', id: 1 })
+    drawio({ event: 'yaseenMerge', id: 1, xml: `${XML}<!--1-->` })
+    await settle()
+    await settle()
+    expect(posted.filter((m) => m.action === 'yaseenMerge').map((m) => m.xml)).toEqual([`${XML}<!--1-->`, `${XML}<!--2-->`])
+  })
+
+  it('item 10: a clash keeps the bar; a later outside save that merges takes it down', async () => {
+    await opened()
+    mergeReply = 'conflict'
+    drawio({ event: 'autosave', xml: EDITED })
+    load.mockResolvedValue({ path: PATH, xml: `${XML}<!--ai-->`, mtime: 300, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 300 })
+    await settle()
+    await settle()
+    expect(text()).toContain('File changed on disk.')
+    mergeReply = 'merged'
+    load.mockResolvedValue({ path: PATH, xml: `${XML}<!--ai2-->`, mtime: 400, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await settle()
+    await settle()
+    expect(text()).not.toContain('File changed on disk.')
+  })
+
+  it('after a save, the merge\'s base is what the save wrote', async () => {
+    await opened()
+    drawio({ event: 'autosave', xml: EDITED })
+    await act(async () => {
+      vi.advanceTimersByTime(600)
+    })
+    await settle()
+    drawio({ event: 'autosave', xml: `${EDITED}<!--more-->` })
+    load.mockResolvedValue({ path: PATH, xml: XML, mtime: 400, size: 1 })
+    watcherSaw({ type: 'change', path: PATH, mtime: 400 })
+    await settle()
+    await settle()
+    expect(posted.filter((m) => m.action === 'yaseenMerge').at(-1)).toMatchObject({ base: EDITED })
   })
 })
 
@@ -386,10 +526,24 @@ describe('read only (YAZ-3076 D2)', () => {
 })
 
 describe("the cog on a diagram (YAZ-3943 D13: the drawing's rows are a drawing's only)", () => {
-  it('YAZ-4748 D10: has "Read only", then "Link preview on hover": no pictures row, no export rows', async () => {
+  it('YAZ-4748 D10: has "Read only", then "Link preview on hover", then "Reload from disk": no pictures row, no export rows', async () => {
     await opened()
     act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
-    expect([...(menuIn(container)?.querySelectorAll(':scope > *') ?? [])].map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓'])
+    expect([...(menuIn(container)?.querySelectorAll(':scope > *') ?? [])].map((r) => r.textContent)).toEqual(['Read only', 'Link preview on hover✓', '', 'Reload from disk'])
+  })
+
+  it('YAZ-4279 item 6: Reload from disk reloads the diagram and shows a notice', async () => {
+    await opened()
+    load.mockResolvedValue({ path: PATH, xml: EDITED, mtime: 300, size: 1 })
+    act(() => container.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
+    const reloadRow = [...(menuIn(container)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])].find((b) => b.textContent === 'Reload from disk')!
+    await act(async () => {
+      reloadRow.click()
+      await Promise.resolve()
+    })
+    await settle()
+    expect(posted).toContainEqual(expect.objectContaining({ action: 'load', xml: EDITED, yaseenKeepView: true }))
+    expect(notice).toHaveBeenCalledWith('Reloaded from disk.')
   })
 })
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mergeBoards } from '@shared/boardMerge'
+import { mergeBoards, mergeElements, same, sameShape } from '@shared/boardMerge'
 import { boardFoldArrowsOf, boardHoverOutlineOf, hoverLinksOff, picturesOut, withBoardFoldArrows, withBoardHoverOutline, withHoverLinks, withPicturesOut } from '@shared/drawingAssets'
 import { isDrawingReadOnly, withDrawingReadOnly } from '@shared/readOnly'
 
@@ -283,5 +283,160 @@ describe('mergeBoards — the switches of the yaseendraw block (YAZ-3943 1E): th
     // One ID on both sides, or on one side only: nothing to keep.
     expect(blockOf(base, a, scene({ createdAt: 1, updatedAt: 6, id: 'DEM-5' }))).toEqual({ createdAt: 1, updatedAt: 6, id: 'DEM-5' })
     expect(blockOf(base, a, scene({ createdAt: 1, updatedAt: 6 }))).toEqual({ createdAt: 1, updatedAt: 6, id: 'DEM-5' })
+  })
+})
+
+/** An outside edit the way an AI makes one: a property changed, the engine's stamps left as they were. */
+const set = (e: El, over: Partial<El>): El => ({ ...e, ...over })
+const open = (base: El[], theirs: El[], mine: El[]) => mergeElements(base, theirs, mine, 'per-property') as { elements?: El[]; clashes?: number; conflicts?: string[] }
+const byIdOf = (els: El[] | undefined, id: string) => els?.find((e) => e.id === id)
+
+describe('mergeElements — an open board (YAZ-4279 D4: per property, never a silent loss)', () => {
+  it('different properties of one shape from the two sides are both kept', () => {
+    const out = open([r1], [set(r1, { strokeColor: 'red' })], [edit(r1, 40)])
+    expect(byIdOf(out?.elements, '1')).toMatchObject({ x: 40, strokeColor: 'red' })
+    expect(out?.clashes).toBe(0)
+  })
+
+  it('one property changed to different values on both sides is for the user: the clash names the shape', () => {
+    expect(open([r1], [set(r1, { x: 7 })], [edit(r1, 40)])).toEqual({ conflicts: ['1'] })
+  })
+
+  it('a delete against an edit is for the user; a delete against no change stays deleted', () => {
+    expect(open([r1], [del(r1)], [edit(r1, 40)])).toEqual({ conflicts: ['1'] })
+    expect(open([r1, r2], [r2], [edit(r1, 40), edit(r2, 9)])).toEqual({ conflicts: ['1'] })
+    expect(byIdOf(open([r1, r2], [r1, del(r2)], [edit(r1, 40), r2])?.elements, '2')?.isDeleted).toBe(true)
+  })
+
+  it('shapes added on each side are both kept; one id added with two contents is for the user', () => {
+    expect(open([r1], [r1, shape('t')], [r1, shape('m')])?.elements?.map((e) => e.id).sort()).toEqual(['1', 'm', 't'])
+    expect(open([r1], [r1, shape('n', { x: 1 })], [r1, shape('n', { x: 2 })])).toEqual({ conflicts: ['n'] })
+  })
+
+  it('a change of the stamps alone is no change: the engine bumps them on load, an AI never does', () => {
+    const bumped = { ...r1, version: 9, versionNonce: 77, updated: 9999 }
+    const out = open([r1], [set(r1, { strokeColor: 'red' })], [bumped])
+    expect(byIdOf(out?.elements, '1')).toMatchObject({ strokeColor: 'red' })
+  })
+
+  it('bindings: both sides\' new arrows are kept, minus an arrow that is gone; one side\'s unbind is kept', () => {
+    const box = shape('b', { boundElements: [{ id: 'a0', type: 'arrow' }] })
+    const [a0, a1, a2] = [shape('a0', { type: 'arrow' }), shape('a1', { type: 'arrow' }), shape('a2', { type: 'arrow' })]
+    const both = open(
+      [box, a0],
+      [set(box, { boundElements: [{ id: 'a0', type: 'arrow' }, { id: 'a1', type: 'arrow' }] }), a0, a1],
+      [set(box, { boundElements: [{ id: 'a0', type: 'arrow' }, { id: 'a2', type: 'arrow' }] }), del(a0), a2],
+    )
+    expect((byIdOf(both?.elements, 'b')?.boundElements as { id: string }[]).map((x) => x.id)).toEqual(['a1', 'a2'])
+    const unbound = open([box, a0], [set(box, { boundElements: null }), a0], [edit(box, 40), a0])
+    expect(byIdOf(unbound?.elements, 'b')).toMatchObject({ x: 40, boundElements: null })
+  })
+
+  it('a property one side removed is removed', () => {
+    const linked = shape('1', { link: 'https://a.test' })
+    const { link: _l, ...unlinked } = linked
+    expect(byIdOf(open([linked], [unlinked as El], [edit(linked, 40)])?.elements, '1')).not.toHaveProperty('link')
+  })
+
+  it('item 2: foldedLines + foldedLineTexts merge as one atomic pair', () => {
+    const txt = shape('t1', { type: 'text', text: 'a\nb\nc', foldedLines: [0], foldedLineTexts: ['b'] })
+
+    // Only theirs changed fold pair, mine moved x -> takes BOTH fold keys from theirs
+    const theirsOnly = open([txt], [set(txt, { foldedLines: [0, 1], foldedLineTexts: ['b', 'c'] })], [edit(txt, 40)])
+    expect(byIdOf(theirsOnly?.elements, 't1')).toMatchObject({ x: 40, foldedLines: [0, 1], foldedLineTexts: ['b', 'c'] })
+
+    // Only theirs unfolded (removed both keys), mine moved x -> removes BOTH fold keys
+    const { foldedLines: _fl, foldedLineTexts: _flt, ...unfolded } = txt
+    const theirsUnfolded = open([txt], [unfolded as El], [edit(txt, 40)])
+    const elUnfolded = byIdOf(theirsUnfolded?.elements, 't1')
+    expect(elUnfolded).toMatchObject({ x: 40 })
+    expect(elUnfolded).not.toHaveProperty('foldedLines')
+    expect(elUnfolded).not.toHaveProperty('foldedLineTexts')
+
+    // Only mine changed fold pair, theirs changed strokeColor -> keeps BOTH fold keys from mine
+    const mineOnly = open([txt], [set(txt, { strokeColor: 'red' })], [set(txt, { foldedLines: [1], foldedLineTexts: ['c'] })])
+    expect(byIdOf(mineOnly?.elements, 't1')).toMatchObject({ strokeColor: 'red', foldedLines: [1], foldedLineTexts: ['c'] })
+
+    // Both sides changed fold pair to different values -> conflict
+    expect(
+      open([txt], [set(txt, { foldedLines: [0, 1], foldedLineTexts: ['b', 'c'] })], [set(txt, { foldedLines: [1], foldedLineTexts: ['c'] })]),
+    ).toEqual({ conflicts: ['t1'] })
+
+    // Disjoint keys within the pair (theirs changed foldedLines, mine changed foldedLineTexts) -> still a conflict!
+    expect(
+      open([txt], [set(txt, { foldedLines: [0, 1] })], [set(txt, { foldedLineTexts: ['x'] })]),
+    ).toEqual({ conflicts: ['t1'] })
+
+    // Both sides converged to the same fold pair while editing other disjoint props -> clean merge
+    const samePair = open(
+      [txt],
+      [set(txt, { strokeColor: 'blue', foldedLines: [1], foldedLineTexts: ['c'] })],
+      [set(txt, { x: 25, foldedLines: [1], foldedLineTexts: ['c'] })],
+    )
+    expect(byIdOf(samePair?.elements, 't1')).toMatchObject({ x: 25, strokeColor: 'blue', foldedLines: [1], foldedLineTexts: ['c'] })
+  })
+})
+
+describe('mergeBoards — the engine\'s stamps (YAZ-4279 D1)', () => {
+  it('a side whose only change is a version bump never wins over a real edit of the other side', () => {
+    const bumped = { ...r1, version: 9, updated: 9000 }
+    const m = merge([r1], [bumped], [edit(r1, 13, 1500)])
+    expect(m.get('1')?.x).toBe(13)
+    expect(m.clashes).toBe(0)
+  })
+})
+
+describe('mergeElements — large-board performance & fast equality (YAZ-4279 item 8)', () => {
+  it('same and sameShape preserve key-order independence, undefined-key omission, and stamp ignoring', () => {
+    expect(same({ a: 1, b: { c: 2, d: 3 } }, { b: { d: 3, c: 2 }, a: 1 })).toBe(true)
+    expect(same({ a: 1, b: undefined }, { a: 1 })).toBe(true)
+    expect(same({ a: 1 }, { a: 1, b: null })).toBe(false)
+    expect(same([1, { x: 2, y: 3 }], [1, { y: 3, x: 2 }])).toBe(true)
+    expect(same([1, 2], { 0: 1, 1: 2 })).toBe(false)
+
+    const s1 = shape('1', { x: 10, version: 1, versionNonce: 11, updated: 100, seed: 5 })
+    const s2 = shape('1', { x: 10, version: 9, versionNonce: 99, updated: 999, seed: 42 })
+    expect(sameShape(s1, s2)).toBe(true)
+    expect(sameShape(s1, { ...s2, x: 11 })).toBe(false)
+    expect(sameShape(undefined, undefined)).toBe(true)
+    expect(sameShape(s1, undefined)).toBe(false)
+  })
+
+  it('merges 1,500 shapes in under 50 ms', () => {
+    const count = 1500
+    const base: El[] = []
+    for (let i = 0; i < count; i++) {
+      base.push(
+        shape(`el-${i}`, {
+          x: i * 10,
+          y: i * 5,
+          width: 120,
+          height: 60,
+          strokeColor: '#1e1e1e',
+          backgroundColor: 'transparent',
+          roughness: 1,
+          opacity: 100,
+          index: `a${String(i).padStart(5, '0')}`,
+          boundElements: i % 10 === 0 ? [{ id: `el-${i + 1}`, type: 'arrow' }] : null,
+        }),
+      )
+    }
+    // Clone with bumped stamps on live and a handful of edits on each side
+    const theirs = base.map((e, i) => (i % 100 === 0 ? { ...e, strokeColor: '#ff0000' } : { ...e }))
+    const mine = base.map((e, i) => (i % 100 === 50 ? { ...e, x: (e.x as number) + 25, version: 2, updated: 2000 } : { ...e, version: 2, versionNonce: 99, updated: 2000 }))
+
+    // Warm up JIT slightly, then time
+    mergeElements(base, theirs, mine, 'per-property')
+    const t0 = performance.now()
+    const out = mergeElements(base, theirs, mine, 'per-property')
+    const elapsed = performance.now() - t0
+
+    expect('elements' in out).toBe(true)
+    if ('elements' in out) {
+      expect(out.elements).toHaveLength(count)
+      expect(out.elements[0]?.strokeColor).toBe('#ff0000')
+      expect(out.elements[50]?.x).toBe(50 * 10 + 25)
+    }
+    expect(elapsed).toBeLessThan(50)
   })
 })

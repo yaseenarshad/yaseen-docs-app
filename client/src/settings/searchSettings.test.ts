@@ -101,9 +101,11 @@ describe('settingCandidates', () => {
       'tocLines',
       // Settings › Editor › Find (YAZ-4787).
       'findFolds',
-      // Settings › Editor › Outside changes (YAZ-3704 D5).
+      // Settings › Editor › Outside changes (YAZ-3704 D5, YAZ-6398).
       'outsideChangeGlow',
       'outsideListPinned',
+      'outsideOutlineThickness',
+      'outsideOutlineColors',
       // Settings › Editor › Code blocks › Width (YAZ-4783 layer 3).
       'codeBlockWidth',
       // Settings › Tables, a page of its own after Editor (YAZ-4775); its "All tables" group (YAZ-4167 D16, YAZ-4162 D6,

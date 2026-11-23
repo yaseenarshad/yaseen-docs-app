@@ -43,6 +43,9 @@ import {
   type NewPageDrawing,
   type NewTabPlace,
   OUTSIDE_CHANGE_GLOWS,
+  OUTSIDE_OUTLINE_THICKNESSES,
+  type OutsideOutlineColors,
+  type OutsideOutlineThickness,
   FIND_FOLDS,
   ALL_NOTES_OPENS_AT,
   TABLE_NOW_MARKS,
@@ -762,6 +765,12 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
   findFolds: (v): v is FindFolds => typeof v === 'string' && (FIND_FOLDS as readonly string[]).includes(v),
   outsideChangeGlow: (v): v is OutsideChangeGlow => typeof v === 'string' && (OUTSIDE_CHANGE_GLOWS as readonly string[]).includes(v),
+  outsideOutlineThickness: (v): v is OutsideOutlineThickness => typeof v === 'string' && (OUTSIDE_OUTLINE_THICKNESSES as readonly string[]).includes(v),
+  outsideOutlineColors: (v): v is OutsideOutlineColors =>
+    isRecord(v) &&
+    typeof v.added === 'string' && /^#[0-9a-fA-F]{6}$/.test(v.added) &&
+    typeof v.changed === 'string' && /^#[0-9a-fA-F]{6}$/.test(v.changed) &&
+    typeof v.clash === 'string' && /^#[0-9a-fA-F]{6}$/.test(v.clash),
   outsideListPinned: (v): v is boolean => typeof v === 'boolean',
   // YAZ-4783: "Text column" (`null`) or whole px in range; anything else falls back to Text column, the look before.
   codeBlockWidth: (v): v is number | null => v === null || isBlockWidth(v),

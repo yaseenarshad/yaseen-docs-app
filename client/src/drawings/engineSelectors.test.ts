@@ -15,6 +15,10 @@ import { describe, expect, it } from 'vitest'
  */
 const ENGINE_CLASSES: Record<string, [file: string, why: string]> = {
   excalidraw: ['drawings/drawingEditor.css', 'scopes every in-engine rule of the tab under it'],
+  // YAZ-4279 D5: the outlines are stand-in collaborators, so the engine's avatar list never shows.
+  UserList: ['drawings/outsideMarks.css', "hides the engine's avatar list: the outlines' stand-in collaborators are no people"],
+  UserList__wrapper: ['drawings/outsideMarks.css', 'the same list, its wrapper'],
+  'UserList-Wrapper': ['drawings/outsideMarks.css', "the phone-size main menu's Collaborators box (4A-15)"],
   'theme--dark': ['drawings/drawingEditor.css', 'the dark-mode parity rule'],
   'main-menu-trigger': ['drawings/drawingEditor.css', "hides the engine's own menu in a tab (the application menu has its items)"],
   // The canvas panel (YAZ-3038, Draw's pins).

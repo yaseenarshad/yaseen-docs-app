@@ -41,3 +41,5 @@ export const PICTURE_HINTS = {
 
 export const EXPORT_IMAGE_HINT: Hint = 'Saves a picture or a PDF of this drawing, to a place you pick.'
 export const EXPORT_DRAWING_HINT: Hint = 'Saves a copy of this drawing as an .excalidraw file, which Excalidraw can open.'
+export const RELOAD_DISK_HINT: Hint = 'Re-reads this file from disk, replacing what is on screen.'
+export const REPAIR_DRAWING_HINT: Hint = 'Removes deleted tombstones, fixes broken bindings, re-measures text, and saves this drawing.'

@@ -13,7 +13,7 @@
  *   a sibling tab of the same `.md` page updates quietly without conflict.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import type { CanvasPanelState, CanvasPrefs, FoldArrowMode, PageView } from '@shared/types'
+import type { CanvasPanelState, CanvasPrefs, FoldArrowMode, OutsideChangeGlow, OutsideOutlineColors, OutsideOutlineThickness, PageView } from '@shared/types'
 import { missingPicturesNotice, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { compactInlineScene, drawingTitleOf, findInlineDrawings, inlineDrawingBlock, withDrawingTitle } from '@shared/inlineDrawing'
@@ -34,10 +34,13 @@ import { CardPreviewHost } from '../tabs/cardPreview'
 import { vaultUnit } from '../vault/unitWord'
 import { drawingCogRows } from './DrawingEditor'
 import { openInlineDrawing, type DrawingScene } from './drawingScene'
+import type { SceneSide } from './mergeScene'
+import { sideOf, takeFromDisk } from './takeFromDisk'
 import { exportFileName } from './exportDrawing'
 import { ExcalidrawSurface, type DrawingSnapshot, type DrawingSurfaceApi } from './ExcalidrawSurface'
 import { pressed } from './drawingKeys'
 import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
+import { useOutsideUpdateChip } from './useOutsideUpdateChip'
 import './drawingEditor.css'
 
 const EXPORT_FAILED = "The drawing couldn't be exported."
@@ -101,6 +104,12 @@ export interface InlineDrawingTabProps extends DocumentHostProps, DrawingLinkPro
   onNotice?: (text: string, icon?: NoticeKind) => void
   hotkeys?: HotkeyOverrides
   hotkeysAside?: HotkeyAside
+  /** Settings › Outside changes › Glow (YAZ-4279 D5): how long a shape the file changed stays outlined. Absent → until checked. */
+  outsideChangeGlow?: OutsideChangeGlow
+  /** Settings › Outside changes › Board border thickness (YAZ-6398). */
+  outsideOutlineThickness?: OutsideOutlineThickness
+  /** Settings › Outside changes › Board border colors (YAZ-6398). */
+  outsideOutlineColors?: OutsideOutlineColors
   startView?: PageView
 }
 
@@ -137,12 +146,17 @@ function InlineDrawingHost({
   hotkeysAside,
   onFailed,
   startView,
+  outsideChangeGlow = 'until-checked',
+  outsideOutlineThickness,
+  outsideOutlineColors,
   ...linkProps
 }: InlineDrawingHostProps) {
   const theme = useAppliedTheme()
   const snapshot = useRef<DrawingSnapshot | null>(null)
   const surface = useRef<DrawingSurfaceApi | null>(null)
+  const { onOutsideChange, clearChip: clearOutsideChip, chip: outsideChip } = useOutsideUpdateChip(surface, outsideChangeGlow)
   const reloadedTo = useRef<number | null>(null)
+  const base = useRef<SceneSide | string>(sideOf(loaded.scene))
   const persisted = useRef(new Set(loaded.stored))
   const pageContentRef = useRef(loaded.pageContent)
   const keepMineRef = useRef(false)
@@ -190,12 +204,15 @@ function InlineDrawingHost({
       const res = await trackFileWrite(
         announcedWrite(path, () => api.writeFile({ path, content: nextPage, expectedMtime, quiet: true })),
       )
+      base.current = json
       pageContentRef.current = nextPage
       return res
     },
     onKeepMine: () => {
       persisted.current = new Set()
       keepMineRef.current = true
+      clearOutsideChip()
+      surface.current?.clash([])
     },
     reload: async (a) => {
       const s = surface.current
@@ -203,21 +220,44 @@ function InlineDrawingHost({
       try {
         const doc = await loadInlineDocument(root, path, index)
         reloadedTo.current = doc.mtime
-        persisted.current = new Set(doc.stored)
-        pageContentRef.current = doc.pageContent
-        drawingTitleRef.current = doc.title
-        setDrawingTitle(doc.title)
-        const nextSettings = { hoverLinksOff: doc.scene.hoverLinksOff === true, foldArrows: doc.scene.foldArrows, hoverOutline: doc.scene.hoverOutline }
-        settingsRef.current = nextSettings
-        setHoverLinksOff(nextSettings.hoverLinksOff)
-        setBoardFoldArrows(nextSettings.foldArrows)
-        setBoardHoverOutline(nextSettings.hoverOutline)
+        tookFile(doc)
+        clearOutsideChip()
         a.reset(s.replaceScene(doc.scene) + titleVersionRef.current, doc.mtime)
         return doc.readOnly
       } catch (err) {
         reloadedTo.current = null
         throw err
       }
+    },
+    merge: async (a) => {
+      const s = surface.current
+      if (s === null) return 'conflict'
+      const file = await api.readFile(path)
+      const block = findInlineDrawings(splitFrontmatter(file.content).body)[index]
+      if (block === undefined) return 'conflict'
+      const next = await openInlineDrawing(root, block.json, path)
+      const nextReadOnly = isPageReadOnly(file.content)
+      const scene: DrawingScene = { ...next.scene, readOnly: nextReadOnly }
+      const answer = await takeFromDisk({
+        surface: s,
+        autosave: a,
+        base: base.current,
+        disk: { scene, mtime: file.mtime },
+        readOnly: readOnlyRef.current,
+        glow: outsideChangeGlow,
+        baselineAt: (mtime) => (reloadedTo.current = mtime),
+      })
+      if (answer === 'merged') {
+        tookFile({
+          scene,
+          mtime: file.mtime,
+          stored: next.stored,
+          readOnly: nextReadOnly,
+          pageContent: file.content,
+          title: drawingTitleOf(block.drawingLine),
+        })
+      }
+      return answer
     },
     onCommand: (command) => {
       const s = surface.current
@@ -229,6 +269,18 @@ function InlineDrawingHost({
     onShown: () => surface.current?.refresh(),
     focus: () => surface.current?.focus(),
   })
+  function tookFile(doc: LoadedInlineDocument): void {
+    base.current = sideOf(doc.scene)
+    persisted.current = new Set(doc.stored)
+    pageContentRef.current = doc.pageContent
+    drawingTitleRef.current = doc.title
+    setDrawingTitle(doc.title)
+    const nextSettings = { hoverLinksOff: doc.scene.hoverLinksOff === true, foldArrows: doc.scene.foldArrows, hoverOutline: doc.scene.hoverOutline }
+    settingsRef.current = nextSettings
+    setHoverLinksOff(nextSettings.hoverLinksOff)
+    setBoardFoldArrows(nextSettings.foldArrows)
+    setBoardHoverOutline(nextSettings.hoverOutline)
+  }
   const { autosave, start, chips, readOnly, reload } = board
   const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path, readOnly, hotkeys, onNotice, hostRef: board.hostRef, props: { ...linkProps, hoverLinks: linkProps.hoverLinks === true && !hoverLinksOff } })
 
@@ -458,7 +510,11 @@ function InlineDrawingHost({
           onExportPdf={exportPdf}
           foldArrows={boardFoldArrows}
           hoverOutline={boardHoverOutline}
+          onOutsideChange={onOutsideChange}
+          outsideOutlineThickness={outsideOutlineThickness}
+          outsideOutlineColors={outsideOutlineColors}
         />
+        {outsideChip}
       </div>
       <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={linkProps.previewScope} diagramDarkColors={linkProps.diagramDarkColors ?? 'adapt'} />
     </div>

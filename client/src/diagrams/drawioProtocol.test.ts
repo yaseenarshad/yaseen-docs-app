@@ -172,6 +172,13 @@ describe('readDrawioMessage — only THAT iframe, only the drawio origin (🔒 Y
     expect(msg('{"event":"shortcut"}')).toBeNull()
   })
 
+  it('YAZ-4279: the overlay\'s yaseenMerging and yaseenMerge, each with its request\'s id: a conflict, or the merged file', () => {
+    expect(msg(JSON.stringify({ event: 'yaseenMerging', id: 3 }))).toEqual({ event: 'yaseenMerging', id: 3 })
+    expect(msg(JSON.stringify({ event: 'yaseenMerge', id: 3, conflict: true }))).toEqual({ event: 'yaseenMerge', id: 3, conflict: true })
+    expect(msg(JSON.stringify({ event: 'yaseenMerge', id: 3, xml: '<mxfile/>' }))).toEqual({ event: 'yaseenMerge', id: 3, xml: '<mxfile/>' })
+    expect(msg(JSON.stringify({ event: 'yaseenMerge', conflict: true }))).toBeNull()
+  })
+
   it('ignores another window, another origin, a missing frame, non-strings, junk and unknown events', () => {
     expect(msg('{"event":"init"}', { source: {} })).toBeNull()
     expect(msg('{"event":"init"}', { origin: 'app://yaseen' })).toBeNull()

@@ -1,0 +1,7 @@
+/* YAZ-4279 D5: the outlines of what changed outside are stand-in collaborators (`outsideMarks.ts`); the app has no real
+   ones, so the engine's avatar list never shows, nor the "Collaborators" box of its phone-size menu (4A-15). */
+.excalidraw .UserList__wrapper,
+.excalidraw .UserList,
+.excalidraw .UserList-Wrapper {
+  display: none;
+}

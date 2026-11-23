@@ -257,7 +257,7 @@
 
 /* Whatever the surface mounts fills the frame — its own element, and the engine container inside
    it, which measures its parent (the surface is shared with a drawing tab since YAZ-3028). */
-.drawing-modal__canvas > div,
+.drawing-modal__canvas > div:not(.outside-update-chip),
 .drawing-modal__canvas .drawing-surface > div {
   width: 100%;
   height: 100%;
