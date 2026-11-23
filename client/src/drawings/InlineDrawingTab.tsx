@@ -13,7 +13,7 @@
  *   a sibling tab of the same `.md` page updates quietly without conflict.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import type { CanvasPanelState, CanvasPrefs, PageView } from '@shared/types'
+import type { CanvasPanelState, CanvasPrefs, FoldArrowMode, PageView } from '@shared/types'
 import { missingPicturesNotice, picturesSize, unpersistedFiles } from '@shared/drawingAssets'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { compactInlineScene, drawingTitleOf, findInlineDrawings, inlineDrawingBlock, withDrawingTitle } from '@shared/inlineDrawing'
@@ -32,11 +32,11 @@ import { announcedWrite } from '../lib/twinEditors'
 import { trackFileWrite } from '../views/writeProperty'
 import { CardPreviewHost } from '../tabs/cardPreview'
 import { vaultUnit } from '../vault/unitWord'
+import { drawingCogRows } from './DrawingEditor'
 import { openInlineDrawing, type DrawingScene } from './drawingScene'
 import { exportFileName } from './exportDrawing'
 import { ExcalidrawSurface, type DrawingSnapshot, type DrawingSurfaceApi } from './ExcalidrawSurface'
 import { pressed } from './drawingKeys'
-import { EXPORT_DRAWING_HINT, EXPORT_IMAGE_HINT } from './cogHints'
 import { useDrawingLinks, type DrawingLinkProps } from './useDrawingLinks'
 import './drawingEditor.css'
 
@@ -150,6 +150,11 @@ function InlineDrawingHost({
   const drawingTitleRef = useRef(loaded.title)
   drawingTitleRef.current = drawingTitle
   const titleVersionRef = useRef(0)
+  const [hoverLinksOff, setHoverLinksOff] = useState(loaded.scene.hoverLinksOff === true)
+  const [boardFoldArrows, setBoardFoldArrows] = useState<FoldArrowMode | undefined>(loaded.scene.foldArrows)
+  const [boardHoverOutline, setBoardHoverOutline] = useState<boolean | undefined>(loaded.scene.hoverOutline)
+  const settingsRef = useRef({ hoverLinksOff, foldArrows: boardFoldArrows, hoverOutline: boardHoverOutline })
+  settingsRef.current = { hoverLinksOff, foldArrows: boardFoldArrows, hoverOutline: boardHoverOutline }
 
   useEffect(() => {
     const fallback = `${basename(path).replace(/\.md$/i, '')} · Drawing`
@@ -175,7 +180,7 @@ function InlineDrawingHost({
         const landed = await api.drawing.landAssets({ root, newFiles })
         for (const id of landed.persisted) persisted.current.add(id)
       }
-      const { json: compactJson } = compactInlineScene(json)
+      const { json: compactJson } = compactInlineScene(json, settingsRef.current)
       let baseContent = pageContentRef.current
       if (keepMineRef.current) {
         keepMineRef.current = false
@@ -202,6 +207,11 @@ function InlineDrawingHost({
         pageContentRef.current = doc.pageContent
         drawingTitleRef.current = doc.title
         setDrawingTitle(doc.title)
+        const nextSettings = { hoverLinksOff: doc.scene.hoverLinksOff === true, foldArrows: doc.scene.foldArrows, hoverOutline: doc.scene.hoverOutline }
+        settingsRef.current = nextSettings
+        setHoverLinksOff(nextSettings.hoverLinksOff)
+        setBoardFoldArrows(nextSettings.foldArrows)
+        setBoardHoverOutline(nextSettings.hoverOutline)
         a.reset(s.replaceScene(doc.scene) + titleVersionRef.current, doc.mtime)
         return doc.readOnly
       } catch (err) {
@@ -220,7 +230,7 @@ function InlineDrawingHost({
     focus: () => surface.current?.focus(),
   })
   const { autosave, start, chips, readOnly, reload } = board
-  const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path, readOnly, hotkeys, onNotice, hostRef: board.hostRef, props: linkProps })
+  const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path, readOnly, hotkeys, onNotice, hostRef: board.hostRef, props: { ...linkProps, hoverLinks: linkProps.hoverLinks === true && !hoverLinksOff } })
 
   const toldMissing = useRef(false)
   useEffect(() => {
@@ -299,17 +309,74 @@ function InlineDrawingHost({
     await exportWithNotice(async () => api.dialog.saveDrawing({ defaultName: exportFileName(base), content: await s.exportScene() }), EXPORT_FAILED, onNotice)
   }
 
-  const cogActions = useRef({ exportDrawing })
-  cogActions.current = { exportDrawing }
+  const bumpSetting = useCallback(() => {
+    titleVersionRef.current += 1
+    autosave.current?.update((snapshot.current?.version ?? 0) + titleVersionRef.current)
+    board.flush()
+  }, [autosave, board])
+
+  const setHoverLinks = useCallback(
+    (on: boolean) => {
+      if (readOnlyRef.current) return
+      const nextOff = !on
+      settingsRef.current = { ...settingsRef.current, hoverLinksOff: nextOff }
+      setHoverLinksOff(nextOff)
+      bumpSetting()
+    },
+    [bumpSetting],
+  )
+
+  const setFoldArrows = useCallback(
+    (value: 'app' | FoldArrowMode) => {
+      if (readOnlyRef.current) return
+      const next = value === 'app' ? undefined : value
+      settingsRef.current = { ...settingsRef.current, foldArrows: next }
+      setBoardFoldArrows(next)
+      bumpSetting()
+    },
+    [bumpSetting],
+  )
+
+  const setHoverOutline = useCallback(
+    (value: 'app' | boolean) => {
+      if (readOnlyRef.current) return
+      const next = value === 'app' ? undefined : value
+      settingsRef.current = { ...settingsRef.current, hoverOutline: next }
+      setBoardHoverOutline(next)
+      bumpSetting()
+    },
+    [bumpSetting],
+  )
+
+  const appFoldArrowsRef = useRef(canvasPrefs?.foldArrowsOpen)
+  appFoldArrowsRef.current = canvasPrefs?.foldArrowsOpen
+  const appHoverOutlineRef = useRef(canvasPrefs?.hoverOutline)
+  appHoverOutlineRef.current = canvasPrefs?.hoverOutline
+  const cogActions = useRef({ exportDrawing, setHoverLinks, setFoldArrows, setHoverOutline })
+  cogActions.current = { exportDrawing, setHoverLinks, setFoldArrows, setHoverOutline }
   useLayoutEffect(
     () =>
       chips.set({
-        pageRows: () => [
-          { label: 'Export Image or PDF…', hint: EXPORT_IMAGE_HINT, onToggle: () => surface.current?.openImageExport() },
-          { label: 'Export Excalidraw Drawing…', hint: EXPORT_DRAWING_HINT, onToggle: () => void cogActions.current.exportDrawing() },
-        ],
+        pageRows: () =>
+          drawingCogRows({
+            includeReadOnly: false,
+            pictures: { bytes: 0, count: 0 },
+            out: false,
+            readOnly,
+            onMovePictures: () => undefined,
+            onExportImage: () => surface.current?.openImageExport(),
+            onExportDrawing: () => void cogActions.current.exportDrawing(),
+            hoverLinks: !hoverLinksOff,
+            onHoverLinks: () => cogActions.current.setHoverLinks(hoverLinksOff),
+            foldArrows: boardFoldArrows ?? 'app',
+            onFoldArrows: (value) => cogActions.current.setFoldArrows(value),
+            appFoldArrows: appFoldArrowsRef.current,
+            hoverOutline: boardHoverOutline ?? 'app',
+            onHoverOutline: (value) => cogActions.current.setHoverOutline(value),
+            appHoverOutline: appHoverOutlineRef.current,
+          }),
       }),
-    [chips],
+    [chips, readOnly, hoverLinksOff, boardFoldArrows, boardHoverOutline],
   )
 
   const exportPdf = async (svg: string, size: { width: number; height: number }): Promise<void> => {
@@ -389,6 +456,8 @@ function InlineDrawingHost({
           autoFocus
           links={links}
           onExportPdf={exportPdf}
+          foldArrows={boardFoldArrows}
+          hoverOutline={boardHoverOutline}
         />
       </div>
       <CardPreviewHost store={linkPreview.store} cardOf={linkCard} scopeOf={linkProps.previewScope} diagramDarkColors={linkProps.diagramDarkColors ?? 'adapt'} />

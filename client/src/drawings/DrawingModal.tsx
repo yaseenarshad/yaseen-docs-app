@@ -46,7 +46,7 @@
 import { lazy, Suspense, useCallback, useContext, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { HotkeyAside } from '@shared/keys'
-import type { CanvasPanelState } from '@shared/types'
+import type { CanvasPanelState, FoldArrowMode } from '@shared/types'
 import { api } from '../api'
 import { setPlaceOverTab } from '../keys/keySheetRequest'
 import { ConflictBar } from '../documents/ConflictBar'
@@ -87,6 +87,17 @@ const EXPORT_FAILED = "The Excalidraw drawing couldn't be exported."
 const PDF_FAILED = "The PDF couldn't be exported."
 const INNER_ESCAPE_SELECTOR = '.sidebar:not(.sidebar--docked), .excalidraw-sidebar, .presentation-player, .Modal, .excalidraw .Dialog, .excalidraw-modal-container .Modal'
 const PORTALED_ESCAPE_SELECTOR = '.excalidraw-modal-container .Modal, .excalidraw .Dialog'
+const FOLD_ARROW_CHOICES: readonly { value: 'app' | FoldArrowMode; label: string; title: string }[] = [
+  { value: 'app', label: 'App', title: 'The app setting' },
+  { value: 'hover', label: 'Hover', title: 'Arrows show on hover' },
+  { value: 'always', label: 'Always', title: 'Arrows always show' },
+  { value: 'off', label: 'Off', title: 'No folding: every line shows, the folds stay saved' },
+]
+const HOVER_OUTLINE_CHOICES: readonly { value: 'app' | boolean; label: string; title: string }[] = [
+  { value: 'app', label: 'App', title: 'The app setting' },
+  { value: true, label: 'On', title: 'A faint outline shows what a click will pick' },
+  { value: false, label: 'Off', title: 'No outline on hover' },
+]
 
 /** Inline mode (YAZ-5040): edits a ```` ```excalidraw ```` block inside a `.md` page instead of a standalone `.excalidraw` file. */
 export interface InlineDrawingModalProps {
@@ -166,6 +177,12 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
   const [inlineTitle, setInlineTitle] = useState(inline?.title ?? '')
   const inlineTitleRef = useRef(inlineTitle)
   inlineTitleRef.current = inlineTitle
+  const [hoverLinksOff, setHoverLinksOff] = useState(false)
+  const [boardFoldArrows, setBoardFoldArrows] = useState<FoldArrowMode | undefined>(undefined)
+  const [boardHoverOutline, setBoardHoverOutline] = useState<boolean | undefined>(undefined)
+  const inlineSettingsRef = useRef<{ hoverLinksOff: boolean; foldArrows?: FoldArrowMode; hoverOutline?: boolean }>({ hoverLinksOff: false })
+  inlineSettingsRef.current = { hoverLinksOff, foldArrows: boardFoldArrows, hoverOutline: boardHoverOutline }
+  const metaVersionRef = useRef(0)
   useEffect(() => {
     setInlineTitle(inline?.title ?? '')
   }, [inline?.title])
@@ -213,6 +230,15 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
       (drawing) => {
         if (!live) return
         persisted.current = new Set(drawing.stored)
+        const nextSettings = {
+          hoverLinksOff: drawing.scene.hoverLinksOff === true,
+          foldArrows: drawing.scene.foldArrows,
+          hoverOutline: drawing.scene.hoverOutline,
+        }
+        inlineSettingsRef.current = nextSettings
+        setHoverLinksOff(nextSettings.hoverLinksOff)
+        setBoardFoldArrows(nextSettings.foldArrows)
+        setBoardHoverOutline(nextSettings.hoverOutline)
         setLoaded(drawing)
       },
       // Missing, unreadable, not a scene: ONE state, exactly like the preview's chip.
@@ -254,7 +280,7 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
   const readOnly = loaded?.scene.readOnly === true || vaultLocked
   // The drawing's page links (YAZ-4039), as in a drawing tab: pills, hover, the open gestures, the menu, the picker, paste.
   // The hover preview: "Links in drawings and diagrams" AND the board's own switch (YAZ-3943 demo 2), read from the file.
-  const hoverLinks = linkProps.hoverLinks === true && loaded?.scene.hoverLinksOff !== true
+  const hoverLinks = linkProps.hoverLinks === true && !hoverLinksOff
   const { links, linkPreview, linkCard } = useDrawingLinks({ root, theme, path: loaded?.path ?? root, readOnly, hotkeys, onNotice, hostRef: sheetRef, props: { ...linkProps, hoverLinks } })
   // YAZ-3943 demo round 3: a board naming an outside pictures folder this Mac has not allowed asks once when it opens here too.
   const outsideFolder = loaded?.scene.picturesOut === true && loaded.scene.picturesFolder !== undefined && picturesFolderOutside(loaded.scene.picturesFolder) ? loaded.scene.picturesFolder : null
@@ -283,7 +309,7 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
             const res = await api.drawing.landAssets({ root, newFiles })
             for (const id of res.persisted) persisted.current.add(id)
           }
-          const { json: compactJson } = compactInlineScene(json)
+          const { json: compactJson } = compactInlineScene(json, inlineSettingsRef.current)
           await inlineOpts.onSave(compactJson)
           setError(null)
           return { mtime: Date.now() }
@@ -312,10 +338,11 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
       const drawing = loadedRef.current
       // Read only (the file's switch or the vault's): never an edit, so there is nothing to autosave.
       if (drawing === null || drawing.scene.readOnly === true || vaultLocked) return
+      const combined = next.version + metaVersionRef.current
       const a = autosave.current
       // The first snapshot IS the clean baseline (the surface restored the disk scene first).
-      if (a === null) autosave.current = new Autosave<number>({ content: next.version, mtime: drawing.mtime, delayMs: 500, save: write, onStatus, onConflict })
-      else a.update(next.version)
+      if (a === null) autosave.current = new Autosave<number>({ content: combined, mtime: drawing.mtime, delayMs: 500, save: write, onStatus, onConflict })
+      else a.update(combined)
     },
     [write, onStatus, onConflict, generation, vaultLocked],
   )
@@ -396,6 +423,15 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
       autosave.current = null
       snapshot.current = null
       onStatus('saved')
+      const nextSettings = {
+        hoverLinksOff: drawing.scene.hoverLinksOff === true,
+        foldArrows: drawing.scene.foldArrows,
+        hoverOutline: drawing.scene.hoverOutline,
+      }
+      inlineSettingsRef.current = nextSettings
+      setHoverLinksOff(nextSettings.hoverLinksOff)
+      setBoardFoldArrows(nextSettings.foldArrows)
+      setBoardHoverOutline(nextSettings.hoverOutline)
       setLoaded(drawing)
       setGeneration(generationRef.current)
     } catch {
@@ -451,7 +487,7 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
           const res = await api.drawing.landAssets({ root, newFiles })
           for (const id of res.persisted) persisted.current.add(id)
         }
-        compactJson = compactInlineScene(json).json
+        compactJson = compactInlineScene(json, inlineSettingsRef.current).json
       }
       await onMoveToFile(compactJson)
     } catch {
@@ -486,16 +522,57 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
     await run()
   }
 
+  const bumpInlineSetting = (): void => {
+    metaVersionRef.current += 1
+    const a = autosave.current
+    if (a !== null) {
+      a.update((snapshot.current?.version ?? 0) + metaVersionRef.current)
+      void a.flush()
+    }
+  }
+
+  const toggleInlineHoverLinks = (): void => {
+    if (readOnly) return
+    const nextOff = !hoverLinksOff
+    inlineSettingsRef.current = { ...inlineSettingsRef.current, hoverLinksOff: nextOff }
+    setHoverLinksOff(nextOff)
+    bumpInlineSetting()
+  }
+
+  const setInlineFoldArrows = (value: 'app' | FoldArrowMode): void => {
+    if (readOnly) return
+    const next = value === 'app' ? undefined : value
+    inlineSettingsRef.current = { ...inlineSettingsRef.current, foldArrows: next }
+    setBoardFoldArrows(next)
+    bumpInlineSetting()
+  }
+
+  const setInlineHoverOutline = (value: 'app' | boolean): void => {
+    if (readOnly) return
+    const next = value === 'app' ? undefined : value
+    inlineSettingsRef.current = { ...inlineSettingsRef.current, hoverOutline: next }
+    setBoardHoverOutline(next)
+    bumpInlineSetting()
+  }
+
   const onKeyDownCapture = (e: ReactKeyboardEvent): void => {
     if (pressed(e, 'drawing.saveNow', hotkeys)) {
       e.preventDefault()
       e.stopPropagation()
       void autosave.current?.flush()
+      return
     }
-  }
-
-  const onKeyDown = (e: ReactKeyboardEvent): void => {
     if (!e.repeat && !e.nativeEvent.isComposing && pressed(e, 'drawing.imagesPanel', hotkeys)) {
+      const t = e.target
+      const inPanel = t instanceof Element && t.closest('.sidebar, .canvas-panel') !== null
+      if (!inPanel) {
+        e.preventDefault()
+        e.stopPropagation()
+        surface.current?.openAddSearch()
+        return
+      }
+    }
+    if (!e.repeat && !e.nativeEvent.isComposing && pressed(e, 'drawing.componentsPanel', hotkeys)) {
       const t = e.target
       const inSurface = t instanceof Element && t.closest('.drawing-surface') !== null
       const editable =
@@ -503,13 +580,18 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
         t instanceof HTMLTextAreaElement ||
         t instanceof HTMLSelectElement ||
         (t instanceof HTMLElement && (t.isContentEditable || t.closest("[contenteditable='true']") !== null))
-      if (!inSurface && !editable) {
+      const selection = window.getSelection()
+      const hasTextSelection = selection !== null && !selection.isCollapsed
+      if (!inSurface && !editable && !hasTextSelection) {
         e.preventDefault()
         e.stopPropagation()
-        surface.current?.openAddSearch()
+        surface.current?.openComponentsPanel?.()
         return
       }
     }
+  }
+
+  const onKeyDown = (e: ReactKeyboardEvent): void => {
     if (e.key !== 'Escape') return
     if (menuOpen) {
       e.preventDefault()
@@ -549,6 +631,8 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
   }
 
   const canOpenInTab = isInline ? inline?.onOpenInTab !== undefined : onOpenInTab !== undefined
+  const appFoldMode = FOLD_ARROW_CHOICES.find((choice) => choice.value === canvasPrefs?.foldArrowsOpen)?.label
+  const appOutlineMode = HOVER_OUTLINE_CHOICES.find((choice) => choice.value === canvasPrefs?.hoverOutline)?.label
 
   return (
     <div ref={overlayRef} className="drawing-modal-overlay" tabIndex={-1} onMouseDown={() => void requestClose()} onKeyDownCapture={onKeyDownCapture} onKeyDown={onKeyDown}>
@@ -592,6 +676,66 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
               </button>
               {menuOpen && (
                 <div className="drawing-modal__menu" role="menu">
+                  {isInline && (
+                    <>
+                      <button
+                        type="button"
+                        className="drawing-modal__menu-item drawing-modal__menu-toggle"
+                        role="menuitemcheckbox"
+                        aria-checked={!hoverLinksOff}
+                        disabled={readOnly}
+                        onClick={toggleInlineHoverLinks}
+                      >
+                        <span className="drawing-modal__menu-check" aria-hidden="true">
+                          {!hoverLinksOff ? '✓' : ''}
+                        </span>
+                        <span>Link preview on hover</span>
+                      </button>
+                      <div className="drawing-modal__menu-divider" role="separator" />
+                      <div className="drawing-modal__menu-group">
+                        <span className="drawing-modal__menu-label">
+                          {appFoldMode === undefined ? 'Fold arrows' : `Fold arrows (app: ${appFoldMode.toLowerCase()})`}
+                        </span>
+                        <div className="drawing-modal__menu-choices" role="group" aria-label="Fold arrows">
+                          {FOLD_ARROW_CHOICES.map(({ value, label, title }) => (
+                            <button
+                              key={String(value)}
+                              type="button"
+                              className="drawing-modal__menu-pill"
+                              title={value === 'app' && appFoldMode !== undefined ? `${title}: ${appFoldMode}` : title}
+                              aria-pressed={(boardFoldArrows ?? 'app') === value}
+                              disabled={readOnly}
+                              onClick={() => setInlineFoldArrows(value)}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="drawing-modal__menu-divider" role="separator" />
+                      <div className="drawing-modal__menu-group">
+                        <span className="drawing-modal__menu-label">
+                          {appOutlineMode === undefined ? 'Hover outline' : `Hover outline (app: ${appOutlineMode.toLowerCase()})`}
+                        </span>
+                        <div className="drawing-modal__menu-choices" role="group" aria-label="Hover outline">
+                          {HOVER_OUTLINE_CHOICES.map(({ value, label, title }) => (
+                            <button
+                              key={String(value)}
+                              type="button"
+                              className="drawing-modal__menu-pill"
+                              title={value === 'app' && appOutlineMode !== undefined ? `${title}: ${appOutlineMode}` : title}
+                              aria-pressed={(boardHoverOutline ?? 'app') === value}
+                              disabled={readOnly}
+                              onClick={() => setInlineHoverOutline(value)}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="drawing-modal__menu-divider" role="separator" />
+                    </>
+                  )}
                   <button
                     type="button"
                     className="drawing-modal__menu-item"
@@ -663,7 +807,7 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
         <div className="drawing-modal__canvas editor--drawing">
           {loaded !== null && (
             <Suspense fallback={null}>
-              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} canvasPanel={canvasPanel} onCanvasPanelChange={onCanvasPanelChange} onSnapshot={onSnapshot} onFailed={setError} onApi={onApi} onExportPdf={exportPdf} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} links={links} foldArrows={loaded.scene.foldArrows} hoverOutline={loaded.scene.hoverOutline} />
+              <ExcalidrawSurface key={generation} scene={loaded.scene} theme={theme} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} canvasPanel={canvasPanel} onCanvasPanelChange={onCanvasPanelChange} onSnapshot={onSnapshot} onFailed={setError} onApi={onApi} onExportPdf={exportPdf} readOnly={readOnly} hotkeys={hotkeys} hotkeysAside={hotkeysAside} links={links} foldArrows={boardFoldArrows} hoverOutline={boardHoverOutline} />
             </Suspense>
           )}
         </div>

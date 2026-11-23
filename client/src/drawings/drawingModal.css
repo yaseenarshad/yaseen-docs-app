@@ -155,8 +155,68 @@
   white-space: nowrap;
 }
 
-.drawing-modal__menu-item:hover {
+.drawing-modal__menu-item:hover:not(:disabled) {
   background: var(--accent-soft);
+}
+
+.drawing-modal__menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.drawing-modal__menu-toggle {
+  gap: 6px;
+}
+
+.drawing-modal__menu-check {
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+  flex: none;
+}
+
+.drawing-modal__menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 4px 10px 6px;
+}
+
+.drawing-modal__menu-label {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.drawing-modal__menu-choices {
+  display: flex;
+  gap: 4px;
+}
+
+.drawing-modal__menu-pill {
+  flex: 1;
+  padding: 3px 7px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.drawing-modal__menu-pill:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.drawing-modal__menu-pill[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  font-weight: 500;
+}
+
+.drawing-modal__menu-pill:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .drawing-modal__menu-divider {

@@ -290,3 +290,25 @@ describe('YAZ-5378 round 2: hidden words take the Underline look while find has 
     expect(el.hasAttribute('data-find-query')).toBe(false)
   })
 })
+
+describe('YAZ-6341: claim rule while DrawingModal is open', () => {
+  it('ignores ⌘F when .drawing-modal-overlay is in the DOM and resumes claiming it once closed', async () => {
+    const channel = createFindChannel()
+    const { el, view } = await mountEditor('apple', { find: channel })
+    renderBar(channel, 'page', el)
+    const overlay = document.createElement('div')
+    overlay.className = 'drawing-modal-overlay'
+    document.body.appendChild(overlay)
+    try {
+      view.dom.focus()
+      const blocked = pressCmdF(view.dom)
+      expect(blocked.defaultPrevented).toBe(false)
+      expect(channel.getState().open).toBe(false)
+    } finally {
+      overlay.remove()
+    }
+    const allowed = pressCmdF(view.dom)
+    expect(allowed.defaultPrevented).toBe(true)
+    expect(channel.getState().open).toBe(true)
+  })
+})
