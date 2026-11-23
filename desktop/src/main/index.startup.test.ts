@@ -7,7 +7,7 @@
  * before the last edit is written.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fileLink } from '@shared/links'
+import { fileLink, workspaceLink } from '@shared/links'
 
 const h = vi.hoisted(() => {
   const s = {
@@ -17,6 +17,7 @@ const h = vi.hoisted(() => {
     windows: [] as Array<{ isDestroyed: () => boolean; isMinimized: () => boolean; restore: () => void; focus: () => void }>,
     /** The store's windows, as far as this file reads them: each one's id and its vaults. */
     stored: [] as Array<{ id: string; roots: string[] }>,
+    vaultSets: [] as Array<{ id: string; name: string; roots: string[]; lastUsed: number }>,
   }
   const log = (entry: string) => () => void s.order.push(entry)
   const app = {
@@ -43,6 +44,10 @@ const h = vi.hoisted(() => {
     rootFor: vi.fn((path: string): string | null => (path.startsWith('/gone') ? null : `root-of:${path}`)),
     restore: vi.fn((which: readonly string[] | string) => void s.order.push(`restore:${String(which)}`)),
     routeToFile: vi.fn((path: string) => s.order.push(`route:${path}`)),
+    openVaultSet: vi.fn((id: string) => {
+      s.order.push(`openVaultSet:${id}`)
+      return s.vaultSets.some((ws) => ws.id === id) ? { opened: true, missing: [] } : { opened: false, missing: [] }
+    }),
     linkNotice: vi.fn(),
     idFor: vi.fn(),
     flushAllForQuit: vi.fn(async (): Promise<void> => void s.order.push('flushAllForQuit')),
@@ -53,7 +58,7 @@ const h = vi.hoisted(() => {
     memoryReload: vi.fn(async () => false),
   }
   const store = {
-    get: () => ({ settings: { theme: 'system', startupWindows: 'none' }, windows: s.stored, recents: [] }),
+    get: () => ({ settings: { theme: 'system', startupWindows: 'none' }, windows: s.stored, recents: [], vaultSets: s.vaultSets }),
     flush: vi.fn(async () => void s.order.push('store.flush')),
     // The 1.0.15 heading styles (YAZ-3066 D11): none here, so the move writes nothing.
     takeLegacyHeadingStyles: vi.fn(() => (s.order.push('takeLegacyHeadingStyles'), {})),
@@ -163,7 +168,7 @@ function gate(): { promise: Promise<void>; open: () => void } {
 beforeEach(async () => {
   vi.clearAllMocks()
   friendsStub.on = false
-  Object.assign(h.s, { order: [], on: new Map(), windows: [], stored: [] })
+  Object.assign(h.s, { order: [], on: new Map(), windows: [], stored: [], vaultSets: [] })
   h.handles.clear()
   h.updater.kind = 'idle'
   vi.stubEnv('YASEEN_DOCS_USER_DATA_DIR', '/tmp/isolated-profile')
@@ -282,6 +287,22 @@ describe('main startup order (YAZ-2172)', () => {
     await settle()
     h.s.on.get('open-url')!(event(), 'yaseendraw:///vault/Board%20one.excalidraw?root=%2Fvault')
     expect(h.manager.routeToFile).toHaveBeenCalledWith('/vault/Board one.excalidraw', '/vault')
+  })
+
+  it('a yaseendocs://workspace/<id> link restores only that workspace on cold start, routes via openVaultSet, and notices when missing', async () => {
+    h.s.vaultSets = [{ id: 'ws-1', name: 'Work Suite', roots: ['/vaults/a', '/vaults/b'], lastUsed: 1 }]
+    h.s.on.get('open-url')!(event(), workspaceLink('ws-1'))
+    h.s.ready()
+    await settle()
+    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith(['/vaults/a', '/vaults/b'])
+    expect(h.manager.openVaultSet).toHaveBeenCalledExactlyOnceWith('ws-1')
+    expect(h.manager.routeToFile).not.toHaveBeenCalled()
+    expect(h.manager.linkNotice).not.toHaveBeenCalled()
+
+    // Unknown workspace after ready shows linkNotice instead of routing to file.
+    h.s.on.get('open-url')!(event(), workspaceLink('ws-missing'))
+    expect(h.manager.openVaultSet).toHaveBeenLastCalledWith('ws-missing')
+    expect(h.manager.linkNotice).toHaveBeenCalledWith("Can't open workspace: ws-missing")
   })
 
   it('copies the card skill into the profile before the windows restore, stamped with the app version (YAZ-5107, YAZ-5149)', async () => {

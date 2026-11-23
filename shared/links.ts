@@ -37,6 +37,11 @@ export function fileLink(path: string, opts?: { open?: LinkOpenTarget }): string
   return base
 }
 
+/** The `yaseendocs://workspace/<id>` link that opens a saved workspace (`VaultSet`). */
+export function workspaceLink(id: string): string {
+  return `${SCHEME}workspace/${encodeURIComponent(id)}`
+}
+
 /** `decodeURIComponent` that answers null for malformed percent-encoding instead of throwing. */
 function decode(encoded: string): string | null {
   try {
@@ -44,6 +49,16 @@ function decode(encoded: string): string | null {
   } catch {
     return null
   }
+}
+
+const WORKSPACE_LINK_RE = /^yaseendocs:\/\/workspace\/([^/?#]+)$/i
+
+/** Parses a `yaseendocs://workspace/<id>` deep link back to its decoded workspace id, or null. */
+export function parseWorkspaceLink(url: string): string | null {
+  const m = WORKSPACE_LINK_RE.exec(url)
+  if (m === null) return null
+  const id = decode(m[1])
+  return id === null || id.length === 0 ? null : id
 }
 
 /**

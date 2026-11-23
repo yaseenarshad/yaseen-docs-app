@@ -75,6 +75,32 @@ describe('resolveDockIconPath (YAZ-6374)', () => {
     expect(resolveDockIconPath(baseState, 'w-alpha', (p) => p === launcherA.iconPath)).toBeNull()
     expect(resolveDockIconPath(baseState, 'w-alpha', (p) => p === launcherA.appPath)).toBeNull()
   })
+
+  it('prefers matching saved workspace launcher icon over single-vault icons in multi-vault windows', () => {
+    const wsLauncher = { name: 'Alpha+Beta', appPath: '/Applications/Alpha+Beta.app', iconPath: '/userData/vault-icons/ws-123.png' }
+    const stateWithWs: AppState = {
+      ...baseState,
+      vaultSets: [
+        { id: 'ws-1', name: 'Alpha+Beta', roots: ['/vaults/beta', '/vaults/alpha'], lastUsed: 10, launcher: wsLauncher },
+      ],
+    }
+    const existing = new Set([
+      launcherA.appPath,
+      launcherA.iconPath,
+      launcherB.appPath,
+      launcherB.iconPath,
+      wsLauncher.appPath,
+      wsLauncher.iconPath,
+    ])
+    // Multi-vault window matches the saved workspace (order-independent via sameVaults) -> workspace icon wins.
+    expect(resolveDockIconPath(stateWithWs, 'w-multi', (p) => existing.has(p))).toBe(wsLauncher.iconPath)
+    expect(resolveDockIconPath(stateWithWs, 'w-multi-blank', (p) => existing.has(p))).toBe(wsLauncher.iconPath)
+    // Single-vault window still gets its own vault launcher icon.
+    expect(resolveDockIconPath(stateWithWs, 'w-alpha', (p) => existing.has(p))).toBe(launcherA.iconPath)
+    // If the workspace launcher .app was removed in Finder, returns null (default icon).
+    existing.delete(wsLauncher.appPath)
+    expect(resolveDockIconPath(stateWithWs, 'w-multi', (p) => existing.has(p))).toBeNull()
+  })
 })
 
 describe('createDockIconController (YAZ-6374)', () => {

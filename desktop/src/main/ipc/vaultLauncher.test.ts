@@ -11,6 +11,7 @@ import {
   MAX_LAUNCHER_ICON_BYTES,
   registerVaultLauncherIpc,
   vaultLauncherIconPath,
+  workspaceLauncherIconPath,
   type VaultLauncherBackend,
 } from './vaultLauncher'
 
@@ -291,5 +292,99 @@ describe('vaultLauncher IPC (YAZ-6374)', () => {
     expect(
       await registered(CONTRACT.vaultLauncher.create)(undefined, { root: ROOT, name: 'Work', pngBase64: VALID_PNG_B64 }),
     ).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+  })
+})
+
+describe('workspace launcher IPC', () => {
+  it('createWorkspace, workspaceStatus, revealWorkspace, testWorkspace, workspaceIcons, and removeWorkspace work end-to-end', async () => {
+    const ws = store.saveVaultSet('Work Suite', ['/vaults/a', '/vaults/b'], 100)!
+    const ws2 = store.saveVaultSet('Ghost Suite', ['/vaults/c', '/vaults/d'], 101)!
+
+    // Status before creation.
+    expect(await registered(CONTRACT.vaultLauncher.workspaceStatus)(undefined, ws.id)).toEqual({
+      ok: true,
+      value: { supported: true, launcher: null, exists: false, iconDataUrl: null },
+    })
+
+    // Create workspace launcher.
+    const expectedIconPath = workspaceLauncherIconPath(dir, ws.id)
+    const created = await registered(CONTRACT.vaultLauncher.createWorkspace)(undefined, {
+      workspaceId: ws.id,
+      name: 'Work Suite',
+      pngBase64: `data:image/png;base64,${VALID_PNG_B64}`,
+      badge: { kind: 'letters', value: 'WS', color: '#2563eb' },
+    })
+    expect(created).toEqual({
+      ok: true,
+      value: {
+        supported: true,
+        launcher: {
+          name: 'Work Suite',
+          appPath: '/Applications/Work Suite.app',
+          iconPath: expectedIconPath,
+          badge: { kind: 'letters', value: 'WS', color: '#2563eb' },
+        },
+        exists: true,
+        iconDataUrl: `data:image/png;base64,${VALID_PNG_B64}`,
+      },
+    })
+    expect(backend.install).toHaveBeenCalledWith(
+      expect.objectContaining({
+        root: `workspace:${ws.id}`,
+        vaultUrl: `yaseendocs://workspace/${encodeURIComponent(ws.id)}`,
+        name: 'Work Suite',
+        iconPath: expectedIconPath,
+      }),
+    )
+    expect(existsSync(expectedIconPath)).toBe(true)
+    expect(store.get().vaultSets.find((s) => s.id === ws.id)?.launcher).toEqual({
+      name: 'Work Suite',
+      appPath: '/Applications/Work Suite.app',
+      iconPath: expectedIconPath,
+      badge: { kind: 'letters', value: 'WS', color: '#2563eb' },
+    })
+    expect(onIconChanged).toHaveBeenCalledWith(expectedIconPath)
+
+    // Reveal and test delegate to backend.
+    expect(await registered(CONTRACT.vaultLauncher.revealWorkspace)(undefined, ws.id)).toEqual({ ok: true, value: undefined })
+    expect(backend.reveal).toHaveBeenCalledWith('/Applications/Work Suite.app')
+    expect(await registered(CONTRACT.vaultLauncher.testWorkspace)(undefined, ws.id)).toEqual({ ok: true, value: undefined })
+    expect(backend.launch).toHaveBeenCalledWith('/Applications/Work Suite.app')
+
+    // Create a second workspace launcher and simulate Finder deletion -> omitted from workspaceIcons.
+    await registered(CONTRACT.vaultLauncher.createWorkspace)(undefined, {
+      workspaceId: ws2.id,
+      name: 'Ghost Suite',
+      pngBase64: VALID_PNG_B64,
+    })
+    installedApps.delete('/Applications/Ghost Suite.app')
+
+    expect(await registered(CONTRACT.vaultLauncher.workspaceIcons)(undefined)).toEqual({
+      ok: true,
+      value: {
+        [ws.id]: `data:image/png;base64,${VALID_PNG_B64}`,
+      },
+    })
+
+    // Remove workspace launcher.
+    onIconChanged.mockClear()
+    expect(await registered(CONTRACT.vaultLauncher.removeWorkspace)(undefined, ws.id)).toEqual({ ok: true, value: undefined })
+    expect(backend.remove).toHaveBeenCalledWith('/Applications/Work Suite.app', `workspace:${ws.id}`)
+    expect(existsSync(expectedIconPath)).toBe(false)
+    expect(store.get().vaultSets.find((s) => s.id === ws.id)?.launcher).toBeUndefined()
+    expect(onIconChanged).toHaveBeenCalledWith(expectedIconPath)
+  })
+
+  it('validates workspaceId, unknown workspace, and missing launcher app', async () => {
+    expect(await registered(CONTRACT.vaultLauncher.workspaceStatus)(undefined, '   ')).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+    expect(
+      await registered(CONTRACT.vaultLauncher.createWorkspace)(undefined, {
+        workspaceId: 'missing-id',
+        name: 'Nope',
+        pngBase64: VALID_PNG_B64,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } })
+    expect(await registered(CONTRACT.vaultLauncher.revealWorkspace)(undefined, 'missing-id')).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } })
+    expect(await registered(CONTRACT.vaultLauncher.testWorkspace)(undefined, 'missing-id')).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } })
   })
 })

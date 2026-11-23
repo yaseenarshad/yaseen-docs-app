@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileLink, isAppLink, LINK_SCHEMES, parseFileLink } from '@shared/links'
+import { fileLink, isAppLink, LINK_SCHEMES, parseFileLink, parseWorkspaceLink, workspaceLink } from '@shared/links'
 
 // Deep links (E1, GRO-2171; format locked in D7): `yaseendocs://` + percent-encoded absolute
 // path, e.g. `yaseendocs:///Users/me/vault/My%20page.md`. Optional `?root=` override.
@@ -123,9 +123,34 @@ describe('isAppLink', () => {
   it('knows both schemes, and nothing else', () => {
     expect(LINK_SCHEMES).toEqual(['yaseendocs', 'yaseendraw'])
     expect(isAppLink('yaseendocs:///v/a.md')).toBe(true)
+    expect(isAppLink('yaseendocs://workspace/ws-1')).toBe(true)
     expect(isAppLink('yaseendraw:///v/a.excalidraw')).toBe(true)
     expect(isAppLink('--flag')).toBe(false)
     expect(isAppLink('https://example.com')).toBe(false)
     expect(isAppLink('/v/a.md')).toBe(false)
+  })
+})
+
+describe('workspaceLink & parseWorkspaceLink', () => {
+  it('builds and round-trips workspace deep links including special characters', () => {
+    expect(workspaceLink('abc-123')).toBe('yaseendocs://workspace/abc-123')
+    expect(parseWorkspaceLink('yaseendocs://workspace/abc-123')).toBe('abc-123')
+    expect(parseWorkspaceLink('YASEENDOCS://WORKSPACE/abc-123')).toBe('abc-123')
+
+    const special = 'ws/id?a=1#frag 100%'
+    const encoded = workspaceLink(special)
+    expect(encoded).toBe(`yaseendocs://workspace/${encodeURIComponent(special)}`)
+    expect(parseWorkspaceLink(encoded)).toBe(special)
+  })
+
+  it('rejects non-workspace links, extra segments, query/hash, empty id, and malformed percent-encoding', () => {
+    expect(parseWorkspaceLink('yaseendocs:///Users/me/vault')).toBeNull()
+    expect(parseWorkspaceLink('yaseendraw://workspace/abc')).toBeNull()
+    expect(parseWorkspaceLink('yaseendocs://workspace/')).toBeNull()
+    expect(parseWorkspaceLink('yaseendocs://workspace/a/b')).toBeNull()
+    expect(parseWorkspaceLink('yaseendocs://workspace/a?foo=1')).toBeNull()
+    expect(parseWorkspaceLink('yaseendocs://workspace/a#top')).toBeNull()
+    expect(parseWorkspaceLink('yaseendocs://workspace/%ZZ')).toBeNull()
+    expect(parseWorkspaceLink('https://workspace/abc')).toBeNull()
   })
 })

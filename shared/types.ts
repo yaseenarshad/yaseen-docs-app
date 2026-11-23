@@ -3661,6 +3661,14 @@ export interface CreateVaultLauncherRequest {
   badge?: VaultLauncherBadge
 }
 
+/** Request payload for `vaultLauncher.createWorkspace`. */
+export interface CreateWorkspaceLauncherRequest {
+  workspaceId: string
+  name: string
+  pngBase64: string
+  badge?: VaultLauncherBadge
+}
+
 const VAULT_LAUNCHER_TARGETS = ['normal', 'inbox', 'today'] as const
 const VAULT_LAUNCHER_BADGE_KINDS = ['emoji', 'letters', 'material'] as const
 
@@ -3760,6 +3768,8 @@ export interface VaultSet {
   roots: string[]
   /** When it was last saved or opened (ms); 0 = not known. */
   lastUsed: number
+  /** Per-Mac macOS `.app` launcher metadata for this workspace. Absent = no launcher. */
+  launcher?: VaultLauncherInfo
 }
 
 /** What `window.openSet` answers (YAZ-2602 S66): `missing` is the set's vaults whose folder is gone, as absolute paths; `opened: false` = none is left, and no window opened. */
