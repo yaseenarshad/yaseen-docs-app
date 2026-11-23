@@ -2530,3 +2530,476 @@ span.cards-wizard__pill {
   filter: brightness(1.06);
   background: var(--accent);
 }
+
+
+/* ---------- Vault app launcher (YAZ-5967, YAZ-6375) ---------- */
+
+.vault-launcher {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vault-launcher__empty,
+.vault-launcher__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.vault-launcher__card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vault-launcher__summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.vault-launcher__icon {
+  flex: none;
+  border-radius: 11px;
+  object-fit: cover;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+}
+
+.vault-launcher__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.vault-launcher__name-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.vault-launcher__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.vault-launcher__target {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.vault-launcher__path {
+  font-size: 12px;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-launcher__missing {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.vault-launcher__missing-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.vault-launcher__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+/* Modal overlay above SettingsDialog (z-index 70) */
+.vault-launcher-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.vault-launcher-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, calc(100vw - 40px));
+  max-height: min(620px, calc(100vh - 48px));
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.vault-launcher-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.vault-launcher-modal__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.vault-launcher-modal__close {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--fg-muted);
+}
+
+.vault-launcher-modal__close:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.vault-launcher-modal__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 196px;
+  gap: 18px;
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+
+@media (max-width: 600px) {
+  .vault-launcher-modal__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.vault-launcher-modal__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.vault-launcher-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vault-launcher-modal__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.vault-launcher-modal__name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vault-launcher-modal__name-row .settings__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.vault-launcher-modal__suffix {
+  font-size: 13px;
+  color: var(--fg-muted);
+  flex: none;
+}
+
+.vault-launcher-modal__tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--bg-side);
+  border: 1px solid var(--border);
+  align-self: flex-start;
+}
+
+.vault-launcher-modal__tab {
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+
+.vault-launcher-modal__tab:hover {
+  color: var(--fg);
+}
+
+.vault-launcher-modal__tab--active {
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.vault-launcher-modal__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vault-launcher-modal__swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vault-launcher-modal__swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+.vault-launcher-modal__swatch--on {
+  border-color: var(--fg);
+  transform: scale(1.1);
+}
+
+.vault-launcher-modal__symbol-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vault-launcher-modal__emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.vault-launcher-modal__emoji-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 18px;
+  border: 1px solid transparent;
+}
+
+.vault-launcher-modal__emoji-btn:hover {
+  background: var(--bg-hover);
+}
+
+.vault-launcher-modal__emoji-btn--on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.vault-launcher-modal__letters-input {
+  width: 84px;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.vault-launcher-modal__icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+  gap: 4px;
+  max-height: 156px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-side);
+}
+
+.vault-launcher-modal__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+}
+
+.vault-launcher-modal__icon-btn:hover {
+  background: var(--bg-hover);
+}
+
+.vault-launcher-modal__icon-btn--on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.vault-launcher-modal__upload {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg-side);
+}
+
+.vault-launcher-modal__hint {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.vault-launcher-modal__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.vault-launcher-modal__error-banner {
+  margin: 0 18px 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.vault-launcher-modal__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--bg-side);
+  border: 1px solid var(--border);
+  align-self: start;
+}
+
+.vault-launcher-modal__preview-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+.vault-launcher-modal__dock-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 6px;
+}
+
+.vault-launcher-modal__dock-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-launcher-modal__alfred-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  min-width: 0;
+}
+
+.vault-launcher-modal__alfred-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.vault-launcher-modal__alfred-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-launcher-modal__alfred-sub {
+  font-size: 11px;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-launcher-preview-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: #ffffff;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  user-select: none;
+}
+
+.vault-launcher-preview-material {
+  display: inline-block;
+  background-color: #ffffff;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.vault-launcher-preview-img {
+  flex: none;
+  object-fit: cover;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+}
+
+.vault-launcher-preview-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  color: var(--fg-muted);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.vault-launcher-modal__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+}

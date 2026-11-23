@@ -409,6 +409,8 @@ interface SidebarProps {
   onInbox: (root: string) => void
   /** An Inbox row's "Open in new window" (YAZ-5054): App opens that vault's Inbox in a new window. Absent: no such item. */
   onInboxNewWindow?: (root: string) => void
+  /** Per-vault launcher icon data URLs for the vault switcher (YAZ-5967, YAZ-6375). */
+  vaultIcons?: Record<string, string>
 }
 
 /** One "open the row menu of this path at this point" gesture (YAZ-2663 D6): the reveal request's idiom. */
@@ -811,6 +813,7 @@ export function Sidebar({
   onReviewPage,
   onInbox,
   onInboxNewWindow,
+  vaultIcons,
   width,
   collapsed = false,
   asideRef,
@@ -2173,6 +2176,7 @@ export function Sidebar({
           onNotice={onNotice}
           onOpenSetHere={onOpenSetHere}
           hotkeys={settings.hotkeys}
+          vaultIcons={vaultIcons}
         />
         {/* The lock of each read-only vault (YAZ-4985), beside the vault's name: the page chip's box and countdown. */}
         {onUnlockVault !== undefined && vaults.filter((vault) => vault.readOnly === true && vault.app !== true).map((vault) => (

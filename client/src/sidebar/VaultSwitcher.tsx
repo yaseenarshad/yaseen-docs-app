@@ -144,6 +144,8 @@ export interface VaultSwitcherProps {
   onOpenSetHere?: (id: string) => Promise<boolean>
   /** `settings.hotkeys` (YAZ-3397 D2): the vault menu's "Open in Files window" names its key as it is now (YAZ-3410). */
   hotkeys: HotkeyOverrides
+  /** Per-vault macOS launcher icon data URLs (YAZ-5967, YAZ-6375). */
+  vaultIcons?: Record<string, string>
 }
 
 /**
@@ -208,7 +210,7 @@ export function defaultHighlight(matches: readonly { path: string }[], query: st
 /** The trigger's text (YAZ-2602 S15): one vault's name; two joined with " + "; more as the first two, then "+ N more". */
 export const vaultsLabel = (names: readonly string[]): string => (names.length <= 2 ? names.join(' + ') : `${names[0]} + ${names[1]} + ${names.length - 2} more`)
 
-export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, onOpenHere, onAddHere, onOpenFolderPage, onReveal, onOpenVsCode, onNotice, onOpenSetHere, hotkeys }: VaultSwitcherProps) {
+export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, onOpenHere, onAddHere, onOpenFolderPage, onReveal, onOpenVsCode, onNotice, onOpenSetHere, hotkeys, vaultIcons }: VaultSwitcherProps) {
   // The first vault: the one a window with one vault has, and so the one the trigger's own menu and rename are about.
   const root = roots[0]
   const multi = roots.length > 1
@@ -566,6 +568,9 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
           // The vault menu is ONE vault's: with several the trigger offers "Save as workspace…" instead (YAZ-2602 S15, S63).
           onContextMenu={(e) => (multi ? openVaultSetMenu(null, e) : openVaultMenu(root, 'header', e))}
         >
+          {!multi && vaultIcons?.[root] !== undefined && (
+            <img className="sidebar__root-icon" src={vaultIcons[root]} alt="" width={18} height={18} />
+          )}
           <span className="sidebar__root-name">{name}</span>
           <span className="sidebar__root-hint" aria-hidden="true"><TriangleIcon up={open} /></span>
         </button>
@@ -652,7 +657,12 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
                     onClick={(e) => clickRow(i, e)}
                     onContextMenu={(e) => openVaultMenu(row.path, 'row', e)}
                   >
-                    <span className="vault-switcher__name">{row.name}</span>
+                    <span className={`vault-switcher__name${vaultIcons?.[row.path] !== undefined ? ' vault-switcher__name--with-icon' : ''}`}>
+                      {vaultIcons?.[row.path] !== undefined && (
+                        <img className="vault-switcher__icon" src={vaultIcons[row.path]} alt="" width={18} height={18} />
+                      )}
+                      {row.name}
+                    </span>
                     {row.key !== null && <kbd className="vault-switcher__key">⌘{row.key}</kbd>}
                     {/* Part of its row (D2): a click is the row's click, a right-click the row's menu. */}
                     <span
