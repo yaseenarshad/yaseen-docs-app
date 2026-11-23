@@ -40,8 +40,9 @@ import { canonicalKey } from './view/keys'
 import { valueHistory } from './view/valueHistory'
 import { stringify } from 'yaml'
 import { withFolderValues } from '@shared/folderValues'
-import { DEFAULT_FOLDER_PAGES, folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type FolderPagesSettings, type GithubSyncStatus, type IndexRecord, type PropertiesResponse, type ZoomStep } from '@shared/types'
+import { DEFAULT_FOLDER_PAGES, folderSettingsPath, inFolder, isContentPosition, isContentWidth, type CommentsOrder, type ContentPosition, type ContentWidth, type DiagramDarkColors, type FileResponse, type FolderPagesSettings, type GithubSyncStatus, type IndexRecord, type PropertiesResponse, type ZoomStep } from '@shared/types'
 import { COLUMN_MARKS_KEY, CONFIRM_CHANGES_KEY, HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, INHERIT_COLUMNS_KEY, SHOW_NEW_BUTTONS_KEY, SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY, columnMarksOf, confirmChangesOf, hoverLinksOf, hoverPreviewOf, hoverRowsOf, inheritColumnsOf, showNewButtonsOf, showOtherFilesOf, showPageFileOf } from '@shared/folderPage'
+import { PAGE_POSITION_KEY, PAGE_WIDTH_KEY, readPagePosition, readPageWidth } from '@shared/pageSwitches'
 import { exactLinkTarget } from '@shared/linkRewrite'
 import { findKey, keyFold, respell, spellings } from '@shared/propertyKeys'
 import { isReadOnlyProperties, READ_ONLY_KEY } from '@shared/readOnly'
@@ -50,6 +51,7 @@ import { CommentsSection } from '../comments/CommentsSection'
 import { FrontmatterPanel } from '../editor/FrontmatterPanel'
 import { PageTitle } from '../editor/PageTitle'
 import { usePathTitles } from '../lib/pageLabel'
+import { columnStart, contentTextWidth } from '../lib/contentWidth'
 import { absFrom, dirname, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { createStore } from '../lib/store'
@@ -129,6 +131,10 @@ export interface FolderViewProps {
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => void
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
+  /** Settings › Appearance › Content width (YAZ-6343): the folder page's width when it has no `page-width`. Absent → `'narrow'`. */
+  contentWidth?: ContentWidth
+  /** Settings › Appearance › Page position (YAZ-6343): the folder page's position when it has no `page-position`. Absent → `'center'`. */
+  contentPosition?: ContentPosition
   /** Settings › Folder pages › Preview rows on hover (YAZ-3403, `hoverOn(settings, 'folderViews')`), with what its panel needs: handed to `ViewsPane` and the Other files tray. */
   hoverPreview?: boolean
   /** Settings › Folder pages › Preview links on hover (demo 13D, `hoverOn(settings, 'folderLinks')`): the link pills in cells, handed to `ViewsPane`. */
@@ -252,6 +258,8 @@ export function FolderView({
   onRetitle,
   commentsOrder,
   onChangeCommentsOrder,
+  contentWidth = 'narrow',
+  contentPosition = 'center',
   hoverPreview,
   hoverLinks,
   previewScope,
@@ -532,6 +540,29 @@ export function FolderView({
       cancelled = true
     }
   }, [file, indexed, revision])
+
+  /** This folder page's own Content width (`page-width`, YAZ-6343): null follows Settings › Appearance › Content width. */
+  const indexedPageWidth = useMemo<ContentWidth | null>(
+    () =>
+      disk !== null
+        ? readPageWidth(disk.content)
+        : record !== undefined && isContentWidth(record.properties[PAGE_WIDTH_KEY])
+          ? record.properties[PAGE_WIDTH_KEY]
+          : null,
+    [disk, record],
+  )
+  const [pageWidth, setPageWidth] = useAheadKey(indexedPageWidth)
+  /** This folder page's own Position (`page-position`, YAZ-6343): null follows Settings › Appearance › Page position. */
+  const indexedPagePosition = useMemo<ContentPosition | null>(
+    () =>
+      disk !== null
+        ? readPagePosition(disk.content)
+        : record !== undefined && isContentPosition(record.properties[PAGE_POSITION_KEY])
+          ? record.properties[PAGE_POSITION_KEY]
+          : null,
+    [disk, record],
+  )
+  const [pagePosition, setPagePosition] = useAheadKey(indexedPagePosition)
 
   const [parsed, setParsed] = useState<ParsedViews | null>(() => (settings === null ? null : folderViewSet(settings, ids)))
   const [settingsError, setSettingsError] = useState<string | null>(null)
@@ -1531,10 +1562,24 @@ export function FolderView({
         views={parsed.def.views.map((v) => ({ name: v.name, type: v.type }))}
         defaultView={parsed.def.defaultView}
         onChangeDefaultView={setDefaultView}
+        pageWidth={pageWidth}
+        appContentWidth={contentWidth}
+        onChangePageWidth={(next) => setPageWidth(next, writeOwnKey(PAGE_WIDTH_KEY, next ?? undefined))}
+        pagePosition={pagePosition}
+        appContentPosition={contentPosition}
+        onChangePagePosition={(next) => setPagePosition(next, writeOwnKey(PAGE_POSITION_KEY, next ?? undefined))}
         sync={sync}
         onSyncNow={onSyncNow}
       />
-      <div ref={hostRef} className="editor-host" style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
+      <div
+        ref={hostRef}
+        className="editor-host"
+        style={{
+          '--document-zoom': zoom / 100,
+          ...(pageWidth !== null && { '--content-text-width': contentTextWidth(pageWidth) }),
+          ...((pageWidth !== null || pagePosition !== null) && { '--column-start': columnStart(pagePosition ?? contentPosition, pageWidth ?? contentWidth) }),
+        } as CSSProperties}
+      >
         <div className="page-header">
           {/* Read only (D36) locks the title and the folder's own properties, as a page's does. */}
           <PageTitle path={path} kind="dir" titles={titles} readOnly={pageEffective} onRetitle={(title) => onRetitle(path, title, 'dir')} />

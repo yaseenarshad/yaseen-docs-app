@@ -15,7 +15,7 @@
  */
 import { useSyncExternalStore } from 'react'
 import { ViewTypeIcon } from './view/icons'
-import type { FolderPagesSettings, GithubSyncStatus } from '@shared/types'
+import type { ContentPosition, ContentWidth, FolderPagesSettings, GithubSyncStatus } from '@shared/types'
 import { type Hint, PageSettings, type PageSwitch } from '../editor/PageSettings'
 import { MarkGlyph } from './view/ColumnMark'
 import { StatusChips } from '../editor/StatusChips'
@@ -32,7 +32,7 @@ export const FOLDER_READ_ONLY_TIP = 'This folder page is read only'
 const SAVE_RANK: Record<SaveStatus, number> = { saved: 0, unsaved: 1, saving: 2, error: 3 }
 const worse = (a: SaveStatus, b: SaveStatus): SaveStatus => (SAVE_RANK[a] >= SAVE_RANK[b] ? a : b)
 
-export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, onTurnOff, editingUntil = null, onLock, showPageFile, onChangeShowPageFile, hoverRows, onChangeHoverRows, hoverLinks, onChangeHoverLinks, showOtherFiles, onChangeShowOtherFiles, inheritColumns, onChangeInheritColumns, columnMarks, onChangeColumnMarks, confirmChanges, onChangeConfirmChanges, showNewButtons, onChangeShowNewButtons, views, defaultView, onChangeDefaultView, name, sync, onSyncNow }: {
+export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly, asking, onAsk, onAllow, onCancel, onTurnOff, editingUntil = null, onLock, showPageFile, onChangeShowPageFile, hoverRows, onChangeHoverRows, hoverLinks, onChangeHoverLinks, showOtherFiles, onChangeShowOtherFiles, inheritColumns, onChangeInheritColumns, columnMarks, onChangeColumnMarks, confirmChanges, onChangeConfirmChanges, showNewButtons, onChangeShowNewButtons, views, defaultView, onChangeDefaultView, pageWidth, appContentWidth, onChangePageWidth, pagePosition, appContentPosition, onChangePagePosition, name, sync, onSyncNow }: {
   store: Store<FolderChipsState>
   zoom: number
   onZoom: (zoom: number) => void
@@ -80,6 +80,14 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
   views?: readonly { name: string; type: string }[]
   defaultView?: string
   onChangeDefaultView?: (next: string | undefined) => void
+  /** This folder page's own Content width (`page-width`, YAZ-6343): null follows Settings › Appearance › Content width. */
+  pageWidth?: ContentWidth | null
+  appContentWidth?: ContentWidth
+  onChangePageWidth?: (next: ContentWidth | null) => void
+  /** This folder page's own Position (`page-position`, YAZ-6343): null follows Settings › Appearance › Page position. */
+  pagePosition?: ContentPosition | null
+  appContentPosition?: ContentPosition
+  onChangePagePosition?: (next: ContentPosition | null) => void
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
 }) {
@@ -161,7 +169,18 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
     <StatusChips zoom={zoom} onZoom={onZoom} readOnly={readOnly ? { asking, onAsk, onAllow, onCancel, onTurnOff, editingUntil, onLock } : null} sync={sync} onSyncNow={onSyncNow} save={page === null ? save : worse(save, page.save)}>
       {page?.foldAll}
       {/* The folder page's own settings only (YAZ-3746 13BM PS2): the Page tab's text settings are on its toolbar (`Toolbar`). */}
-      <PageSettings readOnly={readOnly} onToggleReadOnly={onToggleReadOnly} switches={switches} switchesHeading={`${name} (folder page)`} />
+      <PageSettings
+        readOnly={readOnly}
+        onToggleReadOnly={onToggleReadOnly}
+        switches={switches}
+        switchesHeading={`${name} (folder page)`}
+        pageWidth={pageWidth}
+        appContentWidth={appContentWidth}
+        onChangePageWidth={onChangePageWidth}
+        pagePosition={pagePosition}
+        appContentPosition={appContentPosition}
+        onChangePagePosition={onChangePagePosition}
+      />
     </StatusChips>
   )
 }
