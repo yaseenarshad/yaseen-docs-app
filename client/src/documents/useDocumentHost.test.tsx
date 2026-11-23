@@ -49,8 +49,28 @@ let root: Root | null = null
 let container: HTMLElement
 
 /** The engine's stand-in: the hook, its bar and its chips in a board section. */
-function Host({ path = PATH, sync, onSyncNow, readOnly = false, readOnlySwitch, vault = false }: { path?: string; sync?: GithubSyncStatus | null; onSyncNow?: () => void; readOnly?: boolean; readOnlySwitch?: boolean; vault?: boolean }) {
-  board = useDocumentHost({ root: ROOT, path, watch, sync, onSyncNow, write, reload, onCommand, onShown, focus, readOnly, readOnlySwitch, onNotice })
+function Host({
+  path = PATH,
+  sync,
+  onSyncNow,
+  readOnly = false,
+  readOnlySwitch,
+  vault = false,
+  checkDisk,
+  keepBoth,
+  merge,
+}: {
+  path?: string
+  sync?: GithubSyncStatus | null
+  onSyncNow?: () => void
+  readOnly?: boolean
+  readOnlySwitch?: boolean
+  vault?: boolean
+  checkDisk?: () => Promise<number | null>
+  keepBoth?: (a: Autosave<number>) => Promise<boolean>
+  merge?: (a: Autosave<number>) => Promise<'merged' | 'conflict' | 'reload'>
+}) {
+  board = useDocumentHost({ root: ROOT, path, watch, sync, onSyncNow, write, reload, onCommand, onShown, focus, readOnly, readOnlySwitch, onNotice, checkDisk, keepBoth, merge })
   return (
     <section className="editor editor--drawing">
       <div ref={board.hostRef}>
@@ -611,5 +631,61 @@ describe('Read only for the whole vault on a board (YAZ-4939)', () => {
     opened({ vault: true, readOnlySwitch: false })
     expect(board.readOnly).toBe(false)
     expect(chip()).toBeNull()
+  })
+})
+
+describe('YAZ-4279 items 6 & 12: focus/reveal checkDisk and Keep both', () => {
+  it('window focus calls checkDisk (throttled to 1s) and reloads when mtime moved on a clean buffer', async () => {
+    const checkDisk = vi.fn<() => Promise<number | null>>().mockResolvedValue(200)
+    opened({ checkDisk })
+    act(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
+    await settle()
+    expect(checkDisk).toHaveBeenCalledTimes(1)
+    expect(reload).toHaveBeenCalledTimes(1)
+
+    // Throttled within 1s.
+    act(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
+    await settle()
+    expect(checkDisk).toHaveBeenCalledTimes(1)
+
+    // After 1s, checks again; matching mtime does nothing.
+    checkDisk.mockResolvedValue(100)
+    await after(1000)
+    act(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
+    await settle()
+    expect(checkDisk).toHaveBeenCalledTimes(2)
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('tab reveal via IntersectionObserver calls checkDisk and triggers merge when configured', async () => {
+    const merge = vi.fn<(a: Autosave<number>) => Promise<'merged' | 'conflict' | 'reload'>>().mockResolvedValue('merged')
+    const checkDisk = vi.fn<() => Promise<number | null>>().mockResolvedValue(250)
+    await withRevealObserver(async (reveal) => {
+      opened({ checkDisk, merge })
+      reveal()
+      await settle()
+      expect(checkDisk).toHaveBeenCalledTimes(1)
+      expect(merge).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('Keep both runs the keepBoth callback and clears the conflict bar when it returns true', async () => {
+    const keepBoth = vi.fn<(a: Autosave<number>) => Promise<boolean>>().mockResolvedValue(true)
+    opened({ keepBoth })
+    edit(1)
+    watcherSaw({ type: 'change', path: PATH, mtime: 200 })
+    await settle()
+    expect(text()).toContain('File changed on disk.')
+    expect(button('Keep both')).toBeDefined()
+    await act(async () => button('Keep both').click())
+    await settle()
+    expect(keepBoth).toHaveBeenCalledTimes(1)
+    expect(text()).not.toContain('File changed on disk.')
   })
 })

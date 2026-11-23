@@ -24,7 +24,7 @@ import { storage } from '../lib/storage'
 import { basename } from '../lib/paths'
 import { useAppliedTheme } from '../lib/theme'
 import { useDrawingLinks, type DrawingLinkProps } from '../drawings/useDrawingLinks'
-import { linkPreviewHint, readOnlyHint } from '../drawings/cogHints'
+import { linkPreviewHint, readOnlyHint, RELOAD_DISK_HINT } from '../drawings/cogHints'
 import { CardPreviewHost } from '../tabs/cardPreview'
 import { useDrawioLinkBridge } from './drawioLinkBridge'
 import { drawioAdaptiveColors, drawioConfig, drawioFrameUrl, readDrawioMessage } from './drawioProtocol'
@@ -251,6 +251,15 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
       setHoverLinksOff(keptHoverLinksOff.current)
       return isDiagramReadOnly(res.xml)
     },
+    // YAZ-4279 item 6: cheap disk mtime check on window focus / tab reveal to catch missed watcher events.
+    checkDisk: async () => {
+      try {
+        const head = await api.boardHead(path)
+        return head.mtime
+      } catch {
+        return null
+      }
+    },
     // YAZ-4279 D2, D3, item 1: every outside save, merged in draw.io — edits or none, so a clean tab keeps its undo history,
     // selection and view (draw.io's `load` clears undo). A read-only switch the file changed is the user's to settle under
     // edits; with none, a reload brings it in. A clean merge draw.io refuses falls back to that reload too.
@@ -313,14 +322,25 @@ function DiagramHost({ root, path, loaded, watch, sync, onSyncNow, darkColors, o
       onNotice?.(err instanceof BridgeRequestError && err.message !== '' ? err.message : "The switch couldn't be saved.", 'error')
     }
   }
+  const reloadFromDisk = async (): Promise<void> => {
+    if (retired.current) return
+    await board.reload()
+    onNotice?.('Reloaded from disk.')
+  }
   const setHoverLinksNow = useRef(setHoverLinks)
   setHoverLinksNow.current = setHoverLinks
-  // The cog: "Read only", then this diagram's own row, greyed out by Read only, as a board's (D10).
+  const reloadFromDiskNow = useRef(reloadFromDisk)
+  reloadFromDiskNow.current = reloadFromDisk
+  // The cog: "Read only", then this diagram's own row, greyed out by Read only, as a board's (D10), plus Reload from disk (YAZ-4279 item 6).
   const { chips } = board
   useLayoutEffect(
     () =>
       chips.set({
-        pageRows: () => [{ label: 'Read only', readOnlySlot: true, hint: readOnlyHint('diagram') }, { label: 'Link preview on hover', hint: linkPreviewHint('diagram'), on: !hoverLinksOff, onToggle: () => void setHoverLinksNow.current(hoverLinksOff), disabled: board.readOnly }],
+        pageRows: () => [
+          { label: 'Read only', readOnlySlot: true, hint: readOnlyHint('diagram') },
+          { label: 'Link preview on hover', hint: linkPreviewHint('diagram'), on: !hoverLinksOff, onToggle: () => void setHoverLinksNow.current(hoverLinksOff), disabled: board.readOnly },
+          { label: 'Reload from disk', hint: RELOAD_DISK_HINT, onToggle: () => void reloadFromDiskNow.current(), divider: true },
+        ],
       }),
     [chips, hoverLinksOff, board.readOnly],
   )

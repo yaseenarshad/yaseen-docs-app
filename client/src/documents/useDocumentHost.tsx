@@ -90,6 +90,13 @@ export interface DocumentHostOptions extends DocumentHostProps {
    * 'reload': nothing is unsaved, but only `reload` brings the file in. Absent (the code tab): the old rule.
    */
   merge?: (autosave: Autosave<number>) => Promise<'merged' | 'conflict' | 'reload'>
+  /** "Keep both" on a conflict (YAZ-4279 item 12): merges non-clashing shapes and duplicates clashing ones. True clears the bar. */
+  keepBoth?: (autosave: Autosave<number>) => Promise<boolean>
+  /**
+   * Cheap disk mtime check run on window focus or tab reveal (YAZ-4279 item 6) to catch missed fs-watcher events.
+   * Returns current disk mtime, or null if unreadable.
+   */
+  checkDisk?: () => Promise<number | null>
   /** "Keep mine" is about to overwrite a version this tab did not write: what the engine knows of the file is stale (YAZ-4071 7H). */
   onKeepMine?: () => void
   /** The loaded file's read-only switch (YAZ-3076 D1): `isDrawingReadOnly` / `isDiagramReadOnly` of what the shell loaded. */
@@ -227,6 +234,50 @@ export function useDocumentHost(options: DocumentHostOptions) {
     void a.adopt(conflictMtime)
   }, [conflictMtime])
 
+  const keepBoth = useCallback(() => {
+    const a = autosave.current
+    const fn = engine.current.keepBoth
+    if (a === null || retired.current || conflictMtime === null || fn === undefined) return
+    void fn(a)
+      .then((ok) => {
+        if (ok) setConflictMtime(null)
+      })
+      .catch((err: unknown) => {
+        console.error('keepBoth', err)
+      })
+  }, [conflictMtime])
+
+  // YAZ-4279 item 6: check disk mtime on window focus and tab reveal (throttled to at most once per 1s)
+  // so an outside write whose fs-watcher event was missed still lands cleanly.
+  const lastDiskCheck = useRef(0)
+  const diskCheckInFlight = useRef(false)
+  const checkDiskNow = useCallback(() => {
+    const a = autosave.current
+    const check = engine.current.checkDisk
+    if (a === null || retired.current || check === undefined || diskCheckInFlight.current) return
+    const now = Date.now()
+    if (now - lastDiskCheck.current < 1000) return
+    lastDiskCheck.current = now
+    diskCheckInFlight.current = true
+    void a
+      .settled()
+      .then(() => check().catch(() => null))
+      .then((mtime) => {
+        if (mtime === null || autosave.current !== a || retired.current || mtime === a.mtime) return
+        if (a.dirty || engine.current.merge !== undefined) void mergeOrConflict(mtime)
+        else void reload()
+      })
+      .finally(() => {
+        diskCheckInFlight.current = false
+      })
+  }, [mergeOrConflict, reload])
+
+  useEffect(() => {
+    const onFocus = (): void => checkDiskNow()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [checkDiskNow])
+
   // The close/quit handshake (main holds the window until this settles, 5 s cap) and the unmount
   // flush. A retired host does neither — that is what keeps a delete deleted.
   // It answers whether the document is clean (YAZ-3737 D2): a conflict or a failed write keeps a reload away.
@@ -287,11 +338,12 @@ export function useDocumentHost(options: DocumentHostOptions) {
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((e) => e.isIntersecting)) return
       engine.current.onShown?.()
+      checkDiskNow()
       if (mayTakeFocus(document.activeElement, host.closest('.tabstack'))) engine.current.focus()
     })
     observer.observe(host)
     return () => observer.disconnect()
-  }, [])
+  }, [checkDiskNow])
 
   const flush = useCallback(() => {
     if (!retired.current) void autosave.current?.flush()
@@ -348,7 +400,7 @@ export function useDocumentHost(options: DocumentHostOptions) {
     [chips, setReadOnly, allowFor, lock],
   )
 
-  const conflictBar = conflictMtime !== null && <ConflictBar onReload={() => void reload()} onKeepMine={keepMine} />
+  const conflictBar = conflictMtime !== null && <ConflictBar onReload={() => void reload()} onKeepBoth={options.keepBoth !== undefined ? keepBoth : undefined} onKeepMine={keepMine} />
   return { hostRef, autosave, retired, start, flush, reload, chips, conflictBar, readOnly, switchOn }
 }
 
