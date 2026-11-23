@@ -76,7 +76,7 @@ import { holdColResize } from '../lib/colResize'
 import { namingTab } from '../lib/focusHandoff'
 import { appStateEdits, boardAppStateKeys } from './boardAppState'
 import { contentVersion } from './contentVersion'
-import { mergeLiveScene, type SceneSide } from './mergeScene'
+import { keepBothLiveScene, mergeLiveScene, prepareReplacedScene, type SceneSide } from './mergeScene'
 import { OutsideMarks } from './outsideMarks'
 import './outsideMarks.css'
 import { CANVAS_SIDEBAR, CanvasSidebar, openCanvasTab } from './CanvasSidebar'
@@ -853,7 +853,8 @@ export function ExcalidrawSurface({
         }),
       pictures: () => picturesSize(api.getSceneElements() as readonly unknown[], api.getFiles() as unknown as Record<string, unknown>),
       replaceScene: (next) => {
-        let restored = mod.restoreElements(next.elements as ChangeArgs[0], null)
+        // YAZ-4279 item 4: sanitize, re-measure text, and bump versionNonce so ShapeCache never stays stale on Reload.
+        let restored = prepareReplacedScene(mod, next).elements as unknown as ChangeArgs[0]
         // Folding off (D18): the new scene's folds go aside; the old scene's are gone.
         if (foldsOffAt.current) {
           const taken = mod.takeFoldsAside(restored)
@@ -876,12 +877,19 @@ export function ExcalidrawSurface({
         return version
       },
       mergeScene: (base, disk, glow) => {
-        const merged = mergeLiveScene(mod, base, disk, { elements: api.getSceneElementsIncludingDeleted(), appState: api.getAppState() as unknown as Record<string, unknown> }, boardKeys.current)
+        // YAZ-4277 D18: put hidden folds back before merging so live and disk compare with real fold state.
+        const liveWithFolds = mod.withFoldsPutBack(api.getSceneElementsIncludingDeleted() as ChangeArgs[0], hiddenFolds.current) as readonly unknown[]
+        const merged = mergeLiveScene(mod, base, disk, { elements: liveWithFolds, appState: api.getAppState() as unknown as Record<string, unknown> }, boardKeys.current)
         if ('conflicts' in merged) {
           marks.current?.clash(merged.conflicts)
           return merged
         }
-        const elements = merged.elements as unknown as ChangeArgs[0]
+        let elements = merged.elements as unknown as ChangeArgs[0]
+        if (foldsOffAt.current) {
+          const taken = mod.takeFoldsAside(elements)
+          elements = taken.elements as typeof elements
+          hiddenFolds.current = taken.aside
+        }
         const version = countVersion.current(elements)
         api.updateScene({ elements, ...(Object.keys(merged.appState).length > 0 && { appState: merged.appState as unknown as EngineAppState }), captureUpdate: mod.CaptureUpdateAction.NEVER })
         addNewFiles(api, disk.files)
@@ -951,63 +959,22 @@ export function ExcalidrawSurface({
         return { removedDeleted, repairedCount }
       },
       keepBothScene: (base, disk, glow) => {
-        const live = { elements: api.getSceneElementsIncludingDeleted(), appState: api.getAppState() as unknown as Record<string, unknown> }
-        const merged = mergeLiveScene(mod, base, disk, live, boardKeys.current)
-        if (!('conflicts' in merged)) {
-          const elements = merged.elements as unknown as ChangeArgs[0]
-          const version = countVersion.current(elements)
-          api.updateScene({ elements, ...(Object.keys(merged.appState).length > 0 && { appState: merged.appState as unknown as EngineAppState }), captureUpdate: mod.CaptureUpdateAction.IMMEDIATELY })
-          addNewFiles(api, disk.files)
-          marks.current?.clash([])
-          marks.current?.mark(merged.added, merged.changed, merged.elements, glow)
-          return { version, duplicated: 0 }
+        const liveWithFolds = mod.withFoldsPutBack(api.getSceneElementsIncludingDeleted() as ChangeArgs[0], hiddenFolds.current) as readonly unknown[]
+        const kept = keepBothLiveScene(mod, base, disk, { elements: liveWithFolds, appState: api.getAppState() as unknown as Record<string, unknown> }, boardKeys.current)
+        let elements = kept.elements as unknown as ChangeArgs[0]
+        if (foldsOffAt.current) {
+          const taken = mod.takeFoldsAside(elements)
+          elements = taken.elements as typeof elements
+          hiddenFolds.current = taken.aside
         }
-        const conflictIds = new Set(merged.conflicts)
-        const restoredDisk = mod.restoreElements(disk.elements as ChangeArgs[0], null) as unknown as readonly RepairableElement[]
-        const liveElements = live.elements as readonly RepairableElement[]
-        const liveById = new Map(liveElements.map((e) => [e.id, e]))
-        const idRemap = new Map<string, string>()
-        const clashingDisk = restoredDisk.filter((e) => e.isDeleted !== true && conflictIds.has(e.id))
-        for (const el of clashingDisk) {
-          idRemap.set(el.id, `${el.id}-copy-${Math.random().toString(36).slice(2, 8)}`)
-        }
-        const now = Date.now()
-        const combined: RepairableElement[] = [...liveElements]
-        // Include non-clashing alive disk elements that do not exist in live yet.
-        for (const el of restoredDisk) {
-          if (el.isDeleted === true || conflictIds.has(el.id)) continue
-          if (!liveById.has(el.id)) {
-            combined.push({ ...el, version: (el.version ?? 0) + 1, versionNonce: Math.floor(Math.random() * 2 ** 31), updated: now })
-          }
-        }
-        const duplicatedIds: string[] = []
-        for (const el of clashingDisk) {
-          const newId = idRemap.get(el.id)!
-          duplicatedIds.push(newId)
-          const copy: RepairableElement = {
-            ...el,
-            id: newId,
-            x: (typeof el.x === 'number' ? el.x : 0) + 40,
-            y: (typeof el.y === 'number' ? el.y : 0) + 40,
-            version: 1,
-            versionNonce: Math.floor(Math.random() * 2 ** 31),
-            updated: now,
-          }
-          if (typeof copy.containerId === 'string') copy.containerId = idRemap.get(copy.containerId) ?? null
-          if (typeof copy.frameId === 'string') copy.frameId = idRemap.get(copy.frameId) ?? null
-          if (Array.isArray(copy.boundElements)) {
-            const remapped = copy.boundElements.filter((b) => typeof b?.id === 'string' && idRemap.has(b.id)).map((b) => ({ ...b, id: idRemap.get(b.id)! }))
-            copy.boundElements = remapped.length > 0 ? remapped : null
-          }
-          combined.push(copy)
-        }
-        const elements = combined as unknown as ChangeArgs[0]
         const version = countVersion.current(elements)
-        api.updateScene({ elements, captureUpdate: mod.CaptureUpdateAction.IMMEDIATELY })
+        api.updateScene({ elements, ...(Object.keys(kept.appState).length > 0 && { appState: kept.appState as unknown as EngineAppState }), captureUpdate: mod.CaptureUpdateAction.IMMEDIATELY })
         addNewFiles(api, disk.files)
         marks.current?.clash([])
-        marks.current?.mark(duplicatedIds, [], combined, glow)
-        return { version, duplicated: duplicatedIds.length }
+        marks.current?.mark(kept.added, kept.changed, kept.elements, glow)
+        const changedIds = [...kept.added, ...kept.changed]
+        if (changedIds.length > 0) outsideChangeRef.current?.(changedIds)
+        return { version, duplicated: kept.duplicated.length }
       },
       clash: (ids) => marks.current?.clash(ids),
       whenIdle: () => (inGesture(api.getAppState() as unknown as Record<string, unknown>) ? new Promise<boolean>((done) => idleWaiters.current.push(done)) : Promise.resolve(true)),
