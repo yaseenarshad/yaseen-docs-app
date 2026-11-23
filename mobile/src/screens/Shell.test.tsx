@@ -373,7 +373,7 @@ describe('Settings: Friends (decision 22; round 13, item 4)', () => {
     expect(h.text()).toContain('Home time zoneAsia/Tokyo')
   })
 
-  it('a token with no Gists permission: the alert of 3E, with the guide as the way forward', async () => {
+  it('a token with no Gists permission does not show the legacy Gists alert (Friends uses D1)', async () => {
     h = await mount()
     await signInWithForm(h, 'yaseen/vault', GOOD)
     const account = (await loadAccount(h.store, 'yaseen/vault@main'))!
@@ -381,9 +381,7 @@ describe('Settings: Friends (decision 22; round 13, item 4)', () => {
     h.unmount()
     h = await mount({ phone: { store: h.store, tokens: h.tokens } })
     await h.click('Settings')
-    expect(h.host.querySelector('[role="alert"]')?.textContent).toContain('Friends needs the Gists permission on your token.')
-    await h.click('How to make a token')
-    expect(h.text()).toContain('Set up your phone')
+    expect(h.text()).not.toContain('Friends needs the Gists permission on your token.')
   })
 })
 

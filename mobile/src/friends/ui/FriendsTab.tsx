@@ -80,15 +80,10 @@ export default function FriendsTab() {
   const { service, ready } = useService()
   const { board, refresh } = useBoard(service)
   const app = useApp()
-  const account = friendsMessage(app.friendsAccount)
+  // Friends runs on Cloudflare D1 (/api/friends/*), not GitHub Gists — never show the legacy `no-gists` token warning.
+  const account = app.friendsAccount.kind === 'no-gists' ? null : friendsMessage(app.friendsAccount)
   const alert =
-    account === null ? null : app.friendsAccount.kind === 'no-gists' ? (
-      <Problem
-        message={`${account} Add it to the token on GitHub, then replace the token in Settings.`}
-        action="How to make a token"
-        onAction={() => app.go({ type: 'open', route: { kind: 'guide' } })}
-      />
-    ) : (
+    account === null ? null : (
       <Problem quiet message={account} action="Change" onAction={() => app.go({ type: 'open', route: { kind: 'settings' } })} />
     )
 
@@ -520,13 +515,13 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
               const todayDone = meRow?.numbers?.mark === 'finished' || (dueLeft === 0 && meCards > 0)
               heroDone = todayDone
               heroPrimary = todayDone ? '🎉 Today complete' : dueLeft > 0 ? `${dueLeft} due left` : 'No cards due'
-              metaParts.push(`${meCards.toLocaleString()} cards`, formatStudyDuration(meMinutes), streakText)
+              metaParts.push(`${meCards.toLocaleString()} ${meCards === 1 ? 'card' : 'cards'}`, formatStudyDuration(meMinutes), streakText)
             } else if (period === 'yesterday') {
               subHeading = `Yesterday · ${ctx.rangeLabel}`
               const yestDone = meRow?.numbers?.mark === 'finished'
               heroDone = yestDone
               heroPrimary = yestDone ? '🥇 Yesterday complete' : 'Not finished'
-              metaParts.push(`${meCards.toLocaleString()} cards`, formatStudyDuration(meMinutes), streakText)
+              metaParts.push(`${meCards.toLocaleString()} ${meCards === 1 ? 'card' : 'cards'}`, formatStudyDuration(meMinutes), streakText)
             } else {
               const goal = buildPeriodGoalHero(board.me.stats, period, meCards, formatStudyDuration(meMinutes), now)
               subHeading = goal.line1
@@ -773,7 +768,9 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                               </b>{' '}
                               {rowConsistency.possibleDays === 1 ? 'day' : 'days'}
                               <br />
-                              {priorSubLabel ? `${priorSubLabel} · ${numbers.cards.toLocaleString()} cards` : `${numbers.cards.toLocaleString()} cards`}
+                              {priorSubLabel
+                                ? `${priorSubLabel} · ${numbers.cards.toLocaleString()} ${numbers.cards === 1 ? 'card' : 'cards'}`
+                                : `${numbers.cards.toLocaleString()} ${numbers.cards === 1 ? 'card' : 'cards'}`}
                             </>
                           ) : (
                             <>
@@ -782,7 +779,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                                   ✓
                                 </span>
                               )}{' '}
-                              <b>{numbers.cards}</b> cards
+                              <b>{numbers.cards}</b> {numbers.cards === 1 ? 'card' : 'cards'}
                               <br />
                               {(entry.streak ?? 0) > 0 ? `${entry.streak}d 🔥 · ${formatStudyDuration(numbers.minutes)}` : formatStudyDuration(numbers.minutes)}
                             </>
@@ -842,7 +839,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
             const totalCards = rows.reduce((acc, r) => acc + (r.numbers?.cards ?? 0), 0)
             const totalMins = rows.reduce((acc, r) => acc + (r.numbers?.minutes ?? 0), 0)
             const timeLabel = formatStudyDuration(totalMins)
-            const leftSub = `${count === 1 ? '1 person' : `${count} people`} · ${totalCards} cards · ${timeLabel}`
+            const leftSub = `${count === 1 ? '1 person' : `${count} people`} · ${totalCards} ${totalCards === 1 ? 'card' : 'cards'} · ${timeLabel}`
             const rightSub =
               period === 'today'
                 ? doneCount === count && count > 0
