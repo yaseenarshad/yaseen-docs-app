@@ -183,7 +183,10 @@ export interface FriendsApiClient {
   getDeckFile(ownerId: number, repo: string, path: string): Promise<DeckFilePayload>
   getDeckAssetBytes(ownerId: number, repo: string, path: string): Promise<{ bytes: Uint8Array; contentType: string }>
   createInvite(): Promise<{ code: string; link: string; expiresAt: string }>
-  acceptInvite(code: string): Promise<{ kind: 'friend'; friendId: number } | { kind: 'group'; groupId: string; status: string; name: string }>
+  acceptInvite(code: string): Promise<
+    | { kind: 'friend'; friendId: number; alreadyFriends?: boolean }
+    | { kind: 'group'; groupId: string; status: string; name: string; alreadyMember?: boolean }
+  >
   removeFriend(userId: number, block?: boolean): Promise<{ ok: true }>
   createGroup(name: string): Promise<{ id: string; name: string; inviteCode: string; link: string }>
   renameGroup(groupId: string, name: string): Promise<{ ok: true; name: string }>
@@ -359,7 +362,10 @@ export function createFriendsApiClient(opts: FriendsApiClientOptions): FriendsAp
       return res.data!
     },
     async acceptInvite(code) {
-      const res = await authed<{ kind: 'friend'; friendId: number } | { kind: 'group'; groupId: string; status: string; name: string }>('/api/friends/invites/accept', {
+      const res = await authed<
+        | { kind: 'friend'; friendId: number; alreadyFriends?: boolean }
+        | { kind: 'group'; groupId: string; status: string; name: string; alreadyMember?: boolean }
+      >('/api/friends/invites/accept', {
         method: 'POST',
         body: JSON.stringify({ code }),
       })

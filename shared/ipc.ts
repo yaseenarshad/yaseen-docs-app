@@ -285,7 +285,13 @@ export const CONTRACT = {
       [ownerId: number, repo: string, path: string],
       { ok: true; mime: string; dataBase64: string } | { ok: false; error: string }
     >('friends:browse-deck-asset', 3),
-    onInviteLink: push<{ kind: 'friend' | 'group'; code: string }>('friends:invite-link'),
+    onInviteLink: push<{
+      kind: 'friend' | 'group'
+      code: string
+      status?: 'accepted' | 'pending-auth' | 'error'
+      result?: unknown
+      error?: string
+    }>('friends:invite-link'),
   },
   /** Targeted mutators (not a generic patch) so several windows never lose each other's writes. */
   state: {
