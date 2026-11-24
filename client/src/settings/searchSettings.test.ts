@@ -237,7 +237,7 @@ describe('settingCandidates', () => {
   it('includes Storage and Sharing only with their hooks, after Sync and before Hotkeys; Drawings and Images sit between Editor and Files (YAZ-3028 merge); Tables right after Editor (YAZ-4775); Links & IDs only with a vault (YAZ-6484)', () => {
     const storage: SettingsCtx['storage'] = { stats: null, failed: false, refresh: () => undefined, shrink: async () => ({ shrunk: 0, skipped: 0, bytesMoved: 0 }), lastShrink: null }
     const sharing: SettingsCtx['sharing'] = { root: '/v', status: null, rows: null, listError: null, now: 0, refresh: () => undefined, show: () => undefined }
-    const linkClick: SettingsCtx['linkClick'] = { settings: { click: 'open' }, save: () => undefined }
+    const linkClick: SettingsCtx['linkClick'] = { settings: { click: 'open' }, isExplore: () => false, save: () => undefined }
     const sectionsOf = (c: SettingsCtx) => [...new Set(settingCandidates(c).map((h) => h.section.id))]
     expect(sectionsOf({ ...ctx({ status: null, setEnabled: () => undefined }, REVIEW), linkClick, storage, sharing })).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'tables', 'code', 'canvas', 'images', 'files', 'linksIds', 'folderPages', 'cards', 'sync', 'memory', 'storage', 'sharing', 'hotkeys'])
     expect(sectionsOf(ctx())).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'tables', 'code', 'canvas', 'images', 'files', 'folderPages', 'memory', 'hotkeys'])
@@ -292,7 +292,7 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    const linkClick: SettingsCtx['linkClick'] = { settings: { click: 'open' }, save: () => undefined }
+    const linkClick: SettingsCtx['linkClick'] = { settings: { click: 'open' }, isExplore: () => false, save: () => undefined }
     expect(ids(searchSettings(settingCandidates({ ...ctx(), linkClick }), 'links & ids'))).toEqual(['ids', 'idLetters', 'showIds', 'showIds.title', 'showIds.files', 'showIds.tabs', 'showIds.tabsLayout', 'linkClick', ...LINK_PILL_ROWS, 'duplicates', 'oldIds', 'backfillCreated'])
   })
 

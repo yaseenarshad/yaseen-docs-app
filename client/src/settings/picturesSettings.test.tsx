@@ -53,7 +53,7 @@ async function mount(settings: SettingsState = { ...DEFAULT_SETTINGS }, vaults: 
   root = createRoot(el)
   onChange = vi.fn()
   act(() => root?.render(<SettingsDialog ctx={{ settings, onChange, places }} onClose={vi.fn()} />))
-  act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Files & Links')!.click())
+  act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Files')!.click())
   await flush()
 }
 /** Re-renders with the settings `onChange` last gave, as App does. */
