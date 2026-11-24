@@ -60,7 +60,7 @@ import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
 import { initMint, macId } from './vaultIndex/mint'
 import { createWindowManager, type RestoreTarget } from './windows'
 import { createDockIconController, defaultDockIconPath, type DockIconController } from './dockIcon'
-import { installVaultLauncher, removeVaultLauncher, vaultLauncherBinaryPath } from './vaultLauncher'
+import { installVaultLauncher, removeOrphanLauncher, removeVaultLauncher, vaultLauncherBinaryPath } from './vaultLauncher'
 import { dropLanded } from './dragLanding'
 import { blockFileNavigation, createWindowOpenHandler } from './windowOpenPolicy'
 import { createUpdater, runFile, shortVersion, spawnDetached } from './updater'
@@ -570,6 +570,9 @@ app.whenReady().then(() => {
           },
           remove: async (appPath, root) => {
             await removeVaultLauncher(appPath, root, { trashItem: (p) => shell.trashItem(p) })
+          },
+          removeOrphan: async (appPath) => {
+            await removeOrphanLauncher(appPath, { trashItem: (p) => shell.trashItem(p) })
           },
           reveal: (appPath) => shell.showItemInFolder(appPath),
           launch: async (appPath) => {

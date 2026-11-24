@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { CONTRACT } from '@shared/ipc'
 import { isRecord } from '@shared/guards'
@@ -498,11 +498,17 @@ export function registerVaultLauncherIpc(
     if (backend.removeOrphan) {
       await backend.removeOrphan(appPath)
     } else {
-      const info = await readLauncherPlist(appPath)
-      if (!isOwnLauncher(info)) {
-        throw new BridgeFailure('BAD_REQUEST', `Refusing to remove "${appPath}": it is not a Yaseen Docs launcher.`)
+      const present = await stat(appPath).then(
+        () => true,
+        () => false,
+      )
+      if (present) {
+        const info = await readLauncherPlist(appPath)
+        if (!isOwnLauncher(info)) {
+          throw new BridgeFailure('BAD_REQUEST', `Refusing to remove "${appPath}": it is not a Yaseen Docs launcher.`)
+        }
+        await backend.remove(appPath, info.vaultPath ?? '')
       }
-      await backend.remove(appPath, info.vaultPath ?? '')
     }
     onChanged()
   })

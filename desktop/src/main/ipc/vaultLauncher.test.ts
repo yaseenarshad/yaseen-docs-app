@@ -615,4 +615,14 @@ describe('launcher lifecycle & All Launchers IPC (YAZ-6447)', () => {
     expect(backend.remove).toHaveBeenCalledWith(validOrphan, '/Users/yasin/OldDemo')
     expect(onChanged).toHaveBeenCalledTimes(1)
   })
+
+  it('removeOrphan treats an already-deleted orphan bundle as gone and broadcasts onChanged (YAZ-6459)', async () => {
+    const missingOrphan = path.join(dir, 'Already Deleted.app')
+    onChanged.mockClear()
+    vi.mocked(backend.remove).mockClear()
+
+    expect(await registered(CONTRACT.vaultLauncher.removeOrphan)(undefined, missingOrphan)).toEqual({ ok: true, value: undefined })
+    expect(backend.remove).not.toHaveBeenCalled()
+    expect(onChanged).toHaveBeenCalledTimes(1)
+  })
 })

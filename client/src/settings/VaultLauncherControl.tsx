@@ -41,14 +41,16 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
       setStatus({ supported: false, launcher: null, exists: false, iconDataUrl: null })
       return
     }
+    let seq = 0
     const load = () => {
+      const mySeq = ++seq
       const req = isWorkspace ? api.vaultLauncher.workspaceStatus(workspaceId) : api.vaultLauncher.status(root!)
       void req.then(
         (res) => {
-          if (live) setStatus(res)
+          if (live && mySeq === seq) setStatus(res)
         },
         () => {
-          if (live) setStatus({ supported: false, launcher: null, exists: false, iconDataUrl: null })
+          if (live && mySeq === seq) setStatus({ supported: false, launcher: null, exists: false, iconDataUrl: null })
         },
       )
     }
