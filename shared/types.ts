@@ -2456,6 +2456,12 @@ export interface SettingsState {
    */
   codeBlockWidth: number | null
   /**
+   * Settings › Editor › Code blocks › Inline code (YAZ-6452): how `` `inline code` `` looks in every page — one of
+   * `INLINE_CODE_PRESETS`, or a custom `{ fg, bg }` (`fg`: `'text'` or `#rrggbb`; `bg`: `'auto'`, `'none'`, or `#rrggbb`).
+   * Applied via `data-inline-code-style` and CSS vars on `.app` (no editor remount).
+   */
+  inlineCodeStyle: InlineCodeStyle
+  /**
    * Settings › Tables › All tables › Width (YAZ-4783 layer 3): every page table's width in px at 100% zoom
    * (`isBlockWidth`), its columns shared evenly, or `null`, "Text column" (the look before). `--table-width` on `.app`.
    * A page's `table-width` key wins over it; a table whose every column has a width keeps its own.
@@ -2916,6 +2922,29 @@ export const BLOCK_WIDTH_MIN = 240
 export const BLOCK_WIDTH_MAX = 4000
 /** A block width, checked: a whole number of px in range. */
 export const isBlockWidth = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= BLOCK_WIDTH_MIN && v <= BLOCK_WIDTH_MAX
+/**
+ * Inline code style (YAZ-6452): 6 Light/Dark-adaptive presets, or a custom `{ fg, bg }` where `fg` is `'text'`
+ * (follows theme body text color in Light & Dark) or `#rrggbb`, and `bg` is `'auto'` (adaptive tint from `fg`),
+ * `'none'` (transparent), or `#rrggbb`.
+ */
+export const INLINE_CODE_PRESETS = ['default', 'subtle', 'github', 'accent', 'plum', 'plain'] as const
+export type InlineCodePreset = (typeof INLINE_CODE_PRESETS)[number]
+export interface InlineCodeCustom {
+  fg: string // '#rrggbb' or 'text' (follows theme body text color in Light & Dark)
+  bg: string // '#rrggbb', 'auto' (adaptive tint from fg in Light & Dark), or 'none' (transparent)
+}
+export type InlineCodeStyle = InlineCodePreset | InlineCodeCustom
+const INLINE_CODE_HEX_RE = /^#[0-9a-f]{6}$/i
+export function isInlineCodeStyle(v: unknown): v is InlineCodeStyle {
+  if (typeof v === 'string') return (INLINE_CODE_PRESETS as readonly string[]).includes(v)
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false
+  const rec = v as Record<string, unknown>
+  if (Object.keys(rec).length !== 2) return false
+  const { fg, bg } = rec
+  const fgOk = fg === 'text' || (typeof fg === 'string' && INLINE_CODE_HEX_RE.test(fg))
+  const bgOk = bg === 'auto' || bg === 'none' || (typeof bg === 'string' && INLINE_CODE_HEX_RE.test(bg))
+  return fgOk && bgOk
+}
 /** A band colour: the accent, a table colour, or a `#rrggbb`. */
 export const isBandColour = (v: unknown): v is string =>
   typeof v === 'string' && (v === 'accent' || ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey', 'brown'].includes(v) || /^#[0-9a-f]{6}$/i.test(v))
@@ -3285,6 +3314,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   outsideOutlineColors: { ...DEFAULT_OUTSIDE_OUTLINE_COLORS },
   outsideListPinned: false,
   codeBlockWidth: null,
+  inlineCodeStyle: 'default',
   tableWidth: null,
   tableRowBand: 'all',
   tableBandColour: 'accent',

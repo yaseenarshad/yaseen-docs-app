@@ -660,6 +660,7 @@ const reviewOn = ({ review, ids }: SettingsCtx): boolean => review?.settings.ena
 const CardTitleHelp = lazy(() => import('../components/CardTitleHelp').then((m) => ({ default: m.CardTitleHelp })))
 const CardSpacingPreview = lazy(() => import('./SpacingPreview').then((m) => ({ default: m.CardSpacingPreview })))
 const PageSpacingPreview = lazy(() => import('./SpacingPreview').then((m) => ({ default: m.PageSpacingPreview })))
+const InlineCodeStyleControl = lazy(() => import('./InlineCodeStyleControl').then((m) => ({ default: m.InlineCodeStyleControl })))
 /** A preview row: bare (the preview is its own label), found by "preview" and the spacing words. */
 const previewRow = (id: string, label: string, keywords: readonly string[], Preview: typeof CardSpacingPreview, available?: (ctx: SettingsCtx) => boolean, varsOf?: (ctx: SettingsCtx) => Record<string, string>): SettingDef => ({
   id,
@@ -1847,6 +1848,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['code', 'code block', 'width', 'wide', 'wider', 'narrow', 'px', 'pixels', 'column'],
             render: ({ settings, onChange }) => (
               <BlockWidthSetting name="Code block width" value={settings.codeBlockWidth ?? null} start={900} onSet={(codeBlockWidth) => onChange({ ...settings, codeBlockWidth })} />
+            ),
+          },
+          {
+            id: 'inlineCodeStyle',
+            label: 'Inline code',
+            hint: 'Changes how `inline code` looks in every page. Presets and Auto pill tint adapt to Light and Dark mode.',
+            keywords: ['code', 'inline code', 'backtick', 'pill', 'color', 'colour', 'red', 'style', 'preview'],
+            wide: true,
+            render: ({ settings, onChange }) => (
+              <Suspense fallback={null}>
+                <InlineCodeStyleControl value={settings.inlineCodeStyle ?? 'default'} onChange={(inlineCodeStyle) => onChange({ ...settings, inlineCodeStyle })} />
+              </Suspense>
             ),
           },
         ],

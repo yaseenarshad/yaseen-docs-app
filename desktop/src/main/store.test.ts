@@ -4,8 +4,9 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultLauncher, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, DEFAULT_TOOLBAR, HIGHLIGHT_CUSTOM_COLORS_KEPT, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ROW_HEIGHT_DEFAULT, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultLauncher, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, DEFAULT_TOOLBAR, HIGHLIGHT_CUSTOM_COLORS_KEPT, INLINE_CODE_PRESETS, isInlineCodeStyle, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ROW_HEIGHT_DEFAULT, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type InlineCodeStyle, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
+import { settingsFileText, travels } from '@shared/settingsSync'
 import { MAX_PICTURE_FOLDERS } from './fs/picturesFolders'
 import { createStore, isCanvasPanel, isSettings, mergeFolderSettings, normalizeTabStrip, sanitizeSettings, sanitizeSidebarTabs, sanitizeToolbarPrefs, sanitizeHighlightCustomColors } from './store'
 
@@ -507,6 +508,64 @@ describe('createStore: loading', () => {
       expect(isSettings({ ...DEFAULT_SETTINGS, codeBlockWidth: bad }), String(bad)).toBe(false)
       expect(isSettings({ ...DEFAULT_SETTINGS, tableWidth: bad }), String(bad)).toBe(false)
     }
+  })
+
+  it('YAZ-6452: inlineCodeStyle — defaults to default, validates all presets & custom shapes, rejects invalid values, and travels in settingsSync', async () => {
+    const { inlineCodeStyle: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    expect(DEFAULT_SETTINGS.inlineCodeStyle).toBe('default')
+    expect(LOCAL_SETTINGS).not.toContain('inlineCodeStyle')
+    expect(travels('inlineCodeStyle')).toBe(true)
+
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.inlineCodeStyle).toBe('default')
+
+    const validValues: InlineCodeStyle[] = [
+      ...INLINE_CODE_PRESETS,
+      { fg: 'text', bg: 'auto' },
+      { fg: 'text', bg: 'none' },
+      { fg: 'text', bg: '#e8f0fe' },
+      { fg: '#1d4ed8', bg: 'auto' },
+      { fg: '#1d4ed8', bg: 'none' },
+      { fg: '#ABCDEF', bg: '#123456' },
+    ]
+    for (const inlineCodeStyle of validValues) {
+      expect(isInlineCodeStyle(inlineCodeStyle), JSON.stringify(inlineCodeStyle)).toBe(true)
+      expect(isSettings({ ...DEFAULT_SETTINGS, inlineCodeStyle }), JSON.stringify(inlineCodeStyle)).toBe(true)
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, inlineCodeStyle } }))
+      expect(createStore(file).get().settings.inlineCodeStyle).toEqual(inlineCodeStyle)
+    }
+
+    const invalidValues: unknown[] = [
+      'custom',
+      'red',
+      '',
+      null,
+      undefined,
+      42,
+      [],
+      {},
+      { fg: 'text' },
+      { bg: 'auto' },
+      { fg: 'text', bg: 'auto', extra: true },
+      { fg: '#fff', bg: 'auto' },
+      { fg: 'blue', bg: 'auto' },
+      { fg: 'text', bg: 'transparent' },
+      { fg: 'text', bg: '#12345' },
+    ]
+    for (const bad of invalidValues) {
+      expect(isInlineCodeStyle(bad), JSON.stringify(bad)).toBe(false)
+      expect(isSettings({ ...DEFAULT_SETTINGS, inlineCodeStyle: bad }), JSON.stringify(bad)).toBe(false)
+      expect(sanitizeSettings({ ...DEFAULT_SETTINGS, inlineCodeStyle: bad }).inlineCodeStyle, JSON.stringify(bad)).toBe('default')
+    }
+
+    // Travels in settingsSync and merges atomically across Macs.
+    const synced = JSON.parse(settingsFileText('Mac', 100, { ...DEFAULT_SETTINGS, inlineCodeStyle: { fg: '#1d4ed8', bg: 'auto' } }))
+    expect(synced.settings.inlineCodeStyle).toEqual({ fg: '#1d4ed8', bg: 'auto' })
+    const here = { ...DEFAULT_SETTINGS, inlineCodeStyle: { fg: '#1d4ed8', bg: '#e8f0fe' } as InlineCodeStyle }
+    expect(mergeFolderSettings(here, { inlineCodeStyle: 'github' }).inlineCodeStyle).toBe('github')
+    expect(mergeFolderSettings(here, { inlineCodeStyle: { fg: 'text', bg: 'none' } }).inlineCodeStyle).toEqual({ fg: 'text', bg: 'none' })
+    // Unknown future preset keeps this Mac's value rather than resetting.
+    expect(mergeFolderSettings(here, { inlineCodeStyle: 'future-preset' }).inlineCodeStyle).toEqual(here.inlineCodeStyle)
   })
 
   it('YAZ-4450 D4, D7: workspaceLists and recentsByVault — a file without them loads them on; a value kept; junk falls back', () => {

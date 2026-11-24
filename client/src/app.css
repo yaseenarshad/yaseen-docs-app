@@ -722,6 +722,62 @@ button {
 .milkdown .ProseMirror mark.highlight-red { background: var(--mark-bg-red); }
 .milkdown .ProseMirror mark.highlight-gray { background: var(--mark-bg-gray); }
 
+/* Inline code style (YAZ-6452): preset tokens adapt to Light and Dark on <html> and on the Settings preview. */
+:root,
+[data-theme='light'] {
+  --inline-code-github-fg: #1f2328;
+  --inline-code-github-bg: rgba(175, 184, 193, 0.28);
+  --inline-code-accent-fg: #1d4ed8;
+  --inline-code-accent-bg: rgba(29, 78, 216, 0.1);
+  --inline-code-plum-fg: #7e22ce;
+  --inline-code-plum-bg: rgba(126, 34, 206, 0.1);
+}
+[data-theme='dark'] {
+  --inline-code-github-fg: #e6edf3;
+  --inline-code-github-bg: rgba(110, 118, 129, 0.4);
+  --inline-code-accent-fg: #7cb3ff;
+  --inline-code-accent-bg: rgba(124, 179, 255, 0.16);
+  --inline-code-plum-fg: #d8b4fe;
+  --inline-code-plum-bg: rgba(216, 180, 254, 0.16);
+}
+[data-inline-code-style='subtle'] .milkdown .ProseMirror code {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fg) 16%, transparent);
+  padding: 0 4px;
+}
+[data-inline-code-style='github'] .milkdown .ProseMirror code {
+  color: var(--inline-code-github-fg);
+  background: var(--inline-code-github-bg);
+  padding: 0 4px;
+}
+[data-inline-code-style='accent'] .milkdown .ProseMirror code {
+  color: var(--inline-code-accent-fg);
+  background: var(--inline-code-accent-bg);
+  padding: 0 4px;
+}
+[data-inline-code-style='plum'] .milkdown .ProseMirror code {
+  color: var(--inline-code-plum-fg);
+  background: var(--inline-code-plum-bg);
+  padding: 0 4px;
+}
+[data-inline-code-style='plain'] .milkdown .ProseMirror code {
+  color: var(--fg);
+  background: transparent;
+  padding: 0;
+}
+[data-inline-code-style='custom'] .milkdown .ProseMirror code {
+  color: var(--inline-code-fg);
+  background: var(--inline-code-bg);
+  padding: 0 4px;
+}
+[data-inline-code-style] .milkdown .ProseMirror pre code {
+  color: inherit;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
 /* Formatting inside a code block (YAZ-5794, `editor/code/codeMarks.ts`): CodeMirror mark decorations on the code's own
    text, drawn as the page draws its marks. A highlight's colour is `--code-mark-bg`: a named colour's token, or a custom
    colour's wash set on the span itself. */

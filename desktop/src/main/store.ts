@@ -72,6 +72,7 @@ import {
   TABLE_BAND_STRENGTH_STEP,
   isBandColour,
   isBlockWidth,
+  isInlineCodeStyle,
   isCardWidth,
   isCardTextSize,
   isCardTitleSize,
@@ -774,6 +775,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   outsideListPinned: (v): v is boolean => typeof v === 'boolean',
   // YAZ-4783: "Text column" (`null`) or whole px in range; anything else falls back to Text column, the look before.
   codeBlockWidth: (v): v is number | null => v === null || isBlockWidth(v),
+  inlineCodeStyle: isInlineCodeStyle,
   tableWidth: (v): v is number | null => v === null || isBlockWidth(v),
   tableRowBand: (v): v is TableRowBand => typeof v === 'string' && (TABLE_ROW_BANDS as readonly string[]).includes(v),
   tableBandColour: isBandColour,
@@ -921,7 +923,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
 /** Object fields that travel as a whole (YAZ-3397): the incoming one replaces this Mac's, after its own repair. */
 // The icon colours too (YAZ-3440 D4): a colour another Mac reset to its default is a key gone, which a merge by part would bring back.
 // ⌘D's place too (YAZ-3556 D2): a tab and a folder have other parts, and a merge by part would mix them.
-const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside', 'sidebarIconColors', 'goTo']
+const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside', 'sidebarIconColors', 'goTo', 'inlineCodeStyle']
 
 /**
  * Another Mac's travelling fields over this Mac's settings (YAZ-3276 D3). A value that this build can't read,
