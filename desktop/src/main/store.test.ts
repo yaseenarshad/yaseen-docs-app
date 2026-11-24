@@ -270,6 +270,31 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings).toMatchObject({ contentPosition: 'center' })
   })
 
+  it('tabWidth: legacy state defaults to default; presets and custom integer px (120–400) survive; junk falls back; travels via Settings Folder (YAZ-6464)', async () => {
+    const { tabWidth: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ tabWidth: 'default' })
+
+    for (const tabWidth of ['compact', 'default', 'wide'] as const) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, tabWidth } }))
+      expect(createStore(file).get().settings).toMatchObject({ tabWidth })
+    }
+
+    for (const tabWidth of [120, 240, 400]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, tabWidth } }))
+      expect(createStore(file).get().settings).toMatchObject({ tabWidth })
+    }
+
+    for (const tabWidth of [119, 401, 240.5, '240', 'narrow', null]) {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, tabWidth } }))
+      expect(createStore(file).get().settings, String(tabWidth)).toMatchObject({ tabWidth: 'default' })
+    }
+
+    const store = createStore(file)
+    store.applyFolderSettings({ tabWidth: 280 }, 5000)
+    expect(store.get().settings.tabWidth).toBe(280)
+  })
+
   it('Settings › Notifications (YAZ-3303 D1): a file from before 3303 reads 4 s, every toast type on and the sounds on; each value survives; junk falls back field by field (S1, S2)', async () => {
     const { noticeLength: _a, noticeUndo: _b, noticeClipboard: _c, noticeLists: _d, gestureSounds: _e, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))

@@ -36,7 +36,7 @@ import { useExploreZoom } from '../explore/exploreZoom'
 import { api } from '../api'
 import { CardsSetupWizard } from './CardsSetupWizard'
 import { SyncVaultControl, type SettingsSyncCtx } from './SyncVaultControl'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, EXPLORE_WIDTH_MAX, EXPLORE_WIDTH_MIN, EXPLORE_WIDTH_START, PAGE_WIDTH_MAX, PAGE_WIDTH_MIN, PAGE_WIDTH_START, type AutoSyncStatus, type ContentStep, type ContentWidth, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, CELL_NOTE_PREVIEW_LINES_MAX, CELL_NOTE_PREVIEW_LINES_MIN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type FolderPagesSettings, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, EXPLORE_WIDTH_MAX, EXPLORE_WIDTH_MIN, EXPLORE_WIDTH_START, PAGE_WIDTH_MAX, PAGE_WIDTH_MIN, PAGE_WIDTH_START, TAB_WIDTH_MAX, TAB_WIDTH_MIN, TAB_WIDTH_START, type AutoSyncStatus, type ContentStep, type ContentWidth, type TabWidth, type TabWidthPreset, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, CELL_NOTE_PREVIEW_LINES_MAX, CELL_NOTE_PREVIEW_LINES_MIN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type FolderPagesSettings, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
 import type { IconRule } from '@shared/vaultIcons'
 import { appCardLook, type CardLookSettings } from '@shared/cardLook'
 import { appTableLook, type TableLookSettings } from '@shared/tableLook'
@@ -230,6 +230,25 @@ function ContentWidthSetting({ value, onSet }: { value: ContentWidth; onSet: (ne
     <>
       <Segmented<ContentStep | 'custom'> options={CONTENT_WIDTH_CHOICES} value={typeof value === 'number' ? 'custom' : value} onChange={(choice) => onSet(choice === 'custom' ? (typeof value === 'number' ? value : PAGE_WIDTH_START) : choice)} ariaLabel="Content width" />
       {typeof value === 'number' && <PxBox name="Content width" value={value} min={PAGE_WIDTH_MIN} max={PAGE_WIDTH_MAX} onSet={onSet} />}
+    </>
+  )
+}
+
+/**
+ * Appearance › Tabs › Tab width (YAZ-6464): Compact · Default · Wide · Custom, Content width's way: Custom shows its
+ * px box (`TAB_WIDTH_MIN`–`TAB_WIDTH_MAX`), and starts at `TAB_WIDTH_START`. A preset is saved by its name.
+ */
+const TAB_WIDTH_CHOICES: readonly { label: string; value: TabWidthPreset | 'custom' }[] = [
+  { label: 'Compact', value: 'compact' },
+  { label: 'Default', value: 'default' },
+  { label: 'Wide', value: 'wide' },
+  { label: 'Custom', value: 'custom' },
+]
+function TabWidthSetting({ value, onSet }: { value: TabWidth; onSet: (next: TabWidth) => void }) {
+  return (
+    <>
+      <Segmented<TabWidthPreset | 'custom'> options={TAB_WIDTH_CHOICES} value={typeof value === 'number' ? 'custom' : value} onChange={(choice) => onSet(choice === 'custom' ? (typeof value === 'number' ? value : TAB_WIDTH_START) : choice)} ariaLabel="Tab width" />
+      {typeof value === 'number' && <PxBox name="Tab width" value={value} min={TAB_WIDTH_MIN} max={TAB_WIDTH_MAX} onSet={onSet} />}
     </>
   )
 }
@@ -1167,6 +1186,19 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             render: (ctx) => (
               <Segmented options={CONTENT_POSITION_OPTIONS} value={ctx.settings.contentPosition} disabled={ctx.settings.contentWidth === 'full'} onChange={(contentPosition) => ctx.onChange({ ...ctx.settings, contentPosition })} ariaLabel={unit(ctx, 'Page position')} />
             ),
+          },
+        ],
+      },
+      {
+        // YAZ-6464: global tab strip sizing.
+        title: 'Tabs',
+        items: [
+          {
+            id: 'tabWidth',
+            label: 'Tab width',
+            hint: 'How wide open tabs can grow. Compact (150px), Default (200px, auto-widens for inline IDs), Wide (270px), or Custom (120–400 px).',
+            keywords: ['tab', 'tabs', 'tab bar', 'width', 'compact', 'default', 'wide', 'custom', 'px', 'pixels'],
+            render: ({ settings, onChange }) => <TabWidthSetting value={settings.tabWidth} onSet={(tabWidth) => onChange({ ...settings, tabWidth })} />,
           },
         ],
       },
@@ -2447,7 +2479,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         title: 'This vault',
         // Sub-headings (YAZ-5969).
         subheadings: [
-          { title: 'Show IDs', rows: ['showIds', 'showIds.title', 'showIds.files'] },
+          { title: 'Show IDs', rows: ['showIds', 'showIds.title', 'showIds.files', 'showIds.tabs', 'showIds.tabsLayout'] },
           { title: 'Links and editing', rows: ['linkClick', 'readOnlyVault'] },
           { title: 'Page IDs', rows: ['ids', 'duplicates', 'idLetters', 'oldIds', 'backfillCreated'] }, // drawn through the vault's word: unit(ctx, title), SettingsDialog
         ],
@@ -2508,6 +2540,45 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                   value={showIds.settings.files}
                   onChange={(files) => showIds.save({ ...showIds.settings, files })}
                   ariaLabel="Show IDs in the files list"
+                />
+              ),
+          },
+          {
+            id: 'showIds.tabs',
+            label: 'Show IDs in tabs',
+            hint: (ctx) => unit(ctx, 'The ID on open tabs in the tab bar, for pages, card files and folder pages. Number shows "#12"; Full ID shows "EMB-12". Drawings do not show an ID.'),
+            keywords: ['id', 'ids', 'tab', 'tabs', 'tab bar', 'show', 'number', 'full'],
+            available: (ctx) => ctx.ids?.enabled === true && ctx.showIds !== undefined,
+            render: ({ showIds }) =>
+              showIds && (
+                <Segmented
+                  options={[
+                    { label: 'Off', value: 'off' as const },
+                    { label: 'Number (#12)', value: 'number' as const },
+                    { label: 'Full ID (EMB-12)', value: 'full' as const },
+                  ]}
+                  value={showIds.settings.tabs}
+                  onChange={(tabs) => showIds.save({ ...showIds.settings, tabs })}
+                  ariaLabel="Show IDs in tabs"
+                />
+              ),
+          },
+          {
+            id: 'showIds.tabsLayout',
+            label: 'Tab ID layout',
+            hint: 'How a tab shows its ID. Inline puts the ID before the title on one line. Two lines puts the ID above the title and makes the tab strip taller.',
+            keywords: ['id', 'ids', 'tab', 'tabs', 'layout', 'inline', 'stacked', 'two lines'],
+            available: (ctx) => ctx.ids?.enabled === true && ctx.showIds !== undefined && ctx.showIds.settings.tabs !== 'off',
+            render: ({ showIds }) =>
+              showIds && (
+                <Segmented
+                  options={[
+                    { label: 'Inline', value: 'inline' as const },
+                    { label: 'Two lines', value: 'stacked' as const },
+                  ]}
+                  value={showIds.settings.tabsLayout}
+                  onChange={(tabsLayout) => showIds.save({ ...showIds.settings, tabsLayout })}
+                  ariaLabel="Tab ID layout"
                 />
               ),
           },
