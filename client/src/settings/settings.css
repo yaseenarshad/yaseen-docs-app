@@ -138,6 +138,38 @@
   color: var(--accent);
 }
 
+/* Active-page left-nav sub-TOC (YAZ-6488): indented group jump links shown only under the open section. */
+.settings-nav__subs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 6px 14px;
+  padding-left: 10px;
+  border-left: 1.5px solid var(--border);
+}
+
+.settings-nav__sub {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  border-radius: 5px;
+  text-align: left;
+  font-size: 12.5px;
+  line-height: 1.3;
+  color: var(--fg-muted);
+}
+
+.settings-nav__sub:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.settings-nav__sub--active {
+  color: var(--accent);
+  font-weight: 500;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
 /* Between the settings pages and the reference pages (Hotkeys). */
 .settings-nav__divider {
   width: auto;
@@ -204,8 +236,11 @@
   color: var(--fg-muted);
 }
 
+/* Major group divider (YAZ-6488): clearly thicker and higher-contrast than 1px in-card row hairlines. */
 .settings-group + .settings-group {
-  margin-top: 22px;
+  margin-top: 26px;
+  padding-top: 24px;
+  border-top: 2.5px solid color-mix(in srgb, var(--fg) 18%, var(--border));
 }
 
 /* Group title + hint: above the card, outside it. */

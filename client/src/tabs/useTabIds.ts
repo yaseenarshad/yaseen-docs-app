@@ -8,13 +8,14 @@ export interface TabBarIdProps {
   pathIds: PathIds | undefined
   tabIdSpec: (path: string) => TabIdSpec | undefined
   tabWidth: TabWidth
+  inactiveTabWidth: TabWidth
 }
 
 /**
- * Per-vault tab ID lookup and global tab width props for `TabBar` (YAZ-6464).
+ * Per-vault tab ID lookup and global tab width props for `TabBar` (YAZ-6464, YAZ-6485).
  * Covers pages, card files, and folder pages (no drawings). Subscribes to zero vaults when all are Off.
  */
-export function useTabIds(roots: readonly string[], vaults: readonly VaultScope[], tabWidth: TabWidth): TabBarIdProps {
+export function useTabIds(roots: readonly string[], vaults: readonly VaultScope[], tabWidth: TabWidth, inactiveTabWidth: TabWidth): TabBarIdProps {
   const live = useRef({ roots, vaults })
   live.current = { roots, vaults }
   const key = vaults.map((v) => `${v.ids?.enabled === true ? v.showIds.settings.tabs : 'off'}:${v.showIds.settings.tabsLayout}`).join(',')
@@ -41,5 +42,5 @@ export function useTabIds(roots: readonly string[], vaults: readonly VaultScope[
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [roots, key],
   )
-  return { pathIds, tabIdSpec, tabWidth }
+  return { pathIds, tabIdSpec, tabWidth, inactiveTabWidth }
 }

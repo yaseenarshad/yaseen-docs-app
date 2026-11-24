@@ -142,19 +142,29 @@
   overflow: hidden;
 }
 
-/* Auto-room for tab IDs on Default width only (YAZ-6474): explicit Compact, Wide, or custom px uses its chosen bounds directly. */
-.tabbar-row--default-width .tabbar__tab--id-number:not(.tabbar__tab--stacked) {
+/* Auto-room for tab IDs when Auto is selected (YAZ-6474, YAZ-6485): scoped independently to active vs unselected tabs. */
+.tabbar-row--active-auto .tabbar__tab--active.tabbar__tab--id-number:not(.tabbar__tab--stacked),
+.tabbar-row--inactive-auto .tabbar__tab:not(.tabbar__tab--active).tabbar__tab--id-number:not(.tabbar__tab--stacked) {
   min-width: 105px;
   max-width: 240px;
 }
 
-.tabbar-row--default-width .tabbar__tab--id-full:not(.tabbar__tab--stacked) {
+.tabbar-row--active-auto .tabbar__tab--active.tabbar__tab--id-full:not(.tabbar__tab--stacked),
+.tabbar-row--inactive-auto .tabbar__tab:not(.tabbar__tab--active).tabbar__tab--id-full:not(.tabbar__tab--stacked) {
   min-width: 130px;
   max-width: 270px;
 }
 
-.tabbar-row--default-width .tabbar__tab--id-full.tabbar__tab--stacked {
+.tabbar-row--active-auto .tabbar__tab--active.tabbar__tab--id-full.tabbar__tab--stacked,
+.tabbar-row--inactive-auto .tabbar__tab:not(.tabbar__tab--active).tabbar__tab--id-full.tabbar__tab--stacked {
   min-width: 96px;
+}
+
+/* Fixed inactive tab width (YAZ-6485): unselected tabs hold their chosen max width without crushing, then the strip scrolls. */
+.tabbar-row--inactive-fixed .tabbar__tab:not(.tabbar__tab--active) {
+  flex-shrink: 0;
+  min-width: min(72px, var(--tab-inactive-max-w, 200px));
+  max-width: var(--tab-inactive-max-w, 200px);
 }
 
 /* Two-line stacked tab IDs (YAZ-6474): uniform 40px pill height across the whole strip so mixed-vault windows stay aligned. */
@@ -457,9 +467,11 @@
   background: color-mix(in srgb, var(--fg) 14%, transparent);
 }
 
-/* The active tab never shrinks (YAZ-2689 D3): its name reads whole however many tabs are open. */
+/* The active tab never shrinks (YAZ-2689 D3): its name reads whole however many tabs are open, capped by Active tab width (YAZ-6485). */
 .tabbar__tab--active {
   flex-shrink: 0;
+  min-width: var(--tab-active-min-w, var(--tab-min-w, 72px));
+  max-width: var(--tab-active-max-w, var(--tab-max-w, 200px));
 }
 
 /* A tab from elsewhere over the strip opens as the tab on show (YAZ-3808 6A4): the tab on show now shrinks as the others

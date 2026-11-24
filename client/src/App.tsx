@@ -795,7 +795,7 @@ export function App() {
   useEffect(() => api.window.onFlush(flushWindow), [])
   // Every page of the window by its title (YAZ-2420 🔒 D14), off the index of each vault.
   const titles = useAllPathTitles(useMemo(() => roots.map((vault) => scopes[slots.current.indexOf(vault)].wikilinks), [roots]))
-  const tabIdProps = useTabIds(roots, vaults, settings.tabWidth)
+  const tabIdProps = useTabIds(roots, vaults, settings.tabWidth, settings.inactiveTabWidth)
   /** A page as a notice names it — its title (YAZ-2420 🔒 D14) — off its vault's index snapshot as it stands. */
   const nameOf = useCallback((path: string) => {
     const { root: vault, wikilinks } = scopeOf(path)
@@ -1585,7 +1585,7 @@ export function App() {
   const dailyVault = useCallback(async (vaults: readonly string[], folder: string) => {
     const trees = await Promise.all(vaults.map(async (root) => ({ root, tree: (await fetchTree(root)).tree })))
     const vault = dailyPageVault(trees, folder)
-    if (vault === null) throw new Error(`no vault of this window has the folder "${folder}". Make it, or change the daily pages folder in Settings › Files & Links`)
+    if (vault === null) throw new Error(`no vault of this window has the folder "${folder}". Make it, or change the daily pages folder in Settings › Files`)
     return { vault, tree: trees.find((t) => t.root === vault)!.tree }
   }, [])
   const openDailyPage = useCallback((background = false, targetRoot?: string) => {

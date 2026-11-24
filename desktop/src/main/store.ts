@@ -717,6 +717,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   contentWidth: isContentWidth,
   contentPosition: isContentPosition,
   tabWidth: isTabWidth,
+  inactiveTabWidth: isTabWidth,
   newPageLocation: (v): v is NewPageLocation => typeof v === 'string' && (NEW_PAGE_LOCATIONS as readonly string[]).includes(v),
   newPageFolder: (v): v is string => typeof v === 'string' && isValidNewPageFolder(v),
   confirmDelete: (v): v is boolean => typeof v === 'boolean',

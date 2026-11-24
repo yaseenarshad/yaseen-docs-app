@@ -76,6 +76,19 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   const [page, setPage] = useState<SettingsSectionId>(initialPage ?? sections[0].id)
   /** The section showing: a section this context stops showing while its page is open (Sync, Review) gives way to the first, in the pane and in the nav alike. */
   const shown = sections.find((s) => s.id === page) ?? sections[0]
+  /** Active-page left-nav sub-TOC (YAZ-6488): only the open non-standalone page's visible titled groups, when there are 2+. */
+  const activeToc = useMemo(() => {
+    if (query.trim() !== '' || shown.standalone === true) return []
+    const out: { index: number; title: string }[] = []
+    groupsOf(shown, ctx).forEach((g, index) => {
+      const hasItems = g.items.some((item) => isAvailable(item, ctx) && item.searchOnly !== true)
+      const title = resolveGroupTitle(g, ctx)
+      if (hasItems && title !== undefined) out.push({ index, title })
+    })
+    return out.length >= 2 ? out : []
+  }, [query, shown, ctx])
+  const [activeGroupIndex, setActiveGroupIndex] = useState<number | null>(null)
+  const highlightedGroup = activeToc.some((e) => e.index === activeGroupIndex) ? activeGroupIndex : (activeToc[0]?.index ?? null)
 
   useEffect(() => {
     const previous = document.activeElement
@@ -144,7 +157,32 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
     setHotkeyQuery('')
     setHotkeyFilter(NO_FILTER)
     setPage(id)
+    setActiveGroupIndex(null)
     if (paneRef.current !== null) paneRef.current.scrollTop = 0
+  }
+
+  /** Jump to a major group on the currently open Settings page from the left-nav sub-TOC (YAZ-6488). */
+  const jumpToGroup = (index: number): void => {
+    setActiveGroupIndex(index)
+    const pane = paneRef.current
+    if (pane === null) return
+    const target = pane.querySelector<HTMLElement>(`.settings-group[data-group-index="${index}"]`)
+    if (target === null) return
+    const nextTop = Math.max(0, pane.scrollTop + target.getBoundingClientRect().top - pane.getBoundingClientRect().top - 12)
+    if (typeof pane.scrollTo === 'function') pane.scrollTo({ top: nextTop, behavior: 'smooth' })
+    else pane.scrollTop = nextTop
+  }
+
+  const onPaneScroll = (): void => {
+    const pane = paneRef.current
+    if (pane === null || activeToc.length === 0) return
+    const paneTop = pane.getBoundingClientRect().top
+    let current = activeToc[0].index
+    for (const entry of activeToc) {
+      const el = pane.querySelector<HTMLElement>(`.settings-group[data-group-index="${entry.index}"]`)
+      if (el !== null && el.getBoundingClientRect().top - paneTop <= 56) current = entry.index
+    }
+    setActiveGroupIndex(current)
   }
 
   /**
@@ -282,9 +320,25 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
             )}
           </div>
           {settingsPages.map((s) => (
-            <button key={s.id} type="button" className="settings-nav__item" data-tour={s.id === 'cards' ? 'settings-review' : undefined} aria-current={shown === s ? 'page' : undefined} onClick={() => showPage(s.id)}>
-              {s.title}
-            </button>
+            <Fragment key={s.id}>
+              <button type="button" className="settings-nav__item" data-tour={s.id === 'cards' ? 'settings-review' : undefined} aria-current={shown === s ? 'page' : undefined} onClick={() => showPage(s.id)}>
+                {s.title}
+              </button>
+              {shown === s && activeToc.length > 0 && (
+                <div className="settings-nav__subs" role="group" aria-label={`${s.title} sections`}>
+                  {activeToc.map((entry) => (
+                    <button
+                      key={entry.index}
+                      type="button"
+                      className={`settings-nav__sub${highlightedGroup === entry.index ? ' settings-nav__sub--active' : ''}`}
+                      onClick={() => jumpToGroup(entry.index)}
+                    >
+                      {entry.title}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </Fragment>
           ))}
           <hr className="settings-nav__divider" />
           {referencePages.map((s) => (
@@ -296,7 +350,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
         <button type="button" className="settings-dialog__close" aria-label="Close settings" onClick={onClose}>
           ✕
         </button>
-        <div ref={paneRef} className="settings-pane">
+        <div ref={paneRef} className="settings-pane" onScroll={onPaneScroll}>
           <FindBar channel={findChannel} scope="settings" hostRef={dialogRef} />
           {onHotkeys && !searching && (
             <KeySearch

@@ -70,7 +70,7 @@ test('day folders on: the page made before the switch still opens; with that pag
   // Settings › Files & Links › "Make a folder for each day": On. The vault's daily pages file is the one source
   // (YAZ-5491), and Settings writes it.
   await win.getByRole('button', { name: 'Settings', exact: true }).click()
-  await win.locator('.settings-dialog .settings-nav__item', { hasText: /^Files & Links$/ }).click()
+  await win.locator('.settings-dialog .settings-nav__item', { hasText: /^Files$/ }).click()
   await win.locator('.settings-dialog [data-setting="dailyPageDayFolder"]').getByRole('button', { name: 'On', exact: true }).click()
   await win.keyboard.press('Escape')
   await expect.poll(async () => JSON.parse(await readFile(path.join(second, '.yaseendocs', 'daily-pages.json'), 'utf8').catch(() => '{}')).dayFolder).toBe(true)

@@ -235,20 +235,21 @@ function ContentWidthSetting({ value, onSet }: { value: ContentWidth; onSet: (ne
 }
 
 /**
- * Appearance › Tabs › Tab width (YAZ-6464): Compact · Default · Wide · Custom, Content width's way: Custom shows its
- * px box (`TAB_WIDTH_MIN`–`TAB_WIDTH_MAX`), and starts at `TAB_WIDTH_START`. A preset is saved by its name.
+ * Appearance › Tabs › Active & Inactive tab width (YAZ-6464, YAZ-6485): one shared 5-stop scale —
+ * Auto · Compact (150px) · Medium (200px) · Wide (270px) · Custom (80–400px).
  */
 const TAB_WIDTH_CHOICES: readonly { label: string; value: TabWidthPreset | 'custom' }[] = [
+  { label: 'Auto', value: 'auto' },
   { label: 'Compact', value: 'compact' },
-  { label: 'Default', value: 'default' },
+  { label: 'Medium', value: 'medium' },
   { label: 'Wide', value: 'wide' },
   { label: 'Custom', value: 'custom' },
 ]
-function TabWidthSetting({ value, onSet }: { value: TabWidth; onSet: (next: TabWidth) => void }) {
+function TabWidthSetting({ name, value, onSet }: { name: string; value: TabWidth; onSet: (next: TabWidth) => void }) {
   return (
     <>
-      <Segmented<TabWidthPreset | 'custom'> options={TAB_WIDTH_CHOICES} value={typeof value === 'number' ? 'custom' : value} onChange={(choice) => onSet(choice === 'custom' ? (typeof value === 'number' ? value : TAB_WIDTH_START) : choice)} ariaLabel="Tab width" />
-      {typeof value === 'number' && <PxBox name="Tab width" value={value} min={TAB_WIDTH_MIN} max={TAB_WIDTH_MAX} onSet={onSet} />}
+      <Segmented<TabWidthPreset | 'custom'> options={TAB_WIDTH_CHOICES} value={typeof value === 'number' ? 'custom' : value} onChange={(choice) => onSet(choice === 'custom' ? (typeof value === 'number' ? value : TAB_WIDTH_START) : choice)} ariaLabel={name} />
+      {typeof value === 'number' && <PxBox name={name} value={value} min={TAB_WIDTH_MIN} max={TAB_WIDTH_MAX} onSet={onSet} />}
     </>
   )
 }
@@ -549,7 +550,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'tables' | 'code' | 'files' | 'folderPages' | 'cards' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
+export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'tables' | 'code' | 'files' | 'linksIds' | 'folderPages' | 'cards' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -1190,15 +1191,22 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-6464: global tab strip sizing.
+        // YAZ-6464, YAZ-6485: global tab strip sizing (active and inactive tabs).
         title: 'Tabs',
         items: [
           {
             id: 'tabWidth',
-            label: 'Tab width',
-            hint: 'How wide open tabs can grow. Compact (150px), Default (200px, auto-widens for inline IDs), Wide (270px), or Custom (120–400 px).',
-            keywords: ['tab', 'tabs', 'tab bar', 'width', 'compact', 'default', 'wide', 'custom', 'px', 'pixels'],
-            render: ({ settings, onChange }) => <TabWidthSetting value={settings.tabWidth} onSet={(tabWidth) => onChange({ ...settings, tabWidth })} />,
+            label: 'Active tab width',
+            hint: 'How wide the selected tab stays. Auto (200px, auto-widens for inline IDs), Compact (150px), Medium (200px), Wide (270px), or Custom (80–400 px).',
+            keywords: ['tab', 'tabs', 'tab bar', 'active', 'selected', 'width', 'auto', 'compact', 'medium', 'wide', 'custom', 'px', 'pixels'],
+            render: ({ settings, onChange }) => <TabWidthSetting name="Active tab width" value={settings.tabWidth} onSet={(tabWidth) => onChange({ ...settings, tabWidth })} />,
+          },
+          {
+            id: 'inactiveTabWidth',
+            label: 'Inactive tab width',
+            hint: 'How wide unselected tabs stay. Auto shrinks to fit before scrolling. Compact (150px), Medium (200px), Wide (270px), or Custom (80–400 px) holds that width and scrolls instead.',
+            keywords: ['tab', 'tabs', 'tab bar', 'inactive', 'unselected', 'background', 'width', 'auto', 'compact', 'medium', 'wide', 'custom', 'px', 'pixels'],
+            render: ({ settings, onChange }) => <TabWidthSetting name="Inactive tab width" value={settings.inactiveTabWidth} onSet={(inactiveTabWidth) => onChange({ ...settings, inactiveTabWidth })} />,
           },
         ],
       },
@@ -2282,7 +2290,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   IMAGES_SECTION,
   {
     id: 'files',
-    title: 'Files & Links',
+    title: 'Files',
     groups: [
       {
         // YAZ-4246: what ⌘N's New… box makes, at the top of Files & Links: "Default location for new pages" (unchanged) and the title.
@@ -2477,12 +2485,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         title: 'This vault',
-        // Sub-headings (YAZ-5969).
-        subheadings: [
-          { title: 'Show IDs', rows: ['showIds', 'showIds.title', 'showIds.files', 'showIds.tabs', 'showIds.tabsLayout'] },
-          { title: 'Links and editing', rows: ['linkClick', 'readOnlyVault'] },
-          { title: 'Page IDs', rows: ['ids', 'duplicates', 'idLetters', 'oldIds', 'backfillCreated'] }, // drawn through the vault's word: unit(ctx, title), SettingsDialog
-        ],
         vault: true,
         items: [
           // YAZ-4938: one row of its own, saved in the vault (`.yaseendocs/unit-word.json`): what this vault calls a page.
@@ -2495,7 +2497,52 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             available: (ctx) => ctx.unitWord !== undefined,
             render: ({ unitWord, hasCards }) => unitWord && <UnitWordControl unitWord={unitWord} hasCards={hasCards} />,
           },
-          // YAZ-4940: "Show IDs", three rows in one block, saved in the vault (`.yaseendocs/show-ids.json`), in a vault with IDs only.
+          // YAZ-4939: one row of its own, saved in the vault (`.yaseendocs/read-only.json`).
+          {
+            id: 'readOnlyVault',
+            label: 'Read only',
+            hint: 'On: every page, drawing, diagram, code file and folder page in this vault opens read only, and nothing is written to your pages for it. The Read only chip offers Allow edits for 1 minute, 10 minutes or until the tab closes. Rename, Move, Delete, New and Paste ask first. The lock in the sidebar unlocks the whole vault for 10 minutes, 1 hour or until you lock it.',
+            keywords: ['read only', 'readonly', 'lock', 'locked', 'protect', 'allow edits', 'timer', 'vault'],
+            available: (ctx) => ctx.readOnlyVault !== undefined,
+            render: ({ readOnlyVault }) => readOnlyVault && <Segmented options={ON_OFF_OPTIONS} value={readOnlyVault.settings.on} onChange={(on) => readOnlyVault.save({ on })} ariaLabel="Read only for this vault" />,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // YAZ-6484: Links & IDs split out from Files so ID setup comes before Show IDs, followed by Links and Maintenance.
+    id: 'linksIds',
+    title: 'Links & IDs',
+    available: (ctx) => ctx.ids !== undefined || ctx.linkClick !== undefined || ctx.linkPills !== undefined,
+    vault: true,
+    page: "These settings are saved in this vault's .yaseendocs folder and sync with it.",
+    groups: [
+      {
+        title: (ctx) => unit(ctx, 'Page IDs'),
+        items: [
+          {
+            id: 'ids',
+            label: (ctx) => unit(ctx, "Give this vault's pages IDs"),
+            hint: 'Saved in this vault and synced with it. On: every page gets an ID and the app names its file. Off: the app leaves every file as it is.',
+            available: (ctx) => ctx.ids !== undefined,
+            render: ({ ids, vaultName, review }) => ids && <IdsControl ids={ids} vault={vaultName} review={review} />,
+          },
+          {
+            id: 'idLetters',
+            label: 'ID letters',
+            hint: 'The letters in front of each number, like the YAZ in YAZ-12. A change reaches each ID in this vault, its file name and each link to it. A link to a page outside this vault stays as it is.',
+            keywords: ['letters', 'prefix', 'ids', 'rename', 'change'],
+            wide: true,
+            available: (ctx) => ctx.ids?.enabled === true,
+            render: ({ ids, vaultName }) => ids && <IdLettersControl ids={ids} vault={vaultName} />,
+          },
+        ],
+      },
+      {
+        // YAZ-4940 + YAZ-6464: "Show IDs", saved in the vault (`.yaseendocs/show-ids.json`), in a vault with IDs only.
+        title: 'Show IDs',
+        items: [
           {
             id: 'showIds',
             label: 'Show IDs in search',
@@ -2582,6 +2629,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                 />
               ),
           },
+        ],
+      },
+      {
+        title: 'Links',
+        items: [
           // YAZ-4936: one row of its own, saved in the vault (`.yaseendocs/link-click.json`).
           {
             id: 'linkClick',
@@ -2602,22 +2654,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                 />
               ),
           },
-          // YAZ-4939: one row of its own, saved in the vault (`.yaseendocs/read-only.json`).
+          // YAZ-4924: how every link pill of this vault looks, saved in the vault.
           {
-            id: 'readOnlyVault',
-            label: 'Read only',
-            hint: 'On: every page, drawing, diagram, code file and folder page in this vault opens read only, and nothing is written to your pages for it. The Read only chip offers Allow edits for 1 minute, 10 minutes or until the tab closes. Rename, Move, Delete, New and Paste ask first. The lock in the sidebar unlocks the whole vault for 10 minutes, 1 hour or until you lock it.',
-            keywords: ['read only', 'readonly', 'lock', 'locked', 'protect', 'allow edits', 'timer', 'vault'],
-            available: (ctx) => ctx.readOnlyVault !== undefined,
-            render: ({ readOnlyVault }) => readOnlyVault && <Segmented options={ON_OFF_OPTIONS} value={readOnlyVault.settings.on} onChange={(on) => readOnlyVault.save({ on })} ariaLabel="Read only for this vault" />,
+            id: 'linkPills',
+            label: 'Link pills',
+            hint: "The default look of every link in this vault. Right-click a link to style that one. Saved in this vault and synced with it. The format says what a pill shows, with {icon} {name} {id} {number} {vault} {folder} {path} {mark} and your own text. Click a part of a sample pill in the preview (a page and a card) to style it; click its icon for the icon's colour, and the pill's edge for the box. Every link to a page shows this way in this vault's pages, folder pages and the explore stack. The default look changes no page: it keeps its [[Name]].",
+            keywords: LINK_PILL_WORDS,
+            wide: true,
+            available: (ctx) => ctx.linkPills !== undefined,
+            render: ({ linkPills, textFormatting }) => linkPills && <LinkPillsControl look={linkPills} vault={textFormatting?.vaults.find((v) => v.root === textFormatting.activeRoot)?.name ?? null} />,
           },
-          {
-            id: 'ids',
-            label: (ctx) => unit(ctx, "Give this vault's pages IDs"),
-            hint: 'Saved in this vault and synced with it. On: every page gets an ID and the app names its file. Off: the app leaves every file as it is.',
-            available: (ctx) => ctx.ids !== undefined,
-            render: ({ ids, vaultName, review }) => ids && <IdsControl ids={ids} vault={vaultName} review={review} />,
-          },
+        ],
+      },
+      {
+        title: 'Maintenance',
+        items: [
           {
             id: 'duplicates',
             label: 'Duplicate IDs',
@@ -2626,15 +2677,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             wide: true,
             available: (ctx) => ctx.ids?.enabled === true,
             render: ({ ids }) => ids && <DuplicatesControl check={ids.check} />,
-          },
-          {
-            id: 'idLetters',
-            label: 'ID letters',
-            hint: 'The letters in front of each number, like the YAZ in YAZ-12. A change reaches each ID in this vault, its file name and each link to it. A link to a page outside this vault stays as it is.',
-            keywords: ['letters', 'prefix', 'ids', 'rename', 'change'],
-            wide: true,
-            available: (ctx) => ctx.ids?.enabled === true,
-            render: ({ ids, vaultName }) => ids && <IdLettersControl ids={ids} vault={vaultName} />,
           },
           {
             id: 'oldIds',
@@ -2653,22 +2695,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             wide: true,
             available: (ctx) => ctx.ids?.enabled === true && ctx.ids.backfillCreated !== undefined,
             render: ({ ids }) => ids?.backfillCreated && <BackfillCreatedControl backfillCreated={ids.backfillCreated} />,
-          },
-        ],
-      },
-      {
-        // YAZ-4924: how every link pill of this vault looks, saved in the vault. One row: the format, the preview, the toolbars. Every default is today's look.
-        title: 'Link pills',
-        vault: true,
-        items: [
-          {
-            id: 'linkPills',
-            label: 'Link pills',
-            hint: "The default look of every link in this vault. Right-click a link to style that one. Saved in this vault and synced with it. The format says what a pill shows, with {icon} {name} {id} {number} {vault} {folder} {path} {mark} and your own text. Click a part of a sample pill in the preview (a page and a card) to style it; click its icon for the icon's colour, and the pill's edge for the box. Every link to a page shows this way in this vault's pages, folder pages and the explore stack. The default look changes no page: it keeps its [[Name]].",
-            keywords: LINK_PILL_WORDS,
-            wide: true,
-            available: (ctx) => ctx.linkPills !== undefined,
-            render: ({ linkPills, textFormatting }) => linkPills && <LinkPillsControl look={linkPills} vault={textFormatting?.vaults.find((v) => v.root === textFormatting.activeRoot)?.name ?? null} />,
           },
         ],
       },

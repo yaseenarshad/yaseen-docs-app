@@ -18,7 +18,7 @@ import { copiesOf } from './copies'
 import { useBoardHighlight } from './boardHighlight'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from './cardPreview'
 import { setStripTarget } from './stripDrop'
-import { tabWidthBounds, tabWidthStyle, type TabIdSpec, type TabWidth } from './tabWidth'
+import { inactiveTabMaxWidth, tabWidthBounds, tabWidthStyle, type TabIdSpec, type TabWidth } from './tabWidth'
 export { useTabIds } from './useTabIds'
 import './tabs.css'
 
@@ -154,8 +154,10 @@ export interface TabBarProps {
   pathIds?: ReadonlyMap<string, string>
   /** Per-vault tab ID form and layout for `path` (YAZ-6474); undefined when `showIds.tabs === 'off'`. */
   tabIdSpec?: (path: string) => TabIdSpec | undefined
-  /** App-global tab width preset or custom px (YAZ-6474). Defaults to `'default'`. */
+  /** App-global active tab width preset or custom px (YAZ-6474, YAZ-6485). Defaults to `'auto'`. */
   tabWidth?: TabWidth
+  /** App-global inactive tab width preset or custom px (YAZ-6485). Defaults to `'auto'`. */
+  inactiveTabWidth?: TabWidth
 }
 
 /** How long a sleeping tab is hovered before it wakes (YAZ-3737 S7): a pointer that only crosses it wakes nothing. */
@@ -287,7 +289,7 @@ export interface NavStep {
 /** How long a press on ‹ or › is held before its menu opens instead of a step (YAZ-3647 E3), as in Chrome. */
 export const NAV_HOLD_MS = 500
 
-export function TabBar({ roots, windowId, tabs: pages, active, preview = null, blank = false, inbox, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, onOpenStep, zoomLabels, onShowSidebar, onShowInSidebar, onRenameFile, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake, pathIds, tabIdSpec, tabWidth = 'default' }: TabBarProps) {
+export function TabBar({ roots, windowId, tabs: pages, active, preview = null, blank = false, inbox, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, onOpenStep, zoomLabels, onShowSidebar, onShowInSidebar, onRenameFile, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake, pathIds, tabIdSpec, tabWidth = 'auto', inactiveTabWidth = 'auto' }: TabBarProps) {
   // THE INBOX TAB IN THE STRIP (YAZ-5016): one list of the page tabs and the Inbox tab, at its slot. Every slot, drag and
   // glide of the strip reads this list; what goes out to App is in page tabs (`pageSlot`, `drop`).
   const inboxAt = inbox === undefined ? null : Math.min(Math.max(inbox.at ?? pages.length, 0), pages.length)
@@ -889,7 +891,8 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
   }
 
   const widthBounds = tabWidthBounds(tabWidth)
-  const rowStyle = useMemo<CSSProperties>(() => ({ ...SLIDE, ...tabWidthStyle(tabWidth) }), [tabWidth])
+  const inactiveFixed = inactiveTabMaxWidth(inactiveTabWidth) !== null
+  const rowStyle = useMemo<CSSProperties>(() => ({ ...SLIDE, ...tabWidthStyle(tabWidth, inactiveTabWidth) }), [tabWidth, inactiveTabWidth])
   const hasStacked =
     pathIds !== undefined &&
     tabIdSpec !== undefined &&
@@ -901,7 +904,7 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
 
   return (
     <div
-      className={`tabbar-row${reserveEnd ? ' tabbar-row--end' : ''}${drag !== null || externalOver !== null ? ' tabbar-row--drag' : ''}${hasStacked ? ' tabbar-row--stacked' : ''}${widthBounds.isDefault ? ' tabbar-row--default-width' : ''}`}
+      className={`tabbar-row${reserveEnd ? ' tabbar-row--end' : ''}${drag !== null || externalOver !== null ? ' tabbar-row--drag' : ''}${hasStacked ? ' tabbar-row--stacked' : ''}${widthBounds.isAuto ? ' tabbar-row--active-auto' : ''}${inactiveFixed ? ' tabbar-row--inactive-fixed' : ' tabbar-row--inactive-auto'}`}
       style={rowStyle}
       // Each drag the strip takes scrolls it at its ends (YAZ-3808 D5): over a tab, the tail, ‹ › and the "+" alike.
       onDragOver={(e) => {

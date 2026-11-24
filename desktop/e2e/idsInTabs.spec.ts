@@ -86,7 +86,7 @@ test('1. default state hides tab IDs and shows full page title in tooltip', asyn
 test('2. Show IDs in tabs (Full ID & Number) shows IDs on pages and folders, never drawings or non-ID vaults', async () => {
   await cog(win).click()
   await expect(dialog(win)).toBeVisible()
-  await navSection(win, 'Files & Links').click()
+  await navSection(win, 'Links & IDs').click()
   const tabsRow = settingRow(win, 'showIds.tabs')
   await expect(tabsRow).toBeVisible()
   // Layout row is hidden while Off.
@@ -100,13 +100,13 @@ test('2. Show IDs in tabs (Full ID & Number) shows IDs on pages and folders, nev
   const tabIds = win.locator('.tabbar__tab .tabbar__id')
   await expect(tabIds).toHaveText(['WIKI-2916', 'WIKI-50'])
 
-  // Active full-ID inline tab widens past 200px on Default tabWidth.
+  // Active full-ID inline tab widens past 200px on Auto tabWidth.
   const firstWidth = await win.locator('.tabbar__tab').first().evaluate((el) => el.getBoundingClientRect().width)
   expect(firstWidth).toBeGreaterThan(200)
 
   // Switch to Number (#12).
   await cog(win).click()
-  await navSection(win, 'Files & Links').click()
+  await navSection(win, 'Links & IDs').click()
   await settingRow(win, 'showIds.tabs').getByRole('button', { name: 'Number (#12)', exact: true }).click()
   await closeSettings(win).click()
   await expect(tabIds).toHaveText(['#2916', '#50'])
@@ -114,7 +114,7 @@ test('2. Show IDs in tabs (Full ID & Number) shows IDs on pages and folders, nev
 
 test('3. Two lines layout grows strip to 52px with uniform 40px pills across mixed vaults', async () => {
   await cog(win).click()
-  await navSection(win, 'Files & Links').click()
+  await navSection(win, 'Links & IDs').click()
   await settingRow(win, 'showIds.tabs').getByRole('button', { name: 'Full ID (EMB-12)', exact: true }).click()
   await settingRow(win, 'showIds.tabsLayout').getByRole('button', { name: 'Two lines', exact: true }).click()
   await closeSettings(win).click()
@@ -124,20 +124,26 @@ test('3. Two lines layout grows strip to 52px with uniform 40px pills across mix
   expect(heights).toEqual([40, 40, 40, 40])
 })
 
-test('4. Global Tab width (Compact, Wide, Custom) updates CSS vars and persists across restart', async () => {
+test('4. Active & Inactive tab widths update CSS vars independently and persist across restart', async () => {
   await cog(win).click()
   await navSection(win, 'Appearance').click()
-  const widthRow = settingRow(win, 'tabWidth')
-  await expect(widthRow).toBeVisible()
+  const activeRow = settingRow(win, 'tabWidth')
+  const inactiveRow = settingRow(win, 'inactiveTabWidth')
+  await expect(activeRow).toBeVisible()
+  await expect(inactiveRow).toBeVisible()
 
-  await widthRow.getByRole('button', { name: 'Compact', exact: true }).click()
-  expect(await win.locator('.tabbar-row').evaluate((el) => el.style.getPropertyValue('--tab-max-w'))).toBe('150px')
+  await activeRow.getByRole('button', { name: 'Compact', exact: true }).click()
+  expect(await win.locator('.tabbar-row').evaluate((el) => el.style.getPropertyValue('--tab-active-max-w'))).toBe('150px')
 
-  await widthRow.getByRole('button', { name: 'Custom', exact: true }).click()
-  const pxInput = widthRow.getByLabel('Tab width in px')
+  await activeRow.getByRole('button', { name: 'Custom', exact: true }).click()
+  const pxInput = activeRow.getByLabel('Active tab width in px')
   await pxInput.fill('300')
   await pxInput.press('Enter')
-  expect(await win.locator('.tabbar-row').evaluate((el) => el.style.getPropertyValue('--tab-max-w'))).toBe('300px')
+  expect(await win.locator('.tabbar-row').evaluate((el) => el.style.getPropertyValue('--tab-active-max-w'))).toBe('300px')
+
+  await inactiveRow.getByRole('button', { name: 'Medium', exact: true }).click()
+  expect(await win.locator('.tabbar-row').evaluate((el) => el.style.getPropertyValue('--tab-inactive-max-w'))).toBe('200px')
+  await expect(win.locator('.tabbar-row')).toHaveClass(/tabbar-row--inactive-fixed/)
   await closeSettings(win).click()
 
   // Quit and relaunch to prove persistence.
@@ -146,6 +152,8 @@ test('4. Global Tab width (Compact, Wide, Custom) updates CSS vars and persists 
   win = await appWindow(app, 'w1')
   await expect(win.locator('.tabbar__tab')).toHaveCount(4, { timeout: 15_000 })
   await expect(win.locator('.tabbar-row')).toHaveClass(/tabbar-row--stacked/)
+  await expect(win.locator('.tabbar-row')).toHaveClass(/tabbar-row--inactive-fixed/)
   await expect(win.locator('.tabbar__tab .tabbar__id')).toHaveText(['WIKI-2916', 'WIKI-50'])
-  expect(await win.locator('.tabbar-row').evaluate((el) => el.style.getPropertyValue('--tab-max-w'))).toBe('300px')
+  expect(await win.locator('.tabbar-row').evaluate((el) => el.style.getPropertyValue('--tab-active-max-w'))).toBe('300px')
+  expect(await win.locator('.tabbar-row').evaluate((el) => el.style.getPropertyValue('--tab-inactive-max-w'))).toBe('200px')
 })

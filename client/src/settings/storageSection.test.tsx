@@ -78,7 +78,7 @@ const row = (el: HTMLElement, id: string) => el.querySelector<HTMLElement>(`[dat
 describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
   it('is a standalone page under the divider, after Memory and before Hotkeys — and absent with no vault', () => {
     const { el } = mount(STATS)
-    expect(navTitles(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Sync', 'Memory', 'Storage', 'Hotkeys'])
+    expect(navTitles(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings & diagrams', 'Images', 'Files', 'Folder pages', 'Sync', 'Memory', 'Storage', 'Hotkeys'])
     // Under the divider with Memory (YAZ-3737 D9) and Hotkeys, a reference page like them.
     expect(el.querySelector('.settings-nav__divider + .settings-nav__item + .settings-nav__item')?.textContent).toBe('Storage')
     expect(row(el, 'storageGithub')).toBeNull()
@@ -214,7 +214,7 @@ describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
     const titles = [...el.querySelectorAll('.settings-section__title')].map((t) => t.textContent ?? '')
     expect(titles.some((t) => /^Storage( › |$)/.test(t))).toBe(true)
     expect(el.querySelector('[data-testid="storage-shrink"]')).not.toBeNull()
-    expect(titles.some((t) => /^Drawings and diagrams › Drawing aids/.test(t))).toBe(true)
+    expect(titles.some((t) => /^Drawings & diagrams › Drawing aids/.test(t))).toBe(true)
   })
 
   it('search for "pictures" still reaches the page (S8), with Files & Links\' picture rows (YAZ-3943 demo 2, round 3: registry order)', () => {
@@ -227,7 +227,7 @@ describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
     const titles = [...el.querySelectorAll('.settings-section__title')].map((t) => t.textContent ?? '')
     // YAZ-6423: Images › Pictures in pages comes first in registry order now
     expect(titles[0]).toMatch(/^Images › Pictures in pages/)
-    expect(titles.some((t) => /^Files & Links( › |$)/.test(t))).toBe(true)
+    expect(titles.some((t) => /^Files( › |$)/.test(t))).toBe(true)
     expect(titles.some((t) => /^Storage( › |$)/.test(t))).toBe(true)
   })
 

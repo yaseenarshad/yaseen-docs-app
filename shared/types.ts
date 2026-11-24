@@ -1448,13 +1448,13 @@ export const PAGE_WIDTH_MAX = 2400
 export const PAGE_WIDTH_START = 900
 export const isContentWidth = (v: unknown): v is ContentWidth =>
   (typeof v === 'string' && (CONTENT_WIDTHS as readonly string[]).includes(v)) || (typeof v === 'number' && Number.isInteger(v) && v >= PAGE_WIDTH_MIN && v <= PAGE_WIDTH_MAX)
-/** Global tab-width presets (YAZ-6464), ordered as shown in Settings › Appearance › Tabs. */
-export const TAB_WIDTH_PRESETS = ['compact', 'default', 'wide'] as const
+/** Global tab-width presets shared by Active tab width and Inactive tab width (YAZ-6464, YAZ-6485). */
+export const TAB_WIDTH_PRESETS = ['auto', 'compact', 'medium', 'wide'] as const
 export type TabWidthPreset = (typeof TAB_WIDTH_PRESETS)[number]
 export type TabWidth = TabWidthPreset | number
-export const TAB_WIDTH_MIN = 120
+export const TAB_WIDTH_MIN = 80
 export const TAB_WIDTH_MAX = 400
-export const TAB_WIDTH_START = 240
+export const TAB_WIDTH_START = 200
 export const isTabWidth = (v: unknown): v is TabWidth =>
   (typeof v === 'string' && (TAB_WIDTH_PRESETS as readonly string[]).includes(v)) || (typeof v === 'number' && Number.isInteger(v) && v >= TAB_WIDTH_MIN && v <= TAB_WIDTH_MAX)
 /**
@@ -2298,8 +2298,10 @@ export interface SettingsState {
   contentWidth: ContentWidth
   /** Settings › Appearance › Page position (YAZ-5871 D2): the pages' column at Centre (the default) or at the Left. Off with Full. */
   contentPosition: ContentPosition
-  /** Settings › Appearance › Tabs › Tab width (YAZ-6464): Compact (150px), Default (200px, auto-widens for inline IDs), Wide (270px), or Custom px (120–400). */
+  /** Settings › Appearance › Tabs › Active tab width (YAZ-6464): Auto (200px, auto-widens for inline IDs), Compact (150px), Medium (200px), Wide (270px), or Custom px (80–400). */
   tabWidth: TabWidth
+  /** Settings › Appearance › Tabs › Inactive tab width (YAZ-6485): Auto (shrink to fit), Compact (150px), Medium (200px), Wide (270px), or Custom px (80–400). */
+  inactiveTabWidth: TabWidth
   /** Files & Links (Links C2-, GRO-2240): where a BARE unresolved `[[link]]` creates its page. */
   newPageLocation: NewPageLocation
   /** Root-relative folder for `newPageLocation: 'folder'` ('' = the vault root); ignored otherwise. Interpreted per-vault against each window's root. */
@@ -3275,7 +3277,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   theme: 'system',
   contentWidth: 'narrow',
   contentPosition: 'center',
-  tabWidth: 'default',
+  tabWidth: 'auto',
+  inactiveTabWidth: 'auto',
   newPageLocation: 'current',
   newPageFolder: '',
   confirmDelete: true,

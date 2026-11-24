@@ -13,33 +13,48 @@ export interface TabIdSpec {
 export interface TabWidthBounds {
   min: number
   max: number
-  isDefault: boolean
+  isAuto: boolean
 }
 
-const DEFAULT_BOUNDS: TabWidthBounds = { min: 72, max: 200, isDefault: true }
-const COMPACT_BOUNDS: TabWidthBounds = { min: 64, max: 150, isDefault: false }
-const WIDE_BOUNDS: TabWidthBounds = { min: 100, max: 270, isDefault: false }
+const AUTO_BOUNDS: TabWidthBounds = { min: 72, max: 200, isAuto: true }
+const COMPACT_BOUNDS: TabWidthBounds = { min: 64, max: 150, isAuto: false }
+const MEDIUM_BOUNDS: TabWidthBounds = { min: 72, max: 200, isAuto: false }
+const WIDE_BOUNDS: TabWidthBounds = { min: 100, max: 270, isAuto: false }
 
-/** Resolves the min/max pixel bounds for the app-global `tabWidth` setting. */
+/** Resolves the min/max pixel bounds for the app-global active `tabWidth` setting. */
 export function tabWidthBounds(width: TabWidth | undefined): TabWidthBounds {
   if (width === 'compact') return COMPACT_BOUNDS
+  if (width === 'medium') return MEDIUM_BOUNDS
   if (width === 'wide') return WIDE_BOUNDS
   if (typeof width === 'number' && Number.isFinite(width)) {
-    const clamped = Math.min(TAB_WIDTH_MAX, Math.max(TAB_WIDTH_MIN, width))
+    const max = Math.round(Math.min(TAB_WIDTH_MAX, Math.max(TAB_WIDTH_MIN, width)))
     return {
-      min: Math.max(72, Math.round(clamped * 0.36)),
-      max: Math.round(clamped),
-      isDefault: false,
+      min: Math.min(max, Math.max(64, Math.round(max * 0.36))),
+      max,
+      isAuto: false,
     }
   }
-  return DEFAULT_BOUNDS
+  return AUTO_BOUNDS
 }
 
-/** Inline CSS custom properties for `.tabbar-row` from `tabWidth`. */
-export function tabWidthStyle(width: TabWidth | undefined): CSSProperties {
-  const { min, max } = tabWidthBounds(width)
+/** Resolves the fixed max width (in px) for inactive tabs, or `null` when set to `'auto'` (shrink to fit). */
+export function inactiveTabMaxWidth(width: TabWidth | undefined): number | null {
+  if (width === 'compact') return COMPACT_BOUNDS.max
+  if (width === 'medium') return MEDIUM_BOUNDS.max
+  if (width === 'wide') return WIDE_BOUNDS.max
+  if (typeof width === 'number' && Number.isFinite(width)) {
+    return Math.round(Math.min(TAB_WIDTH_MAX, Math.max(TAB_WIDTH_MIN, width)))
+  }
+  return null
+}
+
+/** Inline CSS custom properties for `.tabbar-row` from `tabWidth` (active) and `inactiveTabWidth` (unselected). */
+export function tabWidthStyle(width: TabWidth | undefined, inactiveWidth?: TabWidth): CSSProperties {
+  const active = tabWidthBounds(width)
+  const inactiveMax = inactiveTabMaxWidth(inactiveWidth)
   return {
-    '--tab-min-w': `${min}px`,
-    '--tab-max-w': `${max}px`,
+    '--tab-active-min-w': `${active.min}px`,
+    '--tab-active-max-w': `${active.max}px`,
+    ...(inactiveMax === null ? {} : { '--tab-inactive-max-w': `${inactiveMax}px` }),
   } as CSSProperties
 }

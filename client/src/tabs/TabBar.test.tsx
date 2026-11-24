@@ -2137,17 +2137,18 @@ describe('Tab strip IDs, custom tab widths, and full-name tooltip (YAZ-6474)', (
     return container
   }
 
-  it('tabWidthBounds and tabWidthStyle resolve presets, custom px, and clamping', () => {
-    expect(tabWidthBounds(undefined)).toEqual({ min: 72, max: 200, isDefault: true })
-    expect(tabWidthBounds('default')).toEqual({ min: 72, max: 200, isDefault: true })
-    expect(tabWidthBounds('compact')).toEqual({ min: 64, max: 150, isDefault: false })
-    expect(tabWidthBounds('wide')).toEqual({ min: 100, max: 270, isDefault: false })
-    expect(tabWidthBounds(280)).toEqual({ min: 101, max: 280, isDefault: false })
-    expect(tabWidthBounds(80)).toEqual({ min: 72, max: 120, isDefault: false })
-    expect(tabWidthBounds(600)).toEqual({ min: 144, max: 400, isDefault: false })
-    expect(tabWidthBounds(Number.NaN)).toEqual({ min: 72, max: 200, isDefault: true })
-    expect(tabWidthStyle('compact')).toEqual({ '--tab-min-w': '64px', '--tab-max-w': '150px' })
-    expect(tabWidthStyle(280)).toEqual({ '--tab-min-w': '101px', '--tab-max-w': '280px' })
+  it('tabWidthBounds and tabWidthStyle resolve shared presets, custom px, and clamping', () => {
+    expect(tabWidthBounds(undefined)).toEqual({ min: 72, max: 200, isAuto: true })
+    expect(tabWidthBounds('auto')).toEqual({ min: 72, max: 200, isAuto: true })
+    expect(tabWidthBounds('compact')).toEqual({ min: 64, max: 150, isAuto: false })
+    expect(tabWidthBounds('medium')).toEqual({ min: 72, max: 200, isAuto: false })
+    expect(tabWidthBounds('wide')).toEqual({ min: 100, max: 270, isAuto: false })
+    expect(tabWidthBounds(280)).toEqual({ min: 101, max: 280, isAuto: false })
+    expect(tabWidthBounds(50)).toEqual({ min: 64, max: 80, isAuto: false })
+    expect(tabWidthBounds(600)).toEqual({ min: 144, max: 400, isAuto: false })
+    expect(tabWidthBounds(Number.NaN)).toEqual({ min: 72, max: 200, isAuto: true })
+    expect(tabWidthStyle('compact')).toEqual({ '--tab-active-min-w': '64px', '--tab-active-max-w': '150px' })
+    expect(tabWidthStyle(280, 'medium')).toEqual({ '--tab-active-min-w': '101px', '--tab-active-max-w': '280px', '--tab-inactive-max-w': '200px' })
   })
 
   it('renders inline IDs (#2916 and WIKI-2916) with width classes and leaves New tab, Inbox, inline drawings, and non-ID tabs untouched', () => {
@@ -2180,7 +2181,7 @@ describe('Tab strip IDs, custom tab widths, and full-name tooltip (YAZ-6474)', (
     })
 
     const row = el.querySelector<HTMLElement>('.tabbar-row')!
-    expect(row.classList.contains('tabbar-row--default-width')).toBe(true)
+    expect(row.classList.contains('tabbar-row--active-auto')).toBe(true)
     expect(row.classList.contains('tabbar-row--stacked')).toBe(false)
 
     const t1 = el.querySelector<HTMLElement>('[data-tab="t1"]')!
@@ -2250,29 +2251,51 @@ describe('Tab strip IDs, custom tab widths, and full-name tooltip (YAZ-6474)', (
     expect(rule('.tabbar__tab--stacked .tabbar__text')).toMatch(/flex-direction:\s*column;/)
   })
 
-  it('applies tabWidth CSS custom properties and scopes ID auto-boost strictly to Default width', () => {
-    const check = (tabWidth: IdTabBarProps['tabWidth'], min: string, max: string, isDefault: boolean) => {
+  it('applies active tabWidth CSS custom properties and scopes ID auto-boost strictly to Auto', () => {
+    const check = (tabWidth: IdTabBarProps['tabWidth'], min: string, max: string, isAuto: boolean) => {
       const el = mountIds({ tabs: [{ id: 't1', path: '/v1/a.md' }], active: 't1', tabWidth })
       const row = el.querySelector<HTMLElement>('.tabbar-row')!
-      expect(row.style.getPropertyValue('--tab-min-w')).toBe(min)
-      expect(row.style.getPropertyValue('--tab-max-w')).toBe(max)
-      expect(row.classList.contains('tabbar-row--default-width')).toBe(isDefault)
+      expect(row.style.getPropertyValue('--tab-active-min-w')).toBe(min)
+      expect(row.style.getPropertyValue('--tab-active-max-w')).toBe(max)
+      expect(row.classList.contains('tabbar-row--active-auto')).toBe(isAuto)
       act(() => root?.unmount())
       root = null
       container?.remove()
       container = null
     }
 
-    check('default', '72px', '200px', true)
+    check('auto', '72px', '200px', true)
     check('compact', '64px', '150px', false)
+    check('medium', '72px', '200px', false)
     check('wide', '100px', '270px', false)
     check(280, '101px', '280px', false)
-    check(50, '72px', '120px', false)
+    check(50, '64px', '80px', false)
     check(999, '144px', '400px', false)
 
-    expect(rule('.tabbar-row--default-width .tabbar__tab--id-number:not(.tabbar__tab--stacked)')).toMatch(/min-width:\s*105px;[\s\S]*max-width:\s*240px;/)
-    expect(rule('.tabbar-row--default-width .tabbar__tab--id-full:not(.tabbar__tab--stacked)')).toMatch(/min-width:\s*130px;[\s\S]*max-width:\s*270px;/)
-    expect(rule('.tabbar-row--default-width .tabbar__tab--id-full.tabbar__tab--stacked')).toMatch(/min-width:\s*96px;/)
+    expect(rule('.tabbar-row--active-auto .tabbar__tab--active.tabbar__tab--id-number:not(.tabbar__tab--stacked),\n.tabbar-row--inactive-auto .tabbar__tab:not(.tabbar__tab--active).tabbar__tab--id-number:not(.tabbar__tab--stacked)')).toMatch(/min-width:\s*105px;[\s\S]*max-width:\s*240px;/)
+    expect(rule('.tabbar-row--active-auto .tabbar__tab--active.tabbar__tab--id-full:not(.tabbar__tab--stacked),\n.tabbar-row--inactive-auto .tabbar__tab:not(.tabbar__tab--active).tabbar__tab--id-full:not(.tabbar__tab--stacked)')).toMatch(/min-width:\s*130px;[\s\S]*max-width:\s*270px;/)
+    expect(rule('.tabbar-row--active-auto .tabbar__tab--active.tabbar__tab--id-full.tabbar__tab--stacked,\n.tabbar-row--inactive-auto .tabbar__tab:not(.tabbar__tab--active).tabbar__tab--id-full.tabbar__tab--stacked')).toMatch(/min-width:\s*96px;/)
+  })
+
+  it('YAZ-6485: applies inactiveTabWidth fixed class and --tab-inactive-max-w independently of active tabWidth', () => {
+    const elAuto = mountIds({ tabs: [{ id: 't1', path: '/v1/a.md' }], active: 't1', tabWidth: 'compact', inactiveTabWidth: 'auto' })
+    const rowAuto = elAuto.querySelector<HTMLElement>('.tabbar-row')!
+    expect(rowAuto.classList.contains('tabbar-row--inactive-fixed')).toBe(false)
+    expect(rowAuto.classList.contains('tabbar-row--inactive-auto')).toBe(true)
+    expect(rowAuto.classList.contains('tabbar-row--active-auto')).toBe(false)
+    expect(rowAuto.style.getPropertyValue('--tab-inactive-max-w')).toBe('')
+    act(() => root?.unmount())
+    root = null
+    container?.remove()
+    container = null
+
+    const elMed = mountIds({ tabs: [{ id: 't1', path: '/v1/a.md' }], active: 't1', tabWidth: 'auto', inactiveTabWidth: 'medium' })
+    const rowMed = elMed.querySelector<HTMLElement>('.tabbar-row')!
+    expect(rowMed.classList.contains('tabbar-row--inactive-fixed')).toBe(true)
+    expect(rowMed.classList.contains('tabbar-row--inactive-auto')).toBe(false)
+    expect(rowMed.classList.contains('tabbar-row--active-auto')).toBe(true)
+    expect(rowMed.style.getPropertyValue('--tab-inactive-max-w')).toBe('200px')
+    expect(rule('.tabbar-row--inactive-fixed .tabbar__tab:not(.tabbar__tab--active)')).toMatch(/flex-shrink:\s*0;[\s\S]*max-width:\s*var\(--tab-inactive-max-w/)
   })
 
   it('targets both .tabbar__name and .tabbar__text in the [data-copy] fade CSS rule', () => {

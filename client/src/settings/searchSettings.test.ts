@@ -49,6 +49,7 @@ describe('settingCandidates', () => {
       'contentWidth',
       'contentPosition',
       'tabWidth',
+      'inactiveTabWidth',
       // YAZ-5976, YAZ-5977: Appearance › Explore (Search size is a pointer row, found by search only).
       'exploreWidth',
       'explorePageZoom',
@@ -195,23 +196,10 @@ describe('settingCandidates', () => {
       'hoverPreview',
       ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'links', 'drawings'].map((place) => `hoverPreviewIn.${place}`),
       'searchIncludeInline',
-      // This vault (YAZ-4938, YAZ-4940, YAZ-6464, YAZ-4936, YAZ-4939): the word for a page, the Show IDs block (search, title, files list, tabs, tab ID layout), Clicking a link, Read only, then the IDs rows.
+      // This vault (YAZ-4938, YAZ-4939): the word for a page and Read only (IDs & Links moved to Links & IDs in YAZ-6484).
       'unitWord',
-      'showIds',
-      'showIds.title',
-      'showIds.files',
-      'showIds.tabs',
-      'showIds.tabsLayout',
-      'linkClick',
       'readOnlyVault',
-      'ids',
-      'duplicates',
-      'idLetters',
-      'oldIds',
-      'backfillCreated',
-      // Settings › Link pills (YAZ-4924), after This vault.
-      ...LINK_PILL_ROWS,
-      // Settings › Folder pages (YAZ-4585): the folder views' hover row moved here from Files & Links.
+      // Settings › Folder pages (YAZ-4585): the folder views' hover row moved here from Files.
       ...FOLDER_PAGES_ROWS,
       // Settings › Memory (YAZ-3737 D9, D10): the report, then the two settings that save memory.
       'memoryWindows',
@@ -240,23 +228,24 @@ describe('settingCandidates', () => {
     expect(ids(settingCandidates(ctx()))).not.toContain('githubSync')
   })
 
-  it('includes the Review section only with a vault open, between Files & Links and Sync (YAZ-2322)', () => {
+  it('includes the Review section only with a vault open, between Folder pages and Sync (YAZ-2322)', () => {
     const all = ids(settingCandidates(ctx({ status: null, setEnabled: () => undefined }, REVIEW)))
-    expect(all.slice(all.indexOf('ids'), all.indexOf('githubSync') + 1)).toEqual(['ids', 'duplicates', 'idLetters', 'oldIds', 'backfillCreated', ...LINK_PILL_ROWS, ...FOLDER_PAGES_ROWS, ...REVIEW_ROWS, 'githubAccount', 'githubSync'])
+    expect(all.slice(all.indexOf('readOnlyVault'), all.indexOf('githubSync') + 1)).toEqual(['readOnlyVault', ...FOLDER_PAGES_ROWS, ...REVIEW_ROWS, 'githubAccount', 'githubSync'])
     expect(ids(settingCandidates(ctx())).filter((id) => REVIEW_ROWS.includes(id))).toEqual([])
   })
 
-  it('includes Storage and Sharing only with their hooks, after Sync and before Hotkeys; Drawings and Images sit between Editor and Files & Links (YAZ-3028 merge); Tables right after Editor (YAZ-4775)', () => {
+  it('includes Storage and Sharing only with their hooks, after Sync and before Hotkeys; Drawings and Images sit between Editor and Files (YAZ-3028 merge); Tables right after Editor (YAZ-4775); Links & IDs only with a vault (YAZ-6484)', () => {
     const storage: SettingsCtx['storage'] = { stats: null, failed: false, refresh: () => undefined, shrink: async () => ({ shrunk: 0, skipped: 0, bytesMoved: 0 }), lastShrink: null }
     const sharing: SettingsCtx['sharing'] = { root: '/v', status: null, rows: null, listError: null, now: 0, refresh: () => undefined, show: () => undefined }
+    const linkClick: SettingsCtx['linkClick'] = { settings: { click: 'open' }, save: () => undefined }
     const sectionsOf = (c: SettingsCtx) => [...new Set(settingCandidates(c).map((h) => h.section.id))]
-    expect(sectionsOf({ ...ctx({ status: null, setEnabled: () => undefined }, REVIEW), storage, sharing })).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'tables', 'code', 'canvas', 'images', 'files', 'folderPages', 'cards', 'sync', 'memory', 'storage', 'sharing', 'hotkeys'])
+    expect(sectionsOf({ ...ctx({ status: null, setEnabled: () => undefined }, REVIEW), linkClick, storage, sharing })).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'tables', 'code', 'canvas', 'images', 'files', 'linksIds', 'folderPages', 'cards', 'sync', 'memory', 'storage', 'sharing', 'hotkeys'])
     expect(sectionsOf(ctx())).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'tables', 'code', 'canvas', 'images', 'files', 'folderPages', 'memory', 'hotkeys'])
   })
 
   it('a candidate carries label, hint, keywords, group title and section title, case-folded in `lower`', () => {
     const confirm = settingCandidates(ctx()).find((h) => h.item.id === 'confirmDelete')
-    expect(confirm?.name).toBe('Confirm before deleting Deleted pages and folders move to the Trash either way. Files & Links')
+    expect(confirm?.name).toBe('Confirm before deleting Deleted pages and folders move to the Trash either way. Files')
     expect(confirm?.lower).toBe(confirm?.name.toLowerCase())
     const width = settingCandidates(ctx()).find((h) => h.item.id === 'threadWidth')
     expect(width?.name).toBe('Line width thread width Bullet threading The coloured path from each list down to the bullet at the caret. Editor')
@@ -303,7 +292,8 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyPages', 'dailyPageFolder', 'dailyPageFormat', 'dailyPageDayFolder', 'dailyPageOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'searchIncludeInline', 'unitWord', 'showIds', 'showIds.title', 'showIds.files', 'showIds.tabs', 'showIds.tabsLayout', 'linkClick', 'readOnlyVault', 'ids', 'duplicates', 'idLetters', 'oldIds', 'backfillCreated', ...LINK_PILL_ROWS])
+    const linkClick: SettingsCtx['linkClick'] = { settings: { click: 'open' }, save: () => undefined }
+    expect(ids(searchSettings(settingCandidates({ ...ctx(), linkClick }), 'links & ids'))).toEqual(['ids', 'idLetters', 'showIds', 'showIds.title', 'showIds.files', 'showIds.tabs', 'showIds.tabsLayout', 'linkClick', ...LINK_PILL_ROWS, 'duplicates', 'oldIds', 'backfillCreated'])
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
@@ -339,7 +329,7 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'guide'))).toEqual(['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'sidebarLines', 'sectionLines', 'tocLines', 'canvas.snapColor', 'folderPages.groupLines'])
     // And the hover preview's master switch and each place's own (YAZ-3403). The Add panel's Hover zoom (YAZ-4447, D34)
     // leads: its label starts with the word, after the drawing's Hover outline (YAZ-4469 demo), which comes first in registry order.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['tableCellNotePreviewLines' /* "Hover preview lines" starts with the word (YAZ-5717) */, 'canvas.hoverOutline', 'mediaHoverZoom', 'mediaHoverZoomSize', 'sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'tableTextInCells' /* its hint says hover a cut cell (YAZ-4900) */, 'tableRowBand' /* its hint names Folder pages › Row band on hover (YAZ-4608 C5) */, 'canvas.measureDistancesInfo' /* Option-hover distance measurement (YAZ-5986) */, 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'linkPills' /* YAZ-5991: Hover subsection in Link pills */, 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.groupLines' /* On hover (YAZ-4798) */, 'hotkey-code-showHover'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['tableCellNotePreviewLines' /* "Hover preview lines" starts with the word (YAZ-5717) */, 'canvas.hoverOutline', 'mediaHoverZoom', 'mediaHoverZoomSize', 'sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'tableTextInCells' /* its hint says hover a cut cell (YAZ-4900) */, 'tableRowBand' /* its hint names Folder pages › Row band on hover (YAZ-4608 C5) */, 'canvas.measureDistancesInfo' /* Option-hover distance measurement (YAZ-5986) */, 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.groupLines' /* On hover (YAZ-4798) */, 'hotkey-code-showHover'])
     // The row says its group and its page to search, as each other row does.
     expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a page, at its right edge. Editor')
   })
@@ -420,7 +410,7 @@ describe('searchSettings', () => {
     // "underline" is also a word of Appearance › Text formatting (YAZ-3068); a page and a draw.io diagram both
     // underline with ⌘U (YAZ-3037): both rows answer, the page's first (its label is the word). The Selection toolbar
     // row has the word among its keywords (YAZ-3806 T7), and so do the two "Enter keeps the text style" rows (YAZ-3746 13AB).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-page-underline', 'hotkey-drawing-textUnderline', 'hotkey-diagram-underline', 'textFormatting', 'selectionToolbar', 'enterKeepsStylePages', 'enterKeepsStyleBoxes', 'linkPills'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-page-underline', 'hotkey-drawing-textUnderline', 'hotkey-diagram-underline', 'textFormatting', 'selectionToolbar', 'enterKeepsStylePages', 'enterKeepsStyleBoxes'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkey-app-menuExportExcalidrawDrawing', 'hotkey-drawing-saveAs'])
     // A changed key is searched by the key it has NOW.
     const moved = { ...ctx(), settings: { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K' } } }
