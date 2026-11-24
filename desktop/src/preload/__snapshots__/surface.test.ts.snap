@@ -288,7 +288,10 @@ vaultConfig.write/4: invoke vaultConfig:write ["a0","a1","a2",null]; => "answer"
 vaultLauncher.create/1: invoke vault-launcher:create ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.createWorkspace/1: invoke vault-launcher:create-workspace ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.icons/0: invoke vault-launcher:icons []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.listAll/0: invoke vault-launcher:list-all []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.onChanged/1: on vault-launcher:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off vault-launcher:changed
 vaultLauncher.remove/1: invoke vault-launcher:remove ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.removeOrphan/1: invoke vault-launcher:remove-orphan ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.removeWorkspace/1: invoke vault-launcher:remove-workspace ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.reveal/1: invoke vault-launcher:reveal ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.revealWorkspace/1: invoke vault-launcher:reveal-workspace ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

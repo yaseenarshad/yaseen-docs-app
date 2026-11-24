@@ -197,7 +197,12 @@ function requireFilesPreview(v: unknown): FilesPreviewRequest {
  * `app:flushed` is the renderer's half of the close/quit flush handshake. One door of `link.*` is
  * answered here too, because it needs the caller's window: `link:ready` (YAZ-2589 A2).
  */
-export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void {
+export interface WindowIpcHooks {
+  /** Invoked before a saved workspace is removed so its launcher bundle can be cleaned up (YAZ-6447 D3). */
+  onRemoveVaultSet?: (workspaceId: string) => Promise<void> | void
+}
+
+export function registerWindowIpc(store: Store, windows: WindowManagerIpc, hooks?: WindowIpcHooks): void {
   /** The vaults of a window's places (YAZ-4922 D3): a tab of a folder of a vault may be any page of that vault. */
   const vaultsOf = (entry: WindowEntry): string[] => placeVaults(store.get().folders, entry.roots)
   const entryFor = (e: IpcMainInvokeEvent): WindowEntry => {
@@ -505,7 +510,9 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
   handleWithEvent(CONTRACT.window.saveSet, async (e, name: unknown): Promise<boolean> => store.saveVaultSet(requireString(name, 'name'), entryFor(e).roots) !== null)
   handle(CONTRACT.window.renameSet, async (id: unknown, name: unknown): Promise<boolean> => store.renameVaultSet(requireString(id, 'id'), requireString(name, 'name')))
   handle(CONTRACT.window.removeSet, async (id: unknown) => {
-    store.removeVaultSet(requireString(id, 'id'))
+    const workspaceId = requireString(id, 'id')
+    await hooks?.onRemoveVaultSet?.(workspaceId)
+    store.removeVaultSet(workspaceId)
   })
 
   // Sessions (YAZ-3147 D2): saved copies of a window's tabs. `window:save-session` saves the CALLER's own

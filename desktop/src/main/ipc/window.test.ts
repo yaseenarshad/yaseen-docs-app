@@ -460,6 +460,28 @@ describe('registerWindowIpc', () => {
       expect(await registered(CONTRACT.window.removeSet.channel)({ sender }, 5)).toEqual(bad('BAD_REQUEST'))
       expect(store.get().vaultSets).toEqual([{ ...a, name: 'Alpha' }])
     })
+
+    it('window:remove-set invokes hooks.onRemoveVaultSet before removing the workspace from store (YAZ-6447 D3)', async () => {
+      const ws = store.saveVaultSet('With Launcher', ['/v', '/w'])!
+      store.setVaultSetLauncher(ws.id, {
+        name: 'With Launcher',
+        appPath: '/Applications/With Launcher.app',
+        iconPath: '/tmp/ws-icon.png',
+      })
+
+      const observed: Array<{ id: string; hadLauncher: boolean }> = []
+      vi.mocked(ipcMain.handle).mockClear()
+      registerWindowIpc(store, manager, {
+        onRemoveVaultSet: async (workspaceId) => {
+          const found = store.get().vaultSets.find((s) => s.id === workspaceId)
+          observed.push({ id: workspaceId, hadLauncher: found?.launcher !== undefined })
+        },
+      })
+
+      expect(await registered(CONTRACT.window.removeSet.channel)({ sender }, ws.id)).toEqual(ok(undefined))
+      expect(observed).toEqual([{ id: ws.id, hadLauncher: true }])
+      expect(store.get().vaultSets).toEqual([])
+    })
   })
 
   describe('sessions (YAZ-3147 D2, D3)', () => {
