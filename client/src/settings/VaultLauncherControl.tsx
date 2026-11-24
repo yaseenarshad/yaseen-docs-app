@@ -107,6 +107,7 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
 
   return (
     <div className="vault-launcher">
+      <div className="vault-launcher__target-title">{isWorkspace ? `Workspace: ${defaultName}` : `Vault: ${defaultName}`}</div>
       {launcher === null ? (
         <div className="vault-launcher__empty">
           <button type="button" className="btn" onClick={() => setModalOpen(true)}>

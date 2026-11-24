@@ -2540,6 +2540,12 @@ span.cards-wizard__pill {
   gap: 10px;
 }
 
+.vault-launcher__target-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
 .vault-launcher__empty,
 .vault-launcher__actions {
   display: flex;

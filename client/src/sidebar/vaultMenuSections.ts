@@ -73,6 +73,10 @@ export interface VaultMenuHandlers {
   onResetName: (path: string) => void
   /** Give the vault a number, 1–9, or `null` for none (YAZ-2555 D2); the store takes it from the vault that had it. */
   onSetKey: (path: string, key: number | null) => void
+  /** Open the macOS Vault Launcher modal for this vault. Absent on non-macOS. */
+  onLauncher?: (path: string) => void
+  /** True when this vault already has a launcher (shows "Edit launcher…" instead of "Make a launcher…"). */
+  hasLauncher?: boolean
   onReveal: (path: string) => void
   onOpenVsCode: (path: string) => void
   /** Forget the MRU entry (D3): no confirm, the folder on disk is untouched. */
@@ -137,6 +141,9 @@ export function buildVaultMenuSections({ path, name, isCurrent, isAloneHere, ren
           keyed.some((v) => v.path === path) ? [{ id: 'key-none', label: 'No shortcut', onSelect: () => h.onSetKey(path, null) }] : [],
         ],
       },
+      ...(h.onLauncher !== undefined
+        ? [{ id: 'launcher', label: h.hasLauncher ? 'Edit launcher…' : 'Make a launcher…', onSelect: () => h.onLauncher?.(path) }]
+        : []),
     ],
     [copyItem('copy-name', 'vault name', name, h), copyItem('copy-path', 'path', path, h, createElement(CopyIcon))],
     [

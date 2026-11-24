@@ -265,6 +265,64 @@ describe('Welcome', () => {
       expect(rows(el)[0]?.querySelector('.welcome__recent-name')?.textContent).toBe('Work')
       expect(props.onNotice).toHaveBeenCalledWith("Can't rename: a workspace has that name")
     })
+
+    it('right-clicking a vault row on macOS shows Make/Edit launcher… and opens the vault launcher modal', async () => {
+      const ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+      const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
+      const status = vi.fn(async () => ({ supported: true, launcher: null, exists: false, iconDataUrl: null }))
+      Object.defineProperty(window, 'yaseenDocs', { value: { ...bridge, vaultLauncher: { status } }, configurable: true, writable: true })
+      try {
+        const { el } = mount({
+          recents: [
+            { path: '/vaults/pages', lastOpened: Date.now() },
+            { path: '/vaults/work', lastOpened: Date.now() - HOUR },
+          ],
+          vaultIcons: { '/vaults/work': ICON },
+        })
+        // Vault with existing launcher shows "Edit launcher…"
+        rightClick(rows(el)[1])
+        expect(menuLabels()).toContain('Edit launcher…')
+
+        // Vault without launcher shows "Make a launcher…" and opens modal
+        rightClick(rows(el)[0])
+        expect(menuLabels()).toContain('Make a launcher…')
+        pick('Make a launcher…')
+        await vi.waitFor(() => {
+          expect(status).toHaveBeenCalledWith('/vaults/pages')
+          expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Make a vault launcher')
+        })
+      } finally {
+        platformSpy.mockRestore()
+      }
+    })
+
+    it('right-clicking a workspace row on macOS shows Make/Edit launcher… and opens the workspace launcher modal', async () => {
+      const ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+      const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
+      const workspaceStatus = vi.fn(async () => ({ supported: true, launcher: null, exists: false, iconDataUrl: null }))
+      Object.defineProperty(window, 'yaseenDocs', { value: { ...bridge, vaultLauncher: { workspaceStatus } }, configurable: true, writable: true })
+      try {
+        const second: VaultSet = { id: 's2', name: 'Personal', roots: ['/vaults/a', '/vaults/b'], lastUsed: Date.now() - HOUR }
+        const { el } = mount({
+          sets: [work, second],
+          workspaceIcons: { s2: ICON },
+        })
+        // Workspace with existing launcher shows "Edit launcher…"
+        rightClick(rows(el)[1])
+        expect(menuLabels()).toContain('Edit launcher…')
+
+        // Workspace without launcher shows "Make a launcher…" and opens modal
+        rightClick(rows(el)[0])
+        expect(menuLabels()).toContain('Make a launcher…')
+        pick('Make a launcher…')
+        await vi.waitFor(() => {
+          expect(workspaceStatus).toHaveBeenCalledWith('s1')
+          expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace launcher')
+        })
+      } finally {
+        platformSpy.mockRestore()
+      }
+    })
   })
 
   it('YAZ-3979: a workspace that another window removes leaves the page, and a rename there shows here; the order stays the mount\'s', async () => {

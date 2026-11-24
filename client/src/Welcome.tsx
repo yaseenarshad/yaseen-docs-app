@@ -1,5 +1,5 @@
-import { useEffect, useReducer, useState, useSyncExternalStore, type MouseEvent } from 'react'
-import { MAX_RECENT_ROOTS, cleanVaultName, type RecentRoots, type VaultSet } from '@shared/types'
+import { lazy, Suspense, useEffect, useReducer, useState, useSyncExternalStore, type MouseEvent } from 'react'
+import { MAX_RECENT_ROOTS, cleanVaultName, type RecentRoots, type VaultLauncherStatus, type VaultSet } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import appIcon from './assets/welcome-icon.png'
 import { basename } from './lib/paths'
@@ -9,6 +9,8 @@ import { ContextMenu } from './sidebar/ContextMenu'
 import { buildVaultMenuSections, buildVaultSetMenuSections, type VaultMenuHandlers } from './sidebar/vaultMenuSections'
 import { GROUP_SETS_TEXT, SETS_MISSING_TEXT } from './sidebar/VaultSwitcher'
 import { TextField } from './views/view/TextField'
+
+const VaultLauncherModal = lazy(() => import('./settings/VaultLauncherModal').then((m) => ({ default: m.VaultLauncherModal })))
 
 /**
  * The Welcome screen (C2, GRO-2164): shown only when this window has no folder (D3) — the app
@@ -56,12 +58,14 @@ interface WelcomeProps {
   vaultIcons?: Record<string, string>
   /** Per-workspace macOS launcher icon data URLs. */
   workspaceIcons?: Record<string, string>
+  /** Called when a vault or workspace launcher is saved so App can refresh launcher icons. */
+  onLauncherChanged?: () => void
 }
 
 /** A row's menu or inline name field: a folder row's (its path) or a workspace row's (its id). */
 type RowRef = { kind: 'folder' | 'set'; key: string }
 
-export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, picking, onNotice, vaultIcons, workspaceIcons }: WelcomeProps) {
+export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, picking, onNotice, vaultIcons, workspaceIcons, onLauncherChanged }: WelcomeProps) {
   const [rows, setRows] = useState(() => recents.slice(0, MAX_RECENT_ROOTS))
   const [workspaces, setWorkspaces] = useState(() => sets)
   /**
@@ -74,6 +78,13 @@ export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, 
   const [missing, setMissing] = useState<ReadonlySet<string>>(new Set())
   const [menu, setMenu] = useState<(RowRef & { x: number; y: number }) | null>(null)
   const [renaming, setRenaming] = useState<RowRef | null>(null)
+  const [launcherModal, setLauncherModal] = useState<
+    | { kind: 'vault'; root: string; defaultName: string; status: VaultLauncherStatus | null }
+    | { kind: 'workspace'; workspaceId: string; defaultName: string; status: VaultLauncherStatus | null }
+    | null
+  >(null)
+  const canVaultLauncher = /Mac/i.test(navigator.platform) && typeof window.yaseenDocs?.vaultLauncher?.status === 'function'
+  const canWorkspaceLauncher = /Mac/i.test(navigator.platform) && typeof window.yaseenDocs?.vaultLauncher?.workspaceStatus === 'function'
   /** A display name lives in the store, not in this page's state: a change there draws the page again. */
   const [, redraw] = useReducer((n: number) => n + 1, 0)
   const now = Date.now()
@@ -116,6 +127,21 @@ export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, 
   const removeSet = (id: string): void => {
     void api.window.removeSet(id).catch(failed('remove the workspace'))
     setWorkspaces((prev) => prev.filter((s) => s.id !== id))
+  }
+  const openVaultLauncher = (path: string): void => {
+    const defaultName = storage.vaultName(path)
+    void api.vaultLauncher.status(path).then(
+      (status) => setLauncherModal({ kind: 'vault', root: path, defaultName, status }),
+      () => setLauncherModal({ kind: 'vault', root: path, defaultName, status: null }),
+    )
+  }
+  const openWorkspaceLauncher = (id: string): void => {
+    const set = liveWorkspaces.find((s) => s.id === id) ?? storage.getVaultSets().find((s) => s.id === id)
+    if (set === undefined) return
+    void api.vaultLauncher.workspaceStatus(id).then(
+      (status) => setLauncherModal({ kind: 'workspace', workspaceId: id, defaultName: set.name, status }),
+      () => setLauncherModal({ kind: 'workspace', workspaceId: id, defaultName: set.name, status: null }),
+    )
   }
   /** Reveal in Finder and Open in VS Code: a folder that is gone says so, as the sidebar's do (YAZ-963). */
   const shell = (door: 'reveal' | 'openVsCode', what: string) => (path: string) =>
@@ -226,6 +252,12 @@ export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, 
                 onRename: (path) => setRenaming({ kind: 'folder', key: path }),
                 onResetName: (path) => saveName(path, null),
                 onSetKey: (path, key) => storage.setVaultKey(path, key),
+                ...(canVaultLauncher
+                  ? {
+                      onLauncher: openVaultLauncher,
+                      hasLauncher: vaultIcons?.[menu.key] !== undefined,
+                    }
+                  : {}),
                 onReveal: shell('reveal', 'reveal'),
                 onOpenVsCode: shell('openVsCode', 'open in VS Code'),
                 onRemove: removeRow,
@@ -236,7 +268,38 @@ export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, 
           />
         )}
         {menu?.kind === 'set' && (
-          <ContextMenu x={menu.x} y={menu.y} sections={buildVaultSetMenuSections(menu.key, { onRename: (id) => setRenaming({ kind: 'set', key: id }), onRemove: removeSet })} onClose={() => setMenu(null)} />
+          <ContextMenu
+            x={menu.x}
+            y={menu.y}
+            sections={buildVaultSetMenuSections(menu.key, {
+              onRename: (id) => setRenaming({ kind: 'set', key: id }),
+              onRemove: removeSet,
+              ...(canWorkspaceLauncher
+                ? {
+                    onLauncher: openWorkspaceLauncher,
+                    hasLauncher: workspaceIcons?.[menu.key] !== undefined,
+                  }
+                : {}),
+            })}
+            onClose={() => setMenu(null)}
+          />
+        )}
+        {launcherModal !== null && (
+          <Suspense fallback={null}>
+            <VaultLauncherModal
+              root={launcherModal.kind === 'vault' ? launcherModal.root : undefined}
+              workspaceId={launcherModal.kind === 'workspace' ? launcherModal.workspaceId : undefined}
+              defaultName={launcherModal.defaultName}
+              initial={launcherModal.status?.launcher}
+              initialIconDataUrl={launcherModal.status?.iconDataUrl}
+              recreating={launcherModal.status?.launcher !== null && launcherModal.status?.launcher !== undefined && !launcherModal.status.exists}
+              onSaved={() => {
+                setLauncherModal(null)
+                onLauncherChanged?.()
+              }}
+              onClose={() => setLauncherModal(null)}
+            />
+          </Suspense>
         )}
       </div>
     </div>
