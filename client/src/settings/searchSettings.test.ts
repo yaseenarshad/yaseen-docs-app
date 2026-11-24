@@ -44,6 +44,7 @@ describe('settingCandidates', () => {
       'vaultOpensOn',
       'workspaceLauncher',
       'vaultLauncher',
+      'allLaunchers',
       'theme',
       'contentWidth',
       'contentPosition',
@@ -303,7 +304,7 @@ describe('searchSettings', () => {
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
     for (const query of ['startup', 'when the app starts']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toEqual(['startupWindows'])
-    expect(ids(searchSettings(settingCandidates(ctx()), 'launch'))).toEqual(['startupWindows', 'workspaceLauncher', 'vaultLauncher'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'launch'))).toEqual(['startupWindows', 'workspaceLauncher', 'vaultLauncher', 'allLaunchers'])
   })
 
   it('"toc" finds the three rows of the table of contents and "jump" "Pin default" and the code tab\'s "Jump across files" (YAZ-3500); "outline" and "headings" find them among others; the group\'s name finds the rows and the ⌘J line of the Hotkeys table, "Table of contents default" first; "pin" and "default" find their rows (YAZ-2700, YAZ-2762, YAZ-3558 S18)', () => {

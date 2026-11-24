@@ -21,6 +21,8 @@ export function useVaultLauncherIcons(): {
   }, [])
   useEffect(() => {
     refreshLauncherIcons()
+    if (typeof window.yaseenDocs?.vaultLauncher?.onChanged !== 'function') return
+    return api.vaultLauncher.onChanged(() => refreshLauncherIcons())
   }, [refreshLauncherIcons])
   return { launcherIcons, workspaceIcons, refreshLauncherIcons }
 }
