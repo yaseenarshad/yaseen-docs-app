@@ -1,13 +1,8 @@
 import type { CSSProperties } from 'react'
+import { TAB_WIDTH_MAX, TAB_WIDTH_MIN, type TabWidth } from '@shared/types'
+import type { IdsInTabs, TabIdLayout } from '@shared/showIds'
 
-/** App-global tab strip width setting (YAZ-6474). Re-pointed to `@shared/types` on merge. */
-export type TabWidth = 'compact' | 'default' | 'wide' | number
-
-/** Per-vault tab strip ID display mode (YAZ-6474). Re-pointed to `@shared/showIds` on merge. */
-export type IdsInTabs = 'off' | 'number' | 'full'
-
-/** Per-vault tab strip ID layout (YAZ-6474). Re-pointed to `@shared/showIds` on merge. */
-export type TabIdLayout = 'inline' | 'stacked'
+export type { IdsInTabs, TabIdLayout, TabWidth }
 
 /** Active tab ID rendering config for a vault whose `showIds.tabs !== 'off'`. */
 export interface TabIdSpec {
@@ -30,7 +25,7 @@ export function tabWidthBounds(width: TabWidth | undefined): TabWidthBounds {
   if (width === 'compact') return COMPACT_BOUNDS
   if (width === 'wide') return WIDE_BOUNDS
   if (typeof width === 'number' && Number.isFinite(width)) {
-    const clamped = Math.min(400, Math.max(120, width))
+    const clamped = Math.min(TAB_WIDTH_MAX, Math.max(TAB_WIDTH_MIN, width))
     return {
       min: Math.max(72, Math.round(clamped * 0.36)),
       max: Math.round(clamped),

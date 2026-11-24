@@ -118,7 +118,7 @@ import { CommentPrefsContext, useCardFollowsProfile } from './comments/usePeople
 import type { LinkActions } from './editor/linkMenu'
 import { useVaultIcons, type IconLook } from './sidebar/useVaultIcons'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
-import { TabBar } from './tabs/TabBar'
+import { TabBar, useTabIds } from './tabs/TabBar'
 import type { MoveTarget } from './tabs/TabMenu'
 import { setBoardHighlight } from './tabs/boardHighlight'
 import { useWindowHidden, useWindowMinimized } from './tabs/hiddenWindows'
@@ -794,8 +794,8 @@ export function App() {
   // frontmatter write (YAZ-2174): the page editor's autosave registers with the bridge itself.
   useEffect(() => api.window.onFlush(flushWindow), [])
   // Every page of the window by its title (YAZ-2420 🔒 D14), off the index of each vault.
-  const titleSources = useMemo(() => roots.map((vault) => scopes[slots.current.indexOf(vault)].wikilinks), [roots])
-  const titles = useAllPathTitles(titleSources)
+  const titles = useAllPathTitles(useMemo(() => roots.map((vault) => scopes[slots.current.indexOf(vault)].wikilinks), [roots]))
+  const tabIdProps = useTabIds(roots, vaults, settings.tabWidth)
   /** A page as a notice names it — its title (YAZ-2420 🔒 D14) — off its vault's index snapshot as it stands. */
   const nameOf = useCallback((path: string) => {
     const { root: vault, wikilinks } = scopeOf(path)
@@ -4587,7 +4587,7 @@ export function App() {
             onCloseDuplicates={closeDuplicateTabs}
             onSaveSession={saveFromGrid}
             onNotice={notify}
-            titles={titles}
+            titles={titles} {...tabIdProps}
             // The tab menu's "Add to focus" and "Add to favorites" (YAZ-3264 D2): App's lists, so they work with the sidebar hidden.
             listState={lists.stateOf}
             onToggleFocus={lists.toggleFocus}

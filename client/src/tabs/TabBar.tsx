@@ -19,6 +19,7 @@ import { useBoardHighlight } from './boardHighlight'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from './cardPreview'
 import { setStripTarget } from './stripDrop'
 import { tabWidthBounds, tabWidthStyle, type TabIdSpec, type TabWidth } from './tabWidth'
+export { useTabIds } from './useTabIds'
 import './tabs.css'
 
 export interface TabBarProps {
