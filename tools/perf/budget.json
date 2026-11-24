@@ -38,8 +38,8 @@
       "$comment": "Unbundled node_modules files inside app.asar (must stay 0)."
     },
     "rendererEagerJsBytes": {
-      "max": 3060000,
-      "$comment": "Renderer entry JS static import closure bytes (measured 3,045,129 B on feat/yaz-5967-vault-apps; raised with Yasin's OK)."
+      "max": 3090000,
+      "$comment": "Renderer entry JS static import closure bytes (raised from 3,060,000 B with Yasin's OK for YAZ-6460 inline parity + pageUnlockStore)."
     },
     "rendererEagerCssBytes": {
       "max": 308000,

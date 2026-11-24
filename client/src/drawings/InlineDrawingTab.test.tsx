@@ -61,6 +61,7 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
 
 import { api } from '../api'
 import * as inlineDrawingLand from '../editor/drawing/inlineDrawingLand'
+import { publishPageUnlock } from '../editor/pageUnlockStore'
 import { InlineDrawingTab } from './InlineDrawingTab'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -374,5 +375,29 @@ describe('InlineDrawingTab parent-page link / Show in page (YAZ-6468)', () => {
     expect(onOpenLink).toHaveBeenCalledExactlyOnceWith('/v/Notes.md')
 
     landSpy.mockRestore()
+  })
+
+  it('inherits parent page timed unlock and switches ExcalidrawSurface + title input between read-only and editable (YAZ-6460 item 13)', async () => {
+    const lockedMd = '---\nreadonly: true\n---\n\n```excalidraw\n{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}\n```\n'
+    vi.mocked(api.readFile).mockResolvedValue({ path: '/v/Locked.md', content: lockedMd, mtime: 100, size: lockedMd.length })
+    const token = Symbol('parent-tab')
+
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<InlineDrawingTab root="/v" path="/v/Locked.md" index={0} watch={fakeWatch().watch} />)
+    })
+
+    expect(surface.props?.readOnly).toBe(true)
+    expect(container.querySelector<HTMLInputElement>('.inline-drawing-tab__title')?.readOnly).toBe(true)
+
+    act(() => publishPageUnlock('/v/Locked.md', token, Infinity))
+    expect(surface.props?.readOnly).toBe(false)
+    expect(container.querySelector<HTMLInputElement>('.inline-drawing-tab__title')?.readOnly).toBe(false)
+
+    act(() => publishPageUnlock('/v/Locked.md', token, null))
+    expect(surface.props?.readOnly).toBe(true)
+    expect(container.querySelector<HTMLInputElement>('.inline-drawing-tab__title')?.readOnly).toBe(true)
   })
 })

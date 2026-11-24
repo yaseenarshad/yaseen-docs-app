@@ -189,7 +189,8 @@ function InlineDrawingHost({
     sync,
     onSyncNow,
     readOnly: loaded.readOnly,
-    readOnlySwitch: false,
+    readOnlySwitch: 'timed',
+    inheritPageUnlock: true,
     onNotice,
     write: async (expectedMtime) => {
       const current = snapshot.current
