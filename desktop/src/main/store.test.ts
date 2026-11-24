@@ -513,6 +513,7 @@ describe('createStore: loading', () => {
   it('YAZ-6452: inlineCodeStyle — defaults to default, validates all presets & custom shapes, rejects invalid values, and travels in settingsSync', async () => {
     const { inlineCodeStyle: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     expect(DEFAULT_SETTINGS.inlineCodeStyle).toBe('default')
+    expect(INLINE_CODE_PRESETS).toContain('classic')
     expect(LOCAL_SETTINGS).not.toContain('inlineCodeStyle')
     expect(travels('inlineCodeStyle')).toBe(true)
 
@@ -562,6 +563,7 @@ describe('createStore: loading', () => {
     const synced = JSON.parse(settingsFileText('Mac', 100, { ...DEFAULT_SETTINGS, inlineCodeStyle: { fg: '#1d4ed8', bg: 'auto' } }))
     expect(synced.settings.inlineCodeStyle).toEqual({ fg: '#1d4ed8', bg: 'auto' })
     const here = { ...DEFAULT_SETTINGS, inlineCodeStyle: { fg: '#1d4ed8', bg: '#e8f0fe' } as InlineCodeStyle }
+    expect(mergeFolderSettings(here, { inlineCodeStyle: 'classic' }).inlineCodeStyle).toBe('classic')
     expect(mergeFolderSettings(here, { inlineCodeStyle: 'github' }).inlineCodeStyle).toBe('github')
     expect(mergeFolderSettings(here, { inlineCodeStyle: { fg: 'text', bg: 'none' } }).inlineCodeStyle).toEqual({ fg: 'text', bg: 'none' })
     // Unknown future preset keeps this Mac's value rather than resetting.

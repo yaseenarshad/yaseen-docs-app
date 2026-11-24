@@ -2923,11 +2923,11 @@ export const BLOCK_WIDTH_MAX = 4000
 /** A block width, checked: a whole number of px in range. */
 export const isBlockWidth = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= BLOCK_WIDTH_MIN && v <= BLOCK_WIDTH_MAX
 /**
- * Inline code style (YAZ-6452): 6 Light/Dark-adaptive presets, or a custom `{ fg, bg }` where `fg` is `'text'`
+ * Inline code style (YAZ-6452): 7 Light/Dark-adaptive presets, or a custom `{ fg, bg }` where `fg` is `'text'`
  * (follows theme body text color in Light & Dark) or `#rrggbb`, and `bg` is `'auto'` (adaptive tint from `fg`),
  * `'none'` (transparent), or `#rrggbb`.
  */
-export const INLINE_CODE_PRESETS = ['default', 'subtle', 'github', 'accent', 'plum', 'plain'] as const
+export const INLINE_CODE_PRESETS = ['default', 'classic', 'subtle', 'github', 'accent', 'plum', 'plain'] as const
 export type InlineCodePreset = (typeof INLINE_CODE_PRESETS)[number]
 export interface InlineCodeCustom {
   fg: string // '#rrggbb' or 'text' (follows theme body text color in Light & Dark)
