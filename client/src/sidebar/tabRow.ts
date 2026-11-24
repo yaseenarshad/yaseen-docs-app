@@ -129,10 +129,12 @@ export interface TabRowHandlers {
   sortLabel?: string
   /** "Collapse all" (or "Expand all"): what the fold button does. */
   onFold: () => void
+  /** "Refresh files": resync open vaults and refresh Files tree + index (YAZ-6440). */
+  onRefresh?: () => void
   /** "Edit tab row…": the Tab row panel (YAZ-3279 S17). The menu always ends with it. */
   onEdit: () => void
   /** A row's glyph (YAZ-3279: a glyph on each row, so a tab is quick to find): a tab's, or a button's. */
-  iconOf?: (key: SidebarTab | Exclude<SidebarButton, 'more'>) => ReactNode
+  iconOf?: (key: SidebarTab | Exclude<SidebarButton, 'more'> | 'refresh') => ReactNode
 }
 
 /**
@@ -158,5 +160,6 @@ export function tabRowSections(layout: RowLayout, prefs: SidebarTabsPrefs, lens:
   const offBar: MenuAction[] = []
   if (buttons.sort && prefs.hiddenButtons.includes('sort')) offBar.push({ id: 'tabrow-sort', label: `${handlers.sortLabel ?? 'Sort'}…`, icon: icon?.('sort'), onSelect: handlers.onSort })
   if (buttons.fold && prefs.hiddenButtons.includes('fold')) offBar.push({ id: 'tabrow-fold', label: foldLabel, icon: icon?.('fold'), onSelect: handlers.onFold })
-  return [hide, over, hidden, offBar, [{ id: 'tabrow-edit', label: 'Edit tab row…', onSelect: handlers.onEdit }]]
+  const refreshSection: MenuAction[] = handlers.onRefresh === undefined ? [] : [{ id: 'tabrow-refresh', label: 'Refresh files', icon: icon?.('refresh'), onSelect: handlers.onRefresh }]
+  return [hide, over, hidden, offBar, refreshSection, [{ id: 'tabrow-edit', label: 'Edit tab row…', onSelect: handlers.onEdit }]]
 }

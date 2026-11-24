@@ -55,6 +55,8 @@ export interface TreeWatcher {
   on(event: 'error', listener: (err: unknown) => void): this
   /** Re-attach `p` — only the polling fallback ever loses a path (one that appears during its start). */
   add(p: string): void
+  /** Re-walk the watched tree against what the engine knows; resolves `true` if any event was emitted (YAZ-6439). */
+  resyncNow(): Promise<boolean>
   close(): Promise<void>
 }
 
@@ -195,6 +197,8 @@ class Engine extends EventEmitter implements TreeWatcher {
   })
   /** Set when polling replaces the native engine from the start: the native initial walk stops. */
   private abandoned = false
+  /** Counts emitted fs change events so `resync()` can report whether anything changed (YAZ-6439). */
+  private emittedChanges = 0
 
   constructor(
     private readonly dir: string,
@@ -211,11 +215,24 @@ class Engine extends EventEmitter implements TreeWatcher {
    */
   override emit(event: string | symbol, ...args: unknown[]): boolean {
     if (this.closed && event !== 'error') return false
+    if (event === 'add' || event === 'change' || event === 'unlink' || event === 'addDir' || event === 'unlinkDir') {
+      this.emittedChanges++
+    }
     return super.emit(event, ...args)
   }
 
   add(p: string): void {
     this.polling?.add(p)
+  }
+
+  resyncNow(): Promise<boolean> {
+    if (this.closed || this.polling !== null || !this.started) return Promise.resolve(false)
+    const run = this.chain.then(() => (this.closed || this.polling !== null ? false : this.resync()))
+    this.chain = run.then(
+      () => undefined,
+      (err: unknown) => void this.emit('error', err),
+    )
+    return run.catch(() => false)
   }
 
   async close(): Promise<void> {
@@ -421,7 +438,8 @@ class Engine extends EventEmitter implements TreeWatcher {
   }
 
   /** The whole tree against what the engine knew: the difference is announced, as if every path had been queued. */
-  private async resync(): Promise<void> {
+  private async resync(): Promise<boolean> {
+    const before = this.emittedChanges
     const unseen = new Set(this.known.keys())
     const dirsToVisit: string[] = [this.dir]
     const toLook: string[] = []
@@ -445,13 +463,21 @@ class Engine extends EventEmitter implements TreeWatcher {
       const width = Math.min(WALK_CONCURRENCY, dirsToVisit.length - next)
       await Promise.all(Array.from({ length: width }, dirWorker))
     }
-    if (this.closed) return
-    for (const p of toLook) {
-      if (this.closed) return
-      await this.look(p)
+    if (this.closed) return this.emittedChanges > before
+    let lookNext = 0
+    const lookWorker = async (): Promise<void> => {
+      while (lookNext < toLook.length && !this.closed) {
+        const p = toLook[lookNext++]!
+        await this.look(p)
+      }
     }
-    if (this.closed) return
+    if (toLook.length > 0) {
+      const width = Math.min(WALK_CONCURRENCY, toLook.length)
+      await Promise.all(Array.from({ length: width }, lookWorker))
+    }
+    if (this.closed) return this.emittedChanges > before
     for (const p of unseen) if (this.known.has(p)) this.forget(p)
+    return this.emittedChanges > before
   }
 
   /** Everything under `d`, remembered; announced as `add`/`addDir` when `announce`. */
