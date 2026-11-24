@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { APP_ZOOM_STEPS, EXPLORE_SIZE_DEFAULT, rootOfPath, stepZoom, type CommentsOrder, type OpenStat, type PageView, type ZoomStep } from '@shared/types'
+import { diskPathOf, parseInlineRef } from '@shared/inlineRef'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction } from '@shared/keys'
 import { stepZoomByKey } from '../editor/DocumentZoom'
@@ -29,10 +30,11 @@ import { storage } from '../lib/storage'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { useSearchCandidates, type SearchVault } from '../search/useSearchResults'
 import { ContextMenu } from '../sidebar/ContextMenu'
+import { vaultUnit } from '../vault/unitWord'
 import { ExploreBoard } from './ExploreBoard'
 import { ExploreCard } from './ExploreCard'
 import { ExplorePage, type ExploreLinkPreview, type ExploreVault, type PageFrameDoors } from './ExplorePage'
-import { explorePageSections } from './exploreMenu'
+import { exploreInlineSections, explorePageSections, type ExploreInlineTarget } from './exploreMenu'
 import { exploreRecents, onExploreMove, rememberExploreRecent } from './exploreRecents'
 import { ExploreSearch, type SearchLink } from './ExploreSearch'
 import { textCandidates } from './exploreRows'
@@ -41,8 +43,9 @@ import { ExploreArrange } from './ExploreArrange'
 import { GRIPS, useLayerBoxes } from './layerBoxes'
 import { useExploreZoom } from './exploreZoom'
 import { layoutForCount, pickRecent, TILE_MS, TILE_PLACES, tileBoxes, tileOrder, type ArrangeLayout, type TileLayout } from './tile'
-import { EXPLORE_PAGE_ZOOM_DEFAULT, frontOrder, layerKindOf, MAX_LAYERS, PAGE_MS, newLayerId, pushLayer, raiseLayer, SEARCH_MS, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type ExploreRequest } from './layers'
+import { EXPLORE_PAGE_ZOOM_DEFAULT, frontOrder, layerKindOf, layerRowPath, MAX_LAYERS, PAGE_MS, newLayerId, pushLayer, raiseLayer, SEARCH_MS, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type ExploreRequest } from './layers'
 import { landOnCard, type CardPlace } from '../editor/card/cardOpen'
+import { landOnInlineDrawing } from '../editor/drawing/inlineDrawingLand'
 import { keyText } from '@shared/keyLabel'
 import './explore.css'
 
@@ -114,8 +117,29 @@ export interface ExploreStackProps {
 const noLog = () => ({})
 
 /** The layer a page or a board opens as (YAZ-4943): a page for reading, a board (a drawing or a diagram) for reading. */
-const fileLayer = (path: string, from?: { search: number; at: number }): ExploreLayer =>
+const fileLayer = (path: string, from?: { search: number; at: number; rowPath?: string }): ExploreLayer =>
   layerKindOf(path) === 'board' ? { id: newLayerId(), kind: 'board', path, ...(from !== undefined && { from }) } : { id: newLayerId(), kind: 'page', path, mode: 'read', ...(from !== undefined && { from }) }
+
+type ExploreMenuState =
+  | { x: number; y: number; kind: 'page'; path: string }
+  | { x: number; y: number; kind: 'inline'; target: ExploreInlineTarget; fromBoard?: boolean }
+
+function menuForRow(row: SearchCandidate, x: number, y: number): ExploreMenuState {
+  if (row.inlineDrawing === true && row.page !== undefined && row.index !== undefined) {
+    return { x, y, kind: 'inline', target: { kind: 'drawing', page: row.page, index: row.index, name: row.name } }
+  }
+  if (row.page !== undefined) {
+    return { x, y, kind: 'inline', target: { kind: 'card', page: row.page, id: row.id ?? null, index: row.index ?? 0, name: row.name } }
+  }
+  const parsed = parseInlineRef(row.path)
+  if (parsed?.kind === 'drawing') {
+    return { x, y, kind: 'inline', target: { kind: 'drawing', page: parsed.page, index: parsed.index, name: row.name } }
+  }
+  if (parsed?.kind === 'card') {
+    return { x, y, kind: 'inline', target: { kind: 'card', page: parsed.page, id: parsed.id, index: row.index ?? 0, name: row.name } }
+  }
+  return { x, y, kind: 'page', path: row.path }
+}
 
 /**
  * The layer App's ask opens (YAZ-4962): a card window, or a page landed on a card. Asked to edit (the Inbox's E,
@@ -269,8 +293,8 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
 
   const doors = useRef({ onNotice, onClose, openInTab, onOpenInlineDrawingTab, openLinkIn, onRenameFile, linkActions })
   doors.current = { onNotice, onClose, openInTab, onOpenInlineDrawingTab, openLinkIn, onRenameFile, linkActions }
-  /** The page menu on show (round 1, items 6 and 7): where, and for which page. */
-  const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
+  /** The page or inline menu on show (round 1, items 6 and 7; YAZ-6470): where, and for which target. */
+  const [menu, setMenu] = useState<ExploreMenuState | null>(null)
   const pageSections = useCallback(
     (path: string) =>
       explorePageSections(path, {
@@ -341,11 +365,67 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     },
     [push],
   )
-  /** A card window's page (YAZ-4962), or a card row's (YAZ-5164): on top, landed on the card. */
-  const openPageAt = useCallback((path: string, card: CardPlace) => {
-    const layer = fileLayer(path)
-    if (layer.kind === 'page' && push({ ...layer, card })) rememberExploreRecent(path)
-  }, [push])
+  /** A card window's page (YAZ-4962), or a card row's (YAZ-5164, YAZ-6470): on top, landed on the card. */
+  const openPageAt = useCallback(
+    (path: string, card: CardPlace, from?: { search: number; at: number; rowPath?: string }) => {
+      const layer = fileLayer(path, from)
+      if (layer.kind === 'page' && push({ ...layer, card })) rememberExploreRecent(path)
+    },
+    [push],
+  )
+  /** Opens `path` on top of Explore landed on inline drawing `#drawing` (YAZ-6470). */
+  const openPageAtDrawing = useCallback(
+    (path: string, drawing: number) => {
+      const layer = fileLayer(path)
+      if (layer.kind === 'page' && push({ ...layer, drawing })) rememberExploreRecent(path)
+    },
+    [push],
+  )
+  /** Opens an inline Excalidraw drawing inside Explore as a read-only `ExploreBoard` layer (YAZ-6470). */
+  const openInlineDrawing = useCallback(
+    (path: string, index: number, title?: string, from?: { search: number; at: number; rowPath?: string }) => {
+      if (push({ id: newLayerId(), kind: 'board', path, inlineDrawing: { index, ...(title !== undefined && { title }) }, ...(from !== undefined && { from }) })) {
+        rememberExploreRecent(path)
+      }
+    },
+    [push],
+  )
+  /** Opens an `ExploreCard` layer for an inline card from the Explore Search context menu (YAZ-6470). */
+  const openCardWindow = useCallback(
+    (path: string, cardId: string | null, index: number) => {
+      push({ id: newLayerId(), kind: 'card', path, cardId, index })
+    },
+    [push],
+  )
+  /** Opens an inline drawing in a tab from a reading `ExplorePage`: foreground closes Explore, background keeps it (YAZ-6470). */
+  const openInlineDrawingFromPage = useCallback(
+    (path: string, index: number, background: boolean) => {
+      if (doors.current.onOpenInlineDrawingTab === undefined) return
+      if (!background) flushEdits()
+      doors.current.onOpenInlineDrawingTab(path, index, background)
+      if (!background) doors.current.onClose()
+    },
+    [flushEdits],
+  )
+  const inlineSections = useCallback(
+    (target: ExploreInlineTarget, fromBoard: boolean) =>
+      exploreInlineSections(target, {
+        openInlineDrawing: fromBoard ? undefined : (p, idx, title) => openInlineDrawing(p, idx, title),
+        showDrawingInPage: (p, idx) => openPageAtDrawing(p, idx),
+        openCardInPage: (p, card) => openPageAt(p, card),
+        openCardWindow: (p, cardId, idx) => openCardWindow(p, cardId, idx),
+        openInlineDrawingTab: doors.current.onOpenInlineDrawingTab,
+        openInTab: (p) => doors.current.openInTab(p),
+        linkActions: doors.current.linkActions,
+        onNotice: (m) => doors.current.onNotice(m),
+        closeStack: () => {
+          flushEdits()
+          doors.current.onClose()
+        },
+        unit: vaultUnit(rootOfPath(roots, target.page) ?? ''),
+      }),
+    [flushEdits, openInlineDrawing, openPageAtDrawing, openPageAt, openCardWindow, roots],
+  )
   /** A card window's link with a bound gesture: a background tab keeps the stack; any other tab closes it. */
   const openTabFromCard = useCallback((path: string, where: GestureAction) => {
     const { openLinkIn: linkIn, openInTab: inTab, onClose: closeAll } = doors.current
@@ -357,44 +437,59 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   /** A row of search layer `search` at `at` (round 3): the layer remembers them, so ‹ › step through that search. */
   const openRow = useCallback(
     (search: number, row: SearchCandidate, at: number) => {
-      // An inline Excalidraw drawing inside a page (YAZ-6143): open it in its own drawing tab and close the stack.
+      // An inline Excalidraw drawing inside a page (YAZ-6470): stay inside Explore in a read-only `ExploreBoard` layer (⌘↵ opens in a tab).
       if (row.inlineDrawing === true && row.page !== undefined && row.index !== undefined) {
-        flushEdits()
-        doors.current.onOpenInlineDrawingTab?.(row.page, row.index, false)
-        doors.current.onClose()
+        openInlineDrawing(row.page, row.index, row.name, { search, at, rowPath: row.path })
         return
       }
-      // A card inside a page (YAZ-5164): its page on top, landed on the card, as the Inbox's E lands. Not a step of ‹ ›.
-      if (row.page !== undefined) return openPageAt(row.page, { id: row.id ?? null, index: row.index ?? 0 })
+      // A card inside a page (YAZ-5164, YAZ-6470): its page on top, landed on the card, and steppable with ‹ ›.
+      if (row.page !== undefined) return openPageAt(row.page, { id: row.id ?? null, index: row.index ?? 0 }, { search, at, rowPath: row.path })
       if (layerKindOf(row.path) === null) return openPath(row.path)
       if (push(fileLayer(row.path, { search, at }))) rememberExploreRecent(row.path)
     },
-    [push, openPath, openPageAt, flushEdits],
+    [push, openPath, openPageAt, openInlineDrawing],
   )
 
   /**
-   * ‹ › (round 3): the page layer `id` goes to the next (`dir` 1) or the previous page row of the search under it,
-   * in place: no layer is added. In edit the page's pending save flushes first (a cell note's step), and the editor
-   * mounts on the next page. False at the end of the rows, or for a page that came from a link.
+   * ‹ › (round 3, YAZ-6470): the page or board layer `id` goes to the next (`dir` 1) or the previous steppable row of the
+   * search under it (pages, boards, inline cards, inline drawings), in place: no layer is added. In edit the page's pending
+   * save flushes first (a cell note's step), and the editor mounts on the next page. False at the end of the rows, or for a
+   * page that came from a link.
    */
   const step = useCallback((id: number, dir: -1 | 1): boolean => {
     const layer = layersRef.current.find((l) => l.id === id)
     if (layer === undefined || layer.kind === 'search' || layer.kind === 'card' || layer.from === undefined) return false
     const search = layer.from.search
-    const to = stepResult(links.current.get(search)?.rows ?? [], layer.from.at, layer.path, dir)
+    const rows = links.current.get(search)?.rows ?? []
+    const currentRowPath = layer.from.rowPath ?? layerRowPath(layer)
+    const to = stepResult(rows, layer.from.at, currentRowPath, dir)
     if (to === null) return false
     if (layer.kind === 'page' && layer.mode === 'edit') void flushRenamedPath(layer.path)
-    // A step may cross between a page and a board (YAZ-4943): the SAME layer (its id, box and place) shows the next
-    // file in its kind; a page keeps its mode, a board reads.
-    const from = { search, at: to.at }
+    // A step may cross between pages, boards, inline cards, and inline drawings (YAZ-4943, YAZ-6470): the SAME layer
+    // (its id, box and place) shows the next item in its kind; a page keeps its mode, a board reads.
+    const targetRow = rows[to.at]
+    const inlineRef = parseInlineRef(to.path)
+    const from = { search, at: to.at, ...(inlineRef !== null || targetRow?.page !== undefined ? { rowPath: to.path } : {}) }
     setLayers((prev) =>
       prev.map((l): ExploreLayer => {
         if (l.id !== id || l.kind === 'search' || l.kind === 'card') return l
+        if (targetRow?.inlineDrawing === true && targetRow.page !== undefined && targetRow.index !== undefined) {
+          return { id, kind: 'board', path: targetRow.page, inlineDrawing: { index: targetRow.index, title: targetRow.name }, from }
+        }
+        if (inlineRef?.kind === 'drawing') {
+          return { id, kind: 'board', path: inlineRef.page, inlineDrawing: { index: inlineRef.index, title: targetRow?.name }, from }
+        }
+        if (targetRow?.page !== undefined) {
+          return { id, kind: 'page', path: targetRow.page, mode: l.kind === 'page' ? l.mode : 'read', card: { id: targetRow.id ?? null, index: targetRow.index ?? 0 }, from }
+        }
+        if (inlineRef?.kind === 'card') {
+          return { id, kind: 'page', path: inlineRef.page, mode: l.kind === 'page' ? l.mode : 'read', card: { id: inlineRef.id, index: targetRow?.index ?? 0 }, from }
+        }
         if (layerKindOf(to.path) === 'board') return { id, kind: 'board', path: to.path, from }
         return { id, kind: 'page', path: to.path, mode: l.kind === 'page' ? l.mode : 'read', from }
       }),
     )
-    rememberExploreRecent(to.path)
+    rememberExploreRecent(targetRow?.page ?? diskPathOf(to.path))
     return true
   }, [])
 
@@ -548,6 +643,19 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     const page = topPage(live)
     if (page === null) return
     flushEdits()
+    if (page.kind === 'board' && page.inlineDrawing !== undefined) {
+      if (doors.current.onOpenInlineDrawingTab !== undefined) {
+        doors.current.onOpenInlineDrawingTab(page.path, page.inlineDrawing.index, false)
+      } else {
+        landOnInlineDrawing(page.path, page.inlineDrawing.index)
+        doors.current.openInTab(page.path)
+      }
+      doors.current.onClose()
+      return
+    }
+    if (page.kind === 'card' && page.cardId !== null) landOnCard(page.path, page.cardId)
+    else if (page.kind === 'page' && page.card?.id != null) landOnCard(page.path, page.card.id)
+    else if (page.kind === 'page' && page.drawing !== undefined) landOnInlineDrawing(page.path, page.drawing)
     doors.current.openInTab(page.path)
     doors.current.onClose()
   }, [live, flushEdits])
@@ -699,12 +807,19 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     if (id !== top.id && !leaving.has(id)) raise(id)
   }
 
-  /** A layer's name in the trail and in Arrange: Search, the page's name, or the card's ID (YAZ-4962). */
-  const trailName = (layer: ExploreLayer): string => (layer.kind === 'search' ? 'Search' : layer.kind === 'card' ? (layer.cardId ?? 'Card') : nameOf(layer.path))
+  /** A layer's name in the trail and in Arrange: Search, the page's name, the inline drawing's title, or the card's ID (YAZ-4962, YAZ-6470). */
+  const trailName = (layer: ExploreLayer): string => {
+    if (layer.kind === 'search') return 'Search'
+    if (layer.kind === 'card') return layer.cardId ?? 'Card'
+    if (layer.kind === 'board' && layer.inlineDrawing !== undefined) {
+      return layer.inlineDrawing.title?.trim() || `${nameOf(layer.path)} · Drawing`
+    }
+    return nameOf(layer.path)
+  }
 
   /** For each search layer, the page from it nearest the front (round 3, round 6): its row is the one marked. */
   const markedOf = new Map<number, { path: string; at: number }>()
-  for (const l of live) if ((l.kind === 'page' || l.kind === 'board') && l.from !== undefined) markedOf.set(l.from.search, { path: l.path, at: l.from.at })
+  for (const l of live) if ((l.kind === 'page' || l.kind === 'board') && l.from !== undefined) markedOf.set(l.from.search, { path: l.from.rowPath ?? layerRowPath(l), at: l.from.at })
 
   // A click on the dim outside every layer: the front layer closes, as Esc does.
   const onBackdropMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -770,11 +885,12 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
         const style = { '--explore-ms': `${layer.kind === 'search' ? SEARCH_MS : PAGE_MS}ms`, zIndex: ordered.indexOf(layer) + 1 } as CSSProperties
         /** A search layer: the page that came from it nearest the front, whose row stays marked (round 3). */
         const marked = layer.kind === 'search' ? markedOf.get(layer.id) ?? null : null
-        /** A page layer from a search: its place among that search's rows, and whether a step each way exists. */
+        /** A page or board layer from a search: its place among that search's rows, and whether a step each way exists. */
         const rows = (layer.kind === 'page' || layer.kind === 'board') && layer.from !== undefined ? (links.current.get(layer.from.search)?.rows ?? []) : null
+        const rowPath = (layer.kind === 'page' || layer.kind === 'board') && layer.from !== undefined ? (layer.from.rowPath ?? layerRowPath(layer)) : ''
         const steps =
           (layer.kind === 'page' || layer.kind === 'board') && layer.from !== undefined && rows !== null
-            ? { place: stepPlace(rows, layer.from.at, layer.path), count: stepCount(rows), prev: stepResult(rows, layer.from.at, layer.path, -1) !== null, next: stepResult(rows, layer.from.at, layer.path, 1) !== null, onStep: (dir: -1 | 1) => void step(layer.id, dir) }
+            ? { place: stepPlace(rows, layer.from.at, rowPath), count: stepCount(rows), prev: stepResult(rows, layer.from.at, rowPath, -1) !== null, next: stepResult(rows, layer.from.at, rowPath, 1) !== null, onStep: (dir: -1 | 1) => void step(layer.id, dir) }
             : undefined
         return (
           <div
@@ -793,7 +909,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
               <>
                 {/* The search moves by its top edge (round 3): the input keeps its text selection. */}
                 <div className="explore__grab" title="Drag to move; double-click to put back" onMouseDown={(e) => gestures.onHeadDown(layer.id, e)} onDoubleClick={(e) => gestures.reset(layer.id, e)} />
-                <ExploreSearch candidates={candidates} link={linkOf(layer.id)} markedRow={marked} recent={recent} rowOf={rowOf} roots={roots} nameOf={nameOf} onOpen={(row, at) => openRow(layer.id, row, at)} onOpenInTab={rowToTab} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.page ?? row.path })} idsInSearch={idsInSearch} active={!covered} />
+                <ExploreSearch candidates={candidates} link={linkOf(layer.id)} markedRow={marked} recent={recent} rowOf={rowOf} roots={roots} nameOf={nameOf} onOpen={(row, at) => openRow(layer.id, row, at)} onOpenInTab={rowToTab} onRowMenu={(row, x, y) => setMenu(menuForRow(row, x, y))} idsInSearch={idsInSearch} active={!covered} />
               </>
             ) : layer.kind === 'card' ? (
               <ExploreCard
@@ -819,7 +935,10 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
             ) : layer.kind === 'board' ? (
               <ExploreBoard
                 path={layer.path}
-                title={nameOf(layer.path)}
+                title={layer.inlineDrawing !== undefined ? (layer.inlineDrawing.title?.trim() || `${nameOf(layer.path)} · Drawing`) : nameOf(layer.path)}
+                inlineDrawing={layer.inlineDrawing}
+                pageName={layer.inlineDrawing !== undefined ? nameOf(layer.path) : undefined}
+                onShowInPage={layer.inlineDrawing !== undefined ? () => openPageAtDrawing(layer.path, layer.inlineDrawing!.index) : undefined}
                 idInTitle={idsInTitle(layer.path)}
                 vault={vaultOf(layer.path)}
                 steps={steps}
@@ -828,7 +947,13 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 onHeadDown={(e) => gestures.onHeadDown(layer.id, e)}
                 onHeadReset={(e) => gestures.reset(layer.id, e)}
                 onOpenInTab={toTab}
-                onHeadMenu={(x, y) => setMenu({ x, y, path: layer.path })}
+                onHeadMenu={(x, y) =>
+                  setMenu(
+                    layer.inlineDrawing !== undefined
+                      ? { x, y, kind: 'inline', target: { kind: 'drawing', page: layer.path, index: layer.inlineDrawing.index, name: layer.inlineDrawing.title }, fromBoard: true }
+                      : { x, y, kind: 'page', path: layer.path },
+                  )
+                }
                 onClose={() => close(layer.id)}
                 registerZoom={zoomDoorOf(layer.id)}
                 active={!covered}
@@ -853,6 +978,8 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 editAsk={layer.editAsk}
                 leaveAsk={layer.leaveAsk}
                 card={layer.card}
+                drawing={layer.drawing}
+                onOpenInlineDrawingTab={onOpenInlineDrawingTab === undefined ? undefined : openInlineDrawingFromPage}
                 editCard={layer.editCard === true}
                 fromInbox={layer.fromInbox === true}
                 steps={steps}
@@ -863,7 +990,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 commentsOrder={commentsOrder}
                 onChangeCommentsOrder={onChangeCommentsOrder}
                 onOpenInTab={toTab}
-                onHeadMenu={(x, y) => setMenu({ x, y, path: layer.path })}
+                onHeadMenu={(x, y) => setMenu({ x, y, kind: 'page', path: layer.path })}
                 pageMenu={() => pageSections(layer.path)}
                 onClose={() => close(layer.id)}
                 active={!covered}
@@ -876,7 +1003,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
           </div>
         )
       })}
-      {menu !== null && <ContextMenu x={menu.x} y={menu.y} sections={pageSections(menu.path)} onClose={() => setMenu(null)} />}
+      {menu !== null && <ContextMenu x={menu.x} y={menu.y} sections={menu.kind === 'page' ? pageSections(menu.path) : inlineSections(menu.target, menu.fromBoard === true)} onClose={() => setMenu(null)} />}
     </div>
   )
 }
