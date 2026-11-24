@@ -21,7 +21,7 @@ import { formatEmbedOptions, newEmbed, parseEmbedOptions, type EmbedOptions } fr
 import { closesFence, fenceOf, lineKinds } from './fences'
 import { isRecord } from './guards'
 import { inLineEnds, lineEnds } from './lineEnds'
-import { splitFrontmatter } from './frontmatter'
+import { splitFrontmatter } from './frontmatterSplit'
 
 /** The fence language of an inline Excalidraw drawing. */
 export const DRAWING_LANGUAGE = 'excalidraw'

@@ -1,0 +1,58 @@
+/*
+ * Shared inline card and inline drawing preview styling (YAZ-6467).
+ * Loaded lazily alongside `InlineHoverPreview.tsx` and `boardPreview.css` / `card.css`,
+ * using the app's Light/Dark theme tokens so hover popovers and QuickLook panels look 100% native.
+ */
+
+.inline-preview {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.inline-card-preview__body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px 20px;
+}
+
+.board-preview.inline-card-preview .inline-card-preview__body {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
+}
+
+.inline-preview.inline-card-preview .inline-card-preview__body {
+  overflow-y: auto;
+}
+
+.inline-preview--compact .inline-card-preview__body {
+  padding: 14px 18px;
+}
+
+.inline-card-preview__card {
+  width: 100%;
+  margin: 0 auto;
+}
+
+.inline-card-preview__card .card__head {
+  pointer-events: none;
+}
+
+.inline-drawing-preview__body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inline-drawing-preview__body--compact {
+  background: transparent;
+  padding: 12px;
+}
