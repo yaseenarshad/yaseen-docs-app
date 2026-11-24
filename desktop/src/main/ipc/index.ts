@@ -47,7 +47,7 @@ import { registerStateIpc } from './state'
 import { registerPictureFoldersIpc, rememberPick } from './pictureFolders'
 import { registerStorageIpc } from './storage'
 import { registerVaultConfigIpc } from './vaultConfig'
-import { createUnsupportedVaultLauncherBackend, registerVaultLauncherIpc, type VaultLauncherBackend } from './vaultLauncher'
+import { cleanupWorkspaceLauncher, createUnsupportedVaultLauncherBackend, registerVaultLauncherIpc, type VaultLauncherBackend } from './vaultLauncher'
 import { registerWatchIpc } from './watch'
 import { registerWindowIpc } from './window'
 
@@ -101,13 +101,17 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerFocusIpc(store)
   registerFocusFoldersIpc(store, windows)
   registerPropertiesIpc(store)
-  registerWindowIpc(store, windows)
+  const launcherBackend = places.vaultLauncher ?? createUnsupportedVaultLauncherBackend()
+  registerWindowIpc(store, windows, {
+    onRemoveVaultSet: (workspaceId) =>
+      cleanupWorkspaceLauncher(store, launcherBackend, workspaceId, places.onVaultLauncherIconChanged),
+  })
   registerStorageIpc(store)
   registerPictureFoldersIpc(store, pickedPictureFolders)
   registerSoundIpc()
   registerHomeIpc()
   registerCardFormatsIpc(userData)
-  registerVaultLauncherIpc(store, userData, places.vaultLauncher ?? createUnsupportedVaultLauncherBackend(), places.onVaultLauncherIconChanged)
+  registerVaultLauncherIpc(store, userData, launcherBackend, places.onVaultLauncherIconChanged)
   // The code tabs' language helpers (YAZ-3454, YAZ-3455): the quit sequence stops them (`stopAllLanguageServers`).
   // They run only while Settings › Code › "Jump across files" is on, and are a download in `<userData>/lsp`
   // (YAZ-3500). A dev build also takes the `node_modules` copies, unless YASEEN_DOCS_LSP_DOWNLOAD_ONLY=1

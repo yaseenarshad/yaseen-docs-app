@@ -254,6 +254,68 @@ describe('VaultLauncherControl', () => {
     expect(onChanged).toHaveBeenCalledTimes(1)
     expect(buttonByText(el, 'Make a launcher…')).toBeDefined()
   })
+
+  it('renders clear "Vault: <name>" and "Workspace: <name>" target headings in empty, active, and missing states', async () => {
+    // Empty vault
+    mockStatus.mockResolvedValueOnce({ supported: true, launcher: null, exists: false, iconDataUrl: null })
+    let el = await render(<VaultLauncherControl root={ROOT} defaultName="Daily Notes" />)
+    expect(el.querySelector('.vault-launcher__target-title')?.textContent).toBe('Vault: Daily Notes')
+
+    // Active vault
+    act(() => reactRoot?.unmount())
+    host?.remove()
+    mockStatus.mockResolvedValueOnce({
+      supported: true,
+      exists: true,
+      iconDataUrl: FAKE_PNG_DATA_URL,
+      launcher: { name: 'Daily Notes', appPath: '/Applications/Daily Notes.app', iconPath: '/tmp/dn.png', target: 'today' },
+    })
+    el = await render(<VaultLauncherControl root={ROOT} defaultName="Daily Notes" />)
+    expect(el.querySelector('.vault-launcher__target-title')?.textContent).toBe('Vault: Daily Notes')
+
+    // Missing vault
+    act(() => reactRoot?.unmount())
+    host?.remove()
+    mockStatus.mockResolvedValueOnce({
+      supported: true,
+      exists: false,
+      iconDataUrl: null,
+      launcher: { name: 'Daily Notes', appPath: '/Applications/Daily Notes.app', iconPath: '/tmp/dn.png', target: 'today' },
+    })
+    el = await render(<VaultLauncherControl root={ROOT} defaultName="Daily Notes" />)
+    expect(el.querySelector('.vault-launcher__target-title')?.textContent).toBe('Vault: Daily Notes')
+
+    // Empty workspace
+    act(() => reactRoot?.unmount())
+    host?.remove()
+    mockWorkspaceStatus.mockResolvedValueOnce({ supported: true, launcher: null, exists: false, iconDataUrl: null })
+    el = await render(<VaultLauncherControl workspaceId="ws-1" defaultName="All Folders" />)
+    expect(el.querySelector('.vault-launcher__target-title')?.textContent).toBe('Workspace: All Folders')
+
+    // Active workspace
+    act(() => reactRoot?.unmount())
+    host?.remove()
+    mockWorkspaceStatus.mockResolvedValueOnce({
+      supported: true,
+      exists: true,
+      iconDataUrl: FAKE_PNG_DATA_URL,
+      launcher: { name: 'All Folders', appPath: '/Applications/All Folders.app', iconPath: '/tmp/af.png', target: 'normal' },
+    })
+    el = await render(<VaultLauncherControl workspaceId="ws-1" defaultName="All Folders" />)
+    expect(el.querySelector('.vault-launcher__target-title')?.textContent).toBe('Workspace: All Folders')
+
+    // Missing workspace
+    act(() => reactRoot?.unmount())
+    host?.remove()
+    mockWorkspaceStatus.mockResolvedValueOnce({
+      supported: true,
+      exists: false,
+      iconDataUrl: null,
+      launcher: { name: 'All Folders', appPath: '/Applications/All Folders.app', iconPath: '/tmp/af.png', target: 'normal' },
+    })
+    el = await render(<VaultLauncherControl workspaceId="ws-1" defaultName="All Folders" />)
+    expect(el.querySelector('.vault-launcher__target-title')?.textContent).toBe('Workspace: All Folders')
+  })
 })
 
 describe('VaultLauncherModal', () => {
@@ -535,5 +597,32 @@ describe('VaultSwitcher & Welcome launcher icons', () => {
     const icons = [...el.querySelectorAll<HTMLImageElement>('.welcome__vault-icon')]
     expect(icons).toHaveLength(1)
     expect(icons[0].src).toBe(FAKE_PNG_DATA_URL)
+  })
+
+  it('refreshes VaultLauncherControl when vault-launcher:changed fires (e.g. from AllLaunchersList or another window)', async () => {
+    let listener: (() => void) | null = null
+    const off = vi.fn()
+    ;(window as unknown as { yaseenDocs: { vaultLauncher: Record<string, unknown> } }).yaseenDocs.vaultLauncher.onChanged = vi.fn((cb: () => void) => {
+      listener = cb
+      return off
+    })
+    mockStatus
+      .mockResolvedValueOnce({
+        supported: true,
+        launcher: { name: 'Notes', appPath: '/Applications/Notes.app', iconPath: '/tmp/notes.png' },
+        exists: true,
+        iconDataUrl: FAKE_PNG_DATA_URL,
+      })
+      .mockResolvedValueOnce({ supported: true, launcher: null, exists: false, iconDataUrl: null })
+
+    const el = await render(<VaultLauncherControl root={ROOT} defaultName="Notes" />)
+    expect(el.textContent).toContain('Notes.app')
+    expect(listener).not.toBeNull()
+
+    await act(async () => {
+      listener?.()
+    })
+    expect(el.textContent).toContain('Make a launcher…')
+    expect(mockStatus).toHaveBeenCalledTimes(2)
   })
 })

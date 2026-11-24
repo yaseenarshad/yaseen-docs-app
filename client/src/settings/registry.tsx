@@ -645,6 +645,8 @@ const REVIEW_KEYWORDS = ['cards', 'review', 'reviews', 'flashcards', 'inbox', 's
 const GithubAccountControl = lazy(() => import('./GithubAccountControl').then((m) => ({ default: m.GithubAccountControl })))
 /** macOS Vault App launcher control (YAZ-5967, YAZ-6375): lazy-loaded in Settings › General. */
 const VaultLauncherControl = lazy(() => import('./VaultLauncherControl').then((m) => ({ default: m.VaultLauncherControl })))
+/** macOS All Launchers manager (YAZ-6448 Decision 6): lazy-loaded in Settings › General › Vault app. */
+const AllLaunchersList = lazy(() => import('./AllLaunchersList').then((m) => ({ default: m.AllLaunchersList })))
 /** "Friends" (YAZ-5086): the Mac's send of the numbers, under the token; it loads only when Settings shows it. */
 const FriendsSendControl = lazy(() => import('./FriendsSendControl').then((m) => ({ default: m.FriendsSendControl })))
 /** "GitHub" (YAZ-5098, YAZ-5652): the Mac's GitHub token; the Cards words find this row too ("friends" only with Friends on). */
@@ -1095,7 +1097,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'workspaceLauncher',
             label: 'Workspace launcher',
-            hint: 'Opens all vaults in this workspace directly in Yaseen Docs and updates the Dock icon when focused.',
+            hint: 'Opens all vaults in this workspace together in one window and updates the Dock icon when focused.',
             keywords: ['workspace', 'app', 'launcher', 'alfred', 'spotlight', 'dock', 'icon', 'badge', 'macos'],
             wide: true,
             available: (ctx) => ctx.workspaceLauncher !== undefined,
@@ -1109,7 +1111,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'vaultLauncher',
             label: 'Vault launcher',
-            hint: 'Opens this vault directly in Yaseen Docs and updates the Dock icon when focused.',
+            hint: 'Opens this vault alone in its own window (never inside a workspace) and updates the Dock icon when focused.',
             keywords: ['vault', 'app', 'launcher', 'alfred', 'spotlight', 'dock', 'icon', 'badge', 'macos'],
             wide: true,
             available: (ctx) => ctx.vaultLauncher !== undefined,
@@ -1119,6 +1121,19 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                   <VaultLauncherControl root={vaultLauncher.root} defaultName={vaultLauncher.defaultName} onChanged={vaultLauncher.onChanged} />
                 </Suspense>
               ),
+          },
+          {
+            id: 'allLaunchers',
+            label: 'All launchers',
+            hint: 'Every vault launcher, workspace launcher, and leftover .app bundle found on this Mac.',
+            keywords: ['launcher', 'launchers', 'all', 'orphan', 'orphaned', 'cleanup', 'applications', 'vault', 'workspace', 'macos'],
+            wide: true,
+            available: () => /Mac/i.test(navigator.platform) && typeof window.yaseenDocs?.vaultLauncher?.listAll === 'function',
+            render: ({ vaultLauncher, workspaceLauncher }) => (
+              <Suspense fallback={null}>
+                <AllLaunchersList onChanged={vaultLauncher?.onChanged ?? workspaceLauncher?.onChanged} />
+              </Suspense>
+            ),
           },
         ],
       },

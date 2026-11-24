@@ -1885,4 +1885,84 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
       platformSpy.mockRestore()
     }
   })
+
+  it('right-clicking a vault row on macOS shows Make/Edit launcher… and opens VaultLauncherModal for that vault', async () => {
+    const ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+    const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
+    const status = vi.fn(async () => ({ supported: true, launcher: null, exists: false, iconDataUrl: null }))
+    ;(window.yaseenDocs as unknown as Record<string, unknown>).vaultLauncher = { status }
+    try {
+      const { el } = render({ vaultIcons: { [ROOT]: ICON } })
+      openPanel(el)
+
+      // Vault without launcher shows "Make a launcher…"
+      rightClick(rowOf(el, ARCHIVE))
+      expect(menuLabels()).toContain('Make a launcher…')
+      pick('Make a launcher…')
+      await vi.waitFor(() => {
+        expect(status).toHaveBeenCalledWith(ARCHIVE)
+        expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Make a vault launcher')
+      })
+
+      // Close modal and check vault with launcher shows "Edit launcher…"
+      act(() => void document.body.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())
+      openPanel(el)
+      rightClick(rowOf(el, ROOT))
+      expect(menuLabels()).toContain('Edit launcher…')
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
+  it('right-clicking a saved-workspace sidebar header on macOS shows Make/Edit workspace launcher… alongside Save as workspace…', async () => {
+    const ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+    const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
+    const workspaceStatus = vi.fn(async () => ({ supported: true, launcher: null, exists: false, iconDataUrl: null }))
+    ;(window.yaseenDocs as unknown as Record<string, unknown>).vaultLauncher = { workspaceStatus }
+    try {
+      act(() => broadcast(seeded({ vaultSets: [{ id: 'set-work', name: 'Work', roots: [ROOT, ARCHIVE], lastUsed: NOW }] })))
+
+      // Without existing workspace launcher
+      const { el, rerender } = render({ roots: [ROOT, ARCHIVE] })
+      rightClick(trigger(el))
+      expect(menuLabels()).toEqual([SAVE_SET_TEXT, 'Make workspace launcher…'])
+      pick('Make workspace launcher…')
+      await vi.waitFor(() => {
+        expect(workspaceStatus).toHaveBeenCalledWith('set-work')
+        expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace launcher')
+      })
+
+      // Close modal and verify label flips to "Edit workspace launcher…" when icon exists
+      act(() => void document.body.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())
+      rerender({ workspaceIcons: { 'set-work': ICON } })
+      rightClick(trigger(el))
+      expect(menuLabels()).toEqual([SAVE_SET_TEXT, 'Edit workspace launcher…'])
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
+  it('hides launcher menu items on non-macOS platforms', () => {
+    const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('Win32')
+    const status = vi.fn(async () => ({ supported: false, launcher: null, exists: false, iconDataUrl: null }))
+    const workspaceStatus = vi.fn(async () => ({ supported: false, launcher: null, exists: false, iconDataUrl: null }))
+    ;(window.yaseenDocs as unknown as Record<string, unknown>).vaultLauncher = { status, workspaceStatus }
+    try {
+      act(() => broadcast(seeded({ vaultSets: [{ id: 'set-work', name: 'Work', roots: [ROOT, ARCHIVE], lastUsed: NOW }] })))
+      const { el } = render({ roots: [ROOT, ARCHIVE] })
+
+      // Saved-workspace header hides workspace launcher item
+      rightClick(trigger(el))
+      expect(menuLabels()).toEqual([SAVE_SET_TEXT])
+
+      // Vault row hides vault launcher item
+      openPanel(el)
+      const archiveRow = rows(el).find((r) => r.querySelector('.vault-switcher__name')?.textContent === 'Archive')!
+      rightClick(archiveRow)
+      expect(menuLabels()).not.toContain('Make a launcher…')
+      expect(menuLabels()).not.toContain('Edit launcher…')
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
 })

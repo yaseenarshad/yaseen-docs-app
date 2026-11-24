@@ -618,7 +618,7 @@ const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/pages', roots: ['/vaults/p
 
 /** `folderExists` is the open-recent door's answer: `false` = the folder is gone (the door pruned it from the recents). */
 function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, folderExists = true) {
-  const windows = { duplicateWindow: vi.fn(), openRecentBeside: vi.fn(() => folderExists), linkNotice: vi.fn(), idFor: vi.fn((wc: { id: number }) => (wc.id === 7 ? 'w1' : undefined)), openFilesWindow: vi.fn((from: string | undefined) => from !== undefined), closeWindow: vi.fn(), reloadWindow: vi.fn(async (_id: string) => true) }
+  const windows = { duplicateWindow: vi.fn(), openAlone: vi.fn(() => folderExists), openRecentBeside: vi.fn(() => folderExists), linkNotice: vi.fn(), idFor: vi.fn((wc: { id: number }) => (wc.id === 7 ? 'w1' : undefined)), openFilesWindow: vi.fn((from: string | undefined) => from !== undefined), closeWindow: vi.fn(), reloadWindow: vi.fn(async (_id: string) => true) }
   const host: MenuHost = {
     focusedWebContents: () => focused,
     readClipboardText: vi.fn(() => '# Clipboard\n\nText'),
@@ -736,23 +736,26 @@ describe('createMenuHandlers', () => {
     expect(wc.send).toHaveBeenCalledExactlyOnceWith(CONTRACT.menu.onOpenRoot.channel, '/vaults/work')
   })
 
-  it('goToVault goes through the one open-recent door in main, never through the focused renderer (YAZ-2555 D3, A5); a folder that is gone gets the passive notice (S27)', () => {
+  it('goToVault (⌘1–⌘9) calls openAlone in main, not openRecentBeside, and never goes through the focused renderer (YAZ-2555 D3, A5, YAZ-6446 D5); a folder that is gone gets the passive notice (S27)', () => {
     const wc = { id: 7, send: vi.fn() }
     const { handlers, windows } = makeHandlers(wc)
     handlers.goToVault('/vaults/work', 'Work')
     // The window in front comes along: an EMPTY one takes the vault itself (YAZ-3487 D2).
-    expect(windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work', 'w1')
+    expect(windows.openAlone).toHaveBeenCalledExactlyOnceWith('/vaults/work', 'w1')
+    expect(windows.openRecentBeside).not.toHaveBeenCalled()
     expect(windows.linkNotice).not.toHaveBeenCalled()
     expect(wc.send).not.toHaveBeenCalled()
 
     // No focused window at all (every window minimized, S30): the door is still called.
     const unfocused = makeHandlers(undefined)
     unfocused.handlers.goToVault('/vaults/work', 'Work')
-    expect(unfocused.windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work', undefined)
+    expect(unfocused.windows.openAlone).toHaveBeenCalledExactlyOnceWith('/vaults/work', undefined)
+    expect(unfocused.windows.openRecentBeside).not.toHaveBeenCalled()
 
     const gone = makeHandlers(wc, false)
     gone.handlers.goToVault('/vaults/work', 'Work')
-    expect(gone.windows.openRecentBeside).toHaveBeenCalledExactlyOnceWith('/vaults/work', 'w1')
+    expect(gone.windows.openAlone).toHaveBeenCalledExactlyOnceWith('/vaults/work', 'w1')
+    expect(gone.windows.openRecentBeside).not.toHaveBeenCalled()
     expect(gone.windows.linkNotice).toHaveBeenCalledExactlyOnceWith("Can't open Work: folder not found")
     expect(wc.send).not.toHaveBeenCalled()
   })

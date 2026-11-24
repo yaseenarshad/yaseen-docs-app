@@ -58,9 +58,9 @@ import { appZoomFactor, subscribeAppZoom } from './appZoom'
 import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
 import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
 import { initMint, macId } from './vaultIndex/mint'
-import { createWindowManager } from './windows'
+import { createWindowManager, type RestoreTarget } from './windows'
 import { createDockIconController, defaultDockIconPath, type DockIconController } from './dockIcon'
-import { installVaultLauncher, removeVaultLauncher, vaultLauncherBinaryPath } from './vaultLauncher'
+import { installVaultLauncher, removeOrphanLauncher, removeVaultLauncher, vaultLauncherBinaryPath } from './vaultLauncher'
 import { dropLanded } from './dragLanding'
 import { blockFileNavigation, createWindowOpenHandler } from './windowOpenPolicy'
 import { createUpdater, runFile, shortVersion, spawnDetached } from './updater'
@@ -571,6 +571,9 @@ app.whenReady().then(() => {
           remove: async (appPath, root) => {
             await removeVaultLauncher(appPath, root, { trashItem: (p) => shell.trashItem(p) })
           },
+          removeOrphan: async (appPath) => {
+            await removeOrphanLauncher(appPath, { trashItem: (p) => shell.trashItem(p) })
+          },
           reveal: (appPath) => shell.showItemInFolder(appPath),
           launch: async (appPath) => {
             const err = await shell.openPath(appPath)
@@ -663,11 +666,17 @@ app.whenReady().then(() => {
   // A launch that was asked for something opens only that (YAZ-2589 D1): the windows of the vault
   // each waiting link belongs to. A plain launch follows the setting (D2), and a request that cannot
   // open is not a request (A6): a link that cannot be read, or a path `rootFor` has no vault for.
-  const asked = links.pending().flatMap((url) => {
+  const asked = links.pending().flatMap<RestoreTarget>((url) => {
     const wsId = parseWorkspaceLink(url)
-    if (wsId !== null) return store.get().vaultSets.find((s) => s.id === wsId)?.roots ?? []
+    if (wsId !== null) {
+      const set = store.get().vaultSets.find((s) => s.id === wsId)
+      return set !== undefined ? [{ exact: set.roots }] : []
+    }
     const link = parseFileLink(url)
-    return (link === null ? null : manager.rootFor(link.path, link.root)) ?? []
+    if (link === null) return []
+    const root = manager.rootFor(link.path, link.root)
+    if (root === null) return []
+    return manager.isDir(link.path) ? [{ exact: [root] }] : [root]
   })
   // The card skill's copy in the profile (YAZ-5107): made before the first window, never while the app runs. A
   // checkout stamps its version with the shipped files' hash, so an edit of `skills/card-skill` reaches the copy.

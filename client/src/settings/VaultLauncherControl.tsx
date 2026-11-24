@@ -41,17 +41,24 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
       setStatus({ supported: false, launcher: null, exists: false, iconDataUrl: null })
       return
     }
-    const req = isWorkspace ? api.vaultLauncher.workspaceStatus(workspaceId) : api.vaultLauncher.status(root!)
-    void req.then(
-      (res) => {
-        if (live) setStatus(res)
-      },
-      () => {
-        if (live) setStatus({ supported: false, launcher: null, exists: false, iconDataUrl: null })
-      },
-    )
+    let seq = 0
+    const load = () => {
+      const mySeq = ++seq
+      const req = isWorkspace ? api.vaultLauncher.workspaceStatus(workspaceId) : api.vaultLauncher.status(root!)
+      void req.then(
+        (res) => {
+          if (live && mySeq === seq) setStatus(res)
+        },
+        () => {
+          if (live && mySeq === seq) setStatus({ supported: false, launcher: null, exists: false, iconDataUrl: null })
+        },
+      )
+    }
+    load()
+    const off = typeof window.yaseenDocs?.vaultLauncher?.onChanged === 'function' ? api.vaultLauncher.onChanged(load) : undefined
     return () => {
       live = false
+      off?.()
     }
   }, [isWorkspace, root, workspaceId])
 
@@ -107,6 +114,7 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
 
   return (
     <div className="vault-launcher">
+      <div className="vault-launcher__target-title">{isWorkspace ? `Workspace: ${defaultName}` : `Vault: ${defaultName}`}</div>
       {launcher === null ? (
         <div className="vault-launcher__empty">
           <button type="button" className="btn" onClick={() => setModalOpen(true)}>

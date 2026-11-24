@@ -122,6 +122,9 @@ export interface WindowHost {
   onOpenTarget?(win: ManagedWindow, vaultPath: string, openTarget: LinkOpenTarget): void
 }
 
+/** A cold-start restore target (YAZ-6446 D1): a plain root string matches any containing window (file links, YAZ-2602 A8); `{ exact }` matches only a window whose vaults equal `exact` (vault & workspace launchers). */
+export type RestoreTarget = string | { exact: readonly string[] }
+
 export interface WindowManager extends WindowLookup {
   /** CLI navigation (YAZ-4502): the live full windows, most recently focused first. */
   automationWindows(): Array<WindowEntry & { readOnly?: true }>
@@ -137,9 +140,11 @@ export interface WindowManager extends WindowLookup {
    * the vault used last, or none. A window that does not come back is forgotten (D3). When the
    * setting brings back nothing, a single Welcome window opens.
    */
-  restore(which: readonly string[] | StartupWindows): void
+  restore(which: readonly RestoreTarget[] | StartupWindows): void
   /** The vault that a path from outside belongs to (YAZ-2589 D1): the folder itself, or the root `resolveLinkTarget` picks for a file. `null` for a path that cannot open (A6): `routeToFile` answers it with a notice, so it is not a request for a vault. */
   rootFor(path: string, rootOverride?: string | null): string | null
+  /** Whether `path` exists as a directory (YAZ-6446 D1): lets cold-start routing tell a vault folder link from a file link. */
+  isDir(path: string): boolean
   /** D6 plumbing: an independent window on `root`/`file` (the gestures land in D-). A window on a vault bumps it in the MRU (YAZ-2555 D5). */
   openWindow(opts: OpenWindowOptions): void
   /**
@@ -1037,12 +1042,27 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       return resolveLinkTarget(path, state.windows.filter((w) => !isFilesWindow(w)), state.recents, rootOverride).root
     },
 
+    isDir: (path) => host.dirExists(path),
+
     restore(which) {
       const state = store.get()
       // The vaults whose windows come back: the ones asked for (D1), or for "last" the vault used last (D2; the quit recorded it, A1).
-      const roots = (typeof which !== 'string' ? which : which === 'last' ? state.recents.slice(0, 1).map((r) => r.path) : []).map(stripSlash)
-      // A window is on each vault it shows (YAZ-2602 D6, A8): one of them asked for brings it back, with all of them.
-      const keep = (w: WindowEntry): boolean => which === 'all' || w.roots.some((root) => roots.includes(stripSlash(root)))
+      // Plain strings match any containing window (YAZ-2602 A8, for file links); `{ exact }` targets match only windows with that exact vault set (YAZ-6446 D1, for vault & workspace launchers).
+      const anyRoots = (
+        typeof which === 'string'
+          ? which === 'last'
+            ? state.recents.slice(0, 1).map((r) => r.path)
+            : []
+          : which.filter((item): item is string => typeof item === 'string')
+      ).map(stripSlash)
+      const exactSets =
+        typeof which === 'string'
+          ? []
+          : which.filter((item): item is { exact: readonly string[] } => typeof item !== 'string').map((item) => item.exact)
+      const keep = (w: WindowEntry): boolean =>
+        which === 'all' ||
+        w.roots.some((root) => anyRoots.includes(stripSlash(root))) ||
+        exactSets.some((set) => set.length > 0 && sameVaults(w.roots, set))
       // A window that does not come back is forgotten, as a close forgets it (D3): its entry goes, in one commit.
       store.removeWindow(...state.windows.filter((w) => !keep(w)).map((w) => w.id))
       const entries = state.windows.filter(keep)
@@ -1264,16 +1284,17 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     },
 
     routeToFile(path, rootOverride, openTarget) {
-      // A FOLDER from outside — a link, or `open -a` — is "Open Folder…" on it
-      // (YAZ-2556 D1): the one open-recent door raises that vault's windows, or opens it. A link keeps
-      // a trailing slash, and the door keys the vault's bucket by the path it is given: slash off.
+      // A FOLDER from outside — a vault launcher, a link, or `open -a` — opens by itself (YAZ-6446 D1):
+      // raise only a solo window on that vault, or open a new solo window, leaving any workspace window
+      // containing it untouched. A link keeps a trailing slash, and the door keys the vault's bucket by
+      // the path it is given: slash off.
       const normalized = stripSlash(path)
       if (host.dirExists(path)) {
-        openRecentBeside(normalized)
+        openVault(normalized, true)
         if (openTarget !== undefined) {
           const matching = store
             .get()
-            .windows.filter((w) => !isFilesWindow(w) && w.roots.some((root) => stripSlash(root) === normalized))
+            .windows.filter((w) => !isFilesWindow(w) && sameVaults(w.roots, [normalized]))
             .map((w) => ({ id: w.id, win: live.get(w.id) }))
             .filter((w): w is { id: string; win: ManagedWindow } => w.win !== undefined && !w.win.isDestroyed())
           const rank = (id: string): number => {

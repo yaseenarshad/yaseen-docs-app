@@ -3722,6 +3722,22 @@ export interface CreateWorkspaceLauncherRequest {
   badge?: VaultLauncherBadge
 }
 
+/** Entry returned by `vaultLauncher.listAll` for the All Launchers manager (YAZ-6447). */
+export interface LauncherListItem {
+  kind: 'vault' | 'workspace' | 'orphan'
+  /** Vault root path (for vault), workspace id (for workspace), or appPath (for orphan). */
+  id: string
+  name: string
+  appPath: string
+  exists: boolean
+  iconDataUrl: string | null
+  /** Display name of the target vault/workspace, or parsed vault/workspace label for orphans. */
+  targetName: string
+  target?: VaultLauncherTarget
+  /** Raw `YaseenDocsVaultPath` for orphan inspection. */
+  vaultPath?: string
+}
+
 const VAULT_LAUNCHER_TARGETS = ['normal', 'inbox', 'today'] as const
 const VAULT_LAUNCHER_BADGE_KINDS = ['emoji', 'letters', 'material'] as const
 

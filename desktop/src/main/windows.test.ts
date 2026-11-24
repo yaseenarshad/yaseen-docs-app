@@ -686,6 +686,47 @@ describe('createWindowManager: what a launch brings back (YAZ-2589)', () => {
     expect(ids(store.get().windows)).toEqual(['b1', 'b2', 'ab'])
   })
 
+  it('YAZ-6446 D1 cold start vault launcher: saved windows contain All Folders ([/v/other, /v/daily]); restore([{ exact: ["/v/daily"] }]) + routeToFile("/v/daily", null, "today") does NOT restore All Folders and opens solo /v/daily', () => {
+    const onOpenTarget = vi.fn()
+    store.upsertWindow({ ...entry('ws', '/v/other'), roots: ['/v/other', '/v/daily'] })
+    const { host, created } = makeHost([AREA], () => false, (p) => p === '/v/daily' || p === '/v/daily/')
+    host.onOpenTarget = onOpenTarget
+    const manager = createWindowManager(store, host)
+    manager.restore([{ exact: ['/v/daily'] }])
+    expect(created).toHaveLength(0)
+    expect(store.get().windows).toEqual([])
+    manager.routeToFile('/v/daily', null, 'today')
+    expect(created).toHaveLength(1)
+    expect(created[0].entry).toMatchObject({ root: '/v/daily', roots: ['/v/daily'], file: null })
+    expect(onOpenTarget).toHaveBeenCalledExactlyOnceWith(created[0].win, '/v/daily', 'today')
+  })
+
+  it('YAZ-6446 D1 cold start workspace launcher: saved windows contain All Folders ([/v/a, /v/b]) AND solo /v/a; restore([{ exact: ["/v/a", "/v/b"] }]) restores ONLY All Folders, NOT solo /v/a', () => {
+    store.upsertWindow({ ...entry('ws', '/v/a'), roots: ['/v/a', '/v/b'] })
+    store.upsertWindow(entry('solo-a', '/v/a'))
+    const { host, created } = makeHost([AREA])
+    const manager = createWindowManager(store, host)
+    manager.restore([{ exact: ['/v/a', '/v/b'] }])
+    expect(ids(created.map((c) => c.entry))).toEqual(['ws'])
+    expect(ids(store.get().windows)).toEqual(['ws'])
+  })
+
+  it('YAZ-6446 D1 cold start file link regression (YAZ-2602 A8): saved windows contain All Folders ([/v/a, /v/b]); restore(["/v/b"]) for file /v/b/note.md STILL restores All Folders', () => {
+    store.upsertWindow({ ...entry('ws', '/v/a'), roots: ['/v/a', '/v/b'] })
+    store.upsertWindow(entry('other', '/v/c'))
+    const { host, created } = makeHost([AREA], (p) => p === '/v/b/note.md', () => false)
+    const manager = createWindowManager(store, host)
+    const root = manager.rootFor('/v/b/note.md')
+    expect(root).toBe('/v/b')
+    expect(manager.isDir('/v/b/note.md')).toBe(false)
+    manager.restore([root!])
+    manager.routeToFile('/v/b/note.md')
+    expect(ids(created.map((c) => c.entry))).toEqual(['ws'])
+    expect(ids(store.get().windows)).toEqual(['ws'])
+    manager.handleLinkReady(created[0].win.webContents)
+    expect(created[0].win.webContents.send.mock.calls).toEqual([[CONTRACT.link.onOpenFile.channel, '/v/b/note.md']])
+  })
+
   it('YAZ-2602 A8: rootFor answers with the vault of a window that holds the path — the most specific one, whichever place it has in its window — and a launch that asks for a file there brings back that window alone and opens the file in it', () => {
     const { manager, created } = seedSaved(['/r/known'])
     store.upsertWindow({ ...entry('ab', '/v/a'), roots: ['/v/a', '/w/second', '/v/b/deep'] })
@@ -1927,7 +1968,7 @@ describe('createWindowManager: routeToFile (E1)', () => {
     expect(created[2].entry.file).toBe('/v/deeper/n.md')
   })
 
-  it('YAZ-2602 S57/S58: a file in the SECOND vault of a window opens as a tab there, and that vault\'s folder from outside raises the window — no new window either way', () => {
+  it('YAZ-2602 S57/S58 + YAZ-6446 D1: a file in the SECOND vault of a workspace opens as a tab there, while that vault\'s folder from outside opens a new solo window without raising the workspace', () => {
     store.upsertWindow({ id: 'ab', root: '/a', roots: ['/a', '/b'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 800, height: 600 } })
     const { host, created } = makeHost([AREA], (p) => p !== '/b', (p) => p === '/b' || p === '/b/')
     const manager = createWindowManager(store, host)
@@ -1937,12 +1978,58 @@ describe('createWindowManager: routeToFile (E1)', () => {
     manager.routeToFile('/b/sub/x.md')
     expect(ab.focusCount).toBe(1)
     expect(ab.webContents.send.mock.calls).toEqual([[CONTRACT.link.onOpenFile.channel, '/b/sub/x.md']])
-    manager.routeToFile('/b/') // the folder itself, as a link keeps it
-    expect(ab.focusCount).toBe(2)
-    expect(ab.webContents.send).toHaveBeenCalledTimes(1) // no file to open, no notice
+    manager.routeToFile('/b/') // the folder itself opens alone (YAZ-6446 D1)
+    expect(ab.focusCount).toBe(1)
+    expect(ab.webContents.send).toHaveBeenCalledTimes(1)
     expect(store.get().recents[0]?.path).toBe('/b')
-    expect(created).toHaveLength(1)
-    expect(store.get().windows).toHaveLength(1)
+    expect(created).toHaveLength(2)
+    expect(created[1].entry).toMatchObject({ root: '/b', roots: ['/b'], file: null })
+    expect(store.get().windows).toHaveLength(2)
+  })
+
+  it('YAZ-6446 D1 warm launch: All Folders workspace ([/v/daily, /v/other]) is open; routeToFile("/v/daily", null, "today") opens a NEW solo window, sends onOpenTarget("today") to that solo window ONLY, and leaves All Folders untouched', () => {
+    store.upsertWindow({ id: 'ws', root: '/v/other', roots: ['/v/other', '/v/daily'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    const { host, created } = makeHost([AREA], () => false, (p) => p === '/v/daily')
+    const onOpenTarget = vi.fn()
+    host.onOpenTarget = onOpenTarget
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    const ws = created[0].win
+    ws.emit('focus')
+    manager.handleLinkReady(ws.webContents)
+
+    manager.routeToFile('/v/daily', null, 'today')
+
+    expect(created).toHaveLength(2)
+    const solo = created[1]
+    expect(solo.entry).toMatchObject({ root: '/v/daily', roots: ['/v/daily'], file: null })
+    expect(onOpenTarget).toHaveBeenCalledExactlyOnceWith(solo.win, '/v/daily', 'today')
+    expect(ws.focusCount).toBe(0)
+    expect(ws.webContents.send).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-6446 D1 warm launch reuse: both All Folders and solo /v/daily are open; routeToFile("/v/daily", null, "today") raises ONLY solo /v/daily and sends onOpenTarget("today") there', () => {
+    store.upsertWindow({ id: 'ws', root: '/v/other', roots: ['/v/other', '/v/daily'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'solo', root: '/v/daily', roots: ['/v/daily'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 40, y: 40, width: 800, height: 600 } })
+    const { host, created } = makeHost([AREA], () => false, (p) => p === '/v/daily')
+    const onOpenTarget = vi.fn()
+    host.onOpenTarget = onOpenTarget
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    const [ws, solo] = created.map((c) => c.win)
+    // Workspace was focused most recently, so a containing match would have wrongly picked it.
+    solo.emit('focus')
+    ws.emit('focus')
+    manager.handleLinkReady(ws.webContents)
+    manager.handleLinkReady(solo.webContents)
+
+    manager.routeToFile('/v/daily', null, 'today')
+
+    expect(created).toHaveLength(2)
+    expect(solo.focusCount).toBe(1)
+    expect(ws.focusCount).toBe(0)
+    expect(onOpenTarget).toHaveBeenCalledExactlyOnceWith(solo, '/v/daily', 'today')
+    expect(ws.webContents.send).not.toHaveBeenCalled()
   })
 
   it('YAZ-2602: a stored entry with no live window falls back to a fresh window on the vault OF THAT ENTRY that holds the file, not on its first', () => {
