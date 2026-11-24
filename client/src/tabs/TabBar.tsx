@@ -18,6 +18,7 @@ import { copiesOf } from './copies'
 import { useBoardHighlight } from './boardHighlight'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from './cardPreview'
 import { setStripTarget } from './stripDrop'
+import { tabWidthBounds, tabWidthStyle, type TabIdSpec, type TabWidth } from './tabWidth'
 import './tabs.css'
 
 export interface TabBarProps {
@@ -148,6 +149,12 @@ export interface TabBarProps {
   asleep?: ReadonlySet<string>
   /** A sleeping tab hovered `WAKE_HOVER_MS` (YAZ-3737 S7): App mounts its editor behind the page on show, so the click feels instant. */
   onWake?: (id: string) => void
+  /** Formatted tab IDs by path (YAZ-6474), e.g. `"#2916"` or `"WIKI-2916"`. */
+  pathIds?: ReadonlyMap<string, string>
+  /** Per-vault tab ID form and layout for `path` (YAZ-6474); undefined when `showIds.tabs === 'off'`. */
+  tabIdSpec?: (path: string) => TabIdSpec | undefined
+  /** App-global tab width preset or custom px (YAZ-6474). Defaults to `'default'`. */
+  tabWidth?: TabWidth
 }
 
 /** How long a sleeping tab is hovered before it wakes (YAZ-3737 S7): a pointer that only crosses it wakes nothing. */
@@ -279,7 +286,7 @@ export interface NavStep {
 /** How long a press on ‹ or › is held before its menu opens instead of a step (YAZ-3647 E3), as in Chrome. */
 export const NAV_HOLD_MS = 500
 
-export function TabBar({ roots, windowId, tabs: pages, active, preview = null, blank = false, inbox, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, onOpenStep, zoomLabels, onShowSidebar, onShowInSidebar, onRenameFile, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake }: TabBarProps) {
+export function TabBar({ roots, windowId, tabs: pages, active, preview = null, blank = false, inbox, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, onOpenStep, zoomLabels, onShowSidebar, onShowInSidebar, onRenameFile, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake, pathIds, tabIdSpec, tabWidth = 'default' }: TabBarProps) {
   // THE INBOX TAB IN THE STRIP (YAZ-5016): one list of the page tabs and the Inbox tab, at its slot. Every slot, drag and
   // glide of the strip reads this list; what goes out to App is in page tabs (`pageSlot`, `drop`).
   const inboxAt = inbox === undefined ? null : Math.min(Math.max(inbox.at ?? pages.length, 0), pages.length)
@@ -880,10 +887,21 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
     )
   }
 
+  const widthBounds = tabWidthBounds(tabWidth)
+  const rowStyle = useMemo<CSSProperties>(() => ({ ...SLIDE, ...tabWidthStyle(tabWidth) }), [tabWidth])
+  const hasStacked =
+    pathIds !== undefined &&
+    tabIdSpec !== undefined &&
+    pages.some((tab) => {
+      if (tab.inlineDrawing !== undefined) return false
+      const spec = tabIdSpec(tab.path)
+      return spec !== undefined && spec.layout === 'stacked' && pathIds.has(tab.path)
+    })
+
   return (
     <div
-      className={`tabbar-row${reserveEnd ? ' tabbar-row--end' : ''}${drag !== null || externalOver !== null ? ' tabbar-row--drag' : ''}`}
-      style={SLIDE}
+      className={`tabbar-row${reserveEnd ? ' tabbar-row--end' : ''}${drag !== null || externalOver !== null ? ' tabbar-row--drag' : ''}${hasStacked ? ' tabbar-row--stacked' : ''}${widthBounds.isDefault ? ' tabbar-row--default-width' : ''}`}
+      style={rowStyle}
       // Each drag the strip takes scrolls it at its ends (YAZ-3808 D5): over a tab, the tail, ‹ › and the "+" alike.
       onDragOver={(e) => {
         const foreign = foreignTab(e)
@@ -970,10 +988,12 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
           // Which copy of its page this tab is (YAZ-4156 10), as the tab board's "1 of 2" (YAZ-2940 D11): copies tell apart.
           const count = copies.count.get(path) ?? 1
           const copy = count > 1 ? copies.copy[i] + 1 : 0
-          const tip = [name === undefined && shownAt === labelOf(path) ? path : `${shownAt}\n${path}`]
+          const tip = [name === undefined && shownAt === labelOf(path) && !titles.has(path) ? path : `${shownAt}\n${path}`]
           if (copy > 0) tip.push(`${copy} of ${count}`)
           // The preview tab says why it is italic and how to keep it (YAZ-4156 11).
           if (id === preview) tip.push('Preview: double-click to keep')
+          const spec = inlineDrawing === undefined ? tabIdSpec?.(path) : undefined
+          const tabId = spec !== undefined ? pathIds?.get(path) : undefined
           const cls = ['tabbar__tab']
           if (isActive) cls.push('tabbar__tab--active')
           if (isActive && yielding) cls.push('tabbar__tab--yield')
@@ -981,6 +1001,10 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
           if (id === renaming) cls.push('tabbar__tab--renaming')
           if (id === lit) cls.push('tabbar__tab--lit')
           if (slidIn.current.has(id)) cls.push('tabbar__tab--in')
+          if (tabId !== undefined && spec !== undefined) {
+            cls.push('tabbar__tab--has-id', spec.form === 'full' ? 'tabbar__tab--id-full' : 'tabbar__tab--id-number')
+            if (spec.layout === 'stacked') cls.push('tabbar__tab--stacked')
+          }
           // The grabbed tab has left the strip (6A): a strip drag's once the Mac has its picture, a held card's own tab at once.
           if ((drag !== null && drag.lifted && drag.from === i) || (boardOver !== null && id === boardOwn)) cls.push('tabbar__tab--dragging')
           // The drop slot: the tab the gap opens before — or the LAST tab, for the end slot.
@@ -1079,11 +1103,22 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
                   <FileIcon path={inlineDrawing !== undefined ? `${path}.excalidraw` : path} folder={inlineDrawing === undefined && isFolder(path)} />
                   {/* Asleep to save memory (YAZ-3737 D11): quiet, before the name, so no name hides it (YAZ-4003, D18). */}
                   {asleep.has(id) && <AsleepIcon className="tabbar__asleep" />}
-                  <span className="tabbar__name">
-                    {label}
-                    {/* A display name is the user's own words, and a folder page is named whole (YAZ-3536 D4). */}
-                    {name === undefined && inlineDrawing === undefined && !isFolder(path) && <NameEnding path={path} />}
-                  </span>
+                  {tabId !== undefined ? (
+                    <span className="tabbar__text">
+                      <span className="tabbar__id">{tabId}</span>
+                      <span className="tabbar__name">
+                        {label}
+                        {/* A display name is the user's own words, and a folder page is named whole (YAZ-3536 D4). */}
+                        {name === undefined && inlineDrawing === undefined && !isFolder(path) && <NameEnding path={path} />}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="tabbar__name">
+                      {label}
+                      {/* A display name is the user's own words, and a folder page is named whole (YAZ-3536 D4). */}
+                      {name === undefined && inlineDrawing === undefined && !isFolder(path) && <NameEnding path={path} />}
+                    </span>
+                  )}
                 </span>
               </button>
               )}
