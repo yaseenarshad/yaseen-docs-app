@@ -35,7 +35,7 @@ import { tree } from '../fs/tree'
 import { requireRequest, requireStringArray } from '../fs/validate'
 import { backfillCreated } from '../vaultIndex/backfillCreated'
 import type { Store } from '../store'
-import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onBoardIds, onIdFixes, saveIdsAnswer } from '../vaultIndex'
+import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onBoardIds, onExternalRename, onIdFixes, saveIdsAnswer } from '../vaultIndex'
 import { givesIds } from '../vaultIndex/idSweep'
 import { doorOf, type IdDoor } from '../vaultIndex/mint'
 import { idsHome } from '../vaultIndex/scan'
@@ -231,6 +231,11 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   onIdFixes((root, fixes, notice) => {
     for (const fix of fixes) if (fix.renamedFrom !== undefined) void afterRename({ oldPath: fix.renamedFrom, newPath: fix.path, kind: 'file' }).catch(() => undefined)
     if (notice !== null) windows.vaultNotice(root, notice)
+  })
+  // An external file rename detected by the live watcher (YAZ-6438): reuse `afterRename` so open
+  // tabs, stored paths, favorites, focus, icons, order, and shares follow automatically.
+  onExternalRename((_root, oldPath, newPath) => {
+    void afterRename({ oldPath, newPath, kind: 'file' }).catch(() => undefined)
   })
   // A board took an ID, or one with an ID came, went or moved (YAZ-3943 4C): each window of the vault reads its index at
   // once, as after "Change letters". A board's own events never make a window read it (`useIndex`).

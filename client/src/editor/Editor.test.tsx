@@ -1681,6 +1681,24 @@ describe('the page window holds a real editor (YAZ-4547)', () => {
     expect(writeFile.mock.calls[0]?.[0].content).toBe(`${FM}# Hello\n\nafter the rename\n`)
   })
 
+  it('unsaved editor text survives an external rename retargeting without further typing and never writes to the old path (YAZ-6438)', async () => {
+    const NEW = '/vault/external-renamed.md'
+    await mountCardAlone()
+    const unsaved = '# Hello\n\nunsaved text typed before external rename\n'
+    type(unsaved)
+    expect(writeFile).not.toHaveBeenCalled()
+    readFile.mockResolvedValueOnce({ path: NEW, content: FM + BODY, mtime: 2, size: (FM + BODY).length })
+    act(() => {
+      carryEditorAcrossRename(PATH, NEW)
+      renamePageWindows(PATH, NEW)
+    })
+    await settle()
+    await settle()
+    await pastDebounce()
+    expect(writeFile.mock.calls.map(([body]) => body.path)).toEqual([NEW])
+    expect(writeFile.mock.calls[0]?.[0].content).toBe(`${FM}${unsaved}`)
+  })
+
   it('a delete of its page closes the card, and writes nothing (YAZ-4544)', async () => {
     const onClose = vi.fn()
     await mountCardAlone(onClose)

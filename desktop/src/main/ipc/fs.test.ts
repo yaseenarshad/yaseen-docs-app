@@ -1078,3 +1078,54 @@ describe('the save log at the fs:write door (YAZ-3235 D1)', () => {
   })
 })
 
+describe('external rename auto-retarget (YAZ-6438)', () => {
+  it('repairs store paths and broadcasts file:renamed when a watched file is renamed externally on disk', async () => {
+    const extRoot = await mkdtemp(path.join(tmpdir(), 'yd-ipc-ext-rename-'))
+    const oldPath = path.join(extRoot, 'External-A.md')
+    const newPath = path.join(extRoot, 'External-B.md')
+    try {
+      await writeFile(oldPath, '---\nid: EXT-1\n---\n\nExternal rename body\n')
+      registerFsIpc(store, windows)
+      store.upsertWindow({
+        id: 'w-ext',
+        root: extRoot,
+        file: oldPath,
+        tabs: [oldPath],
+        sidebarCollapsed: false,
+        sidebarLens: 'files',
+        bounds: { x: 0, y: 0, width: 800, height: 600 },
+      })
+      const w = fakeWindow()
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
+      vi.mocked(favorites.renamePath).mockClear()
+      vi.mocked(focus.renamePath).mockClear()
+
+      // Build live index so the watcher subscribes to extRoot.
+      const idx = await registered(CONTRACT.index.channel)({ sender: {} }, extRoot)
+      expect(idx.ok).toBe(true)
+      // Give FSEvents / chokidar a brief moment to settle initial watch before renaming.
+      await sleep(150)
+
+      await rename(oldPath, newPath)
+
+      const deadline = Date.now() + 5000
+      while (Date.now() < deadline) {
+        const win = store.get().windows.find((entry) => entry.id === 'w-ext')
+        if (win?.file === newPath && w.webContents.send.mock.calls.some(([ch]) => ch === CONTRACT.file.onRenamed.channel)) break
+        await sleep(50)
+      }
+
+      const win = store.get().windows.find((entry) => entry.id === 'w-ext')
+      expect(win?.file).toBe(newPath)
+      expect(win?.tabs).toEqual([newPath])
+      expect(vi.mocked(favorites.renamePath)).toHaveBeenCalledWith(expect.arrayContaining([extRoot]), oldPath, newPath)
+      expect(vi.mocked(focus.renamePath)).toHaveBeenCalledWith(expect.arrayContaining([extRoot]), oldPath, newPath)
+      expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onRenamed.channel, { oldPath, newPath, kind: 'file' })
+    } finally {
+      store.removeWindow('w-ext')
+      _evictAll()
+      await removeVault(extRoot)
+    }
+  })
+})
+
