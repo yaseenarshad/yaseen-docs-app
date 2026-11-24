@@ -1094,7 +1094,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'workspaceLauncher',
             label: 'Workspace launcher',
-            hint: 'Opens all vaults in this workspace directly in Yaseen Docs and updates the Dock icon when focused.',
+            hint: 'Opens all vaults in this workspace together in one window and updates the Dock icon when focused.',
             keywords: ['workspace', 'app', 'launcher', 'alfred', 'spotlight', 'dock', 'icon', 'badge', 'macos'],
             wide: true,
             available: (ctx) => ctx.workspaceLauncher !== undefined,
@@ -1108,7 +1108,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'vaultLauncher',
             label: 'Vault launcher',
-            hint: 'Opens this vault directly in Yaseen Docs and updates the Dock icon when focused.',
+            hint: 'Opens this vault alone in its own window (never inside a workspace) and updates the Dock icon when focused.',
             keywords: ['vault', 'app', 'launcher', 'alfred', 'spotlight', 'dock', 'icon', 'badge', 'macos'],
             wide: true,
             available: (ctx) => ctx.vaultLauncher !== undefined,

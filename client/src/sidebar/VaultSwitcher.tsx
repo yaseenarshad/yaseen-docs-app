@@ -239,8 +239,12 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
   const [vaultSetMenu, setVaultSetMenu] = useState<{ id: string | null; x: number; y: number } | null>(null)
   /** The workspace name that is an inline field: a saved one's on its row (S67) — or with `id: null` the header's, the name to save this window's vaults under (S63). */
   const [vaultSetField, setVaultSetField] = useState<{ id: string | null } | null>(null)
-  /** Active workspace launcher modal state, loaded via `api.vaultLauncher.workspaceStatus`. */
-  const [launcherModal, setLauncherModal] = useState<{ workspaceId: string; defaultName: string; status: VaultLauncherStatus | null } | null>(null)
+  /** Active launcher modal state (vault or workspace), loaded via `api.vaultLauncher`. */
+  const [launcherModal, setLauncherModal] = useState<
+    | { kind: 'vault'; root: string; defaultName: string; status: VaultLauncherStatus | null }
+    | { kind: 'workspace'; workspaceId: string; defaultName: string; status: VaultLauncherStatus | null }
+    | null
+  >(null)
   // One menu and one field stand at a time, a vault's or a workspace's: the layer rules below are about either.
   const menuUp = vaultMenu !== null || vaultSetMenu !== null
   const fieldUp = renaming !== null || vaultSetField !== null
@@ -256,6 +260,7 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
   const matchedSetId = useSyncExternalStore(storage.subscribe, () => (multi ? storage.getVaultSets().find((set) => sameVaults(set.roots, roots))?.id ?? null : null))
   const name = useSyncExternalStore(storage.subscribe, () => (multi ? storage.getVaultSets().find((set) => sameVaults(set.roots, roots))?.name : undefined) ?? vaultsLabel(roots.map(storage.vaultName)))
   const headerIcon = multi ? (matchedSetId !== null ? workspaceIcons?.[matchedSetId] : undefined) : vaultIcons?.[root]
+  const canVaultLauncher = /Mac/i.test(navigator.platform) && typeof window.yaseenDocs?.vaultLauncher?.status === 'function'
   const canWorkspaceLauncher = /Mac/i.test(navigator.platform) && typeof window.yaseenDocs?.vaultLauncher?.workspaceStatus === 'function'
   const open = panel !== null
 
@@ -414,13 +419,21 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
     setPanel((p) => (p === null ? p : { ...p, sets: p.sets.filter((s) => s.id !== id) }))
     inputRef.current?.focus()
   }
+  const openVaultLauncher = (path: string): void => {
+    const defaultName = storage.vaultName(path)
+    closePanel()
+    void api.vaultLauncher.status(path).then(
+      (status) => setLauncherModal({ kind: 'vault', root: path, defaultName, status }),
+      () => setLauncherModal({ kind: 'vault', root: path, defaultName, status: null }),
+    )
+  }
   const openWorkspaceLauncher = (id: string): void => {
     const set = panel?.sets.find((s) => s.id === id) ?? storage.getVaultSets().find((s) => s.id === id)
     if (set === undefined) return
     closePanel()
     void api.vaultLauncher.workspaceStatus(id).then(
-      (status) => setLauncherModal({ workspaceId: id, defaultName: set.name, status }),
-      () => setLauncherModal({ workspaceId: id, defaultName: set.name, status: null }),
+      (status) => setLauncherModal({ kind: 'workspace', workspaceId: id, defaultName: set.name, status }),
+      () => setLauncherModal({ kind: 'workspace', workspaceId: id, defaultName: set.name, status: null }),
     )
   }
   /**
@@ -772,6 +785,12 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
               onRename: (path) => setRenaming({ path, at: vaultMenu.at }),
               onResetName: (path) => saveName(path, null),
               onSetKey: saveKey,
+              ...(canVaultLauncher
+                ? {
+                    onLauncher: openVaultLauncher,
+                    hasLauncher: vaultIcons?.[vaultMenu.path] !== undefined,
+                  }
+                : {}),
               onReveal,
               onOpenVsCode,
               onRemove: removeRow,
@@ -787,7 +806,20 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
           y={vaultSetMenu.y}
           sections={
             vaultSetMenu.id === null
-              ? [[{ id: 'save-set', label: SAVE_SET_TEXT, onSelect: () => setVaultSetField({ id: null }) }]]
+              ? [
+                  [
+                    { id: 'save-set', label: SAVE_SET_TEXT, onSelect: () => setVaultSetField({ id: null }) },
+                    ...(canWorkspaceLauncher && matchedSetId !== null
+                      ? [
+                          {
+                            id: 'launcher-set',
+                            label: workspaceIcons?.[matchedSetId] !== undefined ? 'Edit workspace launcher…' : 'Make workspace launcher…',
+                            onSelect: () => openWorkspaceLauncher(matchedSetId),
+                          },
+                        ]
+                      : []),
+                  ],
+                ]
               : buildVaultSetMenuSections(vaultSetMenu.id, {
                   onRename: (id) => setVaultSetField({ id }),
                   onRemove: removeSet,
@@ -805,7 +837,8 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
       {launcherModal !== null && (
         <Suspense fallback={null}>
           <VaultLauncherModal
-            workspaceId={launcherModal.workspaceId}
+            root={launcherModal.kind === 'vault' ? launcherModal.root : undefined}
+            workspaceId={launcherModal.kind === 'workspace' ? launcherModal.workspaceId : undefined}
             defaultName={launcherModal.defaultName}
             initial={launcherModal.status?.launcher}
             initialIconDataUrl={launcherModal.status?.iconDataUrl}
