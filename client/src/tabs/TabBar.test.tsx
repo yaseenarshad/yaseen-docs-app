@@ -10,6 +10,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { NAV_HOLD_MS, TabBar as IdTabBar, WAKE_HOVER_MS, type TabBarProps as IdTabBarProps } from './TabBar'
+import { tabWidthBounds, tabWidthStyle, type TabIdSpec } from './tabWidth'
 import tabsCss from './tabs.css?inline'
 import { WORKSPACE_PAGE_MIME } from '../workspace/pageDrag'
 import { setBoardHighlight } from './boardHighlight'
@@ -1120,7 +1121,7 @@ describe('a zoomed tab\'s tooltip (YAZ-3647 E4)', () => {
     const tabs = [{ id: 'z', path: '/v/trip.md', zoom: 'k1:0' }, { id: 'u', path: '/v/trip.md', zoom: 'k2:0' }, { id: 'p', path: '/v/trip.md' }, { id: 'n', path: '/v/trip.md', name: 'Lisbon', zoom: 'k1:0' }]
     act(() => root?.render(<IdTabBar roots={['/v']} titles={new Map([['/v/trip.md', 'Trip plan']])} windowId="w1" tabs={tabs} active="z" zoomLabels={new Map([['k1:0', 'Day 1: Lisbon']])} onActivate={vi.fn()} onClose={vi.fn()} onMove={vi.fn()} {...noNav} />))
     const tab = (id: string) => container!.querySelector<HTMLButtonElement>(`[data-tab="${id}"] [role="tab"]`)!
-    expect(['z', 'u', 'p', 'n'].map((id) => tab(id).title)).toEqual(['Trip plan › Day 1: Lisbon\n/v/trip.md\n1 of 4', '/v/trip.md\n2 of 4', '/v/trip.md\n3 of 4', 'Trip plan › Day 1: Lisbon\n/v/trip.md\n4 of 4'])
+    expect(['z', 'u', 'p', 'n'].map((id) => tab(id).title)).toEqual(['Trip plan › Day 1: Lisbon\n/v/trip.md\n1 of 4', 'Trip plan\n/v/trip.md\n2 of 4', 'Trip plan\n/v/trip.md\n3 of 4', 'Trip plan › Day 1: Lisbon\n/v/trip.md\n4 of 4'])
     expect(['z', 'n'].map((id) => tab(id).textContent)).toEqual(['Trip plan', 'Lisbon'])
   })
 })
@@ -1244,11 +1245,11 @@ describe('the widths of the tabs (YAZ-2689)', () => {
     expect(rule('.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):hover .tabbar__close,\n.tabbar--hoverless .tabbar__close:hover')).toMatch(/visibility:\s*hidden;/)
   })
 
-  it('D1, D2: a tab is as wide as its name, from 72px to 200px, and it can shrink — with no flex basis and no container query, which make the strip cut a tab while the row has room', () => {
+  it('D1, D2: a tab is as wide as its name, defaulting to 72px–200px via CSS custom properties, and it can shrink — with no flex basis and no container query, which make the strip cut a tab while the row has room', () => {
     const tab = rule('.tabbar__tab')
     expect(tab).toMatch(/flex:\s*0 1 auto;/)
-    expect(tab).toMatch(/min-width:\s*72px;/)
-    expect(tab).toMatch(/max-width:\s*200px;/)
+    expect(tab).toMatch(/min-width:\s*var\(--tab-min-w,\s*72px\);/)
+    expect(tab).toMatch(/max-width:\s*var\(--tab-max-w,\s*200px\);/)
     expect(tab).not.toMatch(/(?:^|[;\s])width:|container-type/)
   })
 
@@ -1357,7 +1358,7 @@ describe('TabBar display name (YAZ-2949 D4, D5)', () => {
   it('S11, S14: a named tab shows its name; the tooltip gives the page name, then the path; the ✕ names the tab by its display name', () => {
     const el = mountIds()
     expect(tabs(el).map((t) => t.querySelector('.tabbar__label')?.textContent)).toEqual(['Plan', 'Outline'])
-    expect(tabs(el).map((t) => t.querySelector<HTMLElement>('.tabbar__btn')?.title)).toEqual([`${A}\n1 of 2`, `Plan\n${A}\n2 of 2`])
+    expect(tabs(el).map((t) => t.querySelector<HTMLElement>('.tabbar__btn')?.title)).toEqual([`Plan\n${A}\n1 of 2`, `Plan\n${A}\n2 of 2`])
     expect(tabs(el)[1].querySelector('.tabbar__close')?.getAttribute('aria-label')).toBe('Close Outline')
   })
 
@@ -2132,6 +2133,274 @@ describe('tab sleep on the strip (YAZ-3737 D11, S7)', () => {
     expect(onWake.mock.calls).toEqual([['/v/b.md']])
     act(() => void vi.advanceTimersByTime(1000))
     expect(onWake).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Tab strip IDs, custom tab widths, and full-name tooltip (YAZ-6474)', () => {
+  const noop = { onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav }
+  const rule = (selector: string) =>
+    new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(tabsCss.replace(/\/\*[\s\S]*?\*\//g, ''))?.[1] ?? ''
+
+  function mountIds(props: Partial<IdTabBarProps> & Pick<IdTabBarProps, 'tabs' | 'active'>) {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<IdTabBar roots={['/v1', '/v2']} titles={new Map()} windowId="w1" {...noop} {...props} />))
+    return container
+  }
+
+  it('tabWidthBounds and tabWidthStyle resolve shared presets, custom px, and clamping', () => {
+    expect(tabWidthBounds(undefined)).toEqual({ min: 72, max: 200, isAuto: true })
+    expect(tabWidthBounds('auto')).toEqual({ min: 72, max: 200, isAuto: true })
+    expect(tabWidthBounds('compact')).toEqual({ min: 64, max: 150, isAuto: false })
+    expect(tabWidthBounds('medium')).toEqual({ min: 72, max: 200, isAuto: false })
+    expect(tabWidthBounds('wide')).toEqual({ min: 100, max: 270, isAuto: false })
+    expect(tabWidthBounds(280)).toEqual({ min: 101, max: 280, isAuto: false })
+    expect(tabWidthBounds(50)).toEqual({ min: 64, max: 80, isAuto: false })
+    expect(tabWidthBounds(600)).toEqual({ min: 144, max: 400, isAuto: false })
+    expect(tabWidthBounds(Number.NaN)).toEqual({ min: 72, max: 200, isAuto: true })
+    expect(tabWidthStyle('compact')).toEqual({ '--tab-active-min-w': '64px', '--tab-active-max-w': '150px' })
+    expect(tabWidthStyle(280, 'medium')).toEqual({ '--tab-active-min-w': '101px', '--tab-active-max-w': '280px', '--tab-inactive-max-w': '200px' })
+  })
+
+  it('renders inline IDs (#2916 and WIKI-2916) with width classes and leaves New tab, Inbox, inline drawings, and non-ID tabs untouched', () => {
+    const pathIds = new Map([
+      ['/v1/WIKI-2916.md', '#2916'],
+      ['/v2/ENG-42.md', 'ENG-42'],
+      ['/v1/draw.md', '#99'],
+    ])
+    const tabIdSpec = (path: string): TabIdSpec | undefined => {
+      if (path.startsWith('/v1/')) return { form: 'number', layout: 'inline' }
+      if (path.startsWith('/v2/')) return { form: 'full', layout: 'inline' }
+      return undefined
+    }
+    const el = mountIds({
+      tabs: [
+        { id: 't1', path: '/v1/WIKI-2916.md' },
+        { id: 't2', path: '/v2/ENG-42.md' },
+        { id: 't3', path: '/v1/draw.md', inlineDrawing: 0 },
+        { id: 't4', path: '/v3/plain.md' },
+      ],
+      active: 't1',
+      blank: true,
+      inbox: { label: 'Inbox', active: false, onActivate: vi.fn(), onClose: vi.fn() },
+      titles: new Map([
+        ['/v1/WIKI-2916.md', 'Electron'],
+        ['/v2/ENG-42.md', 'Architecture'],
+      ]),
+      pathIds,
+      tabIdSpec,
+    })
+
+    const row = el.querySelector<HTMLElement>('.tabbar-row')!
+    expect(row.classList.contains('tabbar-row--active-auto')).toBe(true)
+    expect(row.classList.contains('tabbar-row--stacked')).toBe(false)
+
+    const t1 = el.querySelector<HTMLElement>('[data-tab="t1"]')!
+    expect(t1.classList.contains('tabbar__tab--has-id')).toBe(true)
+    expect(t1.classList.contains('tabbar__tab--id-number')).toBe(true)
+    expect(t1.classList.contains('tabbar__tab--stacked')).toBe(false)
+    expect(t1.querySelector('.tabbar__text .tabbar__id')?.textContent).toBe('#2916')
+    expect(t1.querySelector('.tabbar__text .tabbar__name')?.textContent).toBe('Electron')
+
+    const t2 = el.querySelector<HTMLElement>('[data-tab="t2"]')!
+    expect(t2.classList.contains('tabbar__tab--has-id')).toBe(true)
+    expect(t2.classList.contains('tabbar__tab--id-full')).toBe(true)
+    expect(t2.classList.contains('tabbar__tab--stacked')).toBe(false)
+    expect(t2.querySelector('.tabbar__text .tabbar__id')?.textContent).toBe('ENG-42')
+    expect(t2.querySelector('.tabbar__text .tabbar__name')?.textContent).toBe('Architecture')
+
+    // Inline drawing, non-ID vault tab, Inbox, and New tab do not get ID markup or ID classes.
+    for (const selector of ['[data-tab="t3"]', '[data-tab="t4"]', '.tabbar__tab--inbox']) {
+      const tab = el.querySelector<HTMLElement>(selector)!
+      expect(tab.classList.contains('tabbar__tab--has-id')).toBe(false)
+      expect(tab.querySelector('.tabbar__id')).toBeNull()
+    }
+    const newTab = [...el.querySelectorAll<HTMLElement>('.tabbar__tab')].find((t) => t.textContent?.includes('New tab'))!
+    expect(newTab.classList.contains('tabbar__tab--has-id')).toBe(false)
+    expect(newTab.querySelector('.tabbar__id')).toBeNull()
+  })
+
+  it('renders two-line stacked mode with tabbar-row--stacked and uniform 40px pill height across mixed vaults', () => {
+    const pathIds = new Map([
+      ['/v1/WIKI-2916.md', 'WIKI-2916'],
+      ['/v2/ENG-42.md', '#42'],
+    ])
+    const tabIdSpec = (path: string): TabIdSpec | undefined => {
+      if (path.startsWith('/v1/')) return { form: 'full', layout: 'stacked' }
+      if (path.startsWith('/v2/')) return { form: 'number', layout: 'inline' }
+      return undefined
+    }
+    const el = mountIds({
+      tabs: [
+        { id: 't1', path: '/v1/WIKI-2916.md' },
+        { id: 't2', path: '/v2/ENG-42.md' },
+        { id: 't3', path: '/v3/plain.md' },
+      ],
+      active: 't1',
+      pathIds,
+      tabIdSpec,
+    })
+
+    const row = el.querySelector<HTMLElement>('.tabbar-row')!
+    expect(row.classList.contains('tabbar-row--stacked')).toBe(true)
+
+    const t1 = el.querySelector<HTMLElement>('[data-tab="t1"]')!
+    expect(t1.classList.contains('tabbar__tab--has-id')).toBe(true)
+    expect(t1.classList.contains('tabbar__tab--id-full')).toBe(true)
+    expect(t1.classList.contains('tabbar__tab--stacked')).toBe(true)
+
+    const t2 = el.querySelector<HTMLElement>('[data-tab="t2"]')!
+    expect(t2.classList.contains('tabbar__tab--has-id')).toBe(true)
+    expect(t2.classList.contains('tabbar__tab--stacked')).toBe(false)
+
+    const t3 = el.querySelector<HTMLElement>('[data-tab="t3"]')!
+    expect(t3.classList.contains('tabbar__tab--has-id')).toBe(false)
+    expect(t3.classList.contains('tabbar__tab--stacked')).toBe(false)
+
+    expect(rule('.tabbar-row--stacked')).toMatch(/height:\s*52px;/)
+    expect(rule('.tabbar-row--stacked .tabbar__tab')).toMatch(/height:\s*40px;/)
+    expect(rule('.tabbar__tab--stacked .tabbar__text')).toMatch(/flex-direction:\s*column;/)
+  })
+
+  it('applies active tabWidth CSS custom properties and scopes ID auto-boost strictly to Auto', () => {
+    const check = (tabWidth: IdTabBarProps['tabWidth'], min: string, max: string, isAuto: boolean) => {
+      const el = mountIds({ tabs: [{ id: 't1', path: '/v1/a.md' }], active: 't1', tabWidth })
+      const row = el.querySelector<HTMLElement>('.tabbar-row')!
+      expect(row.style.getPropertyValue('--tab-active-min-w')).toBe(min)
+      expect(row.style.getPropertyValue('--tab-active-max-w')).toBe(max)
+      expect(row.classList.contains('tabbar-row--active-auto')).toBe(isAuto)
+      act(() => root?.unmount())
+      root = null
+      container?.remove()
+      container = null
+    }
+
+    check('auto', '72px', '200px', true)
+    check('compact', '64px', '150px', false)
+    check('medium', '72px', '200px', false)
+    check('wide', '100px', '270px', false)
+    check(280, '101px', '280px', false)
+    check(50, '64px', '80px', false)
+    check(999, '144px', '400px', false)
+
+    expect(rule('.tabbar-row--active-auto .tabbar__tab--active.tabbar__tab--id-number:not(.tabbar__tab--stacked),\n.tabbar-row--inactive-auto .tabbar__tab:not(.tabbar__tab--active).tabbar__tab--id-number:not(.tabbar__tab--stacked)')).toMatch(/min-width:\s*105px;[\s\S]*max-width:\s*240px;/)
+    expect(rule('.tabbar-row--active-auto .tabbar__tab--active.tabbar__tab--id-full:not(.tabbar__tab--stacked),\n.tabbar-row--inactive-auto .tabbar__tab:not(.tabbar__tab--active).tabbar__tab--id-full:not(.tabbar__tab--stacked)')).toMatch(/min-width:\s*130px;[\s\S]*max-width:\s*270px;/)
+    expect(rule('.tabbar-row--active-auto .tabbar__tab--active.tabbar__tab--id-full.tabbar__tab--stacked,\n.tabbar-row--inactive-auto .tabbar__tab:not(.tabbar__tab--active).tabbar__tab--id-full.tabbar__tab--stacked')).toMatch(/min-width:\s*96px;/)
+  })
+
+  it('YAZ-6485: applies inactiveTabWidth fixed class and --tab-inactive-max-w independently of active tabWidth', () => {
+    const elAuto = mountIds({ tabs: [{ id: 't1', path: '/v1/a.md' }], active: 't1', tabWidth: 'compact', inactiveTabWidth: 'auto' })
+    const rowAuto = elAuto.querySelector<HTMLElement>('.tabbar-row')!
+    expect(rowAuto.classList.contains('tabbar-row--inactive-fixed')).toBe(false)
+    expect(rowAuto.classList.contains('tabbar-row--inactive-auto')).toBe(true)
+    expect(rowAuto.classList.contains('tabbar-row--active-auto')).toBe(false)
+    expect(rowAuto.style.getPropertyValue('--tab-inactive-max-w')).toBe('')
+    act(() => root?.unmount())
+    root = null
+    container?.remove()
+    container = null
+
+    const elMed = mountIds({ tabs: [{ id: 't1', path: '/v1/a.md' }], active: 't1', tabWidth: 'auto', inactiveTabWidth: 'medium' })
+    const rowMed = elMed.querySelector<HTMLElement>('.tabbar-row')!
+    expect(rowMed.classList.contains('tabbar-row--inactive-fixed')).toBe(true)
+    expect(rowMed.classList.contains('tabbar-row--inactive-auto')).toBe(false)
+    expect(rowMed.classList.contains('tabbar-row--active-auto')).toBe(true)
+    expect(rowMed.style.getPropertyValue('--tab-inactive-max-w')).toBe('200px')
+    expect(rule('.tabbar-row--inactive-fixed .tabbar__tab:not(.tabbar__tab--active)')).toMatch(/flex-shrink:\s*0;[\s\S]*max-width:\s*var\(--tab-inactive-max-w/)
+  })
+
+  it('targets both .tabbar__name and .tabbar__text in the [data-copy] fade CSS rule', () => {
+    const copyRule = rule('.tabbar__label[data-copy] > .tabbar__name,\n.tabbar__label[data-copy] > .tabbar__text')
+    expect(copyRule).toMatch(/overflow:\s*hidden;/)
+    expect(copyRule).toMatch(/padding-right:\s*6px;/)
+    expect(copyRule).toMatch(/mask-image:/)
+  })
+
+  it('shows full page title above path in hover tooltip when titles has an entry, and stays plain path otherwise', () => {
+    const el = mountIds({
+      tabs: [
+        { id: 't1', path: '/v1/WIKI-2916.md' },
+        { id: 't2', path: '/v1/Page.md' },
+      ],
+      active: 't1',
+      titles: new Map([['/v1/WIKI-2916.md', 'Electron']]),
+    })
+    const btn1 = el.querySelector<HTMLElement>('[data-tab="t1"] [role="tab"]')!
+    const btn2 = el.querySelector<HTMLElement>('[data-tab="t2"] [role="tab"]')!
+    expect(btn1.title).toBe('Electron\n/v1/WIKI-2916.md')
+    expect(btn2.title).toBe('/v1/Page.md')
+  })
+
+  it('plain click on .tabbar__id activates the tab and double-click opens TabNameField to rename the name only', () => {
+    const onActivate = vi.fn()
+    const onKeep = vi.fn()
+    const onSetName = vi.fn()
+    const el = mountIds({
+      tabs: [
+        { id: 't1', path: '/v1/WIKI-2916.md' },
+        { id: 't2', path: '/v1/WIKI-2917.md' },
+      ],
+      active: 't1',
+      titles: new Map([['/v1/WIKI-2917.md', 'Electron']]),
+      pathIds: new Map([['/v1/WIKI-2917.md', 'WIKI-2917']]),
+      tabIdSpec: () => ({ form: 'full', layout: 'inline' }),
+      onActivate,
+      onKeep,
+      onSetName,
+    })
+
+    const idSpan = el.querySelector<HTMLElement>('[data-tab="t2"] .tabbar__id')!
+    act(() => idSpan.click())
+    expect(onActivate).toHaveBeenCalledExactlyOnceWith('t2')
+
+    act(() => void idSpan.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    expect(onKeep).toHaveBeenCalledExactlyOnceWith('t2')
+    const input = el.querySelector<HTMLInputElement>('[data-tab="t2"] .tabbar__rename')
+    expect(input).not.toBeNull()
+    expect(input?.value).toBe('Electron')
+  })
+
+  it('shownWidth() drag measurement works on tabs with IDs in both Inline and Two-line modes', () => {
+    const origRect = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      if (this.classList.contains('tabbar__tab')) {
+        const active = this.classList.contains('tabbar__tab--active')
+        const stacked = this.classList.contains('tabbar__tab--stacked')
+        const width = active ? (stacked ? 164 : 212) : 90
+        return { left: 0, right: width, width, top: 0, bottom: stacked ? 40 : 32, height: stacked ? 40 : 32, x: 0, y: 0, toJSON: () => ({}) }
+      }
+      return origRect.call(this)
+    }
+    try {
+      for (const [layout, expected] of [['inline', 'application/x-yaseen-width-212'], ['stacked', 'application/x-yaseen-width-164']] as const) {
+        const el = mountIds({
+          tabs: [
+            { id: 't1', path: '/v1/a.md' },
+            { id: 't2', path: '/v1/WIKI-2916.md' },
+          ],
+          active: 't1',
+          titles: new Map([['/v1/WIKI-2916.md', 'Electron']]),
+          pathIds: new Map([['/v1/WIKI-2916.md', 'WIKI-2916']]),
+          tabIdSpec: () => ({ form: 'full', layout }),
+        })
+        const tab = el.querySelector<HTMLElement>('[data-tab="t2"]')!
+        const types: string[] = []
+        const dt = { effectAllowed: '', setData: (t: string) => types.push(t), getData: () => '', types }
+        const ev = new Event('dragstart', { bubbles: true, cancelable: true })
+        Object.defineProperty(ev, 'dataTransfer', { value: dt })
+        act(() => void tab.dispatchEvent(ev))
+        expect(types).toContain(expected)
+        expect(tab.classList.contains('tabbar__tab--active')).toBe(false)
+        expect(tab.querySelector('.tabbar__btn')?.getAttribute('aria-selected')).toBe('false')
+        act(() => root?.unmount())
+        root = null
+        container?.remove()
+        container = null
+      }
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = origRect
+    }
   })
 })
 

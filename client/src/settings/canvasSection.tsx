@@ -200,7 +200,7 @@ export const CANVAS_SECTION: SettingsSection = {
   // Draw's 🔒 YAZ-1802 D12 / D13: the canvas preferences are Excalidraw's alone; a draw.io diagram has fixed defaults.
   // "Drawings", as the app names them (the YAZ-3818 demo), and draw.io diagrams beside them, with their one row at the
   // end (YAZ-4748 D11); the old words still find it.
-  title: 'Drawings and diagrams',
+  title: 'Drawings & diagrams',
   keywords: ['excalidraw', 'canvas', 'board', 'drawio', 'draw.io', 'diagram'],
   groups: [
     {

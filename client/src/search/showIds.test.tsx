@@ -12,11 +12,11 @@ import type { IndexRecord } from '@shared/types'
 
 describe('Show IDs in search', () => {
   it('reads the vault file; Always is the default, and anything else reads as Always', () => {
-    expect(DEFAULT_SHOW_IDS).toEqual({ search: 'always', title: true, files: 'off' })
-    expect(sanitizeShowIds({ search: 'match' })).toEqual({ search: 'match', title: true, files: 'off' })
-    expect(sanitizeShowIds({ search: 'always' })).toEqual({ search: 'always', title: true, files: 'off' })
-    expect(sanitizeShowIds({ search: 'sometimes' })).toEqual({ search: 'always', title: true, files: 'off' })
-    expect(sanitizeShowIds(null)).toEqual({ search: 'always', title: true, files: 'off' })
+    expect(DEFAULT_SHOW_IDS).toEqual({ search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'match' })).toEqual({ search: 'match', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'always' })).toEqual({ search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'sometimes' })).toEqual({ search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds(null)).toEqual({ search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
   })
 
   it('a row shows its ID always, or only when the search found it by its ID (`searchRows` put "ID — " in front of its label); a row with no ID shows none', () => {
@@ -31,21 +31,32 @@ describe('Show IDs in search', () => {
 })
 
 describe('Show IDs in the title and in the files list (YAZ-4940 part 2)', () => {
-  it('an old file with `search` alone reads as title On, files list Off; the two fields round-trip; anything else is the default', () => {
-    expect(sanitizeShowIds({ search: 'match' })).toEqual({ search: 'match', title: true, files: 'off' })
-    expect(sanitizeShowIds({ search: 'always', title: false, files: 'full' })).toEqual({ search: 'always', title: false, files: 'full' })
-    expect(sanitizeShowIds({ title: 'off', files: 'on' })).toEqual({ search: 'always', title: true, files: 'off' })
-    expect(sanitizeShowIds({ title: false })).toEqual({ search: 'always', title: false, files: 'off' })
+  it('an old file with `search` alone reads as title On, files list Off, tabs Off, tabsLayout Inline; fields round-trip; anything else is the default', () => {
+    expect(sanitizeShowIds({ search: 'match' })).toEqual({ search: 'match', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'always', title: false, files: 'full', tabs: 'number', tabsLayout: 'stacked' })).toEqual({ search: 'always', title: false, files: 'full', tabs: 'number', tabsLayout: 'stacked' })
+    expect(sanitizeShowIds({ title: 'off', files: 'on', tabs: true, tabsLayout: 'two-lines' })).toEqual({ search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ title: false })).toEqual({ search: 'always', title: false, files: 'off', tabs: 'off', tabsLayout: 'inline' })
   })
 
   it('"In the files list" has three choices; the old file\'s `true` (round 2\'s On) reads as Number, `false` or nothing as Off', () => {
-    expect(sanitizeShowIds({ search: 'always', files: true })).toEqual({ search: 'always', title: true, files: 'number' })
-    expect(sanitizeShowIds({ search: 'always', files: false })).toEqual({ search: 'always', title: true, files: 'off' })
+    expect(sanitizeShowIds({ search: 'always', files: true })).toEqual({ search: 'always', title: true, files: 'number', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'always', files: false })).toEqual({ search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
     expect(sanitizeShowIds({ search: 'always' }).files).toBe('off')
     expect(sanitizeShowIds({ files: 'number' }).files).toBe('number')
     expect(sanitizeShowIds({ files: 'full' }).files).toBe('full')
     expect(sanitizeShowIds({ files: 'off' }).files).toBe('off')
     expect(sanitizeShowIds({ files: 'all' }).files).toBe('off')
+  })
+
+  it('"In tabs" and "Tab ID layout" (YAZ-6464): valid values round-trip, missing or invalid values fall back to off / inline', () => {
+    expect(sanitizeShowIds({ tabs: 'number' }).tabs).toBe('number')
+    expect(sanitizeShowIds({ tabs: 'full' }).tabs).toBe('full')
+    expect(sanitizeShowIds({ tabs: 'off' }).tabs).toBe('off')
+    expect(sanitizeShowIds({ tabs: 'all' }).tabs).toBe('off')
+    expect(sanitizeShowIds({ tabs: true }).tabs).toBe('off')
+    expect(sanitizeShowIds({ tabsLayout: 'inline' }).tabsLayout).toBe('inline')
+    expect(sanitizeShowIds({ tabsLayout: 'stacked' }).tabsLayout).toBe('stacked')
+    expect(sanitizeShowIds({ tabsLayout: 'two-lines' }).tabsLayout).toBe('inline')
   })
 
   it('the number is the digits after the ID\'s last "-" (one rule for the files list\'s "#12" and a pill\'s {number}); an ID with no such digits has none', () => {
@@ -185,6 +196,37 @@ describe('Show IDs in the title and in the files list (YAZ-4940 part 2)', () => 
     expect(seen.at(-1)?.get('/v/a.md')).toBe('#12')
     act(() => root.render(<Probe form="full" />))
     expect(seen.at(-1)?.get('/v/a.md')).toBe('EMB-12')
+    act(() => root.unmount())
+  })
+
+  it('`useAllPathIds` with `includeFolders: true` includes folder page IDs keyed by `dirname(folder.path)` and excludes folders when omitted (YAZ-6464)', () => {
+    const one = createWikilinkResolveSource()
+    const folderWithId = record('/v/Projects/.folder.md', 'EMB-99')
+    const folderNoId = record('/v/Notes/.folder.md')
+    one.update(() => null, [record('/v/a.md', 'EMB-12')], [folderWithId, folderNoId], true)
+    const seen: (PathIds | undefined)[] = []
+    const Probe = ({ form, includeFolders }: { form: 'number' | 'full'; includeFolders?: boolean }) => {
+      seen.push(useAllPathIds([{ index: one, form, includeFolders }]))
+      return null
+    }
+    const el = document.createElement('div')
+    const root = createRoot(el)
+    // Omitted: sidebar files list does not include folders.
+    act(() => root.render(<Probe form="number" />))
+    expect(seen.at(-1)?.get('/v/a.md')).toBe('#12')
+    expect(seen.at(-1)?.has('/v/Projects')).toBe(false)
+    expect(seen.at(-1)?.has('/v/Projects/.folder.md')).toBe(false)
+    // Enabled: open tabs get folder page IDs keyed by folder directory path.
+    act(() => root.render(<Probe form="number" includeFolders />))
+    expect(seen.at(-1)?.get('/v/a.md')).toBe('#12')
+    expect(seen.at(-1)?.get('/v/Projects')).toBe('#99')
+    expect(seen.at(-1)?.has('/v/Notes')).toBe(false)
+    // Switching form updates folder IDs too.
+    act(() => root.render(<Probe form="full" includeFolders />))
+    expect(seen.at(-1)?.get('/v/Projects')).toBe('EMB-99')
+    // Folder snapshot update reflects new ID.
+    act(() => one.update(() => null, [record('/v/a.md', 'EMB-12')], [record('/v/Projects/.folder.md', 'EMB-100'), folderNoId], true))
+    expect(seen.at(-1)?.get('/v/Projects')).toBe('EMB-100')
     act(() => root.unmount())
   })
 })

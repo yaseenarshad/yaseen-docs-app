@@ -124,7 +124,7 @@
   min-width: 8px;
 }
 
-/* A tab: a pill as wide as its name, from 72px to 200px (YAZ-2689). Its fill is the pseudo-element. */
+/* A tab: a pill as wide as its name, from 72px to 200px by default (YAZ-2689), overridden by `--tab-min-w` / `--tab-max-w` (YAZ-6474). Its fill is the pseudo-element. */
 .tabbar__tab {
   position: relative;
   isolation: isolate;
@@ -136,10 +136,44 @@
      while the row has room. When the row is full the tabs shrink to 72px, and only then the strip
      scrolls (D2). */
   flex: 0 1 auto;
-  min-width: 72px;
-  max-width: 200px;
+  min-width: var(--tab-min-w, 72px);
+  max-width: var(--tab-max-w, 200px);
   height: 32px;
   overflow: hidden;
+}
+
+/* Auto-room for tab IDs when Auto is selected (YAZ-6474, YAZ-6485): scoped independently to active vs unselected tabs. */
+.tabbar-row--active-auto .tabbar__tab--active.tabbar__tab--id-number:not(.tabbar__tab--stacked),
+.tabbar-row--inactive-auto .tabbar__tab:not(.tabbar__tab--active).tabbar__tab--id-number:not(.tabbar__tab--stacked) {
+  min-width: 105px;
+  max-width: 240px;
+}
+
+.tabbar-row--active-auto .tabbar__tab--active.tabbar__tab--id-full:not(.tabbar__tab--stacked),
+.tabbar-row--inactive-auto .tabbar__tab:not(.tabbar__tab--active).tabbar__tab--id-full:not(.tabbar__tab--stacked) {
+  min-width: 130px;
+  max-width: 270px;
+}
+
+.tabbar-row--active-auto .tabbar__tab--active.tabbar__tab--id-full.tabbar__tab--stacked,
+.tabbar-row--inactive-auto .tabbar__tab:not(.tabbar__tab--active).tabbar__tab--id-full.tabbar__tab--stacked {
+  min-width: 96px;
+}
+
+/* Fixed inactive tab width (YAZ-6485): unselected tabs hold their chosen max width without crushing, then the strip scrolls. */
+.tabbar-row--inactive-fixed .tabbar__tab:not(.tabbar__tab--active) {
+  flex-shrink: 0;
+  min-width: min(72px, var(--tab-inactive-max-w, 200px));
+  max-width: var(--tab-inactive-max-w, 200px);
+}
+
+/* Two-line stacked tab IDs (YAZ-6474): uniform 40px pill height across the whole strip so mixed-vault windows stay aligned. */
+.tabbar-row--stacked {
+  height: 52px;
+}
+
+.tabbar-row--stacked .tabbar__tab {
+  height: 40px;
 }
 
 .tabbar__tab::before {
@@ -314,6 +348,42 @@
   color: var(--fg-muted);
 }
 
+/* Wrapper around tab ID + name when `showIds.tabs` is active (YAZ-6474). */
+.tabbar__text {
+  display: flex;
+  align-items: baseline;
+  flex: 1;
+  min-width: 0;
+}
+
+.tabbar__id {
+  flex: none;
+  margin-right: 5px;
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+
+.tabbar__tab--stacked .tabbar__text {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+}
+
+.tabbar__tab--stacked .tabbar__id {
+  margin-right: 0;
+  font-size: 10.5px;
+  line-height: 12px;
+}
+
+.tabbar__tab--stacked .tabbar__name {
+  font-size: 13px;
+  line-height: 16px;
+  max-width: 100%;
+}
+
 /* The name after the file icon and a sleeping tab's zzz (YAZ-4003): it runs on under the label's end and fades there. */
 .tabbar__name {
   min-width: 0;
@@ -339,7 +409,8 @@
    The name gives way to it: it is cut and fades before the chip, so a 72px tab still shows it. The chip is generated
    content with an empty alternative text (3F1), so it is neither the tab's text nor its accessible name; the tooltip
    says "2 of 3". Its colours are the text's own, mixed, so it reads on a hovered tab in dark too. */
-.tabbar__label[data-copy] > .tabbar__name {
+.tabbar__label[data-copy] > .tabbar__name,
+.tabbar__label[data-copy] > .tabbar__text {
   overflow: hidden;
   /* As the label's own fade: only a name that runs into this room fades, so a short name stays clear. */
   padding-right: 6px;
@@ -396,9 +467,11 @@
   background: color-mix(in srgb, var(--fg) 14%, transparent);
 }
 
-/* The active tab never shrinks (YAZ-2689 D3): its name reads whole however many tabs are open. */
+/* The active tab never shrinks (YAZ-2689 D3): its name reads whole however many tabs are open, capped by Active tab width (YAZ-6485). */
 .tabbar__tab--active {
   flex-shrink: 0;
+  min-width: var(--tab-active-min-w, var(--tab-min-w, 72px));
+  max-width: var(--tab-active-max-w, var(--tab-max-w, 200px));
 }
 
 /* A tab from elsewhere over the strip opens as the tab on show (YAZ-3808 6A4): the tab on show now shrinks as the others

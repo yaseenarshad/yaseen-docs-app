@@ -82,7 +82,7 @@ const cardsPerSub = (el: HTMLElement, title: string) => {
 describe('drawn', () => {
   it('Drawings › New elements: each label over its own card of rows (Q4: Box per sub-group)', () => {
     const el = mount()
-    clickNav(el, 'Drawings and diagrams')
+    clickNav(el, 'Drawings & diagrams')
     expect(cardShape(el, 'New elements')).toEqual([
       '# Shapes and lines',
       'canvas.newElementStyle',
@@ -132,7 +132,7 @@ describe('drawn', () => {
       // The pane is 0–40 tall here (the stub), so a row at 900 is out of it.
       act(() => el.querySelector<HTMLButtonElement>('.settings-search__goto')?.click())
       expect(el.querySelector('[data-setting="canvas.defaultTextAlign"]')).not.toBeNull()
-      expect(el.querySelector('.settings-section__title')?.textContent).toBe('Drawings and diagrams')
+      expect(el.querySelector('.settings-section__title')?.textContent).toBe('Drawings & diagrams')
       expect(scrolled).toHaveBeenCalled()
       expect(scrolled.mock.calls.at(-1)?.[0]).toBeGreaterThan(800)
     } finally {

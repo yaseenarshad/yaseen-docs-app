@@ -16,7 +16,7 @@ describe('YAZ-4748 demo: the cog hints', () => {
       const hint = linkPreviewHint(kind)
       expect(typeof hint).toBe('string')
       expect(hint).toContain(`a link pill in this ${kind}`)
-      expect(hint).toContain('Settings › Files & Links › Preview on hover › Links in drawings and diagrams')
+      expect(hint).toContain('Settings › Files › Preview on hover › Links in drawings and diagrams')
       expect(hint).toMatch(/Saved in this file\.$/)
     }
     expect(linkPreviewHint('drawing')).not.toContain('diagram to')
@@ -29,11 +29,11 @@ describe('YAZ-4748 demo: the cog hints', () => {
     if (typeof hint === 'string') return
     expect(hint.lead).toBe('The arrows left of a bullet in a text box. A folded bullet always shows its arrow.')
     expect(hint.rows.map(([term]) => term)).toEqual(['App', 'Hover', 'Always', 'Off'])
-    expect(hint.rows[0][1]).toBe('Follows Settings › Drawings and diagrams (now Hover)')
+    expect(hint.rows[0][1]).toBe('Follows Settings › Drawings & diagrams (now Hover)')
     expect(hint.rows[3][1]).toBe('No folding: every line shows, the folds stay saved')
     expect(hint.foot).toBe('Saved in this file.')
     const unknown = foldArrowsHint(undefined)
-    expect(typeof unknown !== 'string' && unknown.rows[0][1]).toBe('Follows Settings › Drawings and diagrams')
+    expect(typeof unknown !== 'string' && unknown.rows[0][1]).toBe('Follows Settings › Drawings & diagrams')
   })
 
   it('Hover outline: a list of App, On and Off; App names the Settings page and, when known, the app’s mode now', () => {
@@ -41,10 +41,10 @@ describe('YAZ-4748 demo: the cog hints', () => {
     if (typeof hint === 'string') throw new Error('a list hint')
     expect(hint.lead).toBe('A faint outline shows what a click will pick, while you hover.')
     expect(hint.rows.map(([term]) => term)).toEqual(['App', 'On', 'Off'])
-    expect(hint.rows[0][1]).toBe('Follows Settings › Drawings and diagrams (now Off)')
+    expect(hint.rows[0][1]).toBe('Follows Settings › Drawings & diagrams (now Off)')
     expect(hint.foot).toBe('Saved in this file.')
     const unknown = hoverOutlineHint(undefined)
-    expect(typeof unknown !== 'string' && unknown.rows[0][1]).toBe('Follows Settings › Drawings and diagrams')
+    expect(typeof unknown !== 'string' && unknown.rows[0][1]).toBe('Follows Settings › Drawings & diagrams')
   })
 
   it('the picture moves and the exports are a drawing’s alone: each one sentence about this drawing', () => {

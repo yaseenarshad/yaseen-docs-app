@@ -18,7 +18,7 @@ import { appWindow, buildFixtureVault, clickMenuItem, copyVault, launchApp, quit
 test.describe.configure({ mode: 'serial' })
 
 /** The nav as the registry orders it (registry.tsx): the settings pages (General first, YAZ-3276 D7), a divider, the reference pages. */
-const NAV_ORDER = ['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Cards', 'Sync', '—', 'Memory', 'Storage', 'Sharing', 'Hotkeys'] as const
+const NAV_ORDER = ['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings & diagrams', 'Images', 'Files', 'Links & IDs', 'Folder pages', 'Cards', 'Sync', '—', 'Memory', 'Storage', 'Sharing', 'Hotkeys'] as const
 
 // ---------- the dialog's parts, by role and stable class only (never position) ----------
 
@@ -128,9 +128,9 @@ test('step 3 — search narrows the page to hits under breadcrumbs, and a hit st
   // "dark" is a Theme keyword and the draw.io diagrams' "In dark mode" row (YAZ-3028 D10), Theme first under the
   // untitled group's breadcrumb (just the section). Every key is searchable since YAZ-3564: a drawing's and a
   // diagram's dark-mode keys follow on Hotkeys. The words of three more rows say it too: the guide lines' and the
-  // shades' "darkness", and a table fill's text rule ("A dark fill turns dark text white"). Seven rows.
+  // shades' "darkness", a table fill's text rule ("A dark fill turns dark text white"), and inlineCodeStyle's dark-mode hint (YAZ-6452). Eight rows.
   await search(win).fill('dark')
-  await expect(rows(win)).toHaveCount(7)
+  await expect(rows(win)).toHaveCount(8)
   await expect(row(win, 'theme')).toBeVisible()
   await expect(row(win, 'diagramDarkColors')).toBeVisible()
   await expect(row(win, 'hotkey-drawing-toggleTheme')).toBeVisible()

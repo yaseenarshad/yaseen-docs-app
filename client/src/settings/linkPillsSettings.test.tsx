@@ -25,7 +25,7 @@ function mount(pills: LinkPills | undefined, ids = false, word = UNIT_WORDS.page
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<SettingsDialog ctx={ctx} onClose={vi.fn()} initialPage="files" />))
+  act(() => root?.render(<SettingsDialog ctx={ctx} onClose={vi.fn()} initialPage="linksIds" />))
   return { el: container, save, row: container.querySelector<HTMLElement>('[data-setting="linkPills"]') as HTMLElement }
 }
 

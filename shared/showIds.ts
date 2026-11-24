@@ -9,24 +9,40 @@ export const SHOW_IDS_FILE = 'show-ids.json'
 export type IdsInSearch = 'always' | 'match'
 /** "In the files list": Off, the ID's number ("#12"), or the full ID ("EMB-12"). */
 export type IdsInFiles = 'off' | 'number' | 'full'
+/** "In tabs" (YAZ-6464): Off, the ID's number ("#12"), or the full ID ("EMB-12"). */
+export const IDS_IN_TABS = ['off', 'number', 'full'] as const
+export type IdsInTabs = (typeof IDS_IN_TABS)[number]
+/** "Tab ID layout" (YAZ-6464): inline before the title, or stacked above it on two lines. */
+export const TAB_ID_LAYOUTS = ['inline', 'stacked'] as const
+export type TabIdLayout = (typeof TAB_ID_LAYOUTS)[number]
 export interface ShowIdsSettings {
   search: IdsInSearch
   /** The ID after the page's title (On, the default). */
   title: boolean
   /** The ID at the right end of a page's row in the sidebar's files list (Off, the default). */
   files: IdsInFiles
+  /** The ID shown on open tabs in the tab strip (Off, the default). */
+  tabs: IdsInTabs
+  /** How a tab's ID sits with its title: inline before it (the default) or stacked above it. */
+  tabsLayout: TabIdLayout
 }
-export const DEFAULT_SHOW_IDS: ShowIdsSettings = { search: 'always', title: true, files: 'off' }
+export const DEFAULT_SHOW_IDS: ShowIdsSettings = { search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' }
 /** The keys this build's writer owns (YAZ-5483): every other key of the file is kept on a save. */
 export const SHOW_IDS_KEYS: readonly string[] = Object.keys(DEFAULT_SHOW_IDS)
 
 /**
  * What the file holds, or the default for anything else: an old file (`search` alone) reads as title On, files list
- * Off; round 2's boolean files list reads `true` as Number, `false` as Off.
+ * Off, tabs Off, tabsLayout Inline; round 2's boolean files list reads `true` as Number, `false` as Off.
  */
 export function sanitizeShowIds(raw: unknown): ShowIdsSettings {
-  const held = typeof raw === 'object' && raw !== null ? (raw as { search?: unknown; title?: unknown; files?: unknown }) : {}
-  return { search: held.search === 'match' ? 'match' : 'always', title: held.title !== false, files: held.files === true || held.files === 'number' ? 'number' : held.files === 'full' ? 'full' : 'off' }
+  const held = typeof raw === 'object' && raw !== null ? (raw as { search?: unknown; title?: unknown; files?: unknown; tabs?: unknown; tabsLayout?: unknown }) : {}
+  return {
+    search: held.search === 'match' ? 'match' : 'always',
+    title: held.title !== false,
+    files: held.files === true || held.files === 'number' ? 'number' : held.files === 'full' ? 'full' : 'off',
+    tabs: held.tabs === 'number' ? 'number' : held.tabs === 'full' ? 'full' : 'off',
+    tabsLayout: held.tabsLayout === 'stacked' ? 'stacked' : 'inline',
+  }
 }
 
 

@@ -9,12 +9,12 @@ type Kind = 'drawing' | 'diagram'
 export const readOnlyHint = (kind: Kind): Hint => `Stops edits to this ${kind}. The switch is saved in the file, so it goes where the file goes.`
 
 export const linkPreviewHint = (kind: Kind): Hint =>
-  `Rest the mouse on a link pill in this ${kind} to see the linked page. Settings › Files & Links › Preview on hover › Links in drawings and diagrams must be on too. Saved in this file.`
+  `Rest the mouse on a link pill in this ${kind} to see the linked page. Settings › Files › Preview on hover › Links in drawings and diagrams must be on too. Saved in this file.`
 
 export const foldArrowsHint = (appMode: string | undefined): Hint => ({
   lead: 'The arrows left of a bullet in a text box. A folded bullet always shows its arrow.',
   rows: [
-    ['App', `Follows Settings › Drawings and diagrams${appMode === undefined ? '' : ` (now ${appMode})`}`],
+    ['App', `Follows Settings › Drawings & diagrams${appMode === undefined ? '' : ` (now ${appMode})`}`],
     ['Hover', 'Arrows show on hover'],
     ['Always', 'Arrows always show'],
     ['Off', 'No folding: every line shows, the folds stay saved'],
@@ -25,7 +25,7 @@ export const foldArrowsHint = (appMode: string | undefined): Hint => ({
 export const hoverOutlineHint = (appMode: string | undefined): Hint => ({
   lead: 'A faint outline shows what a click will pick, while you hover.',
   rows: [
-    ['App', `Follows Settings › Drawings and diagrams${appMode === undefined ? '' : ` (now ${appMode})`}`],
+    ['App', `Follows Settings › Drawings & diagrams${appMode === undefined ? '' : ` (now ${appMode})`}`],
     ['On', 'The outline shows'],
     ['Off', 'No outline on hover'],
   ],
