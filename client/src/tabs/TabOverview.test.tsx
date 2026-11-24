@@ -30,6 +30,20 @@ vi.mock('../api', async (importOriginal) => ({
 // The sidebar's preview panels (D18: one preview look): stand-ins that say which file they show.
 vi.mock('../sidebar/PagePreview', () => ({ default: ({ name }: { name: string }) => <div className="page-preview" aria-label={`Preview of ${name}`} /> }))
 vi.mock('../sidebar/BoardPreview', () => ({ default: ({ node }: { node: { path: string } }) => <div className="board-preview" aria-label={`Preview of ${node.path}`} /> }))
+vi.mock('../sidebar/InlineHoverPreview', () => ({
+  default: ({ inlineRef, name, place, anchor, compact }: { inlineRef: { kind: string; page: string; index?: number }; name?: string; place?: string; anchor?: unknown; compact?: boolean }) => (
+    <div
+      className={anchor !== undefined ? 'inline-hover-preview' : 'inline-tile-preview'}
+      data-kind={inlineRef.kind}
+      data-page={inlineRef.page}
+      data-index={inlineRef.index === undefined ? '' : String(inlineRef.index)}
+      data-name={name ?? ''}
+      data-place={place ?? ''}
+      data-compact={String(compact === true)}
+      aria-label={`Inline preview of ${name || 'Untitled drawing'}`}
+    />
+  ),
+}))
 import { setStripTarget } from './stripDrop'
 import tabsCss from './tabs.css?inline'
 import { api } from '../api'
@@ -1930,5 +1944,97 @@ describe('tab sleep on the board (YAZ-3737 D11)', () => {
     expect([...el.querySelectorAll('.taboverview__asleep')].map((m) => m.closest<HTMLElement>('[data-tab]')!.dataset.tab)).toEqual(['/v/Projects/plan.md'])
     expect(page(el, '/v/Projects/plan.md')!.querySelector('.taboverview__title .taboverview__asleep')!.getAttribute('title')).toBe('Asleep to save memory. Click to wake it.')
     expect(page(el, '/v/Projects/plan.md')!.querySelector('.taboverview__title')!.textContent).toBe('plan')
+  })
+})
+
+describe('YAZ-6468: inline drawing tiles, hover preview, and Space preview on TabOverview', () => {
+  it('shows drawing title, Excalidraw icon, inline drawing tile preview, no bogus copy badge, and previews the inline drawing on hover and Space', async () => {
+    vi.useFakeTimers()
+    try {
+      fakeStorage()
+      readHeads.mockResolvedValue([{ path: '/v/Notes.md', mtime: 1, text: 'Parent markdown prose' }] as FileHead[])
+      const scope = () => ({
+        root: '/v',
+        wikilinks: {
+          resolve: null,
+          records: [{ path: '/v/Notes.md', title: 'Notes', inlineDrawings: [{ index: 0, title: 'Event Flow' }] }],
+          folders: [],
+          ids: false,
+          letters: [],
+          pills: { prefix: '', suffix: '', icon: true, color: null, border: false },
+          vault: null,
+          subscribe: () => () => undefined,
+        } as never,
+        textVars: {},
+      })
+      container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      await act(async () => {
+        root?.render(
+          <IdTabOverview
+            roots={['/v']}
+            vaultNames={['Vault']}
+            tabs={[
+              { id: 't-page', path: '/v/Notes.md' },
+              { id: 't-draw', path: '/v/Notes.md', inlineDrawing: 0 },
+            ]}
+            active="t-draw"
+            preview={null}
+            titles={new Map([['/v/Notes.md', 'Notes']])}
+            windowId="me"
+            hoverPreview
+            previewScope={scope}
+            onOpen={vi.fn()}
+            onCloseTabs={vi.fn()}
+            onDismiss={vi.fn()}
+            onMoveToNewWindowQuietly={vi.fn()}
+            onDropToWindow={vi.fn()}
+            onMoveTab={vi.fn()}
+            onMoveToSlot={vi.fn()}
+            onTakeAt={vi.fn()}
+          />,
+        )
+        await Promise.resolve()
+      })
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      const pageCard = page(container, 't-page')!
+      const drawCard = page(container, 't-draw')!
+      // Neither Page.md nor Page.md#drawing-0 gets badged as duplicates of each other.
+      expect(pageCard.querySelector('.taboverview__copy')).toBeNull()
+      expect(drawCard.querySelector('.taboverview__copy')).toBeNull()
+      // Inline drawing tile shows drawing title, Excalidraw icon, and inline drawing preview (not parent prose).
+      expect(drawCard.querySelector('.taboverview__title')?.textContent).toBe('Event Flow')
+      expect(drawCard.querySelector<HTMLElement>('.taboverview__title .file-icon')?.dataset.kind).toBe('drawing')
+      expect(drawCard.querySelector('.taboverview__lines')).toBeNull()
+      expect(drawCard.textContent).not.toContain('Parent markdown prose')
+      const tileShot = drawCard.querySelector<HTMLElement>('.inline-tile-preview')
+      expect(tileShot?.dataset).toMatchObject({ kind: 'drawing', page: '/v/Notes.md', index: '0', compact: 'true' })
+
+      // Hovering the inline drawing card opens the inline drawing hover preview, not PagePreview.
+      act(() => void drawCard.dispatchEvent(new MouseEvent('mousemove', { bubbles: true })))
+      await settled()
+      await act(async () => void vi.advanceTimersByTime(HOVER_PREVIEW_DWELL_MS))
+      await settled()
+      const hoverEl = document.body.querySelector<HTMLElement>('.inline-hover-preview')
+      expect(hoverEl).not.toBeNull()
+      expect(hoverEl?.dataset).toMatchObject({ kind: 'drawing', page: '/v/Notes.md', index: '0', name: 'Event Flow', place: 'Notes' })
+      expect(document.body.querySelector('.page-preview')).toBeNull()
+
+      // Leaving closes hover, then holding Space previews the inline drawing immediately.
+      act(() => void drawCard.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
+      expect(document.body.querySelector('.inline-hover-preview')).toBeNull()
+      const filter = container.querySelector<HTMLInputElement>('.taboverview__filter')!
+      act(() => void filter.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })))
+      await settled()
+      const spaceEl = document.body.querySelector<HTMLElement>('.inline-hover-preview')
+      expect(spaceEl).not.toBeNull()
+      expect(spaceEl?.dataset).toMatchObject({ kind: 'drawing', page: '/v/Notes.md', index: '0', name: 'Event Flow', place: 'Notes' })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

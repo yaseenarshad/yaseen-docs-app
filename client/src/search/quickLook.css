@@ -38,6 +38,16 @@
   white-space: nowrap;
 }
 
+.quicklook__place {
+  flex: 0 1 auto;
+  max-width: 40%;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The ✕ of a tab (`.tabbar__close`), at the size of a header. */
 .quicklook__close {
   flex: none;

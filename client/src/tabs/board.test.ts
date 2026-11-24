@@ -534,3 +534,25 @@ describe('withoutTitle', () => {
     expect(withoutTitle('', 'Weekly review')).toBe('')
   })
 })
+
+describe('YAZ-6468: copiesOf and buildBoard with inline drawings', () => {
+  it('separates page tabs from inline drawing tabs in copy counts and preserves inlineDrawing/inlineTitle on BoardPage', () => {
+    const tabs = [
+      { id: 't-page', path: '/v/Notes.md' },
+      { id: 't-d0a', path: '/v/Notes.md', inlineDrawing: 0, inlineTitle: 'Architecture' },
+      { id: 't-d0b', path: '/v/Notes.md', inlineDrawing: 0, inlineTitle: 'Architecture' },
+      { id: 't-d1', path: '/v/Notes.md', inlineDrawing: 1 },
+    ]
+    const vaults = buildBoard(tabs, ['/v'], ['Vault'], () => 'Notes')
+    const pages = vaults[0].islands[0].pages
+    expect(pages.map((p) => ({ id: p.id, label: p.label, copy: p.copy, copies: p.copies, inlineDrawing: p.inlineDrawing }))).toEqual([
+      { id: 't-page', label: 'Notes', copy: 0, copies: 1, inlineDrawing: undefined },
+      { id: 't-d0a', label: 'Architecture', copy: 0, copies: 2, inlineDrawing: 0 },
+      { id: 't-d0b', label: 'Architecture', copy: 1, copies: 2, inlineDrawing: 0 },
+      { id: 't-d1', label: 'Notes · Drawing', copy: 0, copies: 1, inlineDrawing: 1 },
+    ])
+    // Filter matches both the inline drawing title and the parent page name.
+    expect(buildBoard(tabs, ['/v'], ['Vault'], () => 'Notes', ['arch'])[0].islands[0].pages.map((p) => p.id)).toEqual(['t-d0a', 't-d0b'])
+    expect(buildBoard(tabs, ['/v'], ['Vault'], () => 'Notes', ['notes'])[0].islands[0].pages.map((p) => p.id)).toEqual(['t-page', 't-d0a', 't-d0b', 't-d1'])
+  })
+})

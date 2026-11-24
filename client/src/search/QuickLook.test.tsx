@@ -56,6 +56,23 @@ vi.mock('../viewers/ImageViewer', () => ({ ImageViewer: viewer('image') }))
 vi.mock('../viewers/PdfViewer', () => ({ PdfViewer: viewer('pdf') }))
 /** The board picture (YAZ-3044 A22), stood in: it says what it was handed. */
 vi.mock('./QuickLookBoard', () => ({ default: (props: { root: string; path: string; darkColors: string }) => <div data-board={props.path} data-root={props.root} data-dark={props.darkColors} /> }))
+/** The lazy inline preview (YAZ-6468), stood in: reports the ref and compact/place props it was handed. */
+vi.mock('../sidebar/InlineHoverPreview', () => ({
+  default: (props: { inlineRef: { kind: string; page: string; id?: string; index?: number }; name?: string; place?: string; root?: string; compact?: boolean; anchor?: unknown; diagramDarkColors?: string }) => (
+    <div
+      data-inline-kind={props.inlineRef.kind}
+      data-inline-page={props.inlineRef.page}
+      data-inline-id={props.inlineRef.id ?? ''}
+      data-inline-index={props.inlineRef.index === undefined ? '' : String(props.inlineRef.index)}
+      data-inline-name={props.name ?? ''}
+      data-inline-place={props.place ?? ''}
+      data-inline-root={props.root ?? ''}
+      data-inline-compact={String(props.compact === true)}
+      data-inline-anchored={String(props.anchor !== undefined)}
+      data-inline-dark={props.diagramDarkColors ?? ''}
+    />
+  ),
+}))
 
 const PAGE = '---\ntitle: Plan\n---\n\n# Hello\n\nthe body\n'
 const BODY = '\n# Hello\n\nthe body\n'
@@ -230,5 +247,77 @@ describe('the preview panel of the search (YAZ-2662 D5)', () => {
     document.body.appendChild(page)
     expect(focusOpenDocument()).toBe(true)
     expect(document.activeElement).toBe(page.firstElementChild)
+  })
+
+  it('YAZ-6468: inline card and inline drawing paths render lazy InlineRefPreview inline with clean title and parent page place', async () => {
+    const indexed = createWikilinkResolveSource()
+    indexed.update(
+      () => null,
+      [
+        {
+          path: '/v/Notes.md',
+          name: 'Notes.md',
+          basename: 'Notes',
+          title: 'Project Notes',
+          folder: '',
+          ext: 'md',
+          size: 10,
+          mtime: 1,
+          tags: [],
+          links: [],
+          embeds: [],
+          aliases: [],
+          properties: {},
+          cards: [{ id: 'WIKI-9', title: 'CAP theorem', off: false }],
+          inlineDrawings: [{ index: 0, title: 'Data Flow' }],
+        } as never,
+      ],
+      [],
+      true,
+      ['WIKI'],
+    )
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+
+    // Inline card (with raw synthetic title as App's nameOf currently produces)
+    await act(async () => {
+      root?.render(<QuickLook path="/v/Notes.md#WIKI-9" title="Notes.md#WIKI-9" watch={watch} wikilinks={indexed} root="/v" darkColors="keep" onClose={vi.fn()} />)
+    })
+    await act(async () => new Promise((r) => setTimeout(r, 0)))
+    expect(container.querySelector('.quicklook__title')?.textContent).toBe('CAP theorem')
+    expect(container.querySelector('.quicklook__place')?.textContent).toBe('Project Notes')
+    const cardEl = container.querySelector<HTMLElement>('[data-inline-kind]')!
+    expect(cardEl.dataset).toMatchObject({
+      inlineKind: 'card',
+      inlinePage: '/v/Notes.md',
+      inlineId: 'WIKI-9',
+      inlineName: 'CAP theorem',
+      inlinePlace: 'Project Notes',
+      inlineRoot: '/v',
+      inlineCompact: 'true',
+      inlineAnchored: 'false',
+      inlineDark: 'keep',
+    })
+
+    // Inline drawing
+    await act(async () => {
+      root?.render(<QuickLook path="/v/Notes.md#drawing-0" title="Notes.md#drawing-0" watch={watch} wikilinks={indexed} root="/v" darkColors="adapt" onClose={vi.fn()} />)
+    })
+    await act(async () => new Promise((r) => setTimeout(r, 0)))
+    expect(container.querySelector('.quicklook__title')?.textContent).toBe('Data Flow')
+    expect(container.querySelector('.quicklook__place')?.textContent).toBe('Project Notes')
+    const drawEl = container.querySelector<HTMLElement>('[data-inline-kind]')!
+    expect(drawEl.dataset).toMatchObject({
+      inlineKind: 'drawing',
+      inlinePage: '/v/Notes.md',
+      inlineIndex: '0',
+      inlineName: 'Data Flow',
+      inlinePlace: 'Project Notes',
+      inlineCompact: 'true',
+      inlineAnchored: 'false',
+    })
+    expect(readFile).not.toHaveBeenCalled()
+    expect(crepes).toEqual([])
   })
 })

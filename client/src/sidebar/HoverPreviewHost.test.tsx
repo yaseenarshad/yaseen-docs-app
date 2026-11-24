@@ -14,7 +14,12 @@ vi.mock('../api', async (original) => ({
 }))
 
 /** The lazy panel, stood in: it reports the cache key the host handed it. */
-const panel = vi.hoisted(() => ({ keys: [] as string[], pages: [] as { path: string; size: unknown }[], code: [] as string[] }))
+const panel = vi.hoisted(() => ({
+  keys: [] as string[],
+  pages: [] as { path: string; size: unknown }[],
+  code: [] as string[],
+  inline: [] as { inlineRef: unknown; root?: string; place?: string; name?: string; dark?: boolean; diagramDarkColors?: string }[],
+}))
 vi.mock('./BoardPreview', () => ({
   default: ({ cacheKey }: { cacheKey: string }) => {
     panel.keys.push(cacheKey)
@@ -34,6 +39,21 @@ vi.mock('../code/CodeHoverPreview', () => ({
   default: ({ path }: { path: string }) => {
     panel.code.push(path)
     return <div className="fake-code-preview" />
+  },
+}))
+
+/** The lazy inline preview (YAZ-6468), stood in: reports the ref and parent page props handed by the host. */
+vi.mock('./InlineHoverPreview', () => ({
+  default: (props: { inlineRef: unknown; root?: string; place?: string; name?: string; dark?: boolean; diagramDarkColors?: string }) => {
+    panel.inline.push({
+      inlineRef: props.inlineRef,
+      root: props.root,
+      place: props.place,
+      name: props.name,
+      dark: props.dark,
+      diagramDarkColors: props.diagramDarkColors,
+    })
+    return <div className="fake-inline-preview" />
   },
 }))
 
@@ -216,5 +236,74 @@ describe('HoverPreviewHost', () => {
     expect(api.boardHead).not.toHaveBeenCalled()
     expect(listeners.size).toBe(0)
     expect(panel.keys).toEqual([])
+  })
+
+  it('YAZ-6468: an inline card or inline drawing ref resolves its parent page in forest and renders lazy InlineRefPreview with root, place, wikilinks, diagramDarkColors, and dark', async () => {
+    panel.inline = []
+    const parent: TreeNode = { type: 'file', name: 'Plan.md', path: '/v/Plan.md', size: 10, mtime: 1000, kind: 'markdown' }
+    const onClose = vi.fn()
+    for (const refPath of ['/v/Plan.md#WIKI-12', '/v/Plan.md#drawing-2']) {
+      const hover = createStore<HoverState>({ path: refPath, shown: true })
+      await act(async () => {
+        root?.render(
+          <HoverPreviewHost
+            hover={hover}
+            forest={[parent]}
+            rootOf={() => '/v'}
+            watchOf={() => watch}
+            wikilinksOf={() => wikilinks}
+            nameOf={(p) => (p === '/v/Plan.md' ? 'Annual Plan' : p)}
+            textVarsOf={() => ({ '--text-size': '16px' }) as never}
+            enabled
+            diagramDarkColors="keep"
+            anchor={createRef<HTMLElement>()}
+            onClose={onClose}
+          />,
+        )
+      })
+      for (let i = 0; i < 3; i++) await act(async () => new Promise((r) => setTimeout(r, 0)))
+    }
+    expect(onClose).not.toHaveBeenCalled()
+    expect(api.boardHead).not.toHaveBeenCalled()
+    expect(panel.inline).toEqual([
+      { inlineRef: { kind: 'card', page: '/v/Plan.md', id: 'WIKI-12' }, root: '/v', place: 'Annual Plan', name: undefined, dark: false, diagramDarkColors: 'keep' },
+      { inlineRef: { kind: 'drawing', page: '/v/Plan.md', index: 2 }, root: '/v', place: 'Annual Plan', name: undefined, dark: false, diagramDarkColors: 'keep' },
+    ])
+
+    // When the parent page is gone from forest, HoverPreviewHost closes cleanly.
+    const hoverMissing = createStore<HoverState>({ path: '/v/Gone.md#drawing-0', shown: true })
+    await act(async () => {
+      root?.render(
+        <HoverPreviewHost
+          hover={hoverMissing}
+          forest={[parent]}
+          rootOf={() => '/v'}
+          wikilinksOf={() => wikilinks}
+          nameOf={(p) => p}
+          textVarsOf={() => ({}) as never}
+          enabled
+          diagramDarkColors="adapt"
+          anchor={createRef<HTMLElement>()}
+          onClose={onClose}
+        />,
+      )
+    })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('YAZ-6468: inline refs in useHoverPreview', () => {
+  it('inline card and inline drawing refs dwell 400 ms and show, while non-markdown # refs do not', () => {
+    render()
+    act(() => hook.hoverFile({ path: '/v/clip.mp4#drawing-0' }))
+    wait(HOVER_PREVIEW_DWELL_MS)
+    expect(state()).toEqual({ path: null, shown: false })
+    for (const path of ['/v/Notes.md#WIKI-1', '/v/Notes.md#drawing-0']) {
+      act(() => hook.hoverFile({ path }))
+      wait(HOVER_PREVIEW_DWELL_MS - 1)
+      expect(state()).toEqual({ path, shown: false })
+      wait(1)
+      expect(state()).toEqual({ path, shown: true })
+    }
   })
 })

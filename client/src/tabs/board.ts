@@ -10,10 +10,10 @@
  */
 import { canvasCardKey, rootOfPath, stripSlash, type CanvasCard, type CanvasFrame, type CanvasLayout, type TabCanvasPatch, type TabRef } from '@shared/types'
 import { dirname, relTo } from '../lib/paths'
-import { copiesOf } from './copies'
+import { copiesOf, copyKey } from './copies'
 
 // The strip counts its copies with the same function, from its own small module, so the eager bundle does not take this one (YAZ-4156 3F1).
-export { copiesOf }
+export { copiesOf, copyKey }
 
 /**
  * Every length is in px at zoom 1. A page is a short, wide CARD (D15): its title, a "Page: …" line when named, and
@@ -54,15 +54,19 @@ export interface BoardPage {
   /** This window's tab id, or for another window's tab `${win}\n${path}\n${copy}` (YAZ-3343 D2): never the same as a tab id. */
   id: string
   path: string
-  /** What the page shows: the tab's display name, else its page name (YAZ-2949 D5). */
+  /** What the page shows: the tab's display name, else its page name (YAZ-2949 D5) or inline drawing title (YAZ-6468). */
   label: string
   /** The tab has a display name (YAZ-2949): its menu offers "Reset to page name", and its card says "Page: …" under it (YAZ-3343 D11). */
   named: boolean
   /** The page's own name, whatever the tab is called. */
   page: string
-  /** Which tab of its path it is in its window's strip, 0 first (YAZ-3343 D1), and how many tabs of the path the window has (D11). */
+  /** Which tab of its copy key it is in its window's strip, 0 first (YAZ-3343 D1), and how many tabs of that key the window has (D11). */
   copy: number
   copies: number
+  /** 0-based index of an inline Excalidraw drawing block in `path` (YAZ-6468). */
+  inlineDrawing?: number
+  /** Resolved title of the inline drawing (from live event or vault index), if known (YAZ-6468). */
+  inlineTitle?: string
 }
 
 /** A tab as the board takes it: this window's (`Tab`) or another window's, from its stored strip. */
@@ -70,6 +74,10 @@ export interface BoardTab {
   id: string
   path: string
   name?: string
+  /** 0-based index of an inline Excalidraw drawing block in `path` (YAZ-6468). */
+  inlineDrawing?: number
+  /** Resolved title of the inline drawing (from live event or vault index), if known (YAZ-6468). */
+  inlineTitle?: string
 }
 
 export interface Island {
@@ -92,7 +100,7 @@ export interface VaultIslands {
 
 /** Each tab's ref in its window (YAZ-3343 D1): its path and its copy number, in strip order. */
 export function refsOf(tabs: readonly { path: string }[]): TabRef[] {
-  const { copy } = copiesOf(tabs)
+  const { copy } = copiesOf(tabs.map(({ path }) => ({ path })))
   return tabs.map(({ path }, i) => ({ path, copy: copy[i] }))
 }
 
@@ -106,12 +114,13 @@ export function refsOf(tabs: readonly { path: string }[]): TabRef[] {
 export function buildBoard(tabs: readonly BoardTab[], roots: readonly string[], vaultNames: readonly string[], labelOf: (path: string) => string, terms: readonly string[] = []): VaultIslands[] {
   const vaults = new Map<number, Map<string, Island>>()
   const { copy, count } = copiesOf(tabs)
-  tabs.forEach(({ id, path, name }, i) => {
+  tabs.forEach(({ id, path, name, inlineDrawing, inlineTitle }, i) => {
     const root = rootOfPath(roots, path)
     // A display name (YAZ-2949 D5) is the page's label; the filter still finds the page by its own name (S13).
     const page = labelOf(path)
-    const label = name ?? page
-    const hay = `${label}\n${name === undefined ? '' : `${page}\n`}${root === null ? path : relTo(root, path)}`.toLowerCase()
+    const defaultLabel = inlineDrawing !== undefined ? (inlineTitle !== undefined && inlineTitle !== '' ? inlineTitle : `${page} · Drawing`) : page
+    const label = name ?? defaultLabel
+    const hay = `${label}\n${label === page ? '' : `${page}\n`}${root === null ? path : relTo(root, path)}`.toLowerCase()
     if (!terms.every((term) => hay.includes(term))) return
     const at = root === null ? roots.length : roots.indexOf(root)
     const dir = dirname(path)
@@ -120,7 +129,17 @@ export function buildBoard(tabs: readonly BoardTab[], roots: readonly string[], 
     vaults.set(at, islands)
     const island = islands.get(dir) ?? { dir, top, label: root === null ? dir : top ? (vaultNames[at] ?? '') : relTo(root, dir).split('/').join(' / '), pages: [] }
     islands.set(dir, island)
-    island.pages.push({ id, path, label, named: name !== undefined, page, copy: copy[i], copies: count.get(path) ?? 1 })
+    island.pages.push({
+      id,
+      path,
+      label,
+      named: name !== undefined,
+      page,
+      copy: copy[i],
+      copies: count.get(copyKey({ path, inlineDrawing })) ?? 1,
+      ...(inlineDrawing === undefined ? {} : { inlineDrawing }),
+      ...(inlineTitle === undefined || inlineTitle === '' ? {} : { inlineTitle }),
+    })
   })
   return [...vaults]
     .sort(([a], [b]) => a - b)
