@@ -16,9 +16,10 @@ import { DEFAULT_SHOW_IDS, SHOW_IDS_FILE, SHOW_IDS_KEYS, idInFiles, sanitizeShow
 import { api } from '../api'
 import { pathInfo } from '../editor/wikilink/linkPillLook'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { dirname } from '../lib/paths'
 import type { IndexRecord } from '@shared/types'
 
-export { DEFAULT_SHOW_IDS, SHOW_IDS_FILE, sanitizeShowIds, type IdsInFiles, type IdsInSearch, type ShowIdsSettings } from '@shared/showIds'
+export { DEFAULT_SHOW_IDS, IDS_IN_TABS, SHOW_IDS_FILE, TAB_ID_LAYOUTS, sanitizeShowIds, type IdsInFiles, type IdsInSearch, type IdsInTabs, type ShowIdsSettings, type TabIdLayout } from '@shared/showIds'
 
 export interface ShowIdsState {
   settings: ShowIdsSettings
@@ -107,10 +108,12 @@ function cardFileIds(records: readonly IndexRecord[]): ReadonlyMap<string, strin
 /** Every page's ID by its absolute path (YAZ-4940 "In the files list"), as its vault chose to show it ("#12" or "EMB-12"). */
 export type PathIds = ReadonlyMap<string, string>
 
-/** A vault that chose the files list: its index, and the form its rows show. */
+/** A vault that chose the files list or tabs: its index, the form its rows show, and whether to include folder pages. */
 export interface PathIdsSource {
   index: WikilinkResolveSource
   form: Exclude<IdsInFiles, 'off'>
+  /** When true (used by open tabs), also include folder pages keyed by `dirname(folder.path)`. */
+  includeFolders?: boolean
 }
 
 const NO_IDS: PathIds = new Map()
@@ -123,9 +126,10 @@ function sameIds(prev: PathIds, next: Map<string, string>): boolean {
 
 /**
  * One `PathIds` over the index of each vault in `sources`, live, each in its vault's form: the sidebar's files list
- * draws each page's ID from it. Empty `sources` (no vault chose the files list): `undefined`, and no index is read or
- * subscribed to. Built once per snapshot or change of form, off `pathInfo`'s cached map (and a card file's card ID,
- * YAZ-5546); a build that changed no shown ID keeps the Map it had.
+ * draws each page's ID from it, and the tab bar draws open tabs' IDs from it (with `includeFolders: true`). Empty
+ * `sources` (no vault chose the option): `undefined`, and no index is read or subscribed to. Built once per snapshot
+ * or change of form, off `pathInfo`'s cached map (and a card file's card ID, YAZ-5546, plus folder IDs when requested);
+ * a build that changed no shown ID keeps the Map it had.
  */
 export function useAllPathIds(sources: readonly PathIdsSource[]): PathIds | undefined {
   const subscribe = useCallback(
@@ -138,7 +142,7 @@ export function useAllPathIds(sources: readonly PathIdsSource[]): PathIds | unde
   const held = useRef<{ infos: readonly unknown[]; forms: string; ids: PathIds }>({ infos: [], forms: '', ids: NO_IDS })
   const ids = useSyncExternalStore(subscribe, () => {
     const infos = sources.map((source) => pathInfo(source.index.records, source.index.folders))
-    const forms = sources.map((source) => source.form).join()
+    const forms = sources.map((source) => `${source.form}:${source.includeFolders === true ? '1' : '0'}`).join()
     const last = held.current
     if (forms === last.forms && infos.length === last.infos.length && infos.every((info, i) => info === last.infos[i])) return last.ids
     const built = new Map<string, string>()
@@ -147,6 +151,12 @@ export function useAllPathIds(sources: readonly PathIdsSource[]): PathIds | unde
       for (const [path, { id }] of info) if (id !== undefined) built.set(path, idInFiles(id, form))
       // A card file's ID, its card's (YAZ-5546): not on its record nor in `pathInfo` (see `cardFileIds`).
       for (const [path, id] of cardFileIds(sources[i].index.records)) built.set(path, idInFiles(id, form))
+      // Folder page IDs (YAZ-6464): only when requested (open tabs); sidebar files list keeps folder rows without IDs.
+      if (sources[i].includeFolders === true) {
+        for (const folder of sources[i].index.folders) {
+          if (folder.id !== undefined) built.set(dirname(folder.path), idInFiles(folder.id, form))
+        }
+      }
     })
     held.current = { infos, forms, ids: sameIds(last.ids, built) ? last.ids : built }
     return held.current.ids

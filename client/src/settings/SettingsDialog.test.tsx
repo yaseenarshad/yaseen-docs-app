@@ -145,7 +145,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
 const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'vaultOpensOn']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
-const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'exploreWidth', 'explorePageZoom', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'tabWidth', 'exploreWidth', 'explorePageZoom', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
 /** The icon colour rows (YAZ-3440 D4, YAZ-5100 round 2), by kind. */
 const colourRows = (...kinds: string[]) => kinds.map((kind) => `sidebarIconColors.${kind}`)
@@ -429,7 +429,8 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     // Appearance with no vault: Spacing, Comments (the sidebar's groups have their own page since YAZ-3440 D7). draw.io
     // diagrams (YAZ-3037) is on "Drawings and diagrams" since YAZ-4748 D11. Text formatting needs a vault (YAZ-3068).
     // YAZ-5977: the Explore group (its own box, with its hint) after the first rows.
-    expect(groupTitles(el)).toEqual(['Explore', 'Spacing', 'Comments'])
+    // YAZ-6464: the Tabs group (Tab width) sits before Explore.
+    expect(groupTitles(el)).toEqual(['Tabs', 'Explore', 'Spacing', 'Comments'])
     expect(hints()).toEqual(['The search and its windows, on this Mac'])
     expect(row(el, 'commentsOrder')?.querySelector('.setting__label')?.textContent).toBe('Order')
     expect(row(el, 'commentsOrder')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Comments')
@@ -1306,7 +1307,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
 
     it('one vault: the group "Text formatting" after Spacing, its hint, one bare row (no label on screen, no gap) and no dropdown; a Text line, then H1 to H6 at their rounded default sizes', () => {
       const { el } = mountTf([vaultOf('/pages', 'Pages')])
-      expect(groupTitles(el)).toEqual(['Explore', 'Spacing', 'Text formatting', 'Comments'])
+      expect(groupTitles(el)).toEqual(['Tabs', 'Explore', 'Spacing', 'Text formatting', 'Comments'])
       const group = tf(el).closest('.settings-group') as HTMLElement
       expect(group.querySelector('.settings-group__hint')?.textContent).toBe(TEXT_FORMATTING_HINT)
       // No "Vault: name" line: the dropdown replaces it (D15), and with one vault there is none.
@@ -2943,50 +2944,96 @@ describe('This vault › Read only (YAZ-4939)', () => {
   })
 })
 
-describe('SettingsDialog: Show IDs (YAZ-4940), three rows in one block under "This vault"', () => {
-  const SHOW_IDS: ShowIdsSettings = { search: 'always', title: true, files: 'off' }
+describe('SettingsDialog: Show IDs (YAZ-4940, YAZ-6464), rows in one block under "This vault"', () => {
+  const SHOW_IDS: ShowIdsSettings = { search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' }
   const withShowIds = (idsOn: boolean, showIds: ShowIdsSettings = SHOW_IDS) => mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: idsOn, held: idsOn }, undefined, undefined, showIds)
   const pressed = (el: HTMLElement, id: string) => rowButtons(el, id).map((b) => b.getAttribute('aria-pressed'))
 
-  it('in a vault with IDs: "in search", "in the title" and "in the files list", one after the other, under "This vault"; each shows the vault\'s choice', () => {
+  it('in a vault with IDs: "in search", "in the title", "in the files list", and "in tabs", one after the other, under "This vault"; Tab ID layout stays hidden while tabs is off', () => {
     const { el } = withShowIds(true)
     const ids = rowIds(el)
     const at = ids.indexOf('showIds')
-    expect(ids.slice(at, at + 3)).toEqual(['showIds', 'showIds.title', 'showIds.files'])
+    expect(ids.slice(at, at + 4)).toEqual(['showIds', 'showIds.title', 'showIds.files', 'showIds.tabs'])
+    expect(row(el, 'showIds.tabsLayout')).toBeNull()
     expect(row(el, 'showIds.title')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('This vault')
     expect(row(el, 'showIds.title')?.querySelector('.setting__label')?.textContent).toBe('Show IDs in the title')
     expect(row(el, 'showIds.files')?.querySelector('.setting__label')?.textContent).toBe('Show IDs in the files list')
+    expect(row(el, 'showIds.tabs')?.querySelector('.setting__label')?.textContent).toBe('Show IDs in tabs')
     expect(rowButtons(el, 'showIds.title').map((b) => b.textContent)).toEqual(['On', 'Off'])
     expect(pressed(el, 'showIds.title')).toEqual(['true', 'false'])
     expect(rowButtons(el, 'showIds.files').map((b) => b.textContent)).toEqual(['Off', 'Number (#12)', 'Full ID (EMB-12)'])
     expect(pressed(el, 'showIds.files')).toEqual(['true', 'false', 'false'])
+    expect(rowButtons(el, 'showIds.tabs').map((b) => b.textContent)).toEqual(['Off', 'Number (#12)', 'Full ID (EMB-12)'])
+    expect(pressed(el, 'showIds.tabs')).toEqual(['true', 'false', 'false'])
   })
 
   it('"in the files list" shows the vault\'s choice of three, and each saves its own', () => {
     const { el, saveShowIds } = withShowIds(true, { ...SHOW_IDS, files: 'number' })
     expect(pressed(el, 'showIds.files')).toEqual(['false', 'true', 'false'])
     act(() => rowButtons(el, 'showIds.files')[2].click())
-    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'full' })
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'full', tabs: 'off', tabsLayout: 'inline' })
     act(() => rowButtons(el, 'showIds.files')[0].click())
-    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'off' })
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
   })
 
-  it('a click saves the one choice with the other two as they are', () => {
+  it('"in tabs" and "Tab ID layout" (YAZ-6464): Tab ID layout shows only when tabs !== off, and both save cleanly', () => {
+    const { el, saveShowIds } = withShowIds(true, { ...SHOW_IDS, tabs: 'number', tabsLayout: 'inline' })
+    const ids = rowIds(el)
+    const at = ids.indexOf('showIds')
+    expect(ids.slice(at, at + 5)).toEqual(['showIds', 'showIds.title', 'showIds.files', 'showIds.tabs', 'showIds.tabsLayout'])
+    expect(row(el, 'showIds.tabsLayout')?.querySelector('.setting__label')?.textContent).toBe('Tab ID layout')
+    expect(rowButtons(el, 'showIds.tabsLayout').map((b) => b.textContent)).toEqual(['Inline', 'Two lines'])
+    expect(pressed(el, 'showIds.tabs')).toEqual(['false', 'true', 'false'])
+    expect(pressed(el, 'showIds.tabsLayout')).toEqual(['true', 'false'])
+    act(() => rowButtons(el, 'showIds.tabsLayout')[1].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'off', tabs: 'number', tabsLayout: 'stacked' })
+    act(() => rowButtons(el, 'showIds.tabs')[2].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'off', tabs: 'full', tabsLayout: 'inline' })
+  })
+
+  it('a click saves the one choice with the others as they are', () => {
     const { el, saveShowIds } = withShowIds(true)
     act(() => rowButtons(el, 'showIds.title')[1].click())
-    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: false, files: 'off' })
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: false, files: 'off', tabs: 'off', tabsLayout: 'inline' })
     act(() => rowButtons(el, 'showIds.files')[1].click())
-    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'number' })
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'number', tabs: 'off', tabsLayout: 'inline' })
     act(() => rowButtons(el, 'showIds')[1].click())
-    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'match', title: true, files: 'off' })
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'match', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
   })
 
-  it('in a vault without IDs, or with no vault open, none of the three rows shows', () => {
+  it('in a vault without IDs, or with no vault open, none of the Show IDs rows shows', () => {
     const { el } = withShowIds(false)
     expect(rowIds(el).filter((id) => id?.startsWith('showIds'))).toEqual([])
     unmount()
     const none = mountOn('Files & Links')
     expect(rowIds(none.el).filter((id) => id?.startsWith('showIds'))).toEqual([])
+  })
+})
+
+describe('SettingsDialog: Appearance › Tabs › Tab width (YAZ-6464)', () => {
+  const pressed = (el: HTMLElement, id: string) => rowButtons(el, id).map((b) => b.getAttribute('aria-pressed'))
+
+  it('shows Compact, Default, Wide, Custom; Custom opens a 120–400 px box starting at 240', () => {
+    const { el, onChange } = mountOn('Appearance', { ...DEFAULT_SETTINGS, tabWidth: 'default' })
+    expect(row(el, 'tabWidth')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Tabs')
+    expect(row(el, 'tabWidth')?.querySelector('.setting__label')?.textContent).toBe('Tab width')
+    expect(rowButtons(el, 'tabWidth').map((b) => b.textContent)).toEqual(['Compact', 'Default', 'Wide', 'Custom'])
+    expect(pressed(el, 'tabWidth')).toEqual(['false', 'true', 'false', 'false'])
+    expect(row(el, 'tabWidth')?.querySelector('input[aria-label="Tab width in px"]')).toBeNull()
+
+    act(() => rowButtons(el, 'tabWidth')[0].click())
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ tabWidth: 'compact' }))
+    act(() => rowButtons(el, 'tabWidth')[2].click())
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ tabWidth: 'wide' }))
+    act(() => rowButtons(el, 'tabWidth')[3].click())
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ tabWidth: 240 }))
+
+    unmount()
+    const custom = mountOn('Appearance', { ...DEFAULT_SETTINGS, tabWidth: 260 })
+    expect(pressed(custom.el, 'tabWidth')).toEqual(['false', 'false', 'false', 'true'])
+    const input = row(custom.el, 'tabWidth')?.querySelector<HTMLInputElement>('input[aria-label="Tab width in px"]')
+    expect(input?.value).toBe('260')
+    expect(input?.inputMode).toBe('numeric')
   })
 })
 
