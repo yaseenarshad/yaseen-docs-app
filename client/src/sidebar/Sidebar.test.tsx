@@ -12766,21 +12766,95 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     await wait(50)
     const inlineRow = [...m.el.querySelectorAll<HTMLButtonElement>('.tree__row--card')].find((b) => b.textContent?.includes('Architecture'))
     expect(inlineRow).toBeDefined()
+    expect(inlineRow!.dataset.path).toBe('/v/Plan.md#drawing-0')
+    expect(inlineRow!.title).toBe('Architecture — /v/Plan.md')
     expect(inlineRow!.querySelector('.file-icon')?.getAttribute('data-kind')).toBe('drawing')
     expect(inlineRow!.querySelector('.card-icon')).toBeNull()
     act(() => inlineRow!.click())
     expect(onOpenInlineDrawingTab).toHaveBeenCalledWith('/v/Plan.md', 0, false)
     act(() => inlineRow!.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
     expect(onOpenInlineDrawingTab).toHaveBeenLastCalledWith('/v/Plan.md', 0, true)
-    // Right-clicking the inline drawing opens its context menu; "Show in page" opens the page and schedules landing.
+    // Double-clicking an inline drawing row does not keep the parent markdown file
+    act(() => inlineRow!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    expect(m.props.onKeepFile).not.toHaveBeenCalled()
+    // Right-clicking the inline drawing highlights it and opens its full parity context menu; "Show in page" opens the page and schedules landing.
     act(() => inlineRow!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 })))
-    expect(items(m.el)).toEqual(['Open in new tab', 'Show in page'])
+    expect(inlineRow!.classList.contains('tree__row--selected')).toBe(true)
+    expect(items(m.el)).toEqual(['Show in page', 'Open in new tab', 'Show in sidebar', 'Copy path⌘⇧C', 'Open in'])
     act(() => itemByLabel(m.el, 'Show in page')?.click())
     expect(m.props.onOpenFile).toHaveBeenCalledWith('/v/Plan.md')
     expect(takeInlineDrawingLanding('/v/Plan.md', 0)).toBe(true)
     // Respects settings.searchIncludeInline = false
     await m.rerender({ settings: { ...DEFAULT_SETTINGS, ...NAME, rowDates: { ...DEFAULT_ROW_DATES, search: false }, searchIncludeInline: false } })
     expect(m.el.querySelectorAll('.tree__row--card')).toHaveLength(0)
+  })
+
+  it('YAZ-6469: inline card rows support data-path, tooltip with parent page, double-click keep, ⇧⌘-click new window, hover suppression on menu open, and ⌘⇧C copy path', async () => {
+    storage.mirrorRoots(['/v'])
+    const clipDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const rec: IndexRecord = {
+      ...indexRecord('/v/Geography.md'),
+      cards: [{ id: 'GEO-140', title: 'Capital of France', off: false, next: false, reviews: [] }],
+    }
+    const m = await mount(
+      {
+        lens: 'search',
+        settings: { ...DEFAULT_SETTINGS, ...NAME, rowDates: { ...DEFAULT_ROW_DATES, search: false } },
+      },
+      (b) => {
+        Object.assign(b, { vaultConfig: { read: vi.fn(async () => ({ enabled: true })), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) } })
+        b.tree.mockResolvedValue({ root: '/v', tree: [page('/v/Geography.md', NOW - 60_000)], generatedAt: 1 })
+        b.index.mockResolvedValue({ root: '/v', records: [rec], folders: [], generatedAt: 1, ids: true, letters: ['GEO'] } as never)
+        b.readFile.mockResolvedValue({
+          path: '/v/Geography.md',
+          content: '---\ntitle: Geography\n---\n```card\nParis\n```\n<!-- card: GEO-140 -->\n',
+          mtime: 1,
+          size: 1,
+        })
+      },
+    )
+    function Scope() {
+      useReviewSettings('/v', () => undefined)
+      return null
+    }
+    const probe = createRoot(document.createElement('div'))
+    await act(async () => probe.render(<Scope />))
+    try {
+      await type(searchBar(m.el)!, 'Capital')
+      const cardBtn = [...m.el.querySelectorAll<HTMLButtonElement>('.tree__row--card')].find((b) => b.textContent?.includes('Capital of France'))
+      expect(cardBtn).toBeDefined()
+      expect(cardBtn!.dataset.path).toBe('/v/Geography.md#GEO-140')
+      expect(cardBtn!.title).toBe('Capital of France — /v/Geography.md')
+
+      // Double-click keeps the parent page tab and schedules card landing
+      act(() => cardBtn!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+      expect(m.props.onKeepFile).toHaveBeenCalledWith('/v/Geography.md')
+      expect(takeCardLanding('/v/Geography.md', 'GEO-140')).toBe(true)
+
+      // ⇧⌘-click opens parent page in a new window and schedules card landing (without calling onOpenFile)
+      vi.mocked(m.props.onOpenFile).mockClear()
+      act(() => cardBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true, shiftKey: true })))
+      expect(m.bridge.window.open).toHaveBeenCalledWith({ root: '/v', file: '/v/Geography.md' })
+      expect(takeCardLanding('/v/Geography.md', 'GEO-140')).toBe(true)
+      expect(m.props.onOpenFile).not.toHaveBeenCalled()
+
+      // Right-click opens full card parity menu and highlights the row
+      act(() => cardBtn!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 })))
+      expect(cardBtn!.classList.contains('tree__row--selected')).toBe(true)
+      expect(items(m.el)).toEqual(['Show in page', 'Open in new tab', 'Open in Explore', 'Show in sidebar', 'Copy path⌘⇧C', 'Copy card IDGEO-140', 'Copy card link', 'Open in'])
+
+      // Close menu and press ⌘⇧C in search input to copy canonical <page>:<line>
+      act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+      act(() => void searchBar(m.el)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'C', code: 'KeyC', metaKey: true, shiftKey: true, bubbles: true, cancelable: true })))
+      await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('/v/Geography.md:4'))
+      expect(m.props.onNotice).toHaveBeenCalledWith('Copied path', 'info', 'clipboard')
+    } finally {
+      act(() => probe.unmount())
+      if (clipDescriptor === undefined) delete (navigator as unknown as Record<string, unknown>).clipboard
+      else Object.defineProperty(navigator, 'clipboard', clipDescriptor)
+    }
   })
 
   it('S58, D17: the sort button is lit on Search alone; on Files, with the filter still on, it looks as before', async () => {

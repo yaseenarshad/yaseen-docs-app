@@ -2,7 +2,10 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { api, BridgeRequestError } from '../../api'
+import { PageActions } from '../../lib/pageActions'
+import { OtherFilesMove } from './otherFilesMove'
 import { PageContextMenu } from './PageContextMenu'
+import { ShortcutActions } from './shortcutDoors'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -146,5 +149,131 @@ it('E: a page that is gone is named by its title in the notice (YAZ-2420 D14)', 
     act(() => root.unmount())
     host.remove()
     reveal.mockRestore()
+  }
+})
+
+it('handles inline card rows safely: resolves <page>:<line> on Copy path, targets parent file for OS verbs, adds Copy card ID/link, and omits mutating actions (YAZ-6469)', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+  const readFile = vi.spyOn(api, 'readFile').mockResolvedValue({
+    path: '/vault/Geo/Europe trip.md',
+    content: '---\ntitle: Europe trip\n---\nIntro\n```card\nMadrid\n```\n<!-- card: GEO-1 -->\n',
+    mtime: 1,
+    size: 1,
+  })
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const openNewWindow = vi.fn()
+  const openVsCode = vi.fn()
+  const openDefault = vi.fn()
+  const reveal = vi.fn()
+  const toggleFavorite = vi.fn()
+  const toggleFocus = vi.fn()
+  const moveToTray = vi.fn()
+  const onOpen = vi.fn()
+  const onOpenWindow = vi.fn()
+  const onClose = vi.fn()
+  const inlinePath = '/vault/Geo/Europe trip.md#GEO-1'
+  const diskPath = '/vault/Geo/Europe trip.md'
+
+  const renderMenu = () =>
+    act(() => {
+      root.render(
+        <PageActions.Provider
+          value={{
+            listState: () => ({ favorite: false, focus: false }),
+            toggleFavorite,
+            toggleFocus,
+            openNewWindow,
+            openVsCode,
+            openDefault,
+            reveal,
+          }}
+        >
+          <OtherFilesMove.Provider value={moveToTray}>
+            <ShortcutActions.Provider
+              value={{
+                pageName: 'Geo',
+                homeOf: () => null,
+                locked: () => false,
+                holders: () => new Set(),
+                folders: () => [{ dir: '/vault/Other', name: 'Other', path: 'Other' }],
+                goHome: vi.fn(),
+                add: vi.fn(),
+                remove: vi.fn(),
+              }}
+            >
+              <PageContextMenu
+                x={12}
+                y={34}
+                path={inlinePath}
+                title="Capital of Spain"
+                onOpen={onOpen}
+                onOpenWindow={onOpenWindow}
+                onClose={onClose}
+                danger={
+                  <button type="button" role="menuitem" className="ctx-menu__item ctx-menu__item--danger">
+                    Delete page…
+                  </button>
+                }
+              />
+            </ShortcutActions.Provider>
+          </OtherFilesMove.Provider>
+        </PageActions.Provider>,
+      )
+    })
+
+  try {
+    renderMenu()
+    const items = mainItems(host)
+    expect(items).toEqual(['Open', 'Open in new window', 'Open in mini window', 'Open in', 'Copy path', 'Copy card ID', 'Copy card link'])
+    for (const forbidden of ['Add to favorites', 'Add to focus', 'Add shortcut to', 'Move to Other files', 'Delete page…']) {
+      expect(items).not.toContain(forbidden)
+    }
+
+    // Copy card ID has hint and copies GEO-1
+    const copyIdBtn = [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent === 'Copy card ID')!
+    expect(copyIdBtn.dataset.hint).toBe('GEO-1')
+    act(() => copyIdBtn.click())
+    await act(async () => Promise.resolve())
+    expect(writeText).toHaveBeenLastCalledWith('GEO-1')
+
+    // Copy card link copies [[GEO-1]]
+    const copyLinkBtn = [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent === 'Copy card link')!
+    act(() => copyLinkBtn.click())
+    await act(async () => Promise.resolve())
+    expect(writeText).toHaveBeenLastCalledWith('[[GEO-1]]')
+
+    // Copy path resolves <pagePath>:<1-based line> (line 5)
+    const copyPathBtn = [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent === 'Copy path')!
+    act(() => copyPathBtn.click())
+    await vi.waitFor(() => expect(writeText).toHaveBeenLastCalledWith(`${diskPath}:5`))
+    expect(readFile).toHaveBeenCalledExactlyOnceWith(diskPath)
+
+    // Open in new window operates on diskPath, never #GEO-1
+    const newWinBtn = [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent === 'Open in new window')!
+    act(() => newWinBtn.click())
+    expect(openNewWindow).toHaveBeenCalledExactlyOnceWith(diskPath)
+
+    // Open in › VS Code, Default app, Reveal in Finder all operate on diskPath
+    const flyout = openIn(host)
+    expect(flyout.map((b) => b.textContent)).toEqual(['VS Code', 'Default app', 'Reveal in Finder'])
+    act(() => flyout[0].click())
+    act(() => flyout[1].click())
+    act(() => flyout[2].click())
+    expect(openVsCode).toHaveBeenCalledExactlyOnceWith(diskPath)
+    expect(openDefault).toHaveBeenCalledExactlyOnceWith(diskPath)
+    expect(reveal).toHaveBeenCalledExactlyOnceWith(diskPath)
+    expect(toggleFavorite).not.toHaveBeenCalled()
+    expect(toggleFocus).not.toHaveBeenCalled()
+    expect(moveToTray).not.toHaveBeenCalled()
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+    readFile.mockRestore()
+    if (descriptor === undefined) delete (navigator as unknown as Record<string, unknown>).clipboard
+    else Object.defineProperty(navigator, 'clipboard', descriptor)
   }
 })
