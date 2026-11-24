@@ -455,7 +455,7 @@ export interface MenuHost {
   saveHeapSnapshot(target: { id: number }, windowId: string): Promise<boolean>
 }
 
-type MenuWindows = Pick<WindowManager, 'openRecentBeside' | 'linkNotice' | 'idFor' | 'openFilesWindow' | 'closeWindow' | 'reloadWindow'>
+type MenuWindows = Pick<WindowManager, 'openAlone' | 'linkNotice' | 'idFor' | 'openFilesWindow' | 'closeWindow' | 'reloadWindow'>
 
 /** What Save Heap Snapshot says in a window whose debugger is already attached (YAZ-3737 S23). */
 export const HEAP_SNAPSHOT_BUSY_NOTICE = 'Heap snapshot not saved: a debugger is already attached (close DevTools first)'
@@ -508,12 +508,13 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
       host.focusedWebContents()?.send(CONTRACT.menu.onOpenRoot.channel, path)
     },
     goToVault(path, name) {
-      // Straight to the door in main, never through the focused renderer (YAZ-2555 A5): with every window minimized no
-      // renderer is in front. An EMPTY window in front — a Welcome window too — takes the vault itself (YAZ-3487 D1, D2).
-      // A folder that is gone says so in a window; a key that does nothing is the worst answer.
-      // The door pruned it from the recents; its number stays (A3).
+      // Straight to `openAlone` in main, never through the focused renderer (YAZ-2555 A5, YAZ-6446 D5):
+      // with every window minimized no renderer is in front, and ⌘1–⌘9 opens the vault alone instead of
+      // raising a workspace window that happens to include it. An EMPTY window in front — a Welcome
+      // window too — takes the vault itself (YAZ-3487 D1, D2). A folder that is gone says so in a window;
+      // a key that does nothing is the worst answer. The door pruned it from the recents; its number stays (A3).
       const focused = host.focusedWebContents()
-      if (!windows.openRecentBeside(path, focused === undefined ? undefined : windows.idFor(focused))) windows.linkNotice(`Can't open ${name}: folder not found`)
+      if (!windows.openAlone(path, focused === undefined ? undefined : windows.idFor(focused))) windows.linkNotice(`Can't open ${name}: folder not found`)
     },
     search() {
       host.focusedWebContents()?.send(CONTRACT.menu.onSearch.channel)

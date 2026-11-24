@@ -42,7 +42,9 @@ const h = vi.hoisted(() => {
   const manager = {
     // A path under `/gone` cannot open: the manager says it has no vault (YAZ-2589 A6).
     rootFor: vi.fn((path: string): string | null => (path.startsWith('/gone') ? null : `root-of:${path}`)),
-    restore: vi.fn((which: readonly string[] | string) => void s.order.push(`restore:${String(which)}`)),
+    // Paths without a file extension (like `/vault` or `/vaults/daily`) are vault folders; files have an extension.
+    isDir: vi.fn((path: string): boolean => !path.startsWith('/gone') && !/\.[^/]+$/.test(path)),
+    restore: vi.fn((which: readonly (string | { exact: readonly string[] })[] | string) => void s.order.push(`restore:${String(which)}`)),
     routeToFile: vi.fn((path: string) => s.order.push(`route:${path}`)),
     openVaultSet: vi.fn((id: string) => {
       s.order.push(`openVaultSet:${id}`)
@@ -233,7 +235,7 @@ describe('main startup order (YAZ-2172)', () => {
     h.s.ready()
     await settle()
     expect(h.manager.rootFor.mock.calls).toEqual([['/work/a.md', '/work'], ['/gone/x.md', null], ['/vault', null]])
-    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith(['root-of:/work/a.md', 'root-of:/vault'])
+    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith(['root-of:/work/a.md', { exact: ['root-of:/vault'] }])
     expect(h.manager.linkNotice).toHaveBeenCalledExactlyOnceWith("Can't open link: https://example.com")
     expect(h.manager.routeToFile.mock.calls).toEqual([['/work/a.md', '/work'], ['/gone/x.md', null], ['/vault', null]]) // the manager says why the dead one cannot open
   })
@@ -289,12 +291,12 @@ describe('main startup order (YAZ-2172)', () => {
     expect(h.manager.routeToFile).toHaveBeenCalledWith('/vault/Board one.excalidraw', '/vault')
   })
 
-  it('a yaseendocs://workspace/<id> link restores only that workspace on cold start, routes via openVaultSet, and notices when missing', async () => {
+  it('a yaseendocs://workspace/<id> link restores only that exact workspace on cold start, routes via openVaultSet, and notices when missing (YAZ-6446 D1)', async () => {
     h.s.vaultSets = [{ id: 'ws-1', name: 'Work Suite', roots: ['/vaults/a', '/vaults/b'], lastUsed: 1 }]
     h.s.on.get('open-url')!(event(), workspaceLink('ws-1'))
     h.s.ready()
     await settle()
-    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith(['/vaults/a', '/vaults/b'])
+    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith([{ exact: ['/vaults/a', '/vaults/b'] }])
     expect(h.manager.openVaultSet).toHaveBeenCalledExactlyOnceWith('ws-1')
     expect(h.manager.routeToFile).not.toHaveBeenCalled()
     expect(h.manager.linkNotice).not.toHaveBeenCalled()
@@ -303,6 +305,14 @@ describe('main startup order (YAZ-2172)', () => {
     h.s.on.get('open-url')!(event(), workspaceLink('ws-missing'))
     expect(h.manager.openVaultSet).toHaveBeenLastCalledWith('ws-missing')
     expect(h.manager.linkNotice).toHaveBeenCalledWith("Can't open workspace: ws-missing")
+  })
+
+  it('YAZ-6446 D1: a cold-start vault launcher link (?open=today) passes an exact solo target to restore and routes with openTarget', async () => {
+    h.s.on.get('open-url')!(event(), `${fileLink('/vaults/daily')}?open=today`)
+    h.s.ready()
+    await settle()
+    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith([{ exact: ['root-of:/vaults/daily'] }])
+    expect(h.manager.routeToFile).toHaveBeenCalledExactlyOnceWith('/vaults/daily', null, 'today')
   })
 
   it('copies the card skill into the profile before the windows restore, stamped with the app version (YAZ-5107, YAZ-5149)', async () => {
