@@ -12,6 +12,7 @@ type PreviewTheme = 'light' | 'dark'
 
 const PRESET_CHOICES: readonly { value: ModeChoice; label: string }[] = [
   { value: 'default', label: 'Default' },
+  { value: 'classic', label: 'Classic' },
   { value: 'subtle', label: 'Subtle' },
   { value: 'github', label: 'GitHub' },
   { value: 'accent', label: 'Accent' },
