@@ -61,7 +61,7 @@ export function useCamera({ rootRef, bodyRef, worldRef, read, onMove }: { rootRe
     const next = new Set<string>()
     if (zoom >= BOARD.detailZoom && box !== null && box.w > 0) {
       for (const [id, pos] of read().plan.cards) {
-        if (!isBoard(pos.path)) continue
+        if (!isBoard(pos.path) && pos.inlineDrawing === undefined) continue
         const left = x + pos.x * zoom
         const top = y + pos.y * zoom
         if (left < box.w && top < box.h && left + BOARD.pageW * zoom > 0 && top + BOARD.pageH * zoom > 0) next.add(id)

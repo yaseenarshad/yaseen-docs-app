@@ -19,7 +19,7 @@ import {
   utf8Bytes,
   withDrawingTitle,
 } from '@shared/inlineDrawing'
-import { inlineDrawingPathAtLine } from '@shared/inlineRef'
+import { inlineDrawingPathAtLine } from '@shared/inlineLine'
 import { MAX_FILE_BYTES } from '@shared/types'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 import type { InlineDrawingModalProps } from '../../drawings/DrawingModal'
@@ -72,7 +72,7 @@ interface SheetPrompt {
   go: () => void
 }
 
-export { inlineDrawingPathAtLine } from '@shared/inlineRef'
+export { inlineDrawingPathAtLine } from '@shared/inlineLine'
 
 /** Finds an inline drawing `code_block` at `preferredPos`, or by matching `expectedJson` if positions shifted. */
 function findInlineNode(doc: ProseNode, preferredPos: number, expectedJson?: string): { pos: number; node: ProseNode } | null {

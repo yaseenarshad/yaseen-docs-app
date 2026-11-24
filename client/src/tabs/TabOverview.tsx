@@ -27,6 +27,7 @@ import { useUnit } from '../vault/unitWord'
 import { FileIcon } from '../sidebar/FileIcon'
 import { PlaceName } from '../sidebar/PlaceName'
 import { dirname } from '../lib/paths'
+import { flushRenamedPath } from '../lib/renameContinuity'
 
 export { SETTLE_MS, TOOLBAR_INSET } from './useCamera'
 
@@ -331,7 +332,7 @@ const Card = memo(function Card(p: CardProps) {
       {/* YAZ-5402: the folder icon before the folder. */}
       {p.folder !== null && <PlaceName className="taboverview__folder" path={dirname(p.path)} kind="folder" label={p.folder} />}
       {p.named && <span className="taboverview__pagename">{unit('Page')}: {p.page}</span>}
-      {inlineDrawingRef !== null && p.root !== null ? (
+      {p.picture && inlineDrawingRef !== null && p.root !== null ? (
         <span className="taboverview__shot">
           <Suspense fallback={<span className="taboverview__lines">{p.lines}</span>}>
             <InlineRefPreview inlineRef={inlineDrawingRef} root={p.root} diagramDarkColors={p.darkColors} compact className="taboverview__inline-shot" />
@@ -1774,6 +1775,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           onShowInPage={
             menuCard.mine
               ? (path) => {
+                  void flushRenamedPath(path)
                   if (onOpenPage !== undefined) onOpenPage(path)
                   else {
                     const pageTab = tabs.find((t) => t.path === path && t.inlineDrawing === undefined)

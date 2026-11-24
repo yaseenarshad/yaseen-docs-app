@@ -369,8 +369,12 @@ export function InlineDrawingHoverPreview({
         if (inlineDrawingPreviews.peek(cacheKey) === undefined) {
           pendingDrawingInputs.set(cacheKey, { root, json: block.json, theme })
         }
-        const rendered = await inlineDrawingPreviews.load(cacheKey)
-        if (live) setPicture(rendered)
+        try {
+          const rendered = await inlineDrawingPreviews.load(cacheKey)
+          if (live) setPicture(rendered)
+        } finally {
+          pendingDrawingInputs.delete(cacheKey)
+        }
       })
       .catch(() => {
         if (live) setPicture(null)

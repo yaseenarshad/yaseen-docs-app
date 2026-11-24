@@ -3,7 +3,8 @@
  * Reads the parent Markdown page from disk and computes `<pagePath>:<1-based line>`,
  * falling back to `ref.page` when the file is unreadable or the block is no longer found.
  */
-import { inlineRefPathAtLine, type InlineRef } from '@shared/inlineRef'
+import { inlineRefPathAtLine } from '@shared/inlineLine'
+import type { InlineRef } from '@shared/inlineRef'
 import { api } from '../api'
 
 export async function resolveInlineCopyPath(ref: InlineRef, fallbackIndex?: number): Promise<string> {

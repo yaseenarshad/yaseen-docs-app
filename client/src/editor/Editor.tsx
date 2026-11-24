@@ -3,7 +3,7 @@ import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect
 import { createPortal } from 'react-dom'
 import { FRIENDS_ENABLED } from '@shared/features'
 import { DEFAULT_SETTINGS, folderSettingsPath, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentPosition, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type FindFolds, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
-import { fileKind } from '@shared/fileKind'
+import { fileKind } from '@shared/fileKind'; import { diskPathOf } from '@shared/inlineRef'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, HotkeyAside } from '@shared/keys'
 import { api } from '../api'
@@ -296,7 +296,7 @@ interface EditorProps {
   /** 0-based index of an inline Excalidraw drawing opened in its own tab (YAZ-6134). */
   inlineDrawingIndex?: number
   /** Opens the `index`-th inline Excalidraw drawing of `tabId` in its own tab (YAZ-6134). */
-  onOpenInlineDrawing?: (tabId: string, index: number, background: boolean) => void
+  onOpenInlineDrawing?: (tabId: string, index: number, background: boolean) => void; onShowInlineDrawingInPage?: (path: string, index: number) => void
   /** The canvas preferences every drawing shares (YAZ-3028, Draw's 🔒 YAZ-1775 D9): `SettingsState.canvas`. Absent → the defaults. */
   canvasPrefs?: CanvasPrefs
   /** A drawing's engine moved a pref: App writes the SETTING through this. */
@@ -376,7 +376,7 @@ export function Editor(props: EditorProps) {
   )
 }
 
-function EditorBody({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFolderPage, onOpenFileNewTab, renderPageEditor, onDeleteEntries, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, idInTitle, linkActions, onNotice, newPageFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, contentPosition, cardWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, inlineDrawingIndex, onOpenInlineDrawing, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, hoverFolderLinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, outsideOutlineThickness, outsideOutlineColors, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
+function EditorBody({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFolderPage, onOpenFileNewTab, renderPageEditor, onDeleteEntries, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, idInTitle, linkActions, onNotice, newPageFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, contentPosition, cardWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, onUserEdit, startView, viewKey, tabId, zoomKey, onZoom, onOpenBullet, inlineDrawingIndex, onOpenInlineDrawing, onShowInlineDrawingInPage, canvasPrefs, onChangeCanvasPrefs, canvasPanel, onChangeCanvasPanel, diagramDarkColors = 'adapt', codeReadOnly, codeWrap, codeMinimap, onChangeCodeSettings, codeOutlineSort, codeOutlineHidden, codeOutlineLocals, hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, hoverFolderViews = false, hoverFolderLinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, outsideOutlineThickness, outsideOutlineColors, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps) {
   const inTree = useTreeKind(root, path)
   // Kept from the first render: App drops its copy once this layer is mounted, and `CrepeHost` mounts later, after the file read.
   const startViewRef = useRef(startView)
@@ -430,7 +430,7 @@ function EditorBody({ root, path, watch, onOpenFile, onOpenFileRight, onOpenFold
   if (inlineDrawingIndex !== undefined) {
     return (
       <Suspense fallback={<section className="editor" />}>
-        <InlineDrawingTab key={`${path}#drawing-${inlineDrawingIndex}`} root={root} path={path} index={inlineDrawingIndex} watch={watch} sync={sync} onSyncNow={onSyncNow} startView={startViewRef.current} {...drawingSettings} canvasPanel={canvasPanel} onCanvasPanelChange={onChangeCanvasPanel} onNotice={onNotice} hotkeys={hotkeys} hotkeysAside={hotkeysAside} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink ?? onOpenFile} onOpenLinkBackground={onOpenLinkBackground ?? onOpenFileBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} linkActions={linkActions} newPageFolderFor={newPageFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} outsideChangeGlow={outsideChangeGlow} outsideOutlineThickness={outsideOutlineThickness} outsideOutlineColors={outsideOutlineColors} />
+        <InlineDrawingTab key={`${path}#drawing-${inlineDrawingIndex}`} root={root} path={path} index={inlineDrawingIndex} watch={watch} sync={sync} onSyncNow={onSyncNow} startView={startViewRef.current} {...drawingSettings} canvasPanel={canvasPanel} onCanvasPanelChange={onChangeCanvasPanel} onNotice={onNotice} hotkeys={hotkeys} hotkeysAside={hotkeysAside} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onShowInPage={onShowInlineDrawingInPage} onOpenLink={onOpenLink ?? onOpenFile} onOpenLinkBackground={onOpenLinkBackground ?? onOpenFileBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} linkActions={linkActions} newPageFolderFor={newPageFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} outsideChangeGlow={outsideChangeGlow} outsideOutlineThickness={outsideOutlineThickness} outsideOutlineColors={outsideOutlineColors} />
       </Suspense>
     )
   }
@@ -628,7 +628,7 @@ function CrepeHost({
   zoomKey?: string | null
   onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null, from?: ZoomFrom) => void
   onOpenBullet?: (tabId: string, zoom: string | null, background: boolean, label: string | null) => void
-  onOpenInlineDrawing?: (tabId: string, index: number, background: boolean) => void
+  onOpenInlineDrawing?: (tabId: string, index: number, background: boolean) => void; onShowInlineDrawingInPage?: (path: string, index: number) => void
   diagramDarkColors: DiagramDarkColors
   hoverLinks: boolean
   /** The page popup's board pills follow "Links in drawings and diagrams" (YAZ-3943). */
@@ -690,7 +690,7 @@ function CrepeHost({
   const panelLinks = useMemo(() => ({ open: { onOpenFile: onOpenLink, onOpenFileBackground: onOpenLinkBackground, onOpenFileRight }, hover: linkHover }), [onOpenLink, onOpenLinkBackground, onOpenFileRight, linkHover])
   // The card says how to open the link, as the gestures are now (YAZ-3879 point 9): "⌘-click to open"; a page pill while
   // the vault's "Clicking a link" is Explore: "Click to open in Explore", on a read-only page too (YAZ-4939).
-  const linkCard = (_: string, path: string): { root: string | null; name: string; hint?: string } => ({ root: null, name: pageLabel(path, false, titles), hint: linkOpenHint(hotkeysNow(), linkAt.current?.editable ?? true, exploreOnClick?.() === true && fileKind(path) === 'markdown') })
+  const linkCard = (_: string, path: string): { root: string | null; name: string; hint?: string } => ({ root: null, name: pageLabel(path, false, titles), hint: linkOpenHint(hotkeysNow(), linkAt.current?.editable ?? true, exploreOnClick?.() === true && fileKind(diskPathOf(path)) === 'markdown') })
   // This page owns ⌘+ / ⌘− / ⌘0 while focus is anywhere inside its section — title, properties,
   // body, comments, the zoom pill (YAZ-1710). Same ladder as the pill; ⌘0 is 100%; a wall is a no-op.
   useEffect(() => {

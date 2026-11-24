@@ -248,6 +248,7 @@ export interface PlacedCard {
   /** Its tab in its window (D1): what a stored place of it is keyed by. */
   path: string
   copy: number
+  inlineDrawing?: number
 }
 
 export interface PlacedGroup extends Rect {
@@ -485,7 +486,7 @@ export function layoutCanvas(windows: readonly FrameInput[], { by, wrapW, stored
   let bounds: Rect | null = null
   for (const u of units) {
     for (const c of u.cards) {
-      cards.set(c.page.id, { x: c.x, y: c.y, moved: c.moved, win: u.win, owner: u.owner, path: c.page.path, copy: c.page.copy })
+      cards.set(c.page.id, { x: c.x, y: c.y, moved: c.moved, win: u.win, owner: u.owner, path: c.page.path, copy: c.page.copy, ...(c.page.inlineDrawing === undefined ? {} : { inlineDrawing: c.page.inlineDrawing }) })
       order.push(c.page.id)
       // A moved frame keeps its unmoved cards in their slots from its new place; a moved group has no place of its own, so all its cards are stored.
       if (shifted.has(u) && (c.moved || !framed)) set.push({ win: u.win, path: c.page.path, copy: c.page.copy, by, x: c.x, y: c.y })

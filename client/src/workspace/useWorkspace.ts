@@ -181,8 +181,9 @@ export const tabStrip = (s: TabsState): StoredTab[] =>
 /** The active tab's path: the window's `file`. */
 export const activePath = (s: Pick<TabsState, 'tabs' | 'active'>): string | null => tabById(s, s.active)?.path ?? null
 
-/** Whether any tab shows `path`. */
-const shows = (s: Pick<TabsState, 'tabs'>, path: string): boolean => s.tabs.some((t) => t.path === path)
+/** Whether any normal (non-inline-drawing) tab shows `path` (YAZ-6487). */
+const shows = (s: Pick<TabsState, 'tabs'>, path: string): boolean => s.tabs.some((t) => t.path === path && t.inlineDrawing === undefined)
+const tabKey = (t: Pick<Tab, 'path' | 'inlineDrawing'>): string => (t.inlineDrawing === undefined ? t.path : `${t.path}\0drawing:${t.inlineDrawing}`)
 
 export interface WorkspaceState extends TabsState {
   rightPanel: RightPanelIdentity
@@ -597,19 +598,25 @@ function tabsStep(s: TabsState, a: TabsAction): TabsState {
       // A restore (YAZ-3147 D3, S16–S19, S27): each page that no tab shows joins the end in the saved
       // order, with its copies and display names, as kept tabs. A page that is open opens no copy (S18,
       // S19): the check is against the strip as it was, so two saved copies of a closed page both open.
-      const open = new Set(s.tabs.map((t) => t.path))
+      const open = new Set(s.tabs.map(tabKey))
       const added: Tab[] = []
       let marked: string | null = null
       for (const t of a.tabs) {
-        if (open.has(t.path)) continue
+        if (open.has(tabKey(t))) continue
         const tab = storedTab(t)
         if (t.active === true && marked === null) marked = tab.id
         added.push(tab)
       }
       // The session's active tab is active: its new copy, else the open tab of its page (S18). With no
       // mark, an empty window takes the first new tab (a strip with tabs needs an active one), and a window with tabs keeps its own.
-      const page = a.tabs.find((t) => t.active === true)?.path
-      const active = marked ?? (page === undefined ? null : (tabOf(s, page)?.id ?? null)) ?? (s.active === null ? (added[0]?.id ?? null) : null)
+      const activeStored = a.tabs.find((t) => t.active === true)
+      const existingActive =
+        activeStored === undefined
+          ? null
+          : activeStored.inlineDrawing !== undefined
+            ? (s.tabs.find((t) => t.path === activeStored.path && t.inlineDrawing === activeStored.inlineDrawing)?.id ?? null)
+            : (tabOf(s, activeStored.path)?.id ?? null)
+      const active = marked ?? existingActive ?? (s.active === null ? (added[0]?.id ?? null) : null)
       // A page of the session that shows in the preview tab is kept now: the next sidebar click must not replace it.
       const kept = s.preview !== null && a.tabs.some((t) => t.path === tabById(s, s.preview)?.path) ? null : s.preview
       if (added.length === 0 && kept === s.preview && (active === null || (active === s.active && !s.blank))) return s

@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   diskPathOf,
-  inlineCardPathAtLine,
   inlineCardRowPath,
-  inlineDrawingPathAtLine,
   inlineDrawingRowPath,
-  inlineRefPathAtLine,
   isInlineRef,
   parseInlineRef,
 } from './inlineRef'
+import { inlineCardPathAtLine, inlineDrawingPathAtLine, inlineRefPathAtLine } from './inlineLine'
 
 describe('inlineRef constructors and parsers', () => {
   it('constructs canonical synthetic row paths', () => {

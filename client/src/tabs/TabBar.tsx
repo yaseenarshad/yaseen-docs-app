@@ -20,6 +20,7 @@ import { copiesOf, copyKey } from './copies'
 import { useBoardHighlight } from './boardHighlight'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from './cardPreview'
 import { setStripTarget } from './stripDrop'
+import { flushRenamedPath } from '../lib/renameContinuity'
 import './tabs.css'
 
 export interface TabBarProps {
@@ -1176,6 +1177,7 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
           onResetName={(id) => onSetName?.(id, null)}
           onShowInSidebar={onShowInSidebar}
           onShowInPage={(path) => {
+            void flushRenamedPath(path)
             if (onOpenPage !== undefined) onOpenPage(path)
             else {
               const pageTab = pages.find((t) => t.path === path && t.inlineDrawing === undefined)

@@ -29,6 +29,7 @@ import type { NoticeKind } from '../lib/notice'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
 import { registerPageView } from '../lib/pageView'
+import { flushRenamedPath } from '../lib/renameContinuity'
 import { useAppliedTheme } from '../lib/theme'
 import { announcedWrite } from '../lib/twinEditors'
 import { FileIcon } from '../sidebar/FileIcon'
@@ -458,11 +459,14 @@ function InlineDrawingHost({
       ? pageLabel(path, false, pathTitles(linkProps.wikilinks.records, linkProps.wikilinks.folders))
       : basename(path).replace(/\.(?:md|markdown)$/i, '')
   const onOpenLink = linkProps.onOpenLink
+  const boardFlush = board.flush
   const showInPage = useCallback(() => {
+    boardFlush()
+    void flushRenamedPath(path)
     landOnInlineDrawing(path, index)
     if (onShowInPage !== undefined) onShowInPage(path, index)
     else onOpenLink?.(path)
-  }, [path, index, onShowInPage, onOpenLink])
+  }, [boardFlush, path, index, onShowInPage, onOpenLink])
 
   return (
     <div className="drawing-editor" ref={board.hostRef} onKeyDownCapture={onKeyDownCapture}>

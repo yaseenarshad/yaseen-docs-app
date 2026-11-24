@@ -1950,6 +1950,7 @@ describe('tab sleep on the board (YAZ-3737 D11)', () => {
 describe('YAZ-6468: inline drawing tiles, hover preview, and Space preview on TabOverview', () => {
   it('shows drawing title, Excalidraw icon, inline drawing tile preview, no bogus copy badge, and previews the inline drawing on hover and Space', async () => {
     vi.useFakeTimers()
+    const restoreArea = boardArea(1200, 800)
     try {
       fakeStorage()
       readHeads.mockResolvedValue([{ path: '/v/Notes.md', mtime: 1, text: 'Parent markdown prose' }] as FileHead[])
@@ -2034,6 +2035,7 @@ describe('YAZ-6468: inline drawing tiles, hover preview, and Space preview on Ta
       expect(spaceEl).not.toBeNull()
       expect(spaceEl?.dataset).toMatchObject({ kind: 'drawing', page: '/v/Notes.md', index: '0', name: 'Event Flow', place: 'Notes' })
     } finally {
+      restoreArea()
       vi.useRealTimers()
     }
   })
