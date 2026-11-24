@@ -61,9 +61,159 @@ interface Entry {
    * (the sweep, a change of letters) never reads it: each of its passes reads the folders again.
    */
   answers: Map<string, Promise<boolean>>
+  /** Recent unlinked markdown pages with a Page ID, keyed by canonical ID (YAZ-6438). */
+  recentPageUnlinksById: Map<string, RecentPath>
+  /** Recent added markdown page paths with timestamps for add-then-unlink matching (YAZ-6438). */
+  recentPageAdds: Map<string, { at: number }>
+  /** Recent unlinked non-ID markdown pages, keyed by `size:mtime` (YAZ-6438). */
+  recentNonIdUnlinks: Map<string, RecentNonIdGroup>
+  /** Recent added non-ID markdown pages, keyed by `size:mtime` for add-then-unlink matching (YAZ-6438). */
+  recentNonIdAdds: Map<string, RecentNonIdGroup>
+  /** Recent unlinked boards with a Board ID, keyed by canonical ID (YAZ-6438). */
+  recentBoardUnlinks: Map<string, RecentPath>
+  /** Recent added board paths with timestamps for add-then-unlink matching (YAZ-6438). */
+  recentBoardAdds: Map<string, { at: number }>
+}
+
+interface RecentPath {
+  path: string
+  at: number
+}
+
+interface RecentNonIdGroup {
+  paths: Set<string>
+  at: number
 }
 
 const DEFAULT_IDLE_MS = 10 * 60 * 1000
+/** Window within which an unlink+add (or add+unlink) pair counts as an external rename (YAZ-6438). */
+const EXTERNAL_RENAME_WINDOW_MS = 5_000
+/** Maximum entries kept in each recent unlink/add map per live index. */
+const EXTERNAL_RENAME_MAX_ENTRIES = 256
+
+const statKey = (size: number, mtime: number): string => `${size}:${mtime}`
+
+function pruneRecent<V extends { at: number }>(map: Map<string, V>, now: number): void {
+  for (const [key, value] of map) if (now - value.at > EXTERNAL_RENAME_WINDOW_MS) map.delete(key)
+}
+
+function setBounded<V extends { at: number }>(map: Map<string, V>, key: string, value: V, now: number): void {
+  pruneRecent(map, now)
+  if (map.has(key)) map.delete(key)
+  while (map.size >= EXTERNAL_RENAME_MAX_ENTRIES) {
+    const oldest = map.keys().next().value
+    if (oldest === undefined) break
+    map.delete(oldest)
+  }
+  map.set(key, value)
+}
+
+function recordNonId(map: Map<string, RecentNonIdGroup>, key: string, filePath: string, now: number): void {
+  pruneRecent(map, now)
+  const existing = map.get(key)
+  if (existing !== undefined) {
+    existing.paths.add(filePath)
+    existing.at = now
+    map.delete(key)
+    map.set(key, existing)
+    return
+  }
+  setBounded(map, key, { paths: new Set([filePath]), at: now }, now)
+}
+
+function matchAddedPage(root: string, entry: Entry, record: IndexRecord, now: number): void {
+  if (isFolderSettingsPath(record.path)) return
+  if (record.id !== undefined) {
+    const key = canonicalPageId(record.id)
+    pruneRecent(entry.recentPageUnlinksById, now)
+    const unlinked = entry.recentPageUnlinksById.get(key)
+    if (unlinked !== undefined && unlinked.path !== record.path) {
+      entry.recentPageUnlinksById.delete(key)
+      externalRenamed?.(root, unlinked.path, record.path)
+      return
+    }
+    setBounded(entry.recentPageAdds, record.path, { at: now }, now)
+    return
+  }
+  const key = statKey(record.size, record.mtime)
+  pruneRecent(entry.recentNonIdUnlinks, now)
+  const unlinked = entry.recentNonIdUnlinks.get(key)
+  if (unlinked !== undefined) {
+    if (unlinked.paths.size === 1) {
+      const [oldPath] = unlinked.paths
+      if (oldPath !== undefined && oldPath !== record.path) {
+        entry.recentNonIdUnlinks.delete(key)
+        externalRenamed?.(root, oldPath, record.path)
+        return
+      }
+    }
+    return
+  }
+  recordNonId(entry.recentNonIdAdds, key, record.path, now)
+}
+
+function matchUnlinkedPage(root: string, entry: Entry, prev: IndexRecord, now: number): void {
+  if (isFolderSettingsPath(prev.path)) return
+  if (prev.id !== undefined) {
+    const key = canonicalPageId(prev.id)
+    pruneRecent(entry.recentPageAdds, now)
+    for (const [addedPath] of entry.recentPageAdds) {
+      if (addedPath === prev.path) continue
+      const candidate = entry.records.get(addedPath)
+      if (candidate?.id !== undefined && canonicalPageId(candidate.id) === key) {
+        entry.recentPageAdds.delete(addedPath)
+        externalRenamed?.(root, prev.path, addedPath)
+        return
+      }
+    }
+    setBounded(entry.recentPageUnlinksById, key, { path: prev.path, at: now }, now)
+    return
+  }
+  const key = statKey(prev.size, prev.mtime)
+  pruneRecent(entry.recentNonIdAdds, now)
+  pruneRecent(entry.recentNonIdUnlinks, now)
+  const added = entry.recentNonIdAdds.get(key)
+  if (added !== undefined && !entry.recentNonIdUnlinks.has(key)) {
+    if (added.paths.size === 1) {
+      const [newPath] = added.paths
+      const candidate = newPath === undefined ? undefined : entry.records.get(newPath)
+      if (newPath !== undefined && newPath !== prev.path && candidate !== undefined && candidate.id === undefined) {
+        entry.recentNonIdAdds.delete(key)
+        externalRenamed?.(root, prev.path, newPath)
+        return
+      }
+    }
+  }
+  recordNonId(entry.recentNonIdUnlinks, key, prev.path, now)
+}
+
+function matchAddedBoard(root: string, entry: Entry, file: string, id: string, now: number): void {
+  const key = canonicalPageId(id)
+  pruneRecent(entry.recentBoardUnlinks, now)
+  const unlinked = entry.recentBoardUnlinks.get(key)
+  if (unlinked !== undefined && unlinked.path !== file) {
+    entry.recentBoardUnlinks.delete(key)
+    externalRenamed?.(root, unlinked.path, file)
+    return
+  }
+  setBounded(entry.recentBoardAdds, file, { at: now }, now)
+}
+
+function matchUnlinkedBoard(root: string, entry: Entry, file: string, id: string, now: number): void {
+  const key = canonicalPageId(id)
+  entry.recentBoardAdds.delete(file)
+  pruneRecent(entry.recentBoardAdds, now)
+  for (const [addedPath] of entry.recentBoardAdds) {
+    if (addedPath === file) continue
+    const candidateId = entry.boards.get(addedPath)
+    if (candidateId !== undefined && canonicalPageId(candidateId) === key) {
+      entry.recentBoardAdds.delete(addedPath)
+      externalRenamed?.(root, file, addedPath)
+      return
+    }
+  }
+  setBounded(entry.recentBoardUnlinks, key, { path: file, at: now }, now)
+}
 
 /** One live index per root, kept fresh by the shared watcher; dropped after `idleMs` without a `getIndex`. */
 const entries = new Map<string, Entry>()
@@ -76,19 +226,23 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
     case 'add':
     case 'change': {
       if (isDrawing(ev.path)) {
-        const read = readBoard(root, entry, ev.path).finally(() => entry.inFlight.delete(read))
+        const read = readBoard(root, entry, ev.path, ev.type === 'add').finally(() => entry.inFlight.delete(read))
         entry.inFlight.add(read)
         return
       }
       if (!isMarkdown(ev.path)) return
+      const isAdd = ev.type === 'add'
+      const hadRecord = entry.records.has(ev.path)
       const held = entry.records.get(ev.path)?.id
       const scan = scanFile(root, ev.path)
         .then(
           (record) => {
             entry.records.set(ev.path, record)
             entry.version++
+            const now = Date.now()
             // The diary pages each link to an ID this Mac made, with the time (YAZ-2677 R27).
-            if (entry.ids) see(root, record, Date.now())
+            if (entry.ids) see(root, record, now)
+            if (isAdd && !hadRecord) matchAddedPage(root, entry, record, now)
             // Every other indexed page is known to hold what it holds; this one, what it held before.
             void sweep(root, entry, [record], (p) => (p === ev.path ? held : entry.records.get(p)?.id))
           },
@@ -111,12 +265,20 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
       void sweep(root, entry, [], (p) => entry.records.get(p)?.id, [ev.path])
       return
     case 'unlink': {
+      const now = Date.now()
+      const prevBoardId = entry.boards.get(ev.path)
       if (entry.boards.delete(ev.path)) {
         entry.version++
         boardsChanged?.(root)
+        if (prevBoardId !== undefined) matchUnlinkedBoard(root, entry, ev.path, prevBoardId, now)
       }
-      const id = isFolderSettingsPath(ev.path) ? entry.records.get(ev.path)?.id : undefined
-      if (entry.records.delete(ev.path)) entry.version++
+      const prevRecord = entry.records.get(ev.path)
+      const id = isFolderSettingsPath(ev.path) ? prevRecord?.id : undefined
+      if (entry.records.delete(ev.path)) {
+        entry.version++
+        entry.recentPageAdds.delete(ev.path)
+        if (prevRecord !== undefined) matchUnlinkedPage(root, entry, prevRecord, now)
+      }
       entry.waits.delete(ev.path)
       for (const key of entry.cardWaits.keys()) if (key.startsWith(`${ev.path}\n`)) entry.cardWaits.delete(key)
       schedulePersist(root, entry.records)
@@ -132,6 +294,8 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
       for (const key of entry.cardWaits.keys()) if (key.startsWith(prefix)) entry.cardWaits.delete(key)
       // The windows read the index again for a folder that went (`useIndex`): its boards go with it, with no word.
       for (const p of entry.boards.keys()) if (p.startsWith(prefix)) entry.boards.delete(p)
+      for (const p of entry.recentPageAdds.keys()) if (p.startsWith(prefix)) entry.recentPageAdds.delete(p)
+      for (const p of entry.recentBoardAdds.keys()) if (p.startsWith(prefix)) entry.recentBoardAdds.delete(p)
       entry.dirs = entry.dirs.filter((dir) => dir !== ev.path && !dir.startsWith(prefix))
       schedulePersist(root, entry.records)
       return
@@ -181,14 +345,16 @@ async function boardIdsAt(boards: readonly string[]): Promise<BoardIds[]> {
 }
 
 /** The board at `file` as its head says now; the windows hear of a change of its ID (`onBoardIds`). */
-async function readBoard(root: string, entry: Entry, file: string): Promise<void> {
+async function readBoard(root: string, entry: Entry, file: string, isAdd = false): Promise<void> {
+  const prevId = entry.boards.get(file)
   const ids = await boardIdAt(file)
   const { id } = ids
-  if (!learnFormer(entry, ids) && entry.boards.get(file) === id) return
+  if (!learnFormer(entry, ids) && prevId === id) return
   if (id === undefined) entry.boards.delete(file)
   else entry.boards.set(file, id)
   entry.version++
   boardsChanged?.(root)
+  if (isAdd && prevId === undefined && id !== undefined) matchAddedBoard(root, entry, file, id, Date.now())
 }
 
 /**
@@ -253,6 +419,15 @@ let fixed: FixListener | undefined
 /** One listener, set by the bridge at startup. `notice` is null when the caller tells the result itself ("Check for duplicates"). */
 export function onIdFixes(listener: FixListener | undefined): void {
   fixed = listener
+}
+
+/** Hears each external file rename detected by the live watcher (YAZ-6438): the bridge runs `afterRename`. */
+type ExternalRenameListener = (root: string, oldPath: string, newPath: string) => void
+let externalRenamed: ExternalRenameListener | undefined
+
+/** One listener, set by the bridge at startup. */
+export function onExternalRename(listener: ExternalRenameListener | undefined): void {
+  externalRenamed = listener
 }
 
 let isTransientReadOnlyRoot: ((root: string) => boolean) | undefined
@@ -370,7 +545,27 @@ async function ownPart(root: string, entry: Entry): Promise<{ records: Map<strin
 
 async function build(root: string): Promise<Entry> {
   const dirs: string[] = []
-  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false, waits: new Map(), cardWaits: new Map(), kept: new Map(), boards: new Map(), formerIds: new Map(), formerByCurrent: new Map(), version: 1, answers: new Map() }
+  const entry: Entry = {
+    records: new Map(),
+    unsubscribe: () => undefined,
+    inFlight: new Set(),
+    dirs,
+    ids: false,
+    waits: new Map(),
+    cardWaits: new Map(),
+    kept: new Map(),
+    boards: new Map(),
+    formerIds: new Map(),
+    formerByCurrent: new Map(),
+    version: 1,
+    answers: new Map(),
+    recentPageUnlinksById: new Map(),
+    recentPageAdds: new Map(),
+    recentNonIdUnlinks: new Map(),
+    recentNonIdAdds: new Map(),
+    recentBoardUnlinks: new Map(),
+    recentBoardAdds: new Map(),
+  }
   const files: string[] = []
   const boards: string[] = []
   // Persistent cache (GRO-2223): loaded BEFORE subscribing, overlapped with the walk — the cache
@@ -434,6 +629,12 @@ function evict(root: string): void {
   entry.wait = undefined
   entry.waits.clear()
   entry.cardWaits.clear()
+  entry.recentPageUnlinksById.clear()
+  entry.recentPageAdds.clear()
+  entry.recentNonIdUnlinks.clear()
+  entry.recentNonIdAdds.clear()
+  entry.recentBoardUnlinks.clear()
+  entry.recentBoardAdds.clear()
   // Flush-ish: one last persist so an evicted index leaves a fresh cache behind (GRO-2223).
   schedulePersist(root, entry.records)
   entry.unsubscribe()

@@ -16,18 +16,19 @@ import { settled, sleep, until } from './testFixture'
  * `lateStream`: FSEvents as libuv serves it on macOS — opening a watch leaves the process's one
  * stream, and so every watch, deaf until it is rebuilt `LATE_STREAM_MS` later.
  */
-const nativeWatch = vi.hoisted(() => ({ fail: false, refuse: null as string | null, lateStream: false, deafUntil: 0 }))
+const nativeWatch = vi.hoisted(() => ({ fail: false, refuse: null as string | null, lateStream: false, deafUntil: 0, dropEvents: false }))
 const LATE_STREAM_MS = 300
 vi.mock('node:fs', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs')>()
   const watch = ((p: string, opts?: WatchOptionsWithStringEncoding | WatchListener<string>, listener?: WatchListener<string>) => {
     if (nativeWatch.fail) throw Object.assign(new Error('not here'), { code: 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM' })
     if (p === nativeWatch.refuse) throw Object.assign(new Error('permission denied'), { code: 'EACCES' })
-    if (!nativeWatch.lateStream) return fs.watch(p, opts as WatchOptionsWithStringEncoding, listener)
-    nativeWatch.deafUntil = Date.now() + LATE_STREAM_MS
+    if (!nativeWatch.lateStream && !nativeWatch.dropEvents) return fs.watch(p, opts as WatchOptionsWithStringEncoding, listener)
+    if (nativeWatch.lateStream) nativeWatch.deafUntil = Date.now() + LATE_STREAM_MS
     const w = fs.watch(p, typeof opts === 'function' ? {} : opts)
     const emit = w.emit.bind(w)
-    w.emit = (event: string, ...args: unknown[]) => (event === 'change' && Date.now() < nativeWatch.deafUntil ? false : emit(event, ...args))
+    w.emit = (event: string, ...args: unknown[]) =>
+      event === 'change' && ((nativeWatch.lateStream && Date.now() < nativeWatch.deafUntil) || nativeWatch.dropEvents) ? false : emit(event, ...args)
     const heard = typeof opts === 'function' ? opts : listener
     if (heard !== undefined) w.on('change', heard)
     return w
@@ -41,6 +42,7 @@ afterEach(async () => {
   nativeWatch.fail = false
   nativeWatch.refuse = null
   nativeWatch.lateStream = false
+  nativeWatch.dropEvents = false
   await Promise.all(watchers.splice(0).map((w) => w.close()))
   await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
 })
@@ -215,6 +217,36 @@ describe('treeWatcher (YAZ-2192)', { timeout: 20_000 }, () => {
     await until(() => r.lines.includes('unlink sub/x.md') && r.lines.includes('unlinkDir sub'), 10_000)
     await sleep(1500) // a full poll past the last event: a late root event would have landed
     expect(r.lines.filter((line) => line.endsWith(' '))).toEqual([]) // `unlinkDir ` = the root itself
+  })
+
+  it('YAZ-6439: resyncNow() returns false when unchanged and true when detecting missed add/change/unlink', async () => {
+    const dir = await tempDir()
+    await writeFile(path.join(dir, 'kept.md'), 'v1')
+    await writeFile(path.join(dir, 'gone.md'), 'bye')
+    await sleep(200)
+    // Wrap `fs.watch` so we can silence live OS events after `ready` (simulating a dropped FSEvents stream).
+    nativeWatch.lateStream = true
+    const r = record(dir)
+    await r.ready()
+    nativeWatch.lateStream = false
+    nativeWatch.dropEvents = true
+
+    expect(await r.watcher.resyncNow()).toBe(false)
+    expect(r.lines).toEqual([])
+
+    await writeFile(path.join(dir, 'added.md'), 'new')
+    await writeFile(path.join(dir, 'kept.md'), 'v2, longer content')
+    await rm(path.join(dir, 'gone.md'))
+
+    expect(await r.watcher.resyncNow()).toBe(true)
+    expect([...r.lines].sort()).toEqual(['add added.md', 'change kept.md', 'unlink gone.md'])
+
+    r.lines.length = 0
+    expect(await r.watcher.resyncNow()).toBe(false)
+    expect(r.lines).toEqual([])
+
+    await r.watcher.close()
+    expect(await r.watcher.resyncNow()).toBe(false)
   })
 
 })

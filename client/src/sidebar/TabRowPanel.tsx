@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react'
 import { flushSync } from 'react-dom'
 import { DEFAULT_SIDEBAR_TABS, SIDEBAR_BUTTONS, type SidebarButton, type SidebarTab, type SidebarTabsPrefs } from '@shared/types'
-import { ClockIcon, CollapseAllIcon, DragHandleIcon, EyeIcon, FolderIcon, HeartIcon, MoreIcon, SearchIcon, SortIcon, StackIcon } from '../views/view/icons'
+import { ClockIcon, CollapseAllIcon, DragHandleIcon, EyeIcon, FolderIcon, HeartIcon, MoreIcon, RefreshIcon, SearchIcon, SortIcon, StackIcon } from '../views/view/icons'
 import { moveTab, sameTabRow, TAB_LABEL, toggleButton, toggleTab } from './tabRow'
 
 /** A tab's face: Files is a word (YAZ-3273 D6); the others are glyphs (YAZ-2638 D2, YAZ-2619 D4, YAZ-1766 D1, YAZ-3147 D4, YAZ-3235 D4). */
@@ -13,11 +13,12 @@ export function TabFace({ tab }: { tab: SidebarTab }) {
  * The glyph of a row in the row's menu and in this panel (YAZ-3279): a tab's face, a folder for Files
  * (its tab is a word, D6), or a button's own glyph. One map, so the menu and the panel agree.
  */
-export function rowGlyph(key: SidebarTab | SidebarButton): ReactElement {
+export function rowGlyph(key: SidebarTab | SidebarButton | 'refresh'): ReactElement {
   if (key === 'files') return <FolderIcon size={15} />
   if (key === 'sort') return <SortIcon />
   if (key === 'fold') return <CollapseAllIcon />
   if (key === 'more') return <MoreIcon />
+  if (key === 'refresh') return <RefreshIcon />
   return <TabFace tab={key} />
 }
 

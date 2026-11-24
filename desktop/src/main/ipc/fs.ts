@@ -32,10 +32,11 @@ import { putBack } from '../fs/trash'
 import { retitle } from '../fs/retitle'
 import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
+import { resyncRoot } from '../fs/watchers'
 import { requireRequest, requireStringArray } from '../fs/validate'
 import { backfillCreated } from '../vaultIndex/backfillCreated'
 import type { Store } from '../store'
-import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onBoardIds, onIdFixes, saveIdsAnswer } from '../vaultIndex'
+import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onBoardIds, onExternalRename, onIdFixes, saveIdsAnswer } from '../vaultIndex'
 import { givesIds } from '../vaultIndex/idSweep'
 import { doorOf, type IdDoor } from '../vaultIndex/mint'
 import { idsHome } from '../vaultIndex/scan'
@@ -61,6 +62,7 @@ const repairOrder = (p: Promise<void>): Promise<void> => p.catch((err: unknown) 
 /** The fs half of `window.yaseenDocs` (`dialog:pick-folder` lives in `./dialog`). */
 export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor' | 'vaultNotice'>): void {
   handle(CONTRACT.tree, tree)
+  handle(CONTRACT.resync, async (raw: unknown) => resyncRoot(requireAbsPath(raw, 'root')))
   handle(CONTRACT.readFile, readFile)
   // The pages of the tab board (YAZ-2648 D6): read-only, one call for every open tab.
   handle(CONTRACT.readHeads, readHeads)
@@ -231,6 +233,11 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   onIdFixes((root, fixes, notice) => {
     for (const fix of fixes) if (fix.renamedFrom !== undefined) void afterRename({ oldPath: fix.renamedFrom, newPath: fix.path, kind: 'file' }).catch(() => undefined)
     if (notice !== null) windows.vaultNotice(root, notice)
+  })
+  // An external file rename detected by the live watcher (YAZ-6438): reuse `afterRename` so open
+  // tabs, stored paths, favorites, focus, icons, order, and shares follow automatically.
+  onExternalRename((_root, oldPath, newPath) => {
+    void afterRename({ oldPath, newPath, kind: 'file' }).catch(() => undefined)
   })
   // A board took an ID, or one with an ID came, went or moved (YAZ-3943 4C): each window of the vault reads its index at
   // once, as after "Change letters". A board's own events never make a window read it (`useIndex`).

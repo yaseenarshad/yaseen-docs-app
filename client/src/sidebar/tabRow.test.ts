@@ -131,6 +131,17 @@ describe('tabRowSections (YAZ-3273 D4)', () => {
     // YAZ-4450 D5: on Recents in a workspace the button is the vault filter, and the item says so.
     expect(labels(tabRowSections(at(400, p, 'recents'), p, 'recents', BOTH, 'Collapse all', { ...h, sortLabel: 'Filter by vault' }))[0]).toEqual(['Filter by vault…', 'Collapse all'])
   })
+
+  it('YAZ-6440: when onRefresh is provided, adds "Refresh files" with its icon in its own section right above "Edit tab row…"', () => {
+    const h = { ...handlers(), onRefresh: vi.fn(), iconOf: vi.fn((key) => `icon:${key}`) }
+    const p = prefs({ hidden: ['focus'] })
+    const sections = tabRowSections(at(400, p), p, 'files', BOTH, 'Collapse all', h)
+    expect(labels(sections)).toEqual([['Focus'], ['Refresh files'], ['Edit tab row…']])
+    const refreshItem = sections.flat().find((i) => i.label === 'Refresh files') as MenuAction
+    expect(refreshItem.icon).toBe('icon:refresh')
+    refreshItem.onSelect()
+    expect(h.onRefresh).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('the Hide row (YAZ-3279 D4, S9, S10)', () => {

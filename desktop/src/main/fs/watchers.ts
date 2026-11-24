@@ -18,6 +18,11 @@ export function activeWatcherRoots(): string[] {
   return [...entries.keys()]
 }
 
+/** Runs an on-demand resync on the active watcher for `root`; returns `true` if any missed event was emitted (YAZ-6439). */
+export async function resyncRoot(root: string): Promise<boolean> {
+  return (await entries.get(root)?.watcher.resyncNow()) ?? false
+}
+
 /**
  * Dot-entries and `node_modules` at any depth; every other regular file is watched, viewer or not
  * (YAZ-1577 D1). The engine itself keeps atomic-write tmps silent (YAZ-2179). A folder's settings

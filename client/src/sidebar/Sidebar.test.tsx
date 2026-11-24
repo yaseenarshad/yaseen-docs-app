@@ -118,6 +118,7 @@ const into = (targetDir: string, op: 'copy' | 'cut', ...paths: string[]) => ({ t
 function installBridge() {
   const bridge = {
     tree: vi.fn(async (root: string) => ({ root, tree: TREE, generatedAt: 1 })),
+    resync: vi.fn(async (_root: string) => false),
     // The delete confirm sheet reads the index for its backlink count (GRO-2272 C3).
     index: vi.fn(async (root: string) => ({ root, records: [] as unknown[], folders: [], generatedAt: 1, ids: true })),
     // The inline-create flow (GRO-2022).
@@ -5924,7 +5925,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     const { el, props } = await mount({ lens: 'files', ...withTabs({ hidden: ['focus', 'recents'] }) })
     mouseClick(more(el))
     expect(more(el)?.getAttribute('aria-expanded')).toBe('true')
-    expect(items(el)).toEqual(['Focus [hidden]', 'Recents [hidden]', 'Edit tab row…'])
+    expect(items(el)).toEqual(['Focus [hidden]', 'Recents [hidden]', 'Refresh files', 'Edit tab row…'])
     act(() => itemByLabel(el, 'Recents')?.click())
     expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('recents')
     expect(items(el)).toEqual([])
@@ -5939,7 +5940,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(tabNames(el)).toEqual(['Files', 'Search', 'Favorites', 'Sessions', 'Recents'])
     expect(more(el)?.className).toBe('sidebar__more sidebar__more--lit')
     mouseClick(more(el))
-    expect(items(el)).toEqual(['Focus [open]', 'Edit tab row…'])
+    expect(items(el)).toEqual(['Focus [open]', 'Refresh files', 'Edit tab row…'])
   })
 
   it('S7: the Search tab inside ⋯ still shows its bar, and ↑ from the bar goes to the lit ⋯ (YAZ-2663 D12)', async () => {
@@ -5953,16 +5954,16 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
   it('S11: right-click on blank space in the row, or on a tab, opens the same menu', async () => {
     const { el } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
     expect(rightClick(el.querySelector('.sidebar__lenses')).defaultPrevented).toBe(true)
-    expect(items(el)).toEqual(['Sessions [hidden]', 'Edit tab row…'])
+    expect(items(el)).toEqual(['Sessions [hidden]', 'Refresh files', 'Edit tab row…'])
   })
 
   it('S9, S10 (YAZ-3279): right-click on a tab puts "Hide <tab>" first; on Files it is off, "Files stays"; no Electron menu', async () => {
     const { el, props } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
     expect(rightClick(tabs(el)[1]).defaultPrevented).toBe(true)
-    expect(items(el)).toEqual(['Hide Search', 'Sessions [hidden]', 'Edit tab row…'])
+    expect(items(el)).toEqual(['Hide Search', 'Sessions [hidden]', 'Refresh files', 'Edit tab row…'])
     closeOverlay(el)
     rightClick(tabs(el)[0])
-    expect(items(el)).toEqual(['Hide Files (off) [Files stays]', 'Sessions [hidden]', 'Edit tab row…'])
+    expect(items(el)).toEqual(['Hide Files (off) [Files stays]', 'Sessions [hidden]', 'Refresh files', 'Edit tab row…'])
     act(() => itemByLabel(el, 'Hide Files')?.click())
     expect(props.onChangeSettings).not.toHaveBeenCalled()
     closeOverlay(el)
@@ -5971,10 +5972,10 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith(withTabs({ hidden: ['sessions', 'focus'] }).settings)
   })
 
-  it('S9: with nothing off the bar, a right-click on a tab is "Hide <tab>" and "Edit tab row…"', async () => {
+  it('S9: with nothing off the bar, a right-click on a tab is "Hide <tab>", "Refresh files", and "Edit tab row…"', async () => {
     const { el } = await mount({ lens: 'files' })
     rightClick(tabs(el)[3])
-    expect(items(el)).toEqual(['Hide Favorites', 'Edit tab row…'])
+    expect(items(el)).toEqual(['Hide Favorites', 'Refresh files', 'Edit tab row…'])
   })
 
   it('S17, S18, S26 (YAZ-3279): "Edit tab row…" opens the panel where the menu was, the right-clicked tab lit; a box writes the row through the settings and the panel stays; a press outside closes it', async () => {
@@ -6022,13 +6023,13 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     mouseClick(more(el))
     act(() => itemByLabel(el, fold)?.click())
     mouseClick(more(el))
-    expect(items(el)).toEqual(['Sort…', fold === 'Expand all' ? 'Collapse all' : 'Expand all', 'Edit tab row…']) // the fold ran, as the button's click does
+    expect(items(el)).toEqual(['Sort…', fold === 'Expand all' ? 'Collapse all' : 'Expand all', 'Refresh files', 'Edit tab row…']) // the fold ran, as the button's click does
   })
 
   it('S5: on Sessions Sort does not show, so a hidden Sort is not in the menu; the fold shows on every tab (YAZ-3511 D19), so a hidden fold is', async () => {
     const { el } = await mount({ lens: 'sessions', ...withTabs({ hiddenButtons: ['sort', 'fold'] }) })
     mouseClick(more(el))
-    expect(items(el)).toEqual(['Expand all', 'Edit tab row…'])
+    expect(items(el)).toEqual(['Expand all', 'Refresh files', 'Edit tab row…'])
   })
 
   it('S16: Enter on ⋯ puts the focus in the menu; ↑ ↓ walk its items, from the tabs with no room past the line to the hidden tabs; ← → and ↓ do nothing else; Esc closes it and the focus is back on ⋯', async () => {
@@ -6039,8 +6040,11 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     key('ArrowDown')
     expect(document.activeElement?.textContent).toBe('Sessions')
     key('ArrowDown')
+    expect(document.activeElement?.textContent).toBe('Refresh files')
+    key('ArrowDown')
     key('ArrowDown')
     expect(document.activeElement?.textContent).toBe('Edit tab row…') // stops at the end
+    key('ArrowUp')
     key('ArrowUp')
     key('ArrowUp')
     key('ArrowUp')
@@ -6087,7 +6091,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     const { el } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
     tabs(el)[1].focus()
     act(() => void tabs(el)[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })))
-    expect(items(el)).toEqual(['Hide Search', 'Sessions [hidden]', 'Edit tab row…'])
+    expect(items(el)).toEqual(['Hide Search', 'Sessions [hidden]', 'Refresh files', 'Edit tab row…'])
     expect(document.activeElement?.textContent).toBe('Hide Search')
     key('ArrowDown')
     expect(document.activeElement?.textContent).toBe('Sessions')
@@ -6100,7 +6104,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     const { el } = await mount({ lens: 'files', ...withTabs({ hidden: ['sessions'] }) })
     more(el)?.focus()
     key('ContextMenu')
-    expect(items(el)).toEqual(['Sessions [hidden]', 'Edit tab row…'])
+    expect(items(el)).toEqual(['Sessions [hidden]', 'Refresh files', 'Edit tab row…'])
     expect(more(el)?.getAttribute('aria-expanded')).toBe('true')
     expect(document.activeElement?.textContent).toBe('Sessions')
     key('Escape')
@@ -6181,7 +6185,7 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
       expect(tabNames(el)).toEqual(['Files', 'Search', 'Focus'])
       expect(more(el)?.className).toBe('sidebar__more sidebar__more--lit')
       mouseClick(more(el))
-      expect(items(el)).toEqual(['Favorites', 'Sessions', 'Recents [open]', 'Edit tab row…'])
+      expect(items(el)).toEqual(['Favorites', 'Sessions', 'Recents [open]', 'Refresh files', 'Edit tab row…'])
       closeOverlay(el)
       resize(400)
       expect(tabNames(el)).toEqual(['Files', 'Search', 'Focus', 'Favorites', 'Sessions', 'Recents'])
@@ -6207,6 +6211,104 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
       expect(tabs(el)).toEqual(before) // the same four buttons: no tab came or went
       expect(spy).toHaveBeenCalled()
     })
+  })
+
+  it('YAZ-6440: "Refresh files" has an SVG icon, runs resync + tree + index across open vaults, and shows the appropriate notice', async () => {
+    const { el, bridge, props } = await mount({ lens: 'files' })
+    bridge.tree.mockClear()
+    bridge.index.mockClear()
+    bridge.resync.mockResolvedValueOnce(false)
+
+    rightClick(tabs(el)[0])
+    const refreshBtn = itemByLabel(el, 'Refresh files')
+    expect(refreshBtn).not.toBeNull()
+    expect(refreshBtn?.querySelector('svg')).not.toBeNull()
+    await act(async () => {
+      refreshBtn?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(bridge.resync).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(bridge.tree).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(bridge.index).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Files are up to date')
+
+    bridge.resync.mockClear()
+    bridge.tree.mockClear()
+    bridge.index.mockClear()
+    vi.mocked(props.onNotice).mockClear()
+    bridge.resync.mockResolvedValueOnce(true)
+
+    rightClick(tabs(el)[0])
+    await act(async () => {
+      itemByLabel(el, 'Refresh files')?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(bridge.resync).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(bridge.tree).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(bridge.index).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Refreshed files')
+  })
+
+  it('YAZ-6439: window focus after >= 2 s away resyncs (throttled 15 s) and refreshes tree + index only when changed', async () => {
+    let now = 100_000
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const V = '/v-focus-resync'
+    try {
+      const { bridge } = await mount({ root: V, lens: 'files' })
+      bridge.tree.mockClear()
+      bridge.index.mockClear()
+      bridge.resync.mockClear()
+      const callsFor = (fn: ReturnType<typeof vi.fn>) => fn.mock.calls.filter(([r]) => r === V)
+
+      // Away < 2 s: no resync.
+      act(() => void window.dispatchEvent(new Event('blur')))
+      now += 1_500
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'))
+        await Promise.resolve()
+      })
+      expect(callsFor(bridge.resync)).toHaveLength(0)
+
+      // Away >= 2 s with no changes: resync runs, zero tree/index work.
+      bridge.resync.mockImplementation(async (r: string) => (r === V ? false : false))
+      act(() => void window.dispatchEvent(new Event('blur')))
+      now += 2_500
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(callsFor(bridge.resync)).toHaveLength(1)
+      expect(callsFor(bridge.tree)).toHaveLength(0)
+      expect(callsFor(bridge.index)).toHaveLength(0)
+
+      // Within 15 s throttle window: skipped even if away >= 2 s.
+      bridge.resync.mockClear()
+      act(() => void window.dispatchEvent(new Event('blur')))
+      now += 5_000
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'))
+        await Promise.resolve()
+      })
+      expect(callsFor(bridge.resync)).toHaveLength(0)
+
+      // Past 15 s throttle with changes: resync returns true -> refreshes tree AND index.
+      bridge.resync.mockImplementation(async (r: string) => r === V)
+      act(() => void window.dispatchEvent(new Event('blur')))
+      now += 16_000
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(callsFor(bridge.resync)).toHaveLength(1)
+      expect(callsFor(bridge.tree)).toHaveLength(1)
+      expect(callsFor(bridge.index)).toHaveLength(1)
+    } finally {
+      nowSpy.mockRestore()
+    }
   })
 })
 
