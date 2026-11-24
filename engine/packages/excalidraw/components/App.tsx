@@ -694,6 +694,36 @@ const YOUTUBE_VIDEO_STATES = new Map<
 >();
 
 const MAX_EMBEDDABLE_VIEWPORT_SCALE = 4;
+const MAX_DOM_RECT_SETTLE_DEPTH = 4;
+
+/**
+ * Collects finite running Web Animations on `el` and its ancestor chain so
+ * `updateDOMRect()` / `refresh()` can re-measure after CSS/WAAPI transforms
+ * settle (YAZ-6461).
+ */
+const getRunningAncestorAnimations = (el: HTMLElement): Animation[] => {
+  const running: Animation[] = [];
+  let node: HTMLElement | null = el;
+  while (node) {
+    if (typeof node.getAnimations === "function") {
+      for (const animation of node.getAnimations()) {
+        if (animation.playState !== "running") {
+          continue;
+        }
+        const timing = animation.effect?.getComputedTiming?.();
+        if (
+          timing &&
+          (timing.iterations === Infinity || timing.endTime === Infinity)
+        ) {
+          continue;
+        }
+        running.push(animation);
+      }
+    }
+    node = node.parentElement;
+  }
+  return running;
+};
 
 let IS_PLAIN_PASTE = false;
 let IS_PLAIN_PASTE_TIMER = 0;
@@ -729,6 +759,7 @@ class App extends React.Component<AppProps, AppState> {
    * in-progress `newElement` and the edited text element) */
   private hasRenderableElements: boolean = false;
   private resizeObserver: ResizeObserver | undefined;
+  private domRectSettleGen = 0;
   /** YAZ-3944 D4: whether the board is in view (a hidden tab layer is not) */
   private gifViewObserver: IntersectionObserver | undefined;
   private boardInView = true;
@@ -2614,6 +2645,13 @@ class App extends React.Component<AppProps, AppState> {
       event.type === "pointerenter" ? "none" : "auto";
   }
 
+  private handlePointerEnter = (event: React.PointerEvent) => {
+    this.syncCanvasRectIfStale();
+    if (this.isInteractionEnabled()) {
+      this.toggleOverscrollBehavior(event);
+    }
+  };
+
   private handlePointerLeave = (event: React.PointerEvent) => {
     this.setHostLinkHover(null);
     this.updateSelectionHover(null);
@@ -2715,8 +2753,8 @@ class App extends React.Component<AppProps, AppState> {
             : this.onKeyDown
         }
         onPointerEnter={
-          this.isInteractionEnabled()
-            ? this.toggleOverscrollBehavior
+          this.isInteractionEnabled() || this.isNavigationEnabled()
+            ? this.handlePointerEnter
             : undefined
         }
         onPointerLeave={
@@ -4202,6 +4240,7 @@ class App extends React.Component<AppProps, AppState> {
     // YAZ-4430: an edit open on a closing board ends with it (its text is in
     // the scene already), and its window listeners go
     this.unmounted = true;
+    this.domRectSettleGen++;
     this.textWysiwygSubmitHandler?.();
     this.textWysiwygSubmitHandler = null;
     this.unmountHostLinks?.();
@@ -4851,7 +4890,11 @@ class App extends React.Component<AppProps, AppState> {
   };
 
   private onScroll = debounce(() => {
-    const { offsetTop, offsetLeft } = this.getCanvasOffsets();
+    const rect = this.getLiveContainerRect();
+    if (!rect) {
+      return;
+    }
+    const { top: offsetTop, left: offsetLeft } = rect;
     this.setState((state) => {
       if (state.offsetLeft === offsetLeft && state.offsetTop === offsetTop) {
         return null;
@@ -4987,6 +5030,7 @@ class App extends React.Component<AppProps, AppState> {
     isPlainPaste: boolean,
     imageOptions?: InsertImagesOptions,
   ) {
+    this.syncCanvasRectIfStale();
     const { x: sceneX, y: sceneY } = viewportCoordsToSceneCoords(
       {
         clientX: this.viewport.lastPosition.x,
@@ -7197,6 +7241,7 @@ class App extends React.Component<AppProps, AppState> {
     if (!this.isNavigationEnabled()) {
       return;
     }
+    this.syncCanvasRectIfStale();
     event.preventDefault();
 
     // we only want to deselect on touch screens because user may have selected
@@ -8345,6 +8390,8 @@ class App extends React.Component<AppProps, AppState> {
     ) {
       return;
     }
+
+    this.syncCanvasRectIfStale();
 
     const selectedElements = this.scene.getSelectedElements(this.state);
 
@@ -10296,6 +10343,7 @@ class App extends React.Component<AppProps, AppState> {
   private handleCanvasPointerDown = (
     event: React.PointerEvent<HTMLElement>,
   ) => {
+    this.syncCanvasRectIfStale();
     if (
       !this.isInteractionEnabled() &&
       !this.isToolSupported(this.state.activeTool.type)
@@ -15239,6 +15287,7 @@ class App extends React.Component<AppProps, AppState> {
     if (!this.isInteractionEnabled()) {
       return;
     }
+    this.syncCanvasRectIfStale();
     const { x: sceneX, y: sceneY } = viewportCoordsToSceneCoords(
       event,
       this.state,
@@ -15502,6 +15551,8 @@ class App extends React.Component<AppProps, AppState> {
     ) {
       return;
     }
+
+    this.syncCanvasRectIfStale();
 
     const { x, y } = viewportCoordsToSceneCoords(event, this.state);
     const element = this.getElementAtPosition(x, y, {
@@ -16171,6 +16222,10 @@ class App extends React.Component<AppProps, AppState> {
         return;
       }
 
+      // YAZ-6403 / YAZ-6461: heal stale canvas rect before wheel zoom/pan so
+      // offsetLeft/offsetTop/width/height match live geometry.
+      this.syncCanvasRectIfStale();
+
       const { deltaX, deltaY } = event;
       // note that event.ctrlKey is necessary to handle pinch zooming
       if (event.metaKey || event.ctrlKey) {
@@ -16182,30 +16237,18 @@ class App extends React.Component<AppProps, AppState> {
           : MIN_ZOOM;
         newZoom = Math.max(newZoom, minZoom);
 
-        // YAZ-6403: always read live canvas rect on wheel-zoom so offsetLeft/offsetTop are never stale after sidebar toggles or tab reveals.
-        const liveRect = this.excalidrawContainerRef.current?.getBoundingClientRect();
         const didTranslate = this.viewport.translate(
-          (state) => {
-            const offsetLeft = liveRect ? liveRect.left : state.offsetLeft;
-            const offsetTop = liveRect ? liveRect.top : state.offsetTop;
-            const syncedState =
-              offsetLeft !== state.offsetLeft || offsetTop !== state.offsetTop
-                ? { ...state, offsetLeft, offsetTop }
-                : state;
-            return {
-              ...getViewportForZoomWithScrollConstraints(
-                {
-                  viewportX: event.clientX,
-                  viewportY: event.clientY,
-                  nextZoom: getNormalizedZoom(newZoom),
-                },
-                syncedState,
-              ),
-              offsetLeft,
-              offsetTop,
-              shouldCacheIgnoreZoom: true,
-            };
-          },
+          (state) => ({
+            ...getViewportForZoomWithScrollConstraints(
+              {
+                viewportX: event.clientX,
+                viewportY: event.clientY,
+                nextZoom: getNormalizedZoom(newZoom),
+              },
+              state,
+            ),
+            shouldCacheIgnoreZoom: true,
+          }),
           {
             zoomPreConstrained: true,
             preserveScrollConstraintsSnapBack: true,
@@ -16309,52 +16352,150 @@ class App extends React.Component<AppProps, AppState> {
     }
   }, 300);
 
-  private updateDOMRect = (cb?: () => void) => {
-    if (this.excalidrawContainerRef?.current) {
-      const excalidrawContainer = this.excalidrawContainerRef.current;
-      const {
+  private getLiveContainerRect(): DOMRect | null {
+    const container = this.excalidrawContainerRef?.current;
+    if (!container) {
+      return null;
+    }
+    const rect = container.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return null;
+    }
+    return rect;
+  }
+
+  private scheduleDOMRectSettle = (
+    el: HTMLElement,
+    settleDepth = 0,
+    alreadySettled?: ReadonlySet<Animation>,
+  ) => {
+    const running = getRunningAncestorAnimations(el).filter(
+      (animation) => !alreadySettled?.has(animation),
+    );
+    const gen = ++this.domRectSettleGen;
+    if (running.length === 0 || settleDepth >= MAX_DOM_RECT_SETTLE_DEPTH) {
+      return;
+    }
+    const nextSettled = new Set(alreadySettled);
+    for (const animation of running) {
+      nextSettled.add(animation);
+    }
+    void Promise.allSettled(
+      running.map((animation) => animation.finished),
+    ).then(() => {
+      if (!this.unmounted && this.domRectSettleGen === gen) {
+        this.updateDOMRect(undefined, settleDepth + 1, nextSettled);
+      }
+    });
+  };
+
+  /**
+   * YAZ-6461: Self-healing rect sync at discrete interaction boundaries.
+   * Fast path (99.99%): returns immediately with zero setState/render when
+   * live rect matches state or container is hidden (0x0).
+   */
+  private syncCanvasRectIfStale = (): AppState => {
+    const container = this.excalidrawContainerRef?.current;
+    const rect = this.getLiveContainerRect();
+    if (!container || !rect) {
+      return this.state;
+    }
+    const { width, height, left: offsetLeft, top: offsetTop } = rect;
+    if (
+      width === this.state.width &&
+      height === this.state.height &&
+      offsetLeft === this.state.offsetLeft &&
+      offsetTop === this.state.offsetTop
+    ) {
+      return this.state;
+    }
+    flushSync(() => {
+      this.setState({
         width,
         height,
-        left: offsetLeft,
-        top: offsetTop,
-      } = excalidrawContainer.getBoundingClientRect();
-      const {
-        width: currentWidth,
-        height: currentHeight,
-        offsetTop: currentOffsetTop,
-        offsetLeft: currentOffsetLeft,
-      } = this.state;
+        offsetLeft,
+        offsetTop,
+      });
+    });
+    this.viewport.constrain();
+    this.scheduleDOMRectSettle(container);
+    return this.state;
+  };
 
-      if (
-        width === currentWidth &&
-        height === currentHeight &&
-        offsetLeft === currentOffsetLeft &&
-        offsetTop === currentOffsetTop
-      ) {
-        if (cb) {
-          cb();
-        }
-        return;
-      }
-
-      this.setState(
-        {
-          width,
-          height,
-          offsetLeft,
-          offsetTop,
-        },
-        () => {
-          cb && cb();
-        },
-      );
-      // a smaller viewport may push the min zoom up / shrink the pan range
-      this.viewport.constrain();
+  private updateDOMRect = (
+    cb?: () => void,
+    settleDepth = 0,
+    alreadySettled?: ReadonlySet<Animation>,
+  ) => {
+    const excalidrawContainer = this.excalidrawContainerRef?.current;
+    if (!excalidrawContainer) {
+      return;
     }
+    this.scheduleDOMRectSettle(
+      excalidrawContainer,
+      settleDepth,
+      alreadySettled,
+    );
+    const {
+      width,
+      height,
+      left: offsetLeft,
+      top: offsetTop,
+    } = excalidrawContainer.getBoundingClientRect();
+
+    // Never clobber valid offsets/dimensions with 0 when hidden (e.g. display:none tab).
+    // Preserve initial mount (`cb`) behavior for jsdom tests without mocked layout rects.
+    if ((width <= 0 || height <= 0) && !cb) {
+      return;
+    }
+
+    const {
+      width: currentWidth,
+      height: currentHeight,
+      offsetTop: currentOffsetTop,
+      offsetLeft: currentOffsetLeft,
+    } = this.state;
+
+    if (
+      width === currentWidth &&
+      height === currentHeight &&
+      offsetLeft === currentOffsetLeft &&
+      offsetTop === currentOffsetTop
+    ) {
+      if (cb) {
+        cb();
+      }
+      return;
+    }
+
+    this.setState(
+      {
+        width,
+        height,
+        offsetLeft,
+        offsetTop,
+      },
+      () => {
+        cb && cb();
+      },
+    );
+    // a smaller viewport may push the min zoom up / shrink the pan range
+    this.viewport.constrain();
   };
 
   public refresh = () => {
-    this.setState({ ...this.getCanvasOffsets() });
+    const container = this.excalidrawContainerRef?.current;
+    if (container) {
+      this.scheduleDOMRectSettle(container);
+      const rect = this.getLiveContainerRect();
+      if (rect) {
+        const { width, height, left: offsetLeft, top: offsetTop } = rect;
+        this.setState({ width, height, offsetLeft, offsetTop });
+        this.viewport.constrain();
+        return;
+      }
+    }
+    this.setState({});
   };
 
   private getCanvasOffsets(): Pick<AppState, "offsetTop" | "offsetLeft"> {
