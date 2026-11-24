@@ -15,11 +15,9 @@ import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { embeddedCards, makeCardResolver } from '@shared/cardLinks'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
-import { fetchIndex } from '../lib/indexFeed'
 import { pageName, useAllPathTitles } from '../lib/pageLabel'
 import { absFrom, basename, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { fetchTree } from '../lib/treeFeed'
 import { countLinkReferences, linkingPages } from '../links/renameLinks'
 import { addShortcut, removeShortcut, type Move } from '../links/shortcuts'
 import type { MovedGesture } from '../lib/moveHistory'
@@ -866,7 +864,7 @@ export function Sidebar({
       return match
     },
   }
-  const { roots, appRoots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes, folderShare)
+  const { roots, appRoots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, refreshFiles, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes, folderShare)
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
   /** The person's own vaults: every vault of the window but the app's own (the card skill, YAZ-5108), which is last. */
@@ -1895,23 +1893,7 @@ export function Sidebar({
     [confirmingDelete, onDeleteEntries, onChangeSettings, settings],
   )
 
-  // Manual "Refresh files" from the tab-row menu (YAZ-6440): resync open vaults, refresh Files tree + index, and show a short notice.
-  const refreshFiles = useCallback(() => {
-    const targets = [...roots]
-    void Promise.all(
-      targets.map(async (vault) => {
-        const changed = (await api.resync?.(vault)?.catch(() => false)) === true
-        await Promise.all([
-          fetchTree(vault).catch(() => undefined),
-          fetchIndex(vault, true).catch(() => undefined),
-        ])
-        return changed
-      }),
-    ).then((results) => {
-      onNotice(results.some(Boolean) ? 'Refreshed files' : 'Files are up to date')
-    })
-  }, [roots, onNotice])
-
+  const onRefreshFiles = useCallback(() => { void refreshFiles().then((c) => onNotice(c ? 'Refreshed files' : 'Files are up to date')) }, [refreshFiles, onNotice])
   const { clip, clipTo, pasteInto, importFiles } = useFileClipboard(root, vaultOf, vaultRows, menu, selection, orderedSelectedPaths, dirs, refresh, openTo, clipboardRef, onNotice, onMoved, askDelete, onFileAction)
 
   /**
@@ -2246,9 +2228,7 @@ export function Sidebar({
           </button>
         )
       })}
-      {/* The tabs (🔒 D4, YAZ-847; YAZ-2638 D2) — chrome v2 ROW 1 — in the reader's order, with the ⋯
-          button for the tabs that do not fit or are hidden (YAZ-3273). Search is a tab of its own, and
-          switching tabs never touches its query. */}
+      {/* The tabs (🔒 D4, YAZ-847; YAZ-2638 D2; YAZ-3273): chrome v2 ROW 1; Search keeps its query across tab switches. */}
       <SidebarTabs
         lens={lens}
         onLensChange={onLensChange}
@@ -2263,8 +2243,7 @@ export function Sidebar({
         foldDisabled={foldDisabled}
         foldLabel={allLabel}
         foldOpen={foldOpen}
-        onFold={foldAll}
-        onRefresh={refreshFiles}
+        onFold={foldAll} onRefresh={onRefreshFiles}
       />
       {/* The search bar (YAZ-739 A-, chrome v2 row 2), on the Search tab only (YAZ-2638 D2): the
           tab carries the magnifier, so the bar has none. With text typed the body below is the

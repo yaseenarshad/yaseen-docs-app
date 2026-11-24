@@ -495,5 +495,17 @@ export function useVaultTree(
     [rootOf],
   )
 
-  return { roots, appRoots, single, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
+  /** Manual "Refresh files" (YAZ-6440): resync open vaults and refresh both Files tree and vault index. */
+  const refreshFiles = useCallback(async (): Promise<boolean> => {
+    const results = await Promise.all(
+      live.current.roots.map(async (vault) => {
+        const changed = (await api.resync?.(vault)?.catch(() => false)) === true
+        await Promise.all([fetchTree(vault).catch(() => undefined), fetchIndex(vault, true).catch(() => undefined)])
+        return changed
+      }),
+    )
+    return results.some(Boolean)
+  }, [])
+
+  return { roots, appRoots, single, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, refreshFiles, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
 }
