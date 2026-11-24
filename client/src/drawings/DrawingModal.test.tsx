@@ -25,6 +25,7 @@ import { BROKEN_DRAWING_MESSAGE, DISCARD_PROMPT, DrawingModal } from './DrawingM
 import { ALLOW_FOLDER_TITLE, allowFolderBody } from './usePicturesFolderAllow'
 import { fakeWatch } from '../documents/boardTestKit'
 import { VaultReadOnly } from '../vault/readOnlyVault'
+import { _resetPageUnlockStore, flushPageUnlockDependents } from '../editor/pageUnlockStore'
 import type { DrawingAppSettings, DrawingSurfaceApi, DrawingSurfaceProps } from './ExcalidrawSurface'
 import { DEFAULT_CANVAS_PANEL, DEFAULT_CANVAS_PREFS, type CanvasPanelState, type CanvasPrefs } from '@shared/types'
 
@@ -143,6 +144,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root?.unmount())
   vi.useRealTimers()
+  _resetPageUnlockStore()
   root = null
   container?.remove()
   container = null
@@ -1489,5 +1491,127 @@ describe('YAZ-6351: inline drawing default title selection and Enter focus', () 
     expect(document.activeElement).toBe(overlay)
     expect(seam.focus).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
+  })
+})
+
+describe('YAZ-6460 item 13: inline DrawingModal inherits parent page unlock state', () => {
+  const emptyJson = '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}'
+
+  it('opens editable and autosaves inside a read-only vault when inlineReadOnly is false (parent page timed-unlocked)', async () => {
+    const onSave = vi.fn()
+    const onClose = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <VaultReadOnly.Provider value={{ on: true, allowFileAction: () => Promise.resolve(true) }}>
+          <DrawingModal
+            {...NO_SETTINGS}
+            root={ROOT}
+            inline={{ json: emptyJson, pagePath: '/v/Note.md', title: 'Flow', autoFocusTitle: true, onSave }}
+            inlineReadOnly={false}
+            theme="light"
+            onClose={onClose}
+          />
+        </VaultReadOnly.Provider>,
+      )
+    })
+
+    expect(seam.props?.readOnly).toBe(false)
+    expect(label()).toBe('Saved')
+    const titleInput = container.querySelector<HTMLInputElement>('.drawing-modal__title-input')!
+    expect(titleInput.readOnly).toBe(false)
+    expect(document.activeElement).toBe(titleInput)
+
+    emit(1)
+    emit(2)
+    expect(label()).toBe('Unsaved')
+    await idle()
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(label()).toBe('Saved')
+  })
+
+  it('opens locked inside an unlocked vault when inlineReadOnly is true (read-only page) and never writes', async () => {
+    const onSave = vi.fn()
+    await open('ok', 100, {
+      inline: { json: emptyJson, pagePath: '/v/Locked.md', title: 'Spec', autoFocusTitle: true, onSave },
+      inlineReadOnly: true,
+    })
+
+    expect(seam.props?.readOnly).toBe(true)
+    expect(label()).toBeNull()
+    const titleInput = container!.querySelector<HTMLInputElement>('.drawing-modal__title-input')!
+    expect(titleInput.readOnly).toBe(true)
+    expect(document.activeElement).not.toBe(titleInput)
+
+    emit(1)
+    emit(2)
+    await idle()
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('flushes pending edits on flushPageUnlockDependents and switches to read-only when inlineReadOnly flips true', async () => {
+    const onSave = vi.fn()
+    const onClose = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const renderModal = (inlineReadOnly: boolean) => (
+      <VaultReadOnly.Provider value={{ on: true, allowFileAction: () => Promise.resolve(true) }}>
+        <DrawingModal
+          {...NO_SETTINGS}
+          root={ROOT}
+          inline={{ json: emptyJson, pagePath: '/v/Note.md', title: 'Flow', onSave }}
+          inlineReadOnly={inlineReadOnly}
+          theme="light"
+          onClose={onClose}
+        />
+      </VaultReadOnly.Provider>
+    )
+
+    await act(async () => {
+      root?.render(renderModal(false))
+    })
+    emit(1)
+    emit(2)
+    expect(onSave).not.toHaveBeenCalled()
+
+    // Parent page timed unlock expires: flushes dependents first, then flips inlineReadOnly to true.
+    await act(async () => {
+      await flushPageUnlockDependents('/v/Note.md')
+    })
+    expect(onSave).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      root?.render(renderModal(true))
+    })
+    expect(seam.props?.readOnly).toBe(true)
+    expect(label()).toBeNull()
+
+    emit(3)
+    await idle()
+    expect(onSave).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores inlineReadOnly for standalone .excalidraw modals inside a read-only vault', async () => {
+    readAsset.mockResolvedValue(asset(100))
+    const onClose = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <VaultReadOnly.Provider value={{ on: true, allowFileAction: () => Promise.resolve(true) }}>
+          <DrawingModal {...NO_SETTINGS} root={ROOT} target={TARGET} inlineReadOnly={false} theme="light" onClose={onClose} />
+        </VaultReadOnly.Provider>,
+      )
+    })
+    expect(seam.props?.readOnly).toBe(true)
+    expect(label()).toBeNull()
+    emit(1)
+    emit(2)
+    await idle()
+    expect(drawingSave).not.toHaveBeenCalled()
   })
 })
