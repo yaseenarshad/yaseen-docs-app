@@ -147,6 +147,7 @@ function menuForRow(row: SearchCandidate, x: number, y: number): ExploreMenuStat
  */
 const requestedLayer = (ask: ExploreRequest, readOnly: boolean): ExploreLayer => {
   if (ask.kind === 'card') return { id: newLayerId(), kind: 'card', path: ask.path, cardId: ask.cardId, index: ask.index }
+  if (ask.kind === 'board') return { id: newLayerId(), kind: 'board', path: ask.path, inlineDrawing: ask.inlineDrawing }
   const layer = fileLayer(ask.path)
   if (layer.kind !== 'page') return layer
   return {

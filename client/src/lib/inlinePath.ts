@@ -14,3 +14,19 @@ export async function resolveInlineCopyPath(ref: InlineRef, fallbackIndex?: numb
     return ref.page
   }
 }
+
+/** Copies `text` (resolving `<page>:<line>` when `inlineDrawingIndex` is defined) and reports outcome via `notify`. */
+export async function copyPathWithInlineSupport(
+  text: string,
+  inlineDrawingIndex: number | undefined,
+  notify: (message: string, kind?: 'error' | 'info', type?: 'clipboard') => void,
+): Promise<void> {
+  const resolved = inlineDrawingIndex !== undefined ? await resolveInlineCopyPath({ kind: 'drawing', page: text, index: inlineDrawingIndex }) : text
+  const copied = resolved.split('\n').length
+  try {
+    await navigator.clipboard.writeText(resolved)
+    notify(copied === 1 ? 'Copied path' : `Copied ${copied} paths`, 'info', 'clipboard')
+  } catch (error: unknown) {
+    notify(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}

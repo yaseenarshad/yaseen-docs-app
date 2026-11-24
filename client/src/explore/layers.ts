@@ -89,7 +89,7 @@ export type FileLayer = Extract<ExploreLayer, { kind: 'page' | 'board' | 'card' 
  * `editCard` opens the landed card's Edit card (a card in a page), and
  * `fromInbox` makes ⌘↵ while reading go back to the Inbox.
  */
-export type ExploreRequest = { kind: 'page'; path: string; card?: CardPlace; edit?: boolean; editCard?: boolean; fromInbox?: boolean } | { kind: 'card'; path: string; cardId: string | null; index: number }
+export type ExploreRequest = { kind: 'page'; path: string; card?: CardPlace; edit?: boolean; editCard?: boolean; fromInbox?: boolean } | { kind: 'card'; path: string; cardId: string | null; index: number } | { kind: 'board'; path: string; inlineDrawing: { index: number; title?: string } }
 
 /** The page, board or card layer nearest the top, or null: what ⌘↵ opens in a tab (a card's page). */
 export function topPage(layers: readonly ExploreLayer[]): FileLayer | null {
