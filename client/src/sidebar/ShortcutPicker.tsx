@@ -9,6 +9,7 @@
  * wrapping), ⏎ picks it, Esc or a click away closes. An empty query lists the first `SEARCH_CAP`.
  */
 import { useMemo, useState, type KeyboardEvent } from 'react'
+import { isInlineRef } from '@shared/inlineRef'
 import { useUnit } from '../vault/unitWord'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -34,7 +35,7 @@ export function ShortcutPicker({ folder, source, onPick, onClose }: ShortcutPick
   const [query, setQuery] = useState('')
   const candidates = useMemo(() => {
     const shown = new Set(folderRows(records, folders, folder))
-    return searchCandidates(records.filter((record) => !shown.has(record)))
+    return searchCandidates(records.filter((record) => !shown.has(record))).filter((r) => r.inlineDrawing !== true && !isInlineRef(r.path))
   }, [records, folders, folder])
   const results = useMemo(() => searchTitles(candidates, query), [candidates, query])
   const { sel, setSelected, onKeys } = useResultKeys(results, (hit) => onPick(hit.path))

@@ -50,10 +50,12 @@ function pickColor(input: HTMLInputElement, hex: string) {
 describe('inlineCodeStyle CSS helpers (YAZ-6452)', () => {
   it('computes data attribute and custom CSS vars accurately', () => {
     expect(inlineCodeAttr(undefined)).toBe('default')
+    expect(inlineCodeAttr('classic')).toBe('classic')
     expect(inlineCodeAttr('github')).toBe('github')
     expect(inlineCodeAttr({ fg: 'text', bg: 'auto' })).toBe('custom')
 
     expect(inlineCodeVars('default')).toEqual({})
+    expect(inlineCodeVars('classic')).toEqual({})
     expect(inlineCodeVars('subtle')).toEqual({})
     expect(inlineCodeVars({ fg: 'text', bg: 'auto' })).toEqual({
       '--inline-code-fg': 'var(--fg)',
@@ -75,6 +77,7 @@ describe('InlineCodeStyleControl (YAZ-6452)', () => {
     const { onChange, render } = mount('default')
     expect(buttonsIn('Inline code style').map((b) => b.textContent)).toEqual([
       'Default',
+      'Classic',
       'Subtle',
       'GitHub',
       'Accent',
@@ -90,6 +93,13 @@ describe('InlineCodeStyleControl (YAZ-6452)', () => {
     expect(preview.textContent).toContain('When we updated App.tsx and /api/launchers, inline code stayed easy to scan.')
     expect([...preview.querySelectorAll('code')].map((c) => c.textContent)).toEqual(['App.tsx', '/api/launchers'])
     expect(preview.dataset.inlineCodeStyle).toBe('default')
+
+    act(() => buttonIn('Inline code style', 'Classic').click())
+    expect(onChange).toHaveBeenLastCalledWith('classic')
+    render('classic')
+    expect(buttonIn('Inline code style', 'Classic').getAttribute('aria-pressed')).toBe('true')
+    expect(previewSurface().dataset.inlineCodeStyle).toBe('classic')
+    expect(resetBtn()).not.toBeNull()
 
     act(() => buttonIn('Inline code style', 'Subtle').click())
     expect(onChange).toHaveBeenLastCalledWith('subtle')

@@ -1001,6 +1001,20 @@
   overflow-wrap: anywhere;
 }
 
+/* Inline drawing tile title: Excalidraw icon + single-line truncated title (YAZ-6468). */
+.taboverview__title--drawing {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.taboverview__title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
 /* A copy's card keeps the top-right corner for its "1 of 2" (D11). */
 .taboverview__page--copy .taboverview__title {
   padding-right: 42px;
@@ -1100,6 +1114,22 @@
   max-height: 100%;
   object-fit: contain;
   pointer-events: none;
+}
+
+.taboverview__inline-shot {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  pointer-events: none;
+}
+
+.taboverview__inline-shot .inline-drawing-preview__body--compact {
+  padding: 0;
+}
+
+.taboverview__inline-shot .editor-msg {
+  margin: 0;
+  font-size: 12px;
 }
 
 /* The strip's ✕, shown the way the strip shows it: on the card under the pointer or the highlight. */

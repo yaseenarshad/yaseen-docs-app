@@ -176,4 +176,53 @@ describe('wikilink hover (YAZ-3403 D8)', () => {
       pm.remove()
     })
   })
+
+  it('YAZ-6468: hovering a [[CARD-ID]] wikilink passes the synthetic inline card ref (<page>#<cardId>), not the parent page path', async () => {
+    const source = createWikilinkResolveSource()
+    source.update(
+      (target) => (target.toUpperCase() === 'WIKI-42' ? '/vault/Notes.md' : target === 'Known' ? '/vault/Known.md' : null),
+      [
+        {
+          path: '/vault/Notes.md',
+          name: 'Notes.md',
+          basename: 'Notes',
+          title: 'Notes',
+          folder: '',
+          ext: 'md',
+          size: 100,
+          mtime: 1,
+          tags: [],
+          links: [],
+          embeds: [],
+          aliases: [],
+          properties: {},
+          cards: [{ id: 'WIKI-42', title: 'Spaced repetition', off: false }],
+        } as never,
+      ],
+      [],
+      true,
+      ['WIKI'],
+    )
+    const hover = { onHover: vi.fn(), onLeave: vi.fn() }
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const crepe = createCrepe({ root, defaultValue: 'see [[WIKI-42]] and [[WIKI-42|custom]] and [[Known]]\n', wikilinks: source, wikilinkHover: hover })
+    await crepe.create()
+    mounted.push({ crepe, root })
+
+    const cardSpan = span(root, 'Spaced repetition')
+    over(cardSpan)
+    expect(hover.onHover).toHaveBeenCalledExactlyOnceWith('/vault/Notes.md#WIKI-42', expect.objectContaining({ left: expect.any(Number) }), true)
+    out(cardSpan, root)
+    expect(hover.onLeave).toHaveBeenCalledTimes(1)
+
+    const pipedSpan = span(root, 'custom')
+    over(pipedSpan)
+    expect(hover.onHover).toHaveBeenLastCalledWith('/vault/Notes.md#WIKI-42', expect.objectContaining({ left: expect.any(Number) }), true)
+    out(pipedSpan, root)
+
+    const knownSpan = span(root, 'Known')
+    over(knownSpan)
+    expect(hover.onHover).toHaveBeenLastCalledWith('/vault/Known.md', expect.objectContaining({ left: expect.any(Number) }), true)
+  })
 })

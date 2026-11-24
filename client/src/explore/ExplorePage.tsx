@@ -73,6 +73,7 @@ import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { BacklinksSection } from '../links/BacklinksSection'
 import { savedFirst } from '../lib/renameContinuity'
+import { resolveInlineCopyPath } from '../lib/inlinePath'
 import { storage } from '../lib/storage'
 import { editingLabel, ReadOnlyChip } from '../editor/ReadOnlyChip'
 import { DEFAULT_SETTINGS } from '@shared/types'
@@ -145,6 +146,10 @@ interface ExplorePageProps {
   leaveAsk?: number
   /** The card to land on once the page shows (YAZ-4962): found by its ID (YAZ-5164, `pageCardIn`), its index only while it has none. */
   card?: CardPlace
+  /** The inline drawing (0-based index) to land on once the page shows (YAZ-6470). */
+  drawing?: number
+  /** Opens an inline Excalidraw drawing inside `path` at 0-based `index` in its own tab (YAZ-6470). */
+  onOpenInlineDrawingTab?: (path: string, index: number, background: boolean) => void
   /** The Inbox's E on a card in a page (YAZ-5145): once the layer edits, the card at `card` opens in Edit card, one time. A card file's opens by itself (round 3). */
   editCard?: boolean
   /** Opened by the Inbox (YAZ-5145): ⌘↵ while reading goes back to it, so ↗ does not say ⌘↵. */
@@ -246,7 +251,7 @@ const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeatu
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
-export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, vault, style, frame, onOpenLink, renderEditor, createFolder, onFileAction, linkActions, onNotice, onToggleEdit, editAsk = 0, leaveAsk = 0, card, editCard = false, fromInbox = false, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, pageMenu, onClose, active, linkPreview }: ExplorePageProps) {
+export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, vault, style, frame, onOpenLink, renderEditor, createFolder, onFileAction, linkActions, onNotice, onToggleEdit, editAsk = 0, leaveAsk = 0, card, drawing, onOpenInlineDrawingTab, editCard = false, fromInbox = false, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, pageMenu, onClose, active, linkPreview }: ExplorePageProps) {
   // The layer's vault's word for a page (YAZ-4938), for its own words and for every panel inside it.
   const unit = useVaultUnit(vault.root)
   const pageId = usePageId(idInTitle ? vault.wikilinks : undefined, path)
@@ -282,8 +287,9 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   /** ⌘F in the reading layer finds in THIS page (check 11): the page's own find plugin on this Crepe, and its bar. */
   const findChannel = useMemo(() => createFindChannel(), [])
   // The doors, read at click time: a layer's Crepe is built once, and the stack's callbacks may change identity.
-  const doors = useRef({ onOpenLink, createFolder, onFileAction, linkActions, onNotice, review: vault.review })
-  doors.current = { onOpenLink, createFolder, onFileAction, linkActions, onNotice, review: vault.review }
+  const doors = useRef({ onOpenLink, createFolder, onFileAction, linkActions, onNotice, onOpenInlineDrawingTab, review: vault.review })
+  doors.current = { onOpenLink, createFolder, onFileAction, linkActions, onNotice, onOpenInlineDrawingTab, review: vault.review }
+  const canOpenDrawingTab = onOpenInlineDrawingTab !== undefined
   /**
    * The hover panel of the reading page's [[links]] (YAZ-5920), as the page editor wires it (`Editor.tsx`, YAZ-3403): the
    * reading Crepe tells a hover on a resolved link, the panel shows that page beside it after the dwell. A hover's id is
@@ -433,6 +439,17 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       // The pills' icons, and a board embed as its window, read only (round 1, item 2): what the page tab draws.
       linkLook: { icon: (target, folder) => fileIconDecoration(icons, target, folder) },
       boardEmbeds: { root },
+      // Read-safe inline drawing actions (YAZ-6470): Copy path (<page>:<line>) and Open in new tab; edit actions stay hidden while reading.
+      inlineDrawing: {
+        root,
+        pagePath: path,
+        onCopyPath: (index) => {
+          void resolveInlineCopyPath({ kind: 'drawing', page: path, index }).then((p) => copyText(p, 'path', (m) => doors.current.onNotice(m)))
+        },
+        ...(canOpenDrawingTab && {
+          onOpenInTab: (index, background) => doors.current.onOpenInlineDrawingTab?.(path, index, background),
+        }),
+      },
       // The page's links, live (the read-only rule: a plain click opens, YAZ-3879 point 6). An unresolved link is made first, as everywhere.
       wikilinkNav: { ...doors.current.linkActions, root, createFolder: () => doors.current.createFolder(path), openCurrent: open, openNewTab: open, openBackground: open, onNotice: (m) => doors.current.onNotice(m), allowFileAction: (vault) => doors.current.onFileAction?.(vault) ?? Promise.resolve(true) },
       // A hover on a link (YAZ-5920): the hover panel, as in the page tab; a Markdown link pill previews the page it opens.
@@ -488,7 +505,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
     }
     // `icons` is read at each link draw; a change of the icon rules redraws no preview (the preview panel's rule).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [body, switches, path, root, wikilinks, wikilinkCandidates, viewOnlyLinks, findChannel])
+  }, [body, switches, path, root, wikilinks, wikilinkCandidates, viewOnlyLinks, findChannel, canOpenDrawingTab])
 
   // The layer closes: the Crepe on show goes with it (declared after the Crepe's effect, so its cleanup runs last).
   useEffect(
@@ -521,20 +538,25 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       keys={{ collapse: 'page.foldAll', expand: 'page.unfoldAll' }}
     />
   )
-  // Land on the card the layer opened for (YAZ-4962: the Inbox's O and E, the card window's page name), once: the
-  // outline's landing (`landOn`). Reading: once the read-only Crepe is up. Editing: the editor mounts a tick later, so
+  // Land on the card the layer opened for (YAZ-4962: the Inbox's O and E, the card window's page name), once per target:
+  // the outline's landing (`landOn`). Reading: once the read-only Crepe is up. Editing: the editor mounts a tick later, so
   // ask a few frames until its card is there.
-  const landed = useRef(false)
+  const landedCard = useRef<string | null>(null)
   const editBodyRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (card === undefined || landed.current || (mode === 'read' && ready === null)) return
+    if (card === undefined) {
+      landedCard.current = null
+      return
+    }
+    const key = `${path}\0${card.id ?? ''}\0${card.index}`
+    if (landedCard.current === key || (mode === 'read' && ready === null)) return
     let tries = 0
     let timer: ReturnType<typeof setTimeout> | undefined
     const tick = () => {
       const scope = mode === 'read' ? mountRef.current : editBodyRef.current
       const target = pageCardIn(scope, card)
       if (target !== null) {
-        landed.current = true
+        landedCard.current = key
         landOn(target)
         return
       }
@@ -542,7 +564,33 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
     }
     tick()
     return () => clearTimeout(timer)
-  }, [card, mode, ready])
+  }, [path, card, mode, ready])
+
+  // Land on the inline drawing the layer opened for (YAZ-6470: "Show in page" from an inline ExploreBoard or search menu),
+  // once per `(path, drawing)`: smooth scroll + flash via `landOn`, mirroring card landing above.
+  const landedDrawing = useRef<string | null>(null)
+  useEffect(() => {
+    if (drawing === undefined) {
+      landedDrawing.current = null
+      return
+    }
+    const key = `${path}\0${drawing}`
+    if (landedDrawing.current === key || (mode === 'read' && ready === null)) return
+    let tries = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const tick = () => {
+      const scope = mode === 'read' ? mountRef.current : editBodyRef.current
+      const target = scope?.querySelectorAll<HTMLElement>('.inline-drawing')[drawing] ?? null
+      if (target !== null) {
+        landedDrawing.current = key
+        landOn(target)
+        return
+      }
+      if (++tries <= 40) timer = setTimeout(tick, 16)
+    }
+    tick()
+    return () => clearTimeout(timer)
+  }, [path, drawing, mode, ready])
 
   // E edits the thing you look at (YAZ-5145, Yaseen: "e would edit the card"; round 3, Q38: "if you're opening a card
   // file. Then it makes sense that if you're editing, you're going to edit the card"). Each time the layer goes into
@@ -683,6 +731,13 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       }
       // A card file's Edit card and E: the layer asks, then edits, and E edits the thing you look at: its Edit card.
       if (cardFile) return editRef.current()
+      // An inline drawing edit attempt (double-click, title click, Enter in read mode, YAZ-6470): transition the layer to edit mode (asking "Allow edits?" if locked).
+      if (event instanceof ReadOnlyEditEvent && event.detail === 'drawing') {
+        const drawingEl = target instanceof HTMLElement ? target.closest<HTMLElement>('.inline-drawing') : null
+        if (drawingEl !== null) pinned.current = drawingEl
+        editRef.current()
+        return
+      }
       const own = target instanceof HTMLElement && target.matches('[data-page-card]') ? target : null
       if (own === null) return
       const cards = [...(mountRef.current?.querySelectorAll<HTMLElement>('[data-page-card]') ?? [])]

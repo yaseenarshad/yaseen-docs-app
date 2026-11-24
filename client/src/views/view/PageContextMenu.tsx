@@ -1,6 +1,8 @@
 import { Fragment, useContext, useState, type ReactNode } from 'react'
+import { diskPathOf, parseInlineRef } from '@shared/inlineRef'
 import { useUnit } from '../../vault/unitWord'
 import { FlyoutParent, MenuFlyout, useFlyout } from '../../components/Flyout'
+import { resolveInlineCopyPath } from '../../lib/inlinePath'
 import { PageActions } from '../../lib/pageActions'
 import { CopyIcon, EyeIcon, HeartIcon } from './icons'
 import { FileIcon } from '../../sidebar/FileIcon'
@@ -33,20 +35,24 @@ interface PageContextMenuProps {
 /** Page actions shared by folder views; positioning and dismissal stay action-free. */
 export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpenBackground, onNotice, onClose, extra, danger, onOpenWindow }: PageContextMenuProps) {
   const unit = useUnit()
+  // Inline card/drawing rows (`<page>#<id>` / `<page>#drawing-N`, YAZ-6469): OS verbs target the parent file on disk,
+  // Copy path resolves `<page>:<line>`, and page-mutating/list actions are omitted so synthetic paths never corrupt lists.
+  const inlineRef = parseInlineRef(path)
+  const diskPath = diskPathOf(path)
   // A folder row's page is its folder (YAZ-4579 D32): Copy path and Reveal name the directory, not its hidden `.folder.md`.
-  const page = rowPage(path)
+  const page = rowPage(diskPath)
   // "Move to Other files" (YAZ-4597 D46): its own group, after the surface's groups and before the destructive one (C8),
   // on a page row of a folder page whose tray takes moves.
   const moveToTray = useContext(OtherFilesMove)
   // A whole subfolder (YAZ-4747 OF1): the one directly under the page that holds this row.
   const folderTray = useContext(OtherFilesFolderMove)
-  const subfolder = folderTray?.folderOf(path) ?? null
+  const subfolder = inlineRef !== null ? null : (folderTray?.folderOf(path) ?? null)
   const doors = useContext(PageActions)
-  const lists = doors?.listState?.(page) ?? null
+  const lists = inlineRef !== null ? null : (doors?.listState?.(page) ?? null)
   const flyout = useFlyout<string>()
   // YAZ-4797 demo: a page row's shortcut items, on a folder page of a vault with IDs; a folder row has none (only pages are shortcuts).
   const shortcuts = useContext(ShortcutActions)
-  const pageRow = movesToOtherFiles(path) && shortcuts !== null && !shortcuts.locked(path)
+  const pageRow = inlineRef === null && movesToOtherFiles(path) && shortcuts !== null && !shortcuts.locked(path)
   const home = pageRow ? shortcuts.homeOf(path) : null
   const [folderQuery, setFolderQuery] = useState('')
   const run = (action: () => void) => () => {
@@ -69,10 +75,26 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
       )
     })
   }
-  const copyPath = (): void =>
-    void navigator.clipboard.writeText(page).catch((error: unknown) => {
-      onNotice?.(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`)
+  const copyPath = (): void => {
+    const write = (text: string) =>
+      void navigator.clipboard.writeText(text).catch((error: unknown) => {
+        onNotice?.(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`)
+      })
+    if (inlineRef === null) write(page)
+    else void resolveInlineCopyPath(inlineRef).then(write)
+  }
+  const copyCardId = (): void => {
+    if (inlineRef?.kind !== 'card') return
+    void navigator.clipboard.writeText(inlineRef.id).catch((error: unknown) => {
+      onNotice?.(`Can't copy card ID: ${error instanceof Error ? error.message : String(error)}`)
     })
+  }
+  const copyCardLink = (): void => {
+    if (inlineRef?.kind !== 'card') return
+    void navigator.clipboard.writeText(`[[${inlineRef.id}]]`).catch((error: unknown) => {
+      onNotice?.(`Can't copy card link: ${error instanceof Error ? error.message : String(error)}`)
+    })
+  }
 
   // YAZ-3746 13AW, after the sidebar's and the tab's menus: the ways to open first, the rarer ones folded into
   // "Open in ›" (the sidebar's verbs: right panel, VS Code, the default app | Reveal in Finder). "Open in new window" is out of it,
@@ -112,6 +134,7 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
    * folder row moves its folder (its own row IS the folder, so the words need no name).
    */
   const trayItems = (): ReactNode[] => {
+    if (inlineRef !== null) return []
     if (!movesToOtherFiles(path)) return folderTray !== null && subfolder !== null && subfolder.dir === page ? [item('Move to Other files', () => folderTray.move(subfolder.dir))] : []
     if (moveToTray === null) return []
     if (folderTray === null || subfolder === null) return [item('Move to Other files', () => moveToTray(path))]
@@ -196,11 +219,17 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
       ? []
       : [item(<span className="ctx-menu__label"><EyeIcon />{lists.focus ? 'Remove from focus' : 'Add to focus'}</span>, () => doors.toggleFocus!([page], lists.focus))]),
     item(<span className="ctx-menu__label"><CopyIcon />Copy path</span>, copyPath),
+    ...(inlineRef?.kind === 'card'
+      ? [
+          item(<span className="ctx-menu__label"><CopyIcon />Copy card ID</span>, copyCardId, inlineRef.id),
+          item(<span className="ctx-menu__label"><CopyIcon />Copy card link</span>, copyCardLink),
+        ]
+      : []),
     ...shortcutItems(),
     ...trayItems(),
   ]
   // Keys for the rows of each list (the open items and the shortcut items): React warned on the arrays (YAZ-4797 test).
-  const groups = [...(extra ?? []), <Fragment key="page">{pageGroup.map((n, k) => <Fragment key={k}>{n}</Fragment>)}</Fragment>, ...(danger === undefined || danger === null ? [] : [danger])]
+  const groups = [...(extra ?? []), <Fragment key="page">{pageGroup.map((n, k) => <Fragment key={k}>{n}</Fragment>)}</Fragment>, ...(inlineRef !== null || danger === undefined || danger === null ? [] : [danger])]
 
   return (
     <ContextMenuSurface x={x} y={y} onClose={onClose}>

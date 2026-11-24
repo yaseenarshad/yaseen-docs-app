@@ -33,6 +33,7 @@ import type { Row } from '../views/engine'
 import { readPageView } from '../lib/pageView'
 import { writeProperty } from '../views/writeProperty'
 import { holdPagePlace, showPagePlace } from './pagePlace'
+import { _resetPageUnlockStore, getPageUnlockUntil, registerPageUnlockFlush } from './pageUnlockStore'
 import type { NoticeKind } from '../lib/notice'
 import { VIEW_ONLY_CHANGE } from './readOnlyEdit'
 
@@ -318,6 +319,7 @@ afterEach(() => {
   delete (window as unknown as Record<string, unknown>).yaseenDocs
   // reset (not clear): a failing test must not leak queued mockResolvedValueOnce reads into the next mount.
   vi.resetAllMocks()
+  _resetPageUnlockStore()
   vi.useRealTimers()
 })
 
@@ -3256,6 +3258,43 @@ describe('Read only for the whole vault, with a timed "Allow edits" (YAZ-4939)',
     expect(writeFile.mock.calls.map(([body]) => body.content)).toEqual([`${FM}# Hello\n\nquick\n`])
     expect(readonlyOf()).toBe(true)
     expect(chipButton(el)?.textContent).toBe('Read only')
+  })
+
+  it('YAZ-6460 item 13: publishes timed unlock to pageUnlockStore and awaits dependent flushes before relocking', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
+    expect(getPageUnlockUntil(PATH)).toBeNull()
+
+    await allow(el, '10 minutes')
+    const published = getPageUnlockUntil(PATH)
+    expect(published).not.toBeNull()
+    expect(published!).toBeGreaterThan(Date.now())
+
+    let releaseDependent!: () => void
+    const dependentFlush = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseDependent = resolve
+        }),
+    )
+    const off = registerPageUnlockFlush(PATH, dependentFlush)
+
+    await act(async () => {
+      lockNow(el)!.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    // Dependent flush started and the page stays unlocked until it settles.
+    expect(dependentFlush).toHaveBeenCalledTimes(1)
+    expect(getPageUnlockUntil(PATH)).toBe(published)
+
+    await act(async () => {
+      releaseDependent()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
+    expect(getPageUnlockUntil(PATH)).toBeNull()
+    expect(readonlyOf()).toBe(true)
+    off()
   })
 
   it('YAZ-5164: the unlock and the lock keep the place (Yaseen: "if I lock now again, it then jumps me somewhere else"): each switch runs inside holdPagePlace', async () => {

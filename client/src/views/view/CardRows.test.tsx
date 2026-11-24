@@ -323,4 +323,41 @@ describe('YAZ-5319: a table that lists cards', () => {
     doubleClick(cell(el, 0, 0))
     expect(el.querySelector('[aria-label="Edit title"]')).toBeNull()
   })
+
+  it('YAZ-6469: inline card rows flow through hover preview (not noHover) and Open in mini window lands on the card and opens the parent page', () => {
+    const parsed = parseViews(CARDS_VIEW)
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update(null, [], [], true)
+    const renderPageEditor = vi.fn((path: string) => <div data-mini-editor={path} />)
+    const onOpenFile = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() =>
+      root?.render(
+        <ViewsPane
+          parsed={parsed}
+          onChange={vi.fn()}
+          root="/vault"
+          folderPath="/vault/Geo"
+          records={RECORDS}
+          hoverPreview
+          folder={testFolderHost({ wikilinks, vaultRecords: RECORDS, renderPageEditor })}
+          onOpenFile={onOpenFile}
+        />,
+      ),
+    )
+
+    // Inline card row has its synthetic ref on data-hover-item and does NOT disable hover via noHover
+    const inlineRow = container.querySelector<HTMLElement>(`tr[data-hover-item="${TRIP}#GEO-1"]`)
+    expect(inlineRow).not.toBeNull()
+    // Right-click -> Open in mini window calls landOnCard + renders parent diskPath in PageWindow (never #GEO-1)
+    act(() => void inlineRow!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 20, clientY: 20 })))
+    const miniItem = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent === 'Open in mini window')
+    expect(miniItem).toBeDefined()
+    act(() => miniItem!.click())
+    expect(landOnCard).toHaveBeenCalledExactlyOnceWith(TRIP, 'GEO-1')
+    expect(renderPageEditor).toHaveBeenCalledWith(TRIP)
+    expect(document.querySelector(`[data-mini-editor="${TRIP}"]`)).not.toBeNull()
+  })
 })

@@ -24,6 +24,18 @@ vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: { tree: vi.fn(), shell: { reveal: vi.fn().mockResolvedValue({}), openVsCode: vi.fn().mockResolvedValue({}) } },
 }))
+vi.mock('../sidebar/InlineHoverPreview', () => ({
+  default: ({ inlineRef, name, place }: { inlineRef: { kind: string; page: string; index?: number }; name?: string; place?: string }) => (
+    <div
+      className="inline-drawing-preview"
+      data-kind={inlineRef.kind}
+      data-page={inlineRef.page}
+      data-index={inlineRef.index === undefined ? '' : String(inlineRef.index)}
+      data-place={place ?? ''}
+      aria-label={`Preview of ${name || 'Untitled drawing'}`}
+    />
+  ),
+}))
 import { api, BridgeRequestError } from '../api'
 import { fetchTree } from '../lib/treeFeed'
 const reveal = vi.mocked(api.shell.reveal)
@@ -2388,6 +2400,151 @@ describe('Tab strip IDs, custom tab widths, and full-name tooltip (YAZ-6474)', (
       }
     } finally {
       HTMLElement.prototype.getBoundingClientRect = origRect
+    }
+  })
+})
+
+describe('YAZ-6468: inline drawing tab polish in TabBar', () => {
+  const noop = { onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn() }
+  const makeScope = (records: unknown[] = []) => () => ({
+    root: '/v',
+    wikilinks: { resolve: null, records, folders: [], ids: false, letters: [], pills: { prefix: '', suffix: '', icon: true, color: null, border: false }, vault: null, subscribe: () => () => undefined } as never,
+    textVars: {},
+  })
+
+  it('uses indexed inlineDrawing title for background/restored tabs, falls back to "<Page> · Drawing", and live event overrides', () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const records = [{ path: '/v/Notes.md', title: 'Notes', inlineDrawings: [{ index: 0, title: 'Indexed Flow' }, { index: 1, title: '' }] }]
+    act(() => {
+      root?.render(
+        <IdTabBar
+          roots={['/v']}
+          windowId="w1"
+          titles={new Map([['/v/Notes.md', 'Notes']])}
+          tabs={[
+            { id: 't-page', path: '/v/Notes.md' },
+            { id: 't-d0', path: '/v/Notes.md', inlineDrawing: 0 },
+            { id: 't-d1', path: '/v/Notes.md', inlineDrawing: 1 },
+          ]}
+          active="t-page"
+          previewScope={makeScope(records)}
+          {...noop}
+          {...noNav}
+        />,
+      )
+    })
+    const labelText = (id: string) => container!.querySelector(`[data-tab="${id}"] .tabbar__name`)?.textContent
+    expect(labelText('t-d0')).toBe('Indexed Flow')
+    expect(labelText('t-d1')).toBe('Notes · Drawing')
+
+    // Live title event overrides indexed title.
+    act(() => {
+      window.dispatchEvent(new CustomEvent('mdapp:inline-drawing-title', { detail: { path: '/v/Notes.md', index: 0, title: 'Live Architecture' } }))
+    })
+    expect(labelText('t-d0')).toBe('Live Architecture')
+  })
+
+  it('copy badge treats Page.md and Page.md#drawing-0 as distinct, while two tabs of Page.md#drawing-0 badge 1 and 2', () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => {
+      root?.render(
+        <IdTabBar
+          roots={['/v']}
+          windowId="w1"
+          titles={new Map([['/v/Notes.md', 'Notes']])}
+          tabs={[
+            { id: 't-page', path: '/v/Notes.md' },
+            { id: 't-d0a', path: '/v/Notes.md', inlineDrawing: 0 },
+            { id: 't-d0b', path: '/v/Notes.md', inlineDrawing: 0 },
+            { id: 't-d1', path: '/v/Notes.md', inlineDrawing: 1 },
+          ]}
+          active="t-page"
+          {...noop}
+          {...noNav}
+        />,
+      )
+    })
+    const copyAttr = (id: string) => container!.querySelector(`[data-tab="${id}"] .tabbar__label`)?.getAttribute('data-copy')
+    expect(copyAttr('t-page')).toBeNull()
+    expect(copyAttr('t-d0a')).toBe('1')
+    expect(copyAttr('t-d0b')).toBe('2')
+    expect(copyAttr('t-d1')).toBeNull()
+  })
+
+  it('right-clicking an inline drawing tab opens TabMenu with Show in page and without Rename file', () => {
+    const onOpenPage = vi.fn()
+    const onRenameFile = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => {
+      root?.render(
+        <IdTabBar
+          roots={['/v']}
+          windowId="w1"
+          titles={new Map([['/v/Notes.md', 'Notes']])}
+          tabs={[{ id: 't-d0', path: '/v/Notes.md', inlineDrawing: 0 }]}
+          active="t-d0"
+          onOpenPage={onOpenPage}
+          onRenameFile={onRenameFile}
+          {...noop}
+          {...noNav}
+        />,
+      )
+    })
+    const tab = container.querySelector<HTMLElement>('[data-tab="t-d0"]')!
+    act(() => void tab.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    const items = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    const labels = items.map((b) => b.textContent)
+    expect(labels).toContain('Show in page')
+    expect(labels).not.toContain('Rename file')
+    act(() => items.find((b) => b.textContent === 'Show in page')?.click())
+    expect(onOpenPage).toHaveBeenCalledExactlyOnceWith('/v/Notes.md')
+  })
+
+  it('hovering an inactive inline drawing tab opens the inline drawing hover preview (not the parent .md page)', async () => {
+    vi.useFakeTimers()
+    try {
+      container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      const records = [{ path: '/v/Notes.md', title: 'Notes', inlineDrawings: [{ index: 0, title: 'System Diagram' }] }]
+      act(() => {
+        root?.render(
+          <IdTabBar
+            roots={['/v']}
+            windowId="w1"
+            titles={new Map([['/v/Notes.md', 'Notes']])}
+            tabs={[
+              { id: 't-page', path: '/v/Notes.md' },
+              { id: 't-d0', path: '/v/Notes.md', inlineDrawing: 0 },
+            ]}
+            active="t-page"
+            hoverPreview
+            previewScope={makeScope(records)}
+            {...noop}
+            {...noNav}
+          />,
+        )
+      })
+      const drawingTab = container.querySelector<HTMLElement>('[data-tab="t-d0"]')!
+      act(() => void drawingTab.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+      // Let preloadPreview's dynamic import resolve during the dwell (as in a real browser).
+      await act(async () => {})
+      await act(async () => void vi.advanceTimersByTime(500))
+      await act(async () => {})
+      // InlineRefPreview renders for the inline drawing (never `.page-preview`).
+      const preview = document.body.querySelector<HTMLElement>('.inline-drawing-preview')
+      expect(preview).not.toBeNull()
+      expect(preview?.dataset).toMatchObject({ kind: 'drawing', page: '/v/Notes.md', index: '0', place: 'Notes' })
+      expect(preview?.getAttribute('aria-label')).toBe('Preview of System Diagram')
+      expect(document.body.querySelector('.page-preview')).toBeNull()
+    } finally {
+      vi.useRealTimers()
     }
   })
 })

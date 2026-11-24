@@ -1809,3 +1809,73 @@ describe('sleep and wake (YAZ-3737 5A, S7)', () => {
     })
   })
 })
+
+describe('YAZ-6468: inline drawing tab duplication and synthetic path opens', () => {
+  it('duplicate preserves inlineDrawing on the duplicated tab instead of opening the parent .md page', () => {
+    const start: IdTabsState = {
+      tabs: [
+        { id: 't1', path: '/v/Notes.md' },
+        { id: 't2', path: '/v/Notes.md', inlineDrawing: 2 },
+      ],
+      active: 't2',
+      mounted: ['t1', 't2'],
+      history: NO_STEPS,
+      preview: null,
+      blank: false,
+    }
+    const next = reduceTabs(start, { type: 'duplicate', id: 't2' })
+    expect(next.tabs).toHaveLength(3)
+    expect(next.tabs[2]).toMatchObject({ path: '/v/Notes.md', inlineDrawing: 2 })
+    expect(next.tabs[2].id).not.toBe('t2')
+    expect(next.active).toBe(next.tabs[2].id)
+    expect(next.mounted).toContain(next.tabs[2].id)
+  })
+
+  it('open-background and take decode synthetic inline drawing paths into inlineDrawing tabs without opening broken file paths', () => {
+    const start: IdTabsState = {
+      tabs: [{ id: 't1', path: '/v/Notes.md' }],
+      active: 't1',
+      mounted: ['t1'],
+      history: NO_STEPS,
+      preview: null,
+      blank: false,
+    }
+    const bg = reduceTabs(start, { type: 'open-background', path: '/v/Notes.md#drawing-1' })
+    expect(bg.tabs).toHaveLength(2)
+    expect(bg.tabs[1]).toMatchObject({ path: '/v/Notes.md', inlineDrawing: 1 })
+    expect(bg.active).toBe('t1')
+    // Deduplicates an already-open inline drawing background tab.
+    expect(reduceTabs(bg, { type: 'open-background', path: '/v/Notes.md#drawing-1' })).toBe(bg)
+
+    const taken = reduceTabs(start, { type: 'take', path: '/v/Notes.md#drawing-3', background: true })
+    expect(taken.tabs).toHaveLength(2)
+    expect(taken.tabs[1]).toMatchObject({ path: '/v/Notes.md', inlineDrawing: 3 })
+  })
+
+  it('YAZ-6487: an open inline drawing tab never blocks background-opening or session-restoring its parent .md page', () => {
+    const start: IdTabsState = {
+      tabs: [{ id: 't1', path: '/v/Notes.md', inlineDrawing: 0 }],
+      active: 't1',
+      mounted: ['t1'],
+      history: NO_STEPS,
+      preview: null,
+      blank: false,
+    }
+    const bgParent = reduceTabs(start, { type: 'open-background', path: '/v/Notes.md' })
+    expect(bgParent.tabs).toHaveLength(2)
+    expect(bgParent.tabs[1]).toMatchObject({ path: '/v/Notes.md' })
+    expect(bgParent.tabs[1].inlineDrawing).toBeUndefined()
+    // Once the parent .md tab IS open, another open-background deduplicates it.
+    expect(reduceTabs(bgParent, { type: 'open-background', path: '/v/Notes.md' })).toBe(bgParent)
+
+    // open-stored also restores the parent page even when an inline drawing tab for the same path is open.
+    const restored = reduceTabs(start, {
+      type: 'open-stored',
+      tabs: [{ path: '/v/Notes.md', active: true }, { path: '/v/Notes.md', inlineDrawing: 0 }],
+    })
+    expect(restored.tabs).toHaveLength(2)
+    expect(restored.tabs[1]).toMatchObject({ path: '/v/Notes.md' })
+    expect(restored.tabs[1].inlineDrawing).toBeUndefined()
+    expect(restored.active).toBe(restored.tabs[1].id)
+  })
+})

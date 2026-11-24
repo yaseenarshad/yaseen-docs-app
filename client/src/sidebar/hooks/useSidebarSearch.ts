@@ -10,7 +10,9 @@
  * which then follows the highlight (D5). The shortcut picker keeps the flat list and shares `useResultKeys`.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import { fromKeyEvent, keyFor, sameKey, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { TreeNode } from '@shared/types'
+import type { NoticeKind, NoticeType } from '../../lib/notice'
 import { withoutPaths } from '../../lib/treeState'
 import { readNeedle } from '../../links/completion'
 import { bestScores, NO_SCORES } from '../../search/bestMatch'
@@ -21,6 +23,7 @@ import { rootOfPath } from '@shared/types'
 import { shownId } from '../../search/showIds'
 import { useSearchResults, type SearchVault } from '../../search/useSearchResults'
 import type { SearchCandidate } from '../../search/searchCandidates'
+import { copySearchRowPath } from '../inlineRowMenu'
 import type { ListFold } from '../listFold'
 import type { TreeMarks, TreeSelection } from '../Tree'
 
@@ -115,6 +118,10 @@ export function useSidebarSearch(
   openCard: (row: SearchCandidate, background: boolean, reveal: boolean) => void = () => undefined,
   /** Global default for including inline drawings & cards in search (YAZ-6143, `settings.searchIncludeInline`). */
   defaultIncludeInline = true,
+  /** User hotkey overrides for `⌘⇧C` Copy path on the highlighted search row (YAZ-6469). */
+  hotkeys?: HotkeyOverrides,
+  /** Notice reporter for Copy path feedback. */
+  onNotice?: (message: string, kind?: NoticeKind, type?: NoticeType) => void,
 ) {
   // The search bar's query (YAZ-801). It lives HERE rather than in the bar because the bar is
   // drawn on the Search tab only (YAZ-2638 D2) and the query stays while a different tab shows;
@@ -163,8 +170,6 @@ export function useSidebarSearch(
   }, [results])
   const cardOf = useMemo(() => new Map([...cards.rows.values()].flat().map((r) => [r.path, r])), [cards])
   const cut = useMemo(() => (cards === NO_CARDS ? hits : new Set([...hits, ...cards.rows.keys()])), [hits, cards])
-  /** The file the preview panel shows for a stop: a card's page (YAZ-5037), else the row itself. */
-  const pageOf = (path: string): string => cardOf.get(path)?.page ?? path
   // A folder of `full` shows ALL that it holds (YAZ-2662 D6): Space or → put it there, and it lasts
   // as long as its query, as a fold does.
   const [full, setFull] = useState<ReadonlySet<string>>(NO_FOLDS)
@@ -276,8 +281,8 @@ export function useSidebarSearch(
   // With the preview on, the panel follows the highlight (S32): a file shows `PREVIEW_FOLLOW_MS`
   // after the last move, and the earlier file stays until then. On a folder no panel is drawn, at once (S38).
   const followed = previewing ? rows[sel] : undefined
-  // A card's stop shows its page (YAZ-5037).
-  const followedPath = followed === undefined ? undefined : pageOf(followed.path)
+  // Inline cards and inline drawings pass their full synthetic ref so QuickLook previews the specific item (YAZ-6469).
+  const followedPath = followed?.path
   const followsFile = followed?.type === 'file'
   useEffect(() => {
     if (followedPath === undefined || followedPath === previewPath) return
@@ -372,7 +377,7 @@ export function useSidebarSearch(
     // Space on a file shows the preview panel on it, at once, and Space again closes the panel (D5, S33).
     if (row?.type === 'file' && e.key === ' ') {
       if (previewing) stopPreview()
-      else onPreview(pageOf(row.path))
+      else onPreview(row.path)
       e.preventDefault()
       return true
     }
@@ -404,12 +409,25 @@ export function useSidebarSearch(
     else onLeave()
   }
 
+  /** ⌘⇧C (or user override) copies the highlighted search row's canonical path (YAZ-6469). */
+  const copySearchKey = (e: KeyboardEvent<HTMLElement>): boolean => {
+    if (!typed || rows.length === 0 || e.repeat || e.nativeEvent?.isComposing === true || e.defaultPrevented) return false
+    const want = keyFor('copyPath', hotkeys)
+    if (want === null || !sameKey(fromKeyEvent(e), want)) return false
+    const row = rows[sel]
+    if (row === undefined) return false
+    e.preventDefault()
+    e.stopPropagation()
+    void copySearchRowPath(row.path, cardOf.get(row.path), onNotice ?? (() => undefined))
+    return true
+  }
+
   const searchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
       searchEsc()
-    }
+    } else if (copySearchKey(e)) return
     // A held Enter is ONE Enter (YAZ-961): a repeat of the press that previews a file would be the
     // second Enter, the caret would go into the page, and the next repeats would type into the page.
     // Taken here and not in `resultKeys`, which the shortcut picker shares (YAZ-2662 R7).
@@ -421,5 +439,5 @@ export function useSidebarSearch(
   // and it is on the first row. The bar then hands ↑ to the tabs of the panel. The FIRST ↑ on a
   // highlight that nobody moved is still the search's: it makes the list keys work (YAZ-2662 D7).
   const atTop = rows.length === 0 || (picked !== null && sel === 0)
-  return { query, searchInput, results, typed, found, cardRows: cards.rows, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop }
+  return { query, searchInput, results, typed, found, cardRows: cards.rows, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, copySearchKey, searchEsc, atTop }
 }

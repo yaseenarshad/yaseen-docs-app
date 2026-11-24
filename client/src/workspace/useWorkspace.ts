@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { inAppVault } from '@shared/appVaults'
+import { parseInlineRef } from '@shared/inlineRef'
 import { cleanVaultName, defaultRightPanelIdentity, type RightPanelIdentity, type StoredTab } from '@shared/types'
 import { storage } from '../lib/storage'
 import { carryEditorAcrossPane, flushRenamedPath } from '../lib/renameContinuity'
@@ -180,8 +181,9 @@ export const tabStrip = (s: TabsState): StoredTab[] =>
 /** The active tab's path: the window's `file`. */
 export const activePath = (s: Pick<TabsState, 'tabs' | 'active'>): string | null => tabById(s, s.active)?.path ?? null
 
-/** Whether any tab shows `path`. */
-const shows = (s: Pick<TabsState, 'tabs'>, path: string): boolean => s.tabs.some((t) => t.path === path)
+/** Whether any normal (non-inline-drawing) tab shows `path` (YAZ-6487). */
+const shows = (s: Pick<TabsState, 'tabs'>, path: string): boolean => s.tabs.some((t) => t.path === path && t.inlineDrawing === undefined)
+const tabKey = (t: Pick<Tab, 'path' | 'inlineDrawing'>): string => (t.inlineDrawing === undefined ? t.path : `${t.path}\0drawing:${t.inlineDrawing}`)
 
 export interface WorkspaceState extends TabsState {
   rightPanel: RightPanelIdentity
@@ -426,15 +428,20 @@ function tabsStep(s: TabsState, a: TabsAction): TabsState {
       return appendActive(s, a.path, false, nextSlot(s, a.next))
     }
     case 'open-background': {
+      // Synthetic inline drawing refs (`<page>.md#drawing-<n>`, YAZ-6468) open as background inline drawing tabs rather than a broken file path.
+      const ref = parseInlineRef(a.path)
+      const path = ref === null ? a.path : ref.page
+      const inlineDrawing = ref?.kind === 'drawing' ? ref.index : undefined
       // `fresh` starts the slot's chain again (YAZ-5023: the Inbox tab came to the front), even for a page already open.
       const base = a.fresh === true && s.atChain !== undefined ? { ...s, atChain: undefined } : s
-      if (a.copy !== true && shows(s, a.path)) return base // already open: stay where we are, steal nothing
+      const alreadyOpen = inlineDrawing !== undefined ? s.tabs.some((t) => t.path === path && t.inlineDrawing === inlineDrawing) : shows(s, path)
+      if (a.copy !== true && alreadyOpen) return base // already open: stay where we are, steal nothing
+      const tab: Tab = inlineDrawing === undefined ? newTab(path) : { ...newTab(path), inlineDrawing }
       // The first tab of an empty window must activate: non-empty `tabs` requires a non-null `file`.
       // Under the blank tab too (YAZ-2655 S78): the page becomes the stored file, and the blank tab still shows.
-      if (s.active === null) return { ...appendActive(s, a.path, false), blank: s.blank }
+      if (s.active === null) return { tabs: [tab], active: tab.id, mounted: [tab.id], history: s.history, preview: s.preview, blank: s.blank }
       // Not mounted: the editor lazy-mounts on first activation, and the tab's step comes then (YAZ-3647 D4). Next to the
       // current tab (YAZ-3808 D2), it joins the chain, so the next one goes after it (D4).
-      const tab = newTab(a.path)
       if (a.at !== undefined) {
         // At the caller's slot (YAZ-5023: right after the Inbox tab), or right after the last tab opened there.
         const chained = base.atChain === undefined ? -1 : s.tabs.findIndex((t) => t.id === base.atChain)
@@ -445,11 +452,19 @@ function tabsStep(s: TabsState, a: TabsAction): TabsState {
     }
     case 'duplicate': {
       // A copy (YAZ-2940 D6, S1, S3, S4): a new id on the same page, right after the source, active and
-      // mounted, at the source's zoom level (YAZ-3647 D2); the window's Back list gains its step (D4). A
+      // mounted, at the source's zoom level (YAZ-3647 D2) or inline drawing index (YAZ-6468); the window's Back list gains its step (D4). A
       // preview source is kept, and so is the copy. A copy of a copy is a copy like any other. A trip to a
       // tab drops an unused blank tab. It is the bullet's new tab in front, at the source's own level: one place makes a copy.
       const source = tabById(s, a.id)
-      return source === null ? s : tabsReducer(s, { type: 'open-zoom', id: a.id, zoom: source.zoom ?? null })
+      if (source === null) return s
+      if (source.inlineDrawing !== undefined) {
+        const i = s.tabs.findIndex((t) => t.id === a.id)
+        const copy: Tab = { ...newTab(source.path), inlineDrawing: source.inlineDrawing }
+        const tabs = insertAt(s.tabs, copy, i + 1)
+        const preview = s.preview === a.id ? null : s.preview
+        return { ...withActive({ ...s, tabs }, copy.id), preview }
+      }
+      return tabsReducer(s, { type: 'open-zoom', id: a.id, zoom: source.zoom ?? null })
     }
     case 'open-zoom': {
       // A bullet in a new tab (YAZ-3646 D11): a copy of the tab, right after it, at that bullet. In front, or
@@ -475,13 +490,24 @@ function tabsStep(s: TabsState, a: TabsAction): TabsState {
       return a.background === true ? { ...s, tabs, preview } : { ...withActive({ ...s, tabs }, copy.id), preview }
     }
     case 'take': {
+      const ref = parseInlineRef(a.path)
+      const path = ref === null ? a.path : ref.page
+      const inlineDrawing = ref?.kind === 'drawing' ? ref.index : undefined
+      const makeTab = (): Tab => (inlineDrawing === undefined ? newTab(path) : { ...newTab(path), inlineDrawing })
       // A moved tab (YAZ-3091 D5, S11, S13): never a trip to the tab that is open, so its name and page view
       // are not lost. Under the blank tab this is `fillBlank` for a page that is not open: the page fills it.
       // A quiet move (YAZ-3343 D13) only joins the strip: the page on show stays, and the tab mounts when first shown.
       // A tab board card let go on this strip (YAZ-3808 6H) is quiet too, at its slot.
-      if (a.background === true && s.active !== null && !s.blank) return { ...s, tabs: a.at === undefined ? [...s.tabs, newTab(a.path)] : insertAt(s.tabs, newTab(a.path), a.at) }
+      if (a.background === true && s.active !== null && !s.blank) {
+        const tab = makeTab()
+        return { ...s, tabs: a.at === undefined ? [...s.tabs, tab] : insertAt(s.tabs, tab, a.at) }
+      }
+      if (inlineDrawing !== undefined) {
+        const tab = makeTab()
+        return { tabs: a.at === undefined ? [...s.tabs, tab] : insertAt(s.tabs, tab, a.at), active: tab.id, mounted: [...s.mounted, tab.id], history: s.history, preview: s.preview, blank: false }
+      }
       // Dropped on this strip (YAZ-3637 D4): the new tab stands at the drop slot.
-      return appendActive(s, a.path, false, a.at)
+      return appendActive(s, path, false, a.at)
     }
     case 'keep':
       // Nothing stored changes, so the caller mirrors nothing (YAZ-2648 D4).
@@ -572,19 +598,25 @@ function tabsStep(s: TabsState, a: TabsAction): TabsState {
       // A restore (YAZ-3147 D3, S16–S19, S27): each page that no tab shows joins the end in the saved
       // order, with its copies and display names, as kept tabs. A page that is open opens no copy (S18,
       // S19): the check is against the strip as it was, so two saved copies of a closed page both open.
-      const open = new Set(s.tabs.map((t) => t.path))
+      const open = new Set(s.tabs.map(tabKey))
       const added: Tab[] = []
       let marked: string | null = null
       for (const t of a.tabs) {
-        if (open.has(t.path)) continue
+        if (open.has(tabKey(t))) continue
         const tab = storedTab(t)
         if (t.active === true && marked === null) marked = tab.id
         added.push(tab)
       }
       // The session's active tab is active: its new copy, else the open tab of its page (S18). With no
       // mark, an empty window takes the first new tab (a strip with tabs needs an active one), and a window with tabs keeps its own.
-      const page = a.tabs.find((t) => t.active === true)?.path
-      const active = marked ?? (page === undefined ? null : (tabOf(s, page)?.id ?? null)) ?? (s.active === null ? (added[0]?.id ?? null) : null)
+      const activeStored = a.tabs.find((t) => t.active === true)
+      const existingActive =
+        activeStored === undefined
+          ? null
+          : activeStored.inlineDrawing !== undefined
+            ? (s.tabs.find((t) => t.path === activeStored.path && t.inlineDrawing === activeStored.inlineDrawing)?.id ?? null)
+            : (tabOf(s, activeStored.path)?.id ?? null)
+      const active = marked ?? existingActive ?? (s.active === null ? (added[0]?.id ?? null) : null)
       // A page of the session that shows in the preview tab is kept now: the next sidebar click must not replace it.
       const kept = s.preview !== null && a.tabs.some((t) => t.path === tabById(s, s.preview)?.path) ? null : s.preview
       if (added.length === 0 && kept === s.preview && (active === null || (active === s.active && !s.blank))) return s

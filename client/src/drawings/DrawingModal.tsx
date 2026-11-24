@@ -58,6 +58,7 @@ import { setPlaceOverTab } from '../keys/keySheetRequest'
 import { ConflictBar } from '../documents/ConflictBar'
 import { exportWithNotice } from '../documents/useDocumentHost'
 import { SaveIndicator } from '../editor/SaveIndicator'
+import { registerPageUnlockFlush } from '../editor/pageUnlockStore'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
 import { oneAtATime } from '../documents/oneAtATime'
 import type { WatchSource } from '../hooks/useWatch'
@@ -133,6 +134,8 @@ export interface DrawingModalProps extends DrawingLinkProps, DrawingAppSettings 
   target?: string
   /** Inline mode (YAZ-5040): when set, loads and saves an inline `.md` drawing instead of a `.excalidraw` file. */
   inline?: InlineDrawingModalProps
+  /** Inline mode (YAZ-6460 item 13): parent page's effective read-only state (inherits timed page unlocks). Ignored for standalone modals. */
+  inlineReadOnly?: boolean
   /** The app's resolved appearance, handed straight to the surface. */
   theme: 'light' | 'dark'
   /** Close: the host drops the modal (it is unmounted, never hidden). */
@@ -159,7 +162,7 @@ export interface DrawingModalProps extends DrawingLinkProps, DrawingAppSettings 
   outsideOutlineColors?: OutsideOutlineColors
 }
 
-export function DrawingModal({ root, target = '', inline, theme, onClose, onOpenInTab, hotkeys, hotkeysAside, onNotice, watch, outsideChangeGlow = 'until-checked', outsideOutlineThickness, outsideOutlineColors, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, ...linkProps }: DrawingModalProps) {
+export function DrawingModal({ root, target = '', inline, inlineReadOnly, theme, onClose, onOpenInTab, hotkeys, hotkeysAside, onNotice, watch, outsideChangeGlow = 'until-checked', outsideOutlineThickness, outsideOutlineColors, canvasPrefs, onCanvasPrefsChange, canvasPanel, onCanvasPanelChange = FORGET_PANEL, ...linkProps }: DrawingModalProps) {
   const inlineRef = useRef(inline)
   inlineRef.current = inline
   const onOpenInTabRef = useRef(onOpenInTab)
@@ -328,9 +331,17 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
     }
   }, [root, target, isInline, inlinePagePath])
 
+  /**
+   * The drawing's own file says read only (YAZ-3076 D2, S28), or the vault is (YAZ-4939): the engine's view mode, and
+   * nothing to save. Standalone popups have no timed unlock (open in a tab to edit); inline drawings inherit their
+   * parent page's effective lock state via `inlineReadOnly` (YAZ-6460 item 13), so a timed page unlock carries in.
+   */
+  const vaultLocked = useContext(VaultReadOnly).on
+  const readOnly = isInline && inlineReadOnly !== undefined ? inlineReadOnly : loaded?.scene.readOnly === true || vaultLocked
+
   // Focus lands on the title input for a brand-new `/drawing` (`autoFocusTitle`), else on the overlay so Esc works immediately.
   useEffect(() => {
-    if (inlineRef.current?.autoFocusTitle === true && !vaultLocked && titleInputRef.current !== null) {
+    if (inlineRef.current?.autoFocusTitle === true && !readOnly && titleInputRef.current !== null) {
       titleInputRef.current.focus()
       titleInputRef.current.select()
     } else {
@@ -349,12 +360,11 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
     }
   }, [])
 
-  /**
-   * The drawing's own file says read only (YAZ-3076 D2, S28), or the vault is (YAZ-4939): the engine's view mode, and
-   * nothing to save. The popup has no timed unlock: to edit a board of a read-only vault, open it in its tab.
-   */
-  const vaultLocked = useContext(VaultReadOnly).on
-  const readOnly = loaded?.scene.readOnly === true || vaultLocked
+  // When the parent page's timed unlock expires while this inline modal is open, flush pending edits before it relocks.
+  useEffect(() => {
+    if (!isInline || inlinePagePath === undefined) return
+    return registerPageUnlockFlush(inlinePagePath, () => autosave.current?.flush())
+  }, [isInline, inlinePagePath])
   // The drawing's page links (YAZ-4039), as in a drawing tab: pills, hover, the open gestures, the menu, the picker, paste.
   // The hover preview: "Links in drawings and diagrams" AND the board's own switch (YAZ-3943 demo 2), read from the file.
   const hoverLinks = linkProps.hoverLinks === true && !hoverLinksOff
@@ -418,8 +428,8 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
       // Taken before the read-only return, so a stale one never waits for a later snapshot (4A-23).
       const took = tookAt.current
       tookAt.current = null
-      // Read only (the file's switch or the vault's): never an edit, so there is nothing to autosave.
-      if (drawing === null || drawing.scene.readOnly === true || vaultLocked) return
+      // Read only (the file's switch, the vault's, or the parent page's lock): never an edit, so there is nothing to autosave.
+      if (drawing === null || readOnly) return
       const combined = next.version + metaVersionRef.current
       const a = autosave.current
       // The first snapshot IS the clean baseline (the surface restored the disk scene first); so is the first after the file came in.
@@ -427,7 +437,7 @@ export function DrawingModal({ root, target = '', inline, theme, onClose, onOpen
       else if (took !== null) a.reset(combined, took)
       else a.update(combined)
     },
-    [write, onStatus, onConflict, generation, vaultLocked],
+    [write, onStatus, onConflict, generation, readOnly],
   )
 
   // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).

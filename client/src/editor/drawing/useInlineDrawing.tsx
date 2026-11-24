@@ -14,13 +14,12 @@ import {
   DRAWING_LANGUAGE,
   drawingTitleOf,
   EMPTY_INLINE_SCENE_JSON,
-  findInlineDrawings,
   INLINE_DRAWING_WARN_BYTES,
   NEW_INLINE_DRAWING_LINE,
   utf8Bytes,
   withDrawingTitle,
 } from '@shared/inlineDrawing'
-import { splitFrontmatter } from '@shared/frontmatter'
+import { inlineDrawingPathAtLine } from '@shared/inlineLine'
 import { MAX_FILE_BYTES } from '@shared/types'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 import type { InlineDrawingModalProps } from '../../drawings/DrawingModal'
@@ -73,14 +72,7 @@ interface SheetPrompt {
   go: () => void
 }
 
-/** Computes `<pagePath>:<1-based line>` of the `index`-th ```` ```excalidraw ```` opening fence, or `pagePath` if not yet on disk. */
-export function inlineDrawingPathAtLine(pagePath: string, diskContent: string, index: number): string {
-  const { frontmatter, body } = splitFrontmatter(diskContent)
-  const block = findInlineDrawings(body)[index]
-  if (block === undefined) return pagePath
-  const fmLines = (frontmatter.match(/\n/g) ?? []).length
-  return `${pagePath}:${fmLines + block.open + 1}`
-}
+export { inlineDrawingPathAtLine } from '@shared/inlineLine'
 
 /** Finds an inline drawing `code_block` at `preferredPos`, or by matching `expectedJson` if positions shifted. */
 function findInlineNode(doc: ProseNode, preferredPos: number, expectedJson?: string): { pos: number; node: ProseNode } | null {

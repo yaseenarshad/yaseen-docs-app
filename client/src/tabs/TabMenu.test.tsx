@@ -2,6 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import * as inlineDrawingLand from '../editor/drawing/inlineDrawingLand'
+import * as inlinePath from '../lib/inlinePath'
 import { TabMenu, type TabMenuAt, type TabMenuProps } from './TabMenu'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -174,5 +176,40 @@ describe('TabMenu Focus and Favorites (YAZ-3264 D2)', () => {
     expect(labels(lists({}, null))).toEqual([])
     expect(labels(lists({ menu: at() }))).toEqual([])
     expect(labels(lists({ onToggleFocus: undefined, onToggleFavorite: undefined }))).toEqual([])
+  })
+})
+
+describe('TabMenu for inline drawing tabs (YAZ-6468)', () => {
+  it('shows "Show in page", omits "Rename file", and resolves <page>:<line> on Copy path with notice', async () => {
+    const onShowInPage = vi.fn()
+    const onRenameFile = vi.fn()
+    const onNotice = vi.fn()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const resolveSpy = vi.spyOn(inlinePath, 'resolveInlineCopyPath').mockResolvedValue('/v/a.md:42')
+    const landSpy = vi.spyOn(inlineDrawingLand, 'landOnInlineDrawing').mockImplementation(() => undefined)
+
+    const props = all({ menu: at({ inlineDrawing: 1 }), onShowInPage, onRenameFile, onNotice })
+    let el = mount(props)
+    expect(item(el, 'Show in page')).toBeDefined()
+    expect(item(el, 'Rename file')).toBeUndefined()
+
+    act(() => item(el, 'Show in page')?.click())
+    expect(landSpy).toHaveBeenCalledWith('/v/a.md', 1)
+    expect(onShowInPage).toHaveBeenCalledWith('/v/a.md', 1)
+
+    act(() => root?.unmount())
+    el = mount(props)
+    await act(async () => {
+      item(el, 'Copy path')?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(resolveSpy).toHaveBeenCalledWith({ kind: 'drawing', page: '/v/a.md', index: 1 })
+    expect(writeText).toHaveBeenCalledWith('/v/a.md:42')
+    expect(onNotice).toHaveBeenCalledWith('Copied path')
+
+    resolveSpy.mockRestore()
+    landSpy.mockRestore()
   })
 })

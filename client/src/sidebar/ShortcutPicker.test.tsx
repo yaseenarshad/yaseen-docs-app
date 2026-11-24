@@ -142,4 +142,19 @@ describe('ShortcutPicker (YAZ-2290 D2)', () => {
     press(el, 'Enter')
     expect(onPick).not.toHaveBeenCalled()
   })
+
+  it('excludes inline drawings from shortcut candidates so synthetic #drawing-N paths can never be picked (YAZ-6469)', () => {
+    const withDrawings: IndexRecord[] = [
+      ...RECORDS,
+      { ...rec('/v/Areas/Diagrams.md'), inlineDrawings: [{ index: 0, title: 'Architecture sketch' }] },
+    ]
+    const { el, onPick } = render(withDrawings)
+    expect(labels(el)).toContain('Diagrams')
+    expect(labels(el)).not.toContain('Architecture sketch')
+    type(el, 'Architecture')
+    expect(el.querySelector('.search-results')).toBeNull()
+    expect(el.querySelector('.sidebar__msg')?.textContent).toBe('No matches')
+    press(el, 'Enter')
+    expect(onPick).not.toHaveBeenCalled()
+  })
 })

@@ -5,6 +5,7 @@
  * keeps the list in state and the DOM keeps each layer's scroll.
  */
 import { fileKind } from '@shared/fileKind'
+import { inlineCardRowPath, inlineDrawingRowPath, parseInlineRef } from '@shared/inlineRef'
 import type { CardPlace } from '../editor/card/cardOpen'
 import { LEGACY_EXPLORE_PAGE_BOX_KEY, movedStorageItem } from '@shared/legacyNames'
 import { savedZoom, saveZoom } from '../editor/DocumentZoom'
@@ -16,8 +17,8 @@ export type ExploreLayer =
       kind: 'page'
       path: string
       mode: 'read' | 'edit'
-      /** Opened from a search layer (round 3): that layer's id and the row's place in its list, where ‹ › step from. A page from a link has none. */
-      from?: { search: number; at: number }
+      /** Opened from a search layer (round 3): that layer's id, the row's place in its list, and optional synthetic row path (inline card), where ‹ › step from. A page from a link has none. */
+      from?: { search: number; at: number; rowPath?: string }
       /** Bumped when the page was deleted under the layer: the layer reads again and says it is gone. */
       gone?: number
       /** Bumped by E in a Read only vault (YAZ-4939): the layer asks with its timed "Allow edits", or edits while unlocked. */
@@ -26,6 +27,8 @@ export type ExploreLayer =
       leaveAsk?: number
       /** The card to land on when the page opens (YAZ-4962): its ID, and its place among the page's cards (YAZ-5164: found by its ID). */
       card?: CardPlace
+      /** The inline drawing (0-based index) to land on when the page opens (YAZ-6470). */
+      drawing?: number
       /** The Inbox's E on a card in a page (YAZ-5145): once the layer edits, the card at `card` opens in Edit card. A card file's opens by itself (round 3). */
       editCard?: boolean
       /** Opened from the Inbox (YAZ-5009, YAZ-5145): ⌘↵ while reading goes back to the Inbox, not to a tab. */
@@ -46,8 +49,10 @@ export type ExploreLayer =
       /** A drawing or a diagram, for READING (YAZ-4943): the board embed's view-only window fills the layer; no edit. */
       kind: 'board'
       path: string
+      /** An inline Excalidraw drawing inside `path` (YAZ-6470): renders the block's scene JSON instead of a standalone board file. */
+      inlineDrawing?: { index: number; title?: string }
       /** As a page's: the search it came from, so ‹ › step through it (a step may turn it into a page layer). */
-      from?: { search: number; at: number }
+      from?: { search: number; at: number; rowPath?: string }
     }
 
 /** The most layers the stack holds (the recommendation on YAZ-2571): a 13th push is refused with a notice. */
@@ -84,7 +89,7 @@ export type FileLayer = Extract<ExploreLayer, { kind: 'page' | 'board' | 'card' 
  * `editCard` opens the landed card's Edit card (a card in a page), and
  * `fromInbox` makes ⌘↵ while reading go back to the Inbox.
  */
-export type ExploreRequest = { kind: 'page'; path: string; card?: CardPlace; edit?: boolean; editCard?: boolean; fromInbox?: boolean } | { kind: 'card'; path: string; cardId: string | null; index: number }
+export type ExploreRequest = { kind: 'page'; path: string; card?: CardPlace; edit?: boolean; editCard?: boolean; fromInbox?: boolean } | { kind: 'card'; path: string; cardId: string | null; index: number } | { kind: 'board'; path: string; inlineDrawing: { index: number; title?: string } }
 
 /** The page, board or card layer nearest the top, or null: what ⌘↵ opens in a tab (a card's page). */
 export function topPage(layers: readonly ExploreLayer[]): FileLayer | null {
@@ -150,33 +155,54 @@ export function layerPlace(kind: ExploreLayer['kind'], index: number, windowWidt
 
 /* ---------- ‹ › through the search (round 3) ---------- */
 
+/** A row in a search list that ‹ › inspects (pages, boards, inline cards, inline drawings). */
+export interface StepRow {
+  path: string
+  card?: true
+  inlineDrawing?: true
+}
+
+/** True when a search row opens inside Explore (page, board, inline card, or inline drawing) and can be stepped to with ‹ › (YAZ-6470). */
+export function isSteppableRow(row: StepRow): boolean {
+  if (row.inlineDrawing === true || row.card === true) return true
+  if (parseInlineRef(row.path) !== null) return true
+  return layerKindOf(row.path) !== null
+}
+
+/** The search row `path` corresponding to a page or board layer (synthetic `#<id>` or `#drawing-<index>` for inline items). */
+export function layerRowPath(layer: Extract<ExploreLayer, { kind: 'page' | 'board' }>): string {
+  if (layer.kind === 'board' && layer.inlineDrawing !== undefined) return inlineDrawingRowPath(layer.path, layer.inlineDrawing.index)
+  if (layer.kind === 'page' && layer.card?.id != null) return inlineCardRowPath(layer.path, layer.card.id)
+  return layer.path
+}
+
 /**
  * The row ‹ › go to from the page at `at` (its place when it opened or last stepped) in the search's `rows`, one step
- * `dir`: the next page or board row in that direction (YAZ-4943), a folder or another file skipped (they open in a
- * tab, never in a layer). A page no longer at `at` is found again; one gone from the rows steps from `at` as the mini
- * window does. Null at the end of the list.
+ * `dir`: the next page, board, inline card, or inline drawing row in that direction (YAZ-4943, YAZ-6470), a folder or
+ * another file skipped (they open in a tab, never in a layer). A row no longer at `at` is found again; one gone from
+ * the rows steps from `at` as the mini window does. Null at the end of the list.
  */
-export function stepResult(rows: readonly { path: string }[], at: number, path: string, dir: -1 | 1): { at: number; path: string } | null {
+export function stepResult(rows: readonly StepRow[], at: number, path: string, dir: -1 | 1): { at: number; path: string } | null {
   const here = rows[at]?.path === path ? at : rows.findIndex((r) => r.path === path)
   let i = here === -1 ? (dir === 1 ? at : at - 1) : here + dir
-  for (; i >= 0 && i < rows.length; i += dir) if (layerKindOf(rows[i].path) !== null) return { at: i, path: rows[i].path }
+  for (; i >= 0 && i < rows.length; i += dir) if (isSteppableRow(rows[i])) return { at: i, path: rows[i].path }
   return null
 }
 
 /**
- * The place of the page among the rows ‹ › step to (pages and boards), 1-based, for "n/m": its `at` while the row is
- * still there, else found again; 0 when gone. A folder or another file before it is not counted (YAZ-2571).
+ * The place of the row among the rows ‹ › step to (pages, boards, inline cards, inline drawings), 1-based, for "n/m":
+ * its `at` while the row is still there, else found again; 0 when gone. A folder or another file before it is not counted (YAZ-2571).
  */
-export function stepPlace(rows: readonly { path: string }[], at: number, path: string): number {
+export function stepPlace(rows: readonly StepRow[], at: number, path: string): number {
   const here = rows[at]?.path === path ? at : rows.findIndex((r) => r.path === path)
   if (here === -1) return 0
   let place = 0
-  for (let i = 0; i <= here; i++) if (layerKindOf(rows[i].path) !== null) place++
+  for (let i = 0; i <= here; i++) if (isSteppableRow(rows[i])) place++
   return place
 }
 
-/** The "m" of "n/m": the rows ‹ › step to (pages and boards), not the folders or other files (YAZ-2571). */
-export const stepCount = (rows: readonly { path: string }[]): number => rows.reduce((n, r) => (layerKindOf(r.path) !== null ? n + 1 : n), 0)
+/** The "m" of "n/m": the rows ‹ › step to (pages, boards, inline cards, inline drawings), not folders or other files (YAZ-2571, YAZ-6470). */
+export const stepCount = (rows: readonly StepRow[]): number => rows.reduce((n, r) => (isSteppableRow(r) ? n + 1 : n), 0)
 
 /* ---------- layers that move like a cell note (round 3) ---------- */
 
