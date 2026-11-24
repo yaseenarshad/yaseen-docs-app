@@ -1,16 +1,19 @@
 /**
- * Per-drawing horizontal alignment helpers (YAZ-6354):
- * - `syncAlignAttr` keeps `data-align="left|center|right"` in sync on `.board-embed` DOM elements.
+ * Per-drawing and per-picture horizontal alignment helpers (YAZ-6354, YAZ-6424):
+ * - `syncAlignAttr` keeps `data-align="left|center|right"` in sync on `.board-embed` / `.image-view` DOM elements.
  * - `positionMenuRow` builds the `Position ▸` flyout (`App default`, `Left`, `Center`, `Right` with `✓` on active).
- * - `drawingPositionRows` is the 6-dot block handle menu `RowProvider` for inline drawings and lone board embeds.
+ * - `drawingPositionRows` is the 6-dot block handle menu `RowProvider` for inline drawings, lone board embeds, and lone pictures.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { optionsSuffix, parseEmbedOptions, type EmbedAlign, type EmbedOptions } from '@shared/embedOptions'
 import { drawingTitleOf, formatDrawingLine } from '@shared/inlineDrawing'
 import type { MenuRow, RowProvider } from '../blockHandleMenu'
+import { formatAlt, parseAlt } from '../image/imageSrc'
+import { outlineCollapsedPositions } from '../outline/outlineFolding'
 import { tablerIcon, type TablerIcon } from '../table/tableIcons'
 import { boardCheckOf, boardEmbedsIn, cardCheckOf, type BoardEmbedMatch } from './boardEmbedScan'
+import { isBoardSrc } from './boardEmbedText'
 import { drawingOptionsOf, isInlineDrawingNode } from './inlineDrawingLine'
 
 const EMPTY_OPTIONS: EmbedOptions = { width: null, height: null, view: null, locked: false, page: null, align: null, rest: [] }
@@ -81,9 +84,30 @@ export function setBoardEmbedAlign(view: EditorView, match: BoardEmbedMatch, ali
   view.dispatch(view.state.tr.insertText(suffix, from, match.to - 2))
 }
 
+/** Updates `align` on a non-board `image` node at `pos` while preserving its alt text and width. */
+export function setImageAlign(view: EditorView, pos: number, align: EmbedAlign | null): void {
+  if (!view.editable) return
+  const node = view.state.doc.nodeAt(pos)
+  if (node === null || node.type.name !== 'image' || isBoardSrc((node.attrs.src as string | undefined) ?? '')) return
+  const rawAlt = (node.attrs.alt as string | undefined) ?? ''
+  const parsed = parseAlt(rawAlt)
+  const nextAlt = formatAlt(parsed.text, parsed.width, align)
+  if (nextAlt === rawAlt) return
+  view.dispatch(view.state.tr.setNodeAttribute(pos, 'alt', nextAlt))
+}
+
+/** Returns `{ pos, node }` when `paragraph` holds a single non-board `image` node and nothing else. */
+export function loneImageInParagraph(paraPos: number, paragraph: ProseNode): { pos: number; node: ProseNode } | null {
+  if (paragraph.type.name !== 'paragraph' || paragraph.childCount !== 1) return null
+  const child = paragraph.firstChild
+  if (child === null || child.type.name !== 'image' || isBoardSrc((child.attrs.src as string | undefined) ?? '')) return null
+  return { pos: paraPos + 1, node: child }
+}
+
 type DrawingTarget =
   | { kind: 'inline'; pos: number; node: ProseNode }
   | { kind: 'embed'; paraPos: number; embed: BoardEmbedMatch }
+  | { kind: 'image'; pos: number; node: ProseNode }
 
 function loneBoardEmbedAt(view: EditorView, paraPos: number, paragraph: ProseNode): BoardEmbedMatch | null {
   if (paragraph.type.name !== 'paragraph' || paragraph.childCount !== 1) return null
@@ -95,6 +119,10 @@ function loneBoardEmbedAt(view: EditorView, paraPos: number, paragraph: ProseNod
   return embed
 }
 
+function isCollapsedImageBullet(view: EditorView, listItemPos: number): boolean {
+  return outlineCollapsedPositions(view.state).has(listItemPos)
+}
+
 function drawingTargetAt(view: EditorView, pos: number): DrawingTarget | null {
   const { doc } = view.state
   if (pos < 0 || pos >= doc.content.size) return null
@@ -103,20 +131,27 @@ function drawingTargetAt(view: EditorView, pos: number): DrawingTarget | null {
   if (isInlineDrawingNode(node)) return { kind: 'inline', pos, node }
   if (node.type.name === 'paragraph') {
     const embed = loneBoardEmbedAt(view, pos, node)
-    return embed === null ? null : { kind: 'embed', paraPos: pos, embed }
+    if (embed !== null) return { kind: 'embed', paraPos: pos, embed }
+    const $pos = doc.resolve(pos)
+    if ($pos.depth > 0 && $pos.parent.type.name === 'list_item' && isCollapsedImageBullet(view, $pos.before($pos.depth))) return null
+    const image = loneImageInParagraph(pos, node)
+    return image === null ? null : { kind: 'image', ...image }
   }
   if (node.type.name === 'list_item' && node.firstChild !== null) {
     const childPos = pos + 1
     if (isInlineDrawingNode(node.firstChild)) return { kind: 'inline', pos: childPos, node: node.firstChild }
     if (node.firstChild.type.name === 'paragraph') {
       const embed = loneBoardEmbedAt(view, childPos, node.firstChild)
-      return embed === null ? null : { kind: 'embed', paraPos: childPos, embed }
+      if (embed !== null) return { kind: 'embed', paraPos: childPos, embed }
+      if (isCollapsedImageBullet(view, pos)) return null
+      const image = loneImageInParagraph(childPos, node.firstChild)
+      return image === null ? null : { kind: 'image', ...image }
     }
   }
   return null
 }
 
-/** 6-dot block handle menu `RowProvider`: adds `Position ▸` for inline drawings and lone board embeds. */
+/** 6-dot block handle menu `RowProvider`: adds `Position ▸` for inline drawings, lone board embeds, and lone pictures. */
 export const drawingPositionRows: RowProvider = (view, target) => {
   if (!view.editable) return []
   const at = target.inside >= 0 ? target.inside : target.pos
@@ -125,6 +160,10 @@ export const drawingPositionRows: RowProvider = (view, target) => {
   if (hit.kind === 'inline') {
     const current = drawingOptionsOf(hit.node)?.align ?? null
     return [positionMenuRow(current, (align) => setInlineDrawingAlign(view, hit.pos, align), 'position')]
+  }
+  if (hit.kind === 'image') {
+    const current = parseAlt((hit.node.attrs.alt as string | undefined) ?? '').align
+    return [positionMenuRow(current, (align) => setImageAlign(view, hit.pos, align), 'position')]
   }
   const current = (hit.embed.options === null ? null : parseEmbedOptions(hit.embed.options))?.align ?? null
   return [

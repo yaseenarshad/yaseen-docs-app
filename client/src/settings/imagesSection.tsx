@@ -19,9 +19,10 @@ import { Segmented } from './controls'
 import { FavoriteCopiesLine } from './FavoriteCopiesLine'
 import { IconPacksControl } from './IconPacksControl'
 import { LibraryFolderControl, LibraryFolderHint } from './LibraryFolderControl'
-import { ON_OFF_OPTIONS } from './options'
+import { DRAWING_POSITION_OPTIONS, ON_OFF_OPTIONS } from './options'
 import { PixabayKeyControl } from './PixabayKeyControl'
 import type { SettingsSection } from './registry'
+import { unit } from './unitLabel'
 
 const HOVER_ZOOM_SIZE_OPTIONS: readonly { label: string; value: MediaHoverZoomSize }[] = [
   { label: 'Small', value: 'small' },
@@ -33,6 +34,25 @@ export const IMAGES_SECTION: SettingsSection = {
   id: 'images',
   title: 'Images',
   groups: [
+    {
+      title: (ctx) => unit(ctx, 'Pictures in pages'),
+      items: [
+        {
+          id: 'imagePosition',
+          label: 'Picture position',
+          hint: (ctx) => unit(ctx, "Where pictures sit in a page. A picture's own Position menu can override this."),
+          keywords: ['picture', 'image', 'photo', 'position', 'align', 'alignment', 'left', 'center', 'centre'],
+          render: ({ settings, onChange }) => (
+            <Segmented
+              options={DRAWING_POSITION_OPTIONS}
+              value={settings.imagePosition ?? 'left'}
+              onChange={(imagePosition) => onChange({ ...settings, imagePosition })}
+              ariaLabel="Picture position"
+            />
+          ),
+        },
+      ],
+    },
     {
       items: [
         {

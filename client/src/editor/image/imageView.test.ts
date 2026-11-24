@@ -117,6 +117,23 @@ describe('rendering', () => {
     expect(viewEl(root)).toBeNull()
     expect(root.querySelector('img')?.getAttribute('src')).toBe('images/a.png')
   })
+
+  it('syncs data-align from alt options and keeps markdown round-trip byte-identical (YAZ-6422)', async () => {
+    const both = await mount('![alt|300 align=center](images/a.png)\n')
+    expect(viewEl(both.root)?.dataset.align).toBe('center')
+    expect(imgOf(both.root)?.alt).toBe('alt')
+    expect(imgOf(both.root)?.style.getPropertyValue('--image-width')).toBe('300px')
+    expect(getMarkdownForSave(both.crepe)).toBe('![alt|300 align=center](images/a.png)\n')
+
+    const alignOnly = await mount('![alt|align=right](images/a.png)\n')
+    expect(viewEl(alignOnly.root)?.dataset.align).toBe('right')
+    expect(imgOf(alignOnly.root)?.alt).toBe('alt')
+    expect(imgOf(alignOnly.root)?.style.getPropertyValue('--image-width')).toBe('')
+    expect(getMarkdownForSave(alignOnly.crepe)).toBe('![alt|align=right](images/a.png)\n')
+
+    const none = await mount('![alt](images/a.png)\n')
+    expect(viewEl(none.root)?.hasAttribute('data-align')).toBe(false)
+  })
 })
 
 describe('selection and interaction', () => {
@@ -281,6 +298,20 @@ describe('selection and interaction', () => {
     expect(getMarkdownForSave(crepe)).toBe('![alt](images/a.png)\n')
   })
 
+  it('dragging the handle preserves alignment in the alt (YAZ-6422)', async () => {
+    const { crepe, root, view } = await mount('![alt|align=center](images/a.png)\n')
+    const img = imgOf(root) as HTMLImageElement
+    const handle = root.querySelector(`.${IMAGE_HANDLE_CLASS}[data-handle="se"]`) as HTMLElement
+    img.getBoundingClientRect = () => ({ width: 200 } as DOMRect)
+    Object.defineProperty(view.dom, 'clientWidth', { value: 800, configurable: true })
+    handle.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 100 }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 220 }))
+    document.dispatchEvent(new MouseEvent('mouseup', {}))
+    expect(getMarkdownForSave(crepe)).toBe('![alt|320 align=center](images/a.png)\n')
+    expect(viewEl(root)?.dataset.align).toBe('center')
+    expect(imgOf(root)?.style.getPropertyValue('--image-width')).toBe('320px')
+  })
+
   it('a broken image never opens the lightbox: there is no <img> to double-click', async () => {
     const onOpenImage = vi.fn()
     const { root } = await mount('![a](missing/x.png)\n', { root: ROOT, pagePath: PAGE, onOpenImage })
@@ -337,15 +368,43 @@ describe('update', () => {
     expect(viewEl(root)?.classList.contains(`${IMAGE_VIEW_CLASS}--loading`)).toBe(true)
   })
 
-  it('a src change on a BROKEN image tries again: the chip gives way to a fresh <img>', async () => {
-    const { root, view } = await mount('![a](missing/x.png)\n')
+  it('a src change on a BROKEN image tries again: the chip gives way to a fresh <img> and restores data-align', async () => {
+    const { root, view } = await mount('![a|align=center](missing/x.png)\n')
+    expect(viewEl(root)?.dataset.align).toBe('center')
     imgOf(root)?.dispatchEvent(new Event('error'))
     expect(imgOf(root)).toBeNull()
+    expect(viewEl(root)?.hasAttribute('data-align')).toBe(false)
     const pos = imagePos(view)
     const node = view.state.doc.nodeAt(pos)
     view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...node?.attrs, src: 'images/a.png' }))
     expect(imgOf(root)?.getAttribute('src')).toBe(VAULT_URL('images/a.png'))
     expect(root.querySelector(`.${IMAGE_BROKEN_CLASS}`)).toBeNull()
+    expect(viewEl(root)?.dataset.align).toBe('center')
+  })
+
+  it('an align-only change patches data-align on the SAME <img> — no rebuild, no reload (YAZ-6422)', async () => {
+    const { root, view } = await mount('![alt|300](images/a.png)\n')
+    const img = imgOf(root)
+    img?.dispatchEvent(new Event('load'))
+    const pos = imagePos(view)
+    const node = view.state.doc.nodeAt(pos)
+    view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...node?.attrs, alt: 'alt|300 align=right' }))
+    expect(imgOf(root)).toBe(img)
+    expect(viewEl(root)?.dataset.align).toBe('right')
+    expect(viewEl(root)?.classList.contains(`${IMAGE_VIEW_CLASS}--ready`)).toBe(true)
+    view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...node?.attrs, alt: 'alt|300' }))
+    expect(imgOf(root)).toBe(img)
+    expect(viewEl(root)?.hasAttribute('data-align')).toBe(false)
+  })
+
+  it('marks a lone picture with data-lone-image="true" and clears it when text sits beside the picture (YAZ-6425)', async () => {
+    const { root, view } = await mount('![alt](images/a.png)\n')
+    expect(viewEl(root)?.getAttribute('data-lone-image')).toBe('true')
+    const pos = imagePos(view)
+    view.dispatch(view.state.tr.insertText('caption ', pos))
+    expect(viewEl(root)?.hasAttribute('data-lone-image')).toBe(false)
+    view.dispatch(view.state.tr.delete(pos, pos + 'caption '.length))
+    expect(viewEl(root)?.getAttribute('data-lone-image')).toBe('true')
   })
 })
 

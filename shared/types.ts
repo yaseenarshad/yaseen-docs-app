@@ -2491,6 +2491,8 @@ export interface SettingsState {
    * for inline drawings, embedded drawings, and draw.io diagrams in pages.
    */
   drawingPosition: TablePosition
+  /** Settings › Images › Pictures in pages › Picture position (YAZ-6420). */
+  imagePosition: TablePosition
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
   /**
@@ -3296,6 +3298,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableTextInCells: 'wrap',
   tablePosition: 'left',
   drawingPosition: 'left',
+  imagePosition: 'left',
   tableNowMark: 'line',
   tableNextShade: false,
   tableNextColour: 'red',

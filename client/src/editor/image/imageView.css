@@ -173,3 +173,28 @@
   color: var(--accent);
   border-color: var(--accent);
 }
+
+/* Lone non-board, non-folded pictures align horizontally via --image-align-start/end (YAZ-6422, YAZ-6425). */
+.milkdown .image-view[data-lone-image='true']:not(.board-embed):not([data-outline-folded-image='true']) {
+  display: block;
+  width: fit-content;
+  margin-inline: var(--image-align-start, 0) var(--image-align-end, auto);
+}
+
+/* Bullet-nested pictures stay flush with their bullet even when Picture position is Center (YAZ-6422). */
+.milkdown li .image-view[data-lone-image='true']:not(.board-embed):not([data-outline-folded-image='true']):not([data-align]) {
+  margin-inline: 0 auto;
+}
+
+/* Explicit per-picture horizontal alignment overrides global Picture position and the bullet guard (YAZ-6422). */
+.milkdown .image-view[data-lone-image='true']:not(.board-embed):not([data-outline-folded-image='true'])[data-align='left'] {
+  margin-inline: 0 auto;
+}
+
+.milkdown .image-view[data-lone-image='true']:not(.board-embed):not([data-outline-folded-image='true'])[data-align='center'] {
+  margin-inline: auto;
+}
+
+.milkdown .image-view[data-lone-image='true']:not(.board-embed):not([data-outline-folded-image='true'])[data-align='right'] {
+  margin-inline: auto 0;
+}
