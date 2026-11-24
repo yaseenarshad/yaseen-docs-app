@@ -225,8 +225,8 @@ describe('Settings › Storage (YAZ-1801, YAZ-3039)', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
     const titles = [...el.querySelectorAll('.settings-section__title')].map((t) => t.textContent ?? '')
-    // YAZ-4447: Images › Add panel (the picture hover zoom) comes first in registry order now
-    expect(titles[0]).toMatch(/^Images › Add panel/)
+    // YAZ-6423: Images › Pictures in pages comes first in registry order now
+    expect(titles[0]).toMatch(/^Images › Pictures in pages/)
     expect(titles.some((t) => /^Files & Links( › |$)/.test(t))).toBe(true)
     expect(titles.some((t) => /^Storage( › |$)/.test(t))).toBe(true)
   })

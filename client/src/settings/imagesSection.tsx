@@ -22,6 +22,7 @@ import { LibraryFolderControl, LibraryFolderHint } from './LibraryFolderControl'
 import { DRAWING_POSITION_OPTIONS, ON_OFF_OPTIONS } from './options'
 import { PixabayKeyControl } from './PixabayKeyControl'
 import type { SettingsSection } from './registry'
+import { unit } from './unitLabel'
 
 const HOVER_ZOOM_SIZE_OPTIONS: readonly { label: string; value: MediaHoverZoomSize }[] = [
   { label: 'Small', value: 'small' },
@@ -34,12 +35,12 @@ export const IMAGES_SECTION: SettingsSection = {
   title: 'Images',
   groups: [
     {
-      title: 'Pictures in pages',
+      title: (ctx) => unit(ctx, 'Pictures in pages'),
       items: [
         {
           id: 'imagePosition',
           label: 'Picture position',
-          hint: "Where pictures sit in a page. A picture's own Position menu can override this.",
+          hint: (ctx) => unit(ctx, "Where pictures sit in a page. A picture's own Position menu can override this."),
           keywords: ['picture', 'image', 'photo', 'position', 'align', 'alignment', 'left', 'center', 'centre'],
           render: ({ settings, onChange }) => (
             <Segmented
