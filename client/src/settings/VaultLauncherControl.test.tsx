@@ -598,4 +598,31 @@ describe('VaultSwitcher & Welcome launcher icons', () => {
     expect(icons).toHaveLength(1)
     expect(icons[0].src).toBe(FAKE_PNG_DATA_URL)
   })
+
+  it('refreshes VaultLauncherControl when vault-launcher:changed fires (e.g. from AllLaunchersList or another window)', async () => {
+    let listener: (() => void) | null = null
+    const off = vi.fn()
+    ;(window as unknown as { yaseenDocs: { vaultLauncher: Record<string, unknown> } }).yaseenDocs.vaultLauncher.onChanged = vi.fn((cb: () => void) => {
+      listener = cb
+      return off
+    })
+    mockStatus
+      .mockResolvedValueOnce({
+        supported: true,
+        launcher: { name: 'Notes', appPath: '/Applications/Notes.app', iconPath: '/tmp/notes.png' },
+        exists: true,
+        iconDataUrl: FAKE_PNG_DATA_URL,
+      })
+      .mockResolvedValueOnce({ supported: true, launcher: null, exists: false, iconDataUrl: null })
+
+    const el = await render(<VaultLauncherControl root={ROOT} defaultName="Notes" />)
+    expect(el.textContent).toContain('Notes.app')
+    expect(listener).not.toBeNull()
+
+    await act(async () => {
+      listener?.()
+    })
+    expect(el.textContent).toContain('Make a launcher…')
+    expect(mockStatus).toHaveBeenCalledTimes(2)
+  })
 })

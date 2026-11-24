@@ -41,17 +41,22 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
       setStatus({ supported: false, launcher: null, exists: false, iconDataUrl: null })
       return
     }
-    const req = isWorkspace ? api.vaultLauncher.workspaceStatus(workspaceId) : api.vaultLauncher.status(root!)
-    void req.then(
-      (res) => {
-        if (live) setStatus(res)
-      },
-      () => {
-        if (live) setStatus({ supported: false, launcher: null, exists: false, iconDataUrl: null })
-      },
-    )
+    const load = () => {
+      const req = isWorkspace ? api.vaultLauncher.workspaceStatus(workspaceId) : api.vaultLauncher.status(root!)
+      void req.then(
+        (res) => {
+          if (live) setStatus(res)
+        },
+        () => {
+          if (live) setStatus({ supported: false, launcher: null, exists: false, iconDataUrl: null })
+        },
+      )
+    }
+    load()
+    const off = typeof window.yaseenDocs?.vaultLauncher?.onChanged === 'function' ? api.vaultLauncher.onChanged(load) : undefined
     return () => {
       live = false
+      off?.()
     }
   }, [isWorkspace, root, workspaceId])
 
