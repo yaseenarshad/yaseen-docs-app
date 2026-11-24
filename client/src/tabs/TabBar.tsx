@@ -1011,6 +1011,13 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
           // The drop slot: the tab the gap opens before — or the LAST tab, for the end slot.
           if (gap === i) cls.push('tabbar__tab--gap-before')
           if (gap === tabs.length && i === tabs.length - 1) cls.push('tabbar__tab--gap-after')
+          // A display name is the user's own words, and a folder page is named whole (YAZ-3536 D4).
+          const nameNode = (
+            <span className="tabbar__name">
+              {label}
+              {name === undefined && inlineDrawing === undefined && !isFolder(path) && <NameEnding path={path} />}
+            </span>
+          )
           return [
             ...ghostsBefore(id),
             <div
@@ -1107,18 +1114,10 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
                   {tabId !== undefined ? (
                     <span className="tabbar__text">
                       <span className="tabbar__id">{tabId}</span>
-                      <span className="tabbar__name">
-                        {label}
-                        {/* A display name is the user's own words, and a folder page is named whole (YAZ-3536 D4). */}
-                        {name === undefined && inlineDrawing === undefined && !isFolder(path) && <NameEnding path={path} />}
-                      </span>
+                      {nameNode}
                     </span>
                   ) : (
-                    <span className="tabbar__name">
-                      {label}
-                      {/* A display name is the user's own words, and a folder page is named whole (YAZ-3536 D4). */}
-                      {name === undefined && inlineDrawing === undefined && !isFolder(path) && <NameEnding path={path} />}
-                    </span>
+                    nameNode
                   )}
                 </span>
               </button>
