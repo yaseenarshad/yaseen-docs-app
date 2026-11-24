@@ -18,6 +18,7 @@
  */
 import { cardsWithIds } from '@shared/cardsWithIds'
 import { boardBaseName } from '@shared/fileKind'
+import { inlineCardRowPath, inlineDrawingRowPath } from '@shared/inlineRef'
 import { holdsId } from '@shared/pageId'
 import { kebabTitle } from '@shared/pageName'
 import type { IndexRecord } from '@shared/types'
@@ -60,10 +61,7 @@ export interface SearchCandidate {
 }
 
 /** A card-in-a-page row's own path (YAZ-5037): its page's, `#`, its ID. No file has it: it keys the row, never a read. */
-export const cardRowPath = (page: string, id: string): string => `${page}#${id}`
-
-/** An inline-drawing-in-a-page row's own path (YAZ-6143): its page's, `#drawing-`, its 0-based index. */
-export const inlineDrawingRowPath = (page: string, index: number): string => `${page}#drawing-${index}`
+export { inlineCardRowPath, inlineCardRowPath as cardRowPath, inlineDrawingRowPath } from '@shared/inlineRef'
 
 /** Result cap for title search — scrollable results, not the `[[` picker's MAX_SUGGESTIONS popup. The sidebar says so when it is reached (🔒 D6, YAZ-2620). */
 export const SEARCH_CAP = 50
@@ -94,7 +92,7 @@ export function searchCandidates(records: readonly IndexRecord[], letters: reado
     if (cards && !card) {
       for (const { card: c, id, index } of cardsWithIds(r.cards)) {
         const name = c.title ?? id
-        rows.push({ kind: 'file', name, lower: name.toLowerCase(), label: name, path: cardRowPath(r.path, id), folder: r.folder, id, ...was, card: true, page: r.path, index })
+        rows.push({ kind: 'file', name, lower: name.toLowerCase(), label: name, path: inlineCardRowPath(r.path, id), folder: r.folder, id, ...was, card: true, page: r.path, index })
       }
     }
     if (r.inlineDrawings !== undefined) {

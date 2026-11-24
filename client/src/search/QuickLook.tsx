@@ -12,10 +12,13 @@
  */
 import { lazy, Suspense, type CSSProperties } from 'react'
 import { fileKind } from '@shared/fileKind'
+import { parseInlineRef } from '@shared/inlineRef'
 import type { DiagramDarkColors } from '@shared/types'
 import { ReadOnlyPage } from '../editor/ReadOnlyPage'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
+import { basename } from '../lib/paths'
+import { PlaceName } from '../sidebar/PlaceName'
 import { ImageViewer } from '../viewers/ImageViewer'
 import { PdfViewer } from '../viewers/PdfViewer'
 import './quickLook.css'
@@ -24,6 +27,10 @@ import './quickLook.css'
 const QuickLookBoard = lazy(() => import('./QuickLookBoard'))
 /** A code file (YAZ-3450): Monaco, read only, in its own chunk with Monaco behind it. */
 const CodePreview = lazy(() => import('../code/CodePreview'))
+/** An inline card or inline Excalidraw drawing (YAZ-6468): its own chunk, shared with the hover panel. */
+const InlineRefPreview = lazy(() => import('../sidebar/InlineHoverPreview'))
+
+const MARKDOWN_EXT_RE = /\.(?:md|markdown)$/i
 
 interface QuickLookProps {
   /** The file on preview. */
@@ -43,8 +50,22 @@ interface QuickLookProps {
 }
 
 export function QuickLook({ path, title, watch, wikilinks, root = null, darkColors = 'adapt', style, onClose }: QuickLookProps) {
+  const inlineRef = parseInlineRef(path)
   // The kinds are the ones `Editor` shows as a page (S39); a file with no viewer gets one line (S40).
-  const kind = fileKind(path)
+  const kind = inlineRef === null ? fileKind(path) : undefined
+  const parentRecord = inlineRef === null ? undefined : wikilinks.records.find((r) => r.path === inlineRef.page)
+  const inlinePlace = inlineRef === null ? undefined : (parentRecord?.title ?? basename(inlineRef.page).replace(MARKDOWN_EXT_RE, ''))
+  const explicitInlineTitle = inlineRef !== null && title !== '' && title !== basename(path) && title !== path ? title : undefined
+  const indexedInlineTitle =
+    inlineRef === null
+      ? undefined
+      : inlineRef.kind === 'card'
+        ? (parentRecord?.cards?.find((c) => c.id?.toLowerCase() === inlineRef.id.toLowerCase())?.title ?? undefined)
+        : (parentRecord?.inlineDrawings?.find((d) => d.index === inlineRef.index)?.title || undefined)
+  const headerTitle =
+    inlineRef === null
+      ? title
+      : (explicitInlineTitle ?? indexedInlineTitle ?? (inlineRef.kind === 'card' ? inlineRef.id : 'Untitled drawing'))
   return (
     // The panel takes no focus when it shows. A click in it — to select text — puts the keyboard
     // focus on it (no Tab stop), so the search bar's Esc is out of reach: Esc here closes the panel (S66).
@@ -61,14 +82,29 @@ export function QuickLook({ path, title, watch, wikilinks, root = null, darkColo
       }}
     >
       <header className="quicklook__header">
-        <span className="quicklook__title">{title}</span>
+        <span className="quicklook__title">{headerTitle}</span>
+        {inlineRef !== null && inlinePlace !== undefined && inlinePlace !== '' && <PlaceName className="quicklook__place" path={inlineRef.page} kind="page" label={inlinePlace} />}
         {/* A press on the ✕ takes no focus: the caret stays in the search bar. */}
         <button type="button" className="quicklook__close" aria-label="Close preview" title="Close preview" onMouseDown={(e) => e.preventDefault()} onClick={onClose}>
           ✕
         </button>
       </header>
       <div className="quicklook__body">
-        {kind === 'markdown' ? (
+        {inlineRef !== null ? (
+          <Suspense fallback={null}>
+            <InlineRefPreview
+              key={path}
+              inlineRef={inlineRef}
+              name={explicitInlineTitle ?? indexedInlineTitle}
+              place={inlinePlace}
+              root={root ?? undefined}
+              wikilinks={wikilinks}
+              textVars={style}
+              diagramDarkColors={darkColors}
+              compact
+            />
+          </Suspense>
+        ) : kind === 'markdown' ? (
           // A page that is gone, or that the app cannot read (S41), named as the tree names it.
           <ReadOnlyPage key={path} className="quicklook__page" path={path} wikilinks={wikilinks} unreadable={<>Can&apos;t preview &quot;{title}&quot; — it is no longer there</>} />
         ) : kind === 'text' ? (

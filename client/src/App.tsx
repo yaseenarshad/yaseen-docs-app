@@ -31,6 +31,7 @@ import { beginSidebarResize, useSidebarMotion } from './sidebar/sidebarMotion'
 import { dropIndex } from './lib/dragSlot'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
+import { copyPathWithInlineSupport } from './lib/inlinePath'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { focusOpenDocument, giveFocusBack } from './lib/focusHandoff'
 import { useEscapeLast } from './lib/escapeOrder'
@@ -3027,17 +3028,12 @@ export function App() {
       const text = onPage ?? (selected.size > 0 ? orderedSelection(selected, document.querySelector('.sidebar__body')).join('\n') : pageOnShow)
       if (text === null) return
       event.preventDefault()
-      // BOTH outcomes speak through the window's one passive notice (YAZ-1341): the user cannot
-      // see a clipboard land, so a copy needs its yes as much as its no.
-      const copied = text.split('\n').length
-      void navigator.clipboard.writeText(text).then(
-        () => notify(copied === 1 ? 'Copied path' : `Copied ${copied} paths`, 'info', 'clipboard'),
-        (error: unknown) => notify(`Can't copy path: ${error instanceof Error ? error.message : String(error)}`),
-      )
+      const activeInlineIdx = onPage === null && selected.size === 0 ? tabs.find((t) => t.id === activeTab)?.inlineDrawing : undefined
+      void copyPathWithInlineSupport(text, activeInlineIdx, notify)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [pageOnShow])
+  }, [pageOnShow, tabs, activeTab])
 
   /**
    * ⌘C / ⌘X / ⌘V for the sidebar's FILE clipboard (D6 amended, YAZ-1674) — ⌘⇧C's sibling in every
@@ -4199,7 +4195,7 @@ export function App() {
       onAskVault={setBoardVaultAsk}
       onCloseWindow={closeBoardWindow}
       onNewWindow={openWindowBehind}
-      onOpenTabHere={openBackground}
+      onOpenTabHere={openBackground} onOpenInlineDrawingHere={(path, index) => openInlineDrawingByPath(path, index, true)} onOpenPage={openCurrent}
       // A page's menu is a tab's menu: the strip's own doors. A reveal in the sidebar leaves the board open beside it.
       onMoveToRight={movePageToRight}
       onMoveTargets={moveTargets}
@@ -4383,7 +4379,7 @@ export function App() {
           inert={!filesWindow && sidebarCollapsed ? true : undefined}
         >
           <Sidebar
-            onOpenInlineDrawingTab={openInlineDrawingByPath}
+            onOpenInlineDrawingTab={openInlineDrawingByPath} onOpenInlineDrawingExplore={(path, index) => openExploreWith({ kind: 'board', path, inlineDrawing: { index } })}
           // Keyed on one vault of the window (YAZ-2631 D5): a vault that joins, leaves behind it or moves does not remount the panel.
           key={sidebarKey.current}
           // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
@@ -4579,7 +4575,7 @@ export function App() {
             onOpenStep={toOpenStep}
             zoomLabels={zoomLabels}
             onShowSidebar={sidebarCollapsed ? toggleSidebar : undefined}
-            onShowInSidebar={showInSidebar}
+            onShowInSidebar={showInSidebar} onOpenPage={openCurrent}
             onRenameFile={renameInSidebar}
             onToggleOverview={toggleOverview}
             overviewOpen={overviewOpen}
@@ -4633,7 +4629,7 @@ export function App() {
                   }
                 >
                   {/* Wiki-link clicks (Links C, GRO-2192) ride the tabs API: plain → navigate, in the tab's own slot (openBackground during a review), ⌘ → openBackground; create failures land in the link-notice. The page's first edit keeps a preview tab (YAZ-2648 D2). */}
-                  {id !== held && <UnitContext.Provider value={scopeOf(path).unit.unit}><RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackgroundCopy} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} inlineDrawingIndex={inlineDrawingOf.get(id)} onOpenInlineDrawing={openInlineDrawingTab} /></UnitContext.Provider>}
+                  {id !== held && <UnitContext.Provider value={scopeOf(path).unit.unit}><RetainedEditor key={path} {...editorPropsFor(path)} path={path} onOpenFile={openFromPage} onOpenFileBackground={openBackground} onOpenLink={openLink} onOpenLinkBackground={openBackgroundCopy} onUserEdit={keepEdited} startView={startView.get(id)} viewKey={`step-${stepIdOf(tabHistory, id)}`} tabId={id} zoomKey={zoomOf.get(id) ?? null} onZoom={zoomTabLabelled} onOpenBullet={openBulletTab} inlineDrawingIndex={inlineDrawingOf.get(id)} onOpenInlineDrawing={openInlineDrawingTab} onShowInlineDrawingInPage={openCurrent} /></UnitContext.Provider>}
                 </div>
               )
             })}

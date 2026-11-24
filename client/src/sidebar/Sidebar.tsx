@@ -173,8 +173,8 @@ interface SidebarProps {
   onKeepFile: (path: string) => void
   /** ⌘-click on a file row (I3 LOCKED ruling, GRO-2235): open in a background tab; App passes the workspace's openBackground. */
   onOpenFileBackground: (path: string) => void
-  /** Opens an inline Excalidraw drawing inside a page in its own tab (YAZ-6143). */
-  onOpenInlineDrawingTab?: (path: string, index: number, background: boolean) => void
+  /** Opens an inline Excalidraw drawing inside a page in its own tab (YAZ-6143) or Explore layer (YAZ-6469). */
+  onOpenInlineDrawingTab?: (path: string, index: number, background: boolean) => void; onOpenInlineDrawingExplore?: (path: string, index: number) => void
   /** A tab behind the current one with no copy: a file already in a tab stays as it is (YAZ-4470, 17: "Open all in tabs"). Absent: `onOpenFileBackground`. */
   onOpenFileTab?: (path: string) => void
   /**
@@ -738,7 +738,7 @@ export function Sidebar({
   onOpenFile,
   onKeepFile,
   onOpenFileBackground,
-  onOpenInlineDrawingTab,
+  onOpenInlineDrawingTab, onOpenInlineDrawingExplore,
   onOpenFileTab,
   onRevealInFiles,
   previewPath,
@@ -1184,7 +1184,7 @@ export function Sidebar({
   // starts and one that shows closes (YAZ-3075 D4, C12): one panel at a time. The new tab page's Space panel too (YAZ-3403).
   // Settings › Preview on hover has a switch for the search results and one for the rest of the sidebar (YAZ-3403).
   const hoverHere = hoverOn(settings, searching ? 'search' : 'sidebar')
-  const { hover, hoverFile, closePreview } = useHoverPreview(menu !== null || infoPopover !== null || previewPath !== null || pagePreviewShown || !hoverHere, activeFile) // off (A20): no dwell starts
+  const { hover, hoverFile, closePreview } = useHoverPreview(menu !== null || inlineRowMenu !== null || infoPopover !== null || previewPath !== null || pagePreviewShown || !hoverHere, activeFile) // off (A20): no dwell starts
   /** The watch feed of the vault that holds `path` (the hover preview and Info listen on it, A41). */
   const watchOf = useCallback((path: string): WatchSource | undefined => watches[roots.indexOf(rootOf(path))], [watches, roots, rootOf])
   // The Info popover reads the board's head when it opens, and again on each `change` of that board
@@ -1271,7 +1271,7 @@ export function Sidebar({
   // with a modifier, an open menu or dialog, and the Search tab keep their keys. On the window: the
   // focus is on the body then, and no panel hears the key.
   // On the Search tab the bar is the walk (D12): ↓ or ↑ from nowhere puts the caret in it.
-  const menuOpen = menu !== null
+  const menuOpen = menu !== null || inlineRowMenu !== null
   useEffect(() => {
     if (menuOpen || collapsed) return
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -1304,7 +1304,7 @@ export function Sidebar({
       appRowsLast(nodes, depth, appRows, (level) => (keepsOrder(depth, searchSort, { keepTop: top, vaults: vaultRows.size > appRows.size }) ? level : sortLevel(level, searchSort, shownLabel(titles), scores))),
     [vaultRows, appRows, searchSort, titles],
   )
-  const { searchInput, query, results, typed, found, cardRows, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear, openSearchCard, settings.searchIncludeInline)
+  const { searchInput, query, results, typed, found, cardRows, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, copySearchKey, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear, openSearchCard, settings.searchIncludeInline, settings.hotkeys, onNotice)
   /** ↑ on the first recent file of the empty Search tab, or on the day heading above it, goes back to the bar (YAZ-5774, YAZ-5777). */
   const recentUp = useCallback((e: React.KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'ArrowUp' || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
@@ -1317,7 +1317,7 @@ export function Sidebar({
   useEffect(() => closePreview(), [query, closePreview])
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
   // parent row is no match, so the highlight cannot go to it, and the menu must still say what it acts on.
-  const menuRow = menu?.leaveSearchTo ?? null
+  const menuRow = menu?.leaveSearchTo ?? inlineRowMenu?.card.path ?? null
   const searchSelection = useMemo(() => (menuRow === null || searchCursor.paths.has(menuRow) ? searchCursor : { ...searchCursor, paths: new Set([...searchCursor.paths, menuRow]) }), [searchCursor, menuRow])
   // The search tree scrolls inside `.sidebar__body`, so arrowing past its edge must bring the
   // highlighted row along. jsdom has no scrollIntoView — hence the `?.()` (the TabBar idiom).
@@ -2332,6 +2332,7 @@ export function Sidebar({
         // not also throw the selection the menu was about to act on.
         // (⌘C/⌘X/⌘V are App's window listener, D6 — see `clipboardRef`.)
         onKeyDown={(e) => {
+          if (searching && copySearchKey(e)) return
           const on = e.target instanceof HTMLElement && e.target.matches('.tree__row[data-path]') ? e.target : null
           // Space on a file row shows the preview panel, and Space again closes it (YAZ-2663 D11).
           // Taken here, so the button makes no click and the row does not open. A held Space acts one time.
@@ -2658,7 +2659,7 @@ export function Sidebar({
         <ContextMenu
           x={inlineRowMenu.x}
           y={inlineRowMenu.y}
-          sections={inlineRowMenuSections(inlineRowMenu.card, { openSearchCard, onOpenFile, onOpenFileBackground, unit })}
+          sections={inlineRowMenuSections(inlineRowMenu.card, { openSearchCard, onOpenFile, onOpenFileBackground, onRevealInFiles, onOpenInlineDrawingExplore, onOpenVsCode: openVsCode, onOpenDefault: openDefault, onReveal: reveal, onNotice, hotkeys: settings.hotkeys, unit })}
           onClose={() => setInlineRowMenu(null)}
         />
       )}

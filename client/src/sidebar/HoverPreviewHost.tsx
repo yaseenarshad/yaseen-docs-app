@@ -27,10 +27,12 @@
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from 'react'
 import { isBoard, isMarkdown } from '@shared/fileKind'
+import { isInlineRef, parseInlineRef } from '@shared/inlineRef'
 import type { DiagramDarkColors, TreeNode } from '@shared/types'
 import { api } from '../api'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
+import { basename } from '../lib/paths'
 import { createStore, type Store } from '../lib/store'
 import { useAppliedTheme } from '../lib/theme'
 import { findNode } from '../lib/treeState'
@@ -60,9 +62,15 @@ let mediaHoverModule: typeof import('./MediaHoverPreview') | null = null
 export const loadMediaHoverPreview = () => import('./MediaHoverPreview').then((module) => (mediaHoverModule = module))
 const LazyMediaHoverPreview = lazy(loadMediaHoverPreview)
 
+/** An inline card's or inline drawing's panel (YAZ-6468), its own chunk: the dwell starts the load. */
+let inlineHoverModule: typeof import('./InlineHoverPreview') | null = null
+export const loadInlineHoverPreview = () => import('./InlineHoverPreview').then((module) => (inlineHoverModule = module))
+const LazyInlineHoverPreview = lazy(loadInlineHoverPreview)
+
 /** The panel's chunk of `path`'s kind starts loading with the dwell. A failed load is the lazy panel's to meet. */
 export function preloadPreview(path: string): void {
-  if (isMarkdown(path)) loadPagePreview().catch(() => undefined)
+  if (isInlineRef(path)) loadInlineHoverPreview().catch(() => undefined)
+  else if (isMarkdown(path)) loadPagePreview().catch(() => undefined)
   else if (isCodeHover(path)) loadCodeHoverPreview().catch(() => undefined)
   else if (isMediaHover(path)) loadMediaHoverPreview().catch(() => undefined)
 }
@@ -180,18 +188,19 @@ function useFloatAnchor(anchor: RefObject<HTMLElement | null>, float: PreviewPop
 
 export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, nameOf, textVarsOf, enabled, diagramDarkColors, anchor, float, onClose }: HoverPreviewHostProps) {
   const { path, shown } = useSyncExternalStore(hover.subscribe, hover.getState)
+  const inlineRef = useMemo(() => (path === null ? null : parseInlineRef(path)), [path])
   const node = useMemo(() => {
     if (path === null || forest === null) return null
-    const n = findNode(forest, path)
+    const n = findNode(forest, inlineRef === null ? path : inlineRef.page)
     return n !== null && n.type === 'file' ? n : null
-  }, [path, forest])
+  }, [path, forest, inlineRef])
   useEffect(() => {
     if (path !== null && forest !== null && node === null) onClose()
   }, [path, forest, node, onClose])
   // Escape closes the preview — and ONLY while one shows, so the key is otherwise untouched for the
   // selection, the menus and the canvas. Capture phase, so it wins before the body's own Escape.
-  const visible = shown && node !== null && enabled
-  const placeBy = useFloatAnchor(anchor, float, visible ? node.path : null)
+  const visible = shown && node !== null && enabled && path !== null
+  const placeBy = useFloatAnchor(anchor, float, visible ? path : null)
   useEffect(() => {
     if (!visible) return
     const onKey = (e: KeyboardEvent) => {
@@ -205,7 +214,21 @@ export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, 
     return () => document.removeEventListener('keydown', onKey, true)
   }, [visible, onClose])
   if (!visible) return null
-  return <PreviewPanel key={node.path} path={node.path} root={rootOf(node.path)} name={nameOf(node.path)} wikilinks={wikilinksOf(node.path)} textVars={textVarsOf(node.path)} knownMtime={node.mtime} watch={watchOf?.(node.path)} diagramDarkColors={diagramDarkColors} anchor={placeBy} />
+  return (
+    <PreviewPanel
+      key={path}
+      path={path}
+      root={rootOf(node.path)}
+      name={inlineRef === null ? nameOf(node.path) : ''}
+      place={inlineRef === null ? undefined : nameOf(node.path)}
+      wikilinks={wikilinksOf(node.path)}
+      textVars={textVarsOf(node.path)}
+      knownMtime={node.mtime}
+      watch={watchOf?.(node.path)}
+      diagramDarkColors={diagramDarkColors}
+      anchor={placeBy}
+    />
+  )
 }
 
 export interface PreviewPanelProps {
@@ -214,6 +237,8 @@ export interface PreviewPanelProps {
   root: string
   /** A page's name as the app shows it (its title): the page panel's header. */
   name: string
+  /** Optional parent page display label for inline card / inline drawing previews (YAZ-6468). */
+  place?: string
   /** One quiet line under the header: how to open it (a page's link, YAZ-3935: "⌘-click to open"). Absent → none. */
   hint?: string
   wikilinks: WikilinkResolveSource
@@ -231,7 +256,7 @@ export interface PreviewPanelProps {
  * picture, the kind by its path; anything else shows nothing. The caller decides WHEN (a dwell, Space on the board)
  * and mounts it `key={path}`. A board reads its head once on open and follows the watch feed (see the module doc).
  */
-export function PreviewPanel({ path, root, name, hint, wikilinks, textVars, knownMtime = 0, watch, diagramDarkColors, anchor }: PreviewPanelProps) {
+export function PreviewPanel({ path, root, name, place, hint, wikilinks, textVars, knownMtime = 0, watch, diagramDarkColors, anchor }: PreviewPanelProps) {
   const theme = useAppliedTheme()
   // The board's mtime as its file says now (see the module doc); the tree's until the read answers.
   // A page has no head and no watch (C27): only a BOARD gets a `boardPath`.
@@ -260,6 +285,29 @@ export function PreviewPanel({ path, root, name, hint, wikilinks, textVars, know
     }
   }, [boardPath, watch])
   const node = useMemo(() => ({ path }), [path])
+  // An inline card (`<page>.md#<cardId>`) or inline Excalidraw drawing (`<page>.md#drawing-<n>`), YAZ-6468.
+  const inlineRef = parseInlineRef(path)
+  if (inlineRef !== null) {
+    const InlineRefPreview = inlineHoverModule?.default ?? LazyInlineHoverPreview
+    const parentPlace = place ?? wikilinks.records.find((r) => r.path === inlineRef.page)?.title
+    const cleanName = name !== '' && name !== basename(path) ? name : undefined
+    return (
+      <Suspense fallback={null}>
+        <InlineRefPreview
+          inlineRef={inlineRef}
+          name={cleanName}
+          place={parentPlace}
+          root={root}
+          wikilinks={wikilinks}
+          textVars={textVars}
+          hint={hint}
+          anchor={anchor}
+          diagramDarkColors={diagramDarkColors}
+          dark={theme === 'dark'}
+        />
+      </Suspense>
+    )
+  }
   if (isCodeHover(path)) {
     const CodeHoverPreview = codeHoverModule?.default ?? LazyCodeHoverPreview
     return (

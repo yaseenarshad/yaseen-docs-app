@@ -18,6 +18,7 @@ import { BOARD_COMMAND_EVENT, requestBoardCommand } from './boardCommand'
 import { fakeWatch, withRevealObserver } from './boardTestKit'
 import { DocumentChips, exportWithNotice, useDocumentHost } from './useDocumentHost'
 import { VaultReadOnly } from '../vault/readOnlyVault'
+import { _resetPageUnlockStore, flushPageUnlockDependents, publishPageUnlock } from '../editor/pageUnlockStore'
 
 /**
  * The cog's open menu (YAZ-4776): a portal on the page, under its cog, so a test finds it by the open cog's
@@ -55,6 +56,7 @@ function Host({
   onSyncNow,
   readOnly = false,
   readOnlySwitch,
+  inheritPageUnlock,
   vault = false,
   checkDisk,
   keepBoth,
@@ -64,13 +66,14 @@ function Host({
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
   readOnly?: boolean
-  readOnlySwitch?: boolean
+  readOnlySwitch?: boolean | 'timed'
+  inheritPageUnlock?: boolean
   vault?: boolean
   checkDisk?: () => Promise<number | null>
   keepBoth?: (a: Autosave<number>) => Promise<boolean>
   merge?: (a: Autosave<number>) => Promise<'merged' | 'conflict' | 'reload'>
 }) {
-  board = useDocumentHost({ root: ROOT, path, watch, sync, onSyncNow, write, reload, onCommand, onShown, focus, readOnly, readOnlySwitch, onNotice, checkDisk, keepBoth, merge })
+  board = useDocumentHost({ root: ROOT, path, watch, sync, onSyncNow, write, reload, onCommand, onShown, focus, readOnly, readOnlySwitch, inheritPageUnlock, onNotice, checkDisk, keepBoth, merge })
   return (
     <section className="editor editor--drawing">
       <div ref={board.hostRef}>
@@ -147,6 +150,7 @@ afterEach(() => {
   root = null
   container.remove()
   _resetRenameContinuity()
+  _resetPageUnlockStore()
   vi.useRealTimers()
   vi.clearAllMocks()
 })
@@ -687,5 +691,103 @@ describe('YAZ-4279 items 6 & 12: focus/reveal checkDisk and Keep both', () => {
     await settle()
     expect(keepBoth).toHaveBeenCalledTimes(1)
     expect(text()).not.toContain('File changed on disk.')
+  })
+})
+
+describe("YAZ-6460 item 13: readOnlySwitch: 'timed' and inheritPageUnlock", () => {
+  const PAGE = '/vault/Notes.md'
+  const chip = () => container.querySelector<HTMLButtonElement>('.read-only-chip__button')
+  const lockNow = () => container.querySelector<HTMLButtonElement>('.read-only-chip__lock')
+  const ask = () => container.querySelector<HTMLElement>('.read-only-chip__ask')
+  const labels = () => [...(ask()?.querySelectorAll('button') ?? [])].map((b) => b.textContent)
+
+  it("readOnlySwitch: 'timed' respects page readOnly and VaultReadOnly, shows timed ReadOnlyChip without Turn Read only off or cog row, and never writes board switch", async () => {
+    opened({ path: PAGE, readOnly: true, readOnlySwitch: 'timed', inheritPageUnlock: true })
+    expect(board.readOnly).toBe(true)
+    expect(container.querySelector('.page-settings')).toBeNull()
+    expect(chip()?.textContent).toBe('Read only')
+
+    act(() => chip()!.click())
+    expect(labels()).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
+
+    // Local timed unlock on this drawing tab works and shows Lock now
+    act(() => button('Allow edits for 1 minute').click())
+    expect(board.readOnly).toBe(false)
+    expect(chip()?.textContent).toBe('Editing · 1:00')
+    expect(lockNow()?.textContent).toBe('Lock now')
+
+    edit(1)
+    await act(async () => lockNow()!.click())
+    await settle()
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(board.readOnly).toBe(true)
+    expect(chip()?.textContent).toBe('Read only')
+    expect(setBoardReadOnly).not.toHaveBeenCalled()
+  })
+
+  it("readOnlySwitch: 'timed' also locks when VaultReadOnly is on even if page readOnly is false", () => {
+    opened({ path: PAGE, readOnly: false, vault: true, readOnlySwitch: 'timed', inheritPageUnlock: true })
+    expect(board.readOnly).toBe(true)
+    expect(chip()?.textContent).toBe('Read only')
+  })
+
+  it('inheritPageUnlock inherits a parent page timed unlock live, shows inherited countdown without Lock now, flushes before relock, and relocks when cleared', async () => {
+    opened({ path: PAGE, vault: true, readOnlySwitch: 'timed', inheritPageUnlock: true })
+    expect(board.readOnly).toBe(true)
+    const token = Symbol('pageTab')
+
+    // Unlock on another path does not affect this tab
+    act(() => publishPageUnlock('/vault/Other.md', token, Date.now() + 60_000))
+    expect(board.readOnly).toBe(true)
+
+    // Parent page unlocks for 10 minutes
+    const until = Date.now() + 10 * 60_000
+    act(() => publishPageUnlock(PAGE, token, until))
+    expect(board.readOnly).toBe(false)
+    expect(chip()?.textContent).toBe('Editing · 10:00')
+    expect(lockNow()).toBeNull()
+
+    // Pending edit in this drawing tab flushes when parent page runs flushPageUnlockDependents before relocking
+    edit(1)
+    expect(write).not.toHaveBeenCalled()
+    await act(async () => {
+      await flushPageUnlockDependents(PAGE)
+    })
+    expect(write).toHaveBeenCalledTimes(1)
+
+    // Parent page clears unlock -> drawing tab relocks
+    act(() => publishPageUnlock(PAGE, token, null))
+    expect(board.readOnly).toBe(true)
+    expect(chip()?.textContent).toBe('Read only')
+  })
+
+  it('effectiveUntil takes Math.max of local unlock and inherited unlock, staying unlocked if local outlives parent', () => {
+    opened({ path: PAGE, vault: true, readOnlySwitch: 'timed', inheritPageUnlock: true })
+    const token = Symbol('pageTab')
+    act(() => publishPageUnlock(PAGE, token, Date.now() + 60_000))
+    expect(chip()?.textContent).toBe('Editing · 1:00')
+
+    // User picks "Until I close this tab" locally while parent 1-minute unlock is active
+    act(() => chip()!.click())
+    act(() => button('Until I close this tab').click())
+    expect(chip()?.textContent).toBe('Editing · until close')
+
+    // Parent page relocks -> tab stays unlocked because local unlock is Infinity, and Lock now appears
+    act(() => publishPageUnlock(PAGE, token, null))
+    expect(board.readOnly).toBe(false)
+    expect(chip()?.textContent).toBe('Editing · until close')
+    expect(lockNow()?.textContent).toBe('Lock now')
+  })
+
+  it('a retired host does not flush on flushPageUnlockDependents', async () => {
+    opened({ path: PAGE, vault: true, readOnlySwitch: 'timed', inheritPageUnlock: true })
+    const token = Symbol('pageTab')
+    act(() => publishPageUnlock(PAGE, token, Infinity))
+    edit(1)
+    act(() => retireDeletedPath(PAGE))
+    await act(async () => {
+      await flushPageUnlockDependents(PAGE)
+    })
+    expect(write).not.toHaveBeenCalled()
   })
 })

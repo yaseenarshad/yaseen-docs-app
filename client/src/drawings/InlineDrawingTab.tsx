@@ -24,11 +24,15 @@ import type { HotkeyAside } from '@shared/keys'
 import { api } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, exportWithNotice, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
+import { landOnInlineDrawing } from '../editor/drawing/inlineDrawingLand'
 import type { NoticeKind } from '../lib/notice'
+import { pageLabel, pathTitles } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
 import { registerPageView } from '../lib/pageView'
+import { flushRenamedPath } from '../lib/renameContinuity'
 import { useAppliedTheme } from '../lib/theme'
 import { announcedWrite } from '../lib/twinEditors'
+import { FileIcon } from '../sidebar/FileIcon'
 import { trackFileWrite } from '../views/writeProperty'
 import { CardPreviewHost } from '../tabs/cardPreview'
 import { vaultUnit } from '../vault/unitWord'
@@ -111,6 +115,8 @@ export interface InlineDrawingTabProps extends DocumentHostProps, DrawingLinkPro
   /** Settings › Outside changes › Board border colors (YAZ-6398). */
   outsideOutlineColors?: OutsideOutlineColors
   startView?: PageView
+  /** Jump to this inline drawing inside its parent Markdown page (YAZ-6468). */
+  onShowInPage?: (path: string, index: number) => void
 }
 
 export function InlineDrawingTab(props: InlineDrawingTabProps) {
@@ -146,6 +152,7 @@ function InlineDrawingHost({
   hotkeysAside,
   onFailed,
   startView,
+  onShowInPage,
   outsideChangeGlow = 'until-checked',
   outsideOutlineThickness,
   outsideOutlineColors,
@@ -183,7 +190,8 @@ function InlineDrawingHost({
     sync,
     onSyncNow,
     readOnly: loaded.readOnly,
-    readOnlySwitch: false,
+    readOnlySwitch: 'timed',
+    inheritPageUnlock: true,
     onNotice,
     write: async (expectedMtime) => {
       const current = snapshot.current
@@ -445,20 +453,24 @@ function InlineDrawingHost({
     }
   }
 
+  const unit = vaultUnit(root)
+  const parentPageName =
+    linkProps.wikilinks !== undefined
+      ? pageLabel(path, false, pathTitles(linkProps.wikilinks.records, linkProps.wikilinks.folders))
+      : basename(path).replace(/\.(?:md|markdown)$/i, '')
+  const onOpenLink = linkProps.onOpenLink
+  const boardFlush = board.flush
+  const showInPage = useCallback(() => {
+    boardFlush()
+    void flushRenamedPath(path)
+    landOnInlineDrawing(path, index)
+    if (onShowInPage !== undefined) onShowInPage(path, index)
+    else onOpenLink?.(path)
+  }, [boardFlush, path, index, onShowInPage, onOpenLink])
+
   return (
     <div className="drawing-editor" ref={board.hostRef} onKeyDownCapture={onKeyDownCapture}>
-      <div
-        className="inline-drawing-tab__bar"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '6px 14px',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--bg)',
-          flexShrink: 0,
-        }}
-      >
+      <div className="inline-drawing-tab__bar">
         <input
           type="text"
           className="inline-drawing-tab__title"
@@ -475,18 +487,17 @@ function InlineDrawingHost({
             }
             e.stopPropagation()
           }}
-          style={{
-            flex: 1,
-            minWidth: 0,
-            border: 'none',
-            outline: 'none',
-            background: 'transparent',
-            color: 'var(--fg)',
-            fontSize: '13px',
-            fontWeight: 500,
-            padding: '2px 0',
-          }}
         />
+        <button
+          type="button"
+          className="inline-drawing-tab__page"
+          title={`${unit('Show in page')} (${parentPageName})`}
+          aria-label={`${unit('Show in page')}: ${parentPageName}`}
+          onClick={showInPage}
+        >
+          <FileIcon path={path} />
+          <span className="inline-drawing-tab__page-name">{parentPageName}</span>
+        </button>
       </div>
       {board.conflictBar}
       <div className="drawing-editor__canvas">

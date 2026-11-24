@@ -139,4 +139,57 @@ describe('SearchResults (YAZ-803)', () => {
     expect(icon(page).dataset.kind).toBe('markdown')
     expect(page.querySelector('.search-results__label')?.textContent).toBe('Archive')
   })
+
+  it('YAZ-6468: inline drawing and inline card rows show their dedicated icons, clean titles, no extension suffix, and parent page path in title', () => {
+    const drawing: SearchCandidate = {
+      kind: 'file',
+      name: 'System Architecture',
+      lower: 'system architecture',
+      label: 'System Architecture',
+      path: '/v/Docs/Notes.md#drawing-0',
+      folder: 'Docs',
+      inlineDrawing: true,
+      page: '/v/Docs/Notes.md',
+      index: 0,
+    }
+    const rawDrawing: SearchCandidate = {
+      kind: 'file',
+      name: 'Notes.md#drawing-1',
+      lower: 'notes.md#drawing-1',
+      label: 'Notes.md#drawing-1',
+      path: '/v/Docs/Notes.md#drawing-1',
+      folder: 'Docs',
+      inlineDrawing: true,
+      page: '/v/Docs/Notes.md',
+      index: 1,
+    }
+    const card: SearchCandidate = {
+      kind: 'file',
+      name: 'What is HTTP?',
+      lower: 'what is http?',
+      label: 'What is HTTP?',
+      path: '/v/Docs/Notes.md#WIKI-7',
+      folder: 'Docs',
+      id: 'WIKI-7',
+      card: true,
+      page: '/v/Docs/Notes.md',
+      index: 0,
+    }
+    const { el } = render([drawing, rawDrawing, card])
+    const [dRow, rawRow, cRow] = rows(el)
+
+    expect(dRow.getAttribute('title')).toBe('/v/Docs/Notes.md')
+    expect(dRow.querySelector<HTMLElement>('.file-icon')?.dataset.kind).toBe('drawing')
+    expect(dRow.querySelector('.search-results__label')?.textContent).toBe('System Architecture')
+    expect(dRow.querySelector('.name-ending')).toBeNull()
+
+    expect(rawRow.getAttribute('title')).toBe('/v/Docs/Notes.md')
+    expect(rawRow.querySelector<HTMLElement>('.file-icon')?.dataset.kind).toBe('drawing')
+    expect(rawRow.querySelector('.search-results__label')?.textContent).toBe('Untitled drawing')
+
+    expect(cRow.getAttribute('title')).toBe('/v/Docs/Notes.md')
+    expect(cRow.querySelector<HTMLElement>('.file-icon')?.dataset.kind).toBe('card')
+    expect(cRow.querySelector('.search-results__label')?.textContent).toBe('What is HTTP?')
+    expect(cRow.querySelector('.name-ending')).toBeNull()
+  })
 })

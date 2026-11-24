@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { titleWithKey, type HotkeyOverrides } from '@shared/hotkeyBindings'
+import { inlineDrawingRowPath } from '@shared/inlineRef'
 import { rootOfPath, type DiagramDarkColors, type ScreenPoint, type TabRef } from '@shared/types'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { dropIndex, slotAt, slotUnder } from '../lib/dragSlot'
 import { edgeScroller } from '../lib/edgeScroll'
+import { latestIndex, onIndex } from '../lib/indexFeed'
 import { PART_MS, drawnPlaces as drawnAt, gapOf, glide, motionOff, partGap, partShift, partTransform, roomOf as roomAlong, useEndSlides } from '../lib/liveGap'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { ContextMenu } from '../sidebar/ContextMenu'
@@ -14,10 +16,11 @@ import { duplicateTabIds, type Tab } from '../workspace/useWorkspace'
 import type { ListState } from '../lists/useVaultListsHere'
 import { TabMenu, type MoveTarget, type TabMenuAt } from './TabMenu'
 import { TabNameField } from './TabNameField'
-import { copiesOf } from './copies'
+import { copiesOf, copyKey } from './copies'
 import { useBoardHighlight } from './boardHighlight'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from './cardPreview'
 import { setStripTarget } from './stripDrop'
+import { flushRenamedPath } from '../lib/renameContinuity'
 import './tabs.css'
 
 export interface TabBarProps {
@@ -107,6 +110,10 @@ export interface TabBarProps {
   onShowSidebar?: () => void
   /** Reveal this exact tab in the sidebar without activating it. */
   onShowInSidebar?: (path: string) => void
+  /** Open the parent Markdown page for an inline drawing tab's "Show in page" menu item (YAZ-6468). */
+  onOpenPage?: (path: string) => void
+  /** Optional indexed title lookup for background/restored inline drawing tabs (YAZ-6468). */
+  inlineDrawingTitle?: (path: string, index: number) => string | undefined
   /** "Rename file" (YAZ-4248): the sidebar shows the file and starts its rename. */
   onRenameFile?: (path: string) => void
   /**
@@ -279,12 +286,14 @@ export interface NavStep {
 /** How long a press on ‹ or › is held before its menu opens instead of a step (YAZ-3647 E3), as in Chrome. */
 export const NAV_HOLD_MS = 500
 
-export function TabBar({ roots, windowId, tabs: pages, active, preview = null, blank = false, inbox, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, onOpenStep, zoomLabels, onShowSidebar, onShowInSidebar, onRenameFile, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake }: TabBarProps) {
+export function TabBar({ roots, windowId, tabs: pages, active, preview = null, blank = false, inbox, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, onOpenStep, zoomLabels, onShowSidebar, onShowInSidebar, onOpenPage, inlineDrawingTitle, onRenameFile, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake }: TabBarProps) {
   // THE INBOX TAB IN THE STRIP (YAZ-5016): one list of the page tabs and the Inbox tab, at its slot. Every slot, drag and
   // glide of the strip reads this list; what goes out to App is in page tabs (`pageSlot`, `drop`).
   const inboxAt = inbox === undefined ? null : Math.min(Math.max(inbox.at ?? pages.length, 0), pages.length)
   const inboxLabel = inbox?.label
   const [inlineTitles, setInlineTitles] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const [, setIndexTick] = useState(0)
+  const hasInlineDrawingTabs = pages.some((t) => t.inlineDrawing !== undefined)
   useEffect(() => {
     const onTitle = (e: Event) => {
       const { path: p, index, title: t } = (e as CustomEvent<{ path: string; index: number; title: string }>).detail
@@ -300,6 +309,24 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
     window.addEventListener('mdapp:inline-drawing-title', onTitle)
     return () => window.removeEventListener('mdapp:inline-drawing-title', onTitle)
   }, [])
+  useEffect(() => {
+    if (!hasInlineDrawingTabs) return
+    const offs = roots.map((root) => onIndex(root, () => setIndexTick((n) => n + 1)))
+    return () => offs.forEach((off) => off())
+  }, [roots, hasInlineDrawingTabs])
+  /** Resolves an inline drawing tab's title: live event first, then explicit/indexed lookup (YAZ-6468). */
+  const resolveInlineTitle = (path: string, index: number): string => {
+    const live = inlineTitles.get(`${path}\0${index}`)
+    if (live !== undefined && live !== '') return live
+    const provided = inlineDrawingTitle?.(path, index)
+    if (provided !== undefined && provided !== '') return provided
+    const scopeRecords = previewScope?.(path)?.wikilinks.records
+    const home = rootOfPath(roots, path) ?? roots[0]
+    const records = scopeRecords !== undefined && scopeRecords.length > 0 ? scopeRecords : home === undefined ? undefined : latestIndex(home)?.records
+    const rec = records?.find((r) => r.path === path)
+    const entry = rec?.inlineDrawings?.find((d) => d.index === index) ?? rec?.inlineDrawings?.[index]
+    return entry?.title ?? ''
+  }
   const tabs = useMemo<readonly Tab[]>(
     () => (inboxAt === null ? pages : [...pages.slice(0, inboxAt), { id: INBOX_TAB, path: '', name: inboxLabel }, ...pages.slice(inboxAt)]),
     [pages, inboxAt, inboxLabel],
@@ -483,9 +510,13 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
       onWake(id)
     }, WAKE_HOVER_MS)
   }
-  const previewTab = (id: string): { root: string | null; name: string } | null => {
+  const previewTab = (id: string): { root: string | null; name: string; place?: string } | null => {
     const tab = tabs.find((t) => t.id === id)
-    return tab === undefined ? null : { root: rootOfPath(roots, tab.path), name: tab.name ?? labelOf(tab.path) }
+    if (tab === undefined) return null
+    if (tab.inlineDrawing !== undefined) {
+      return { root: rootOfPath(roots, tab.path), name: tab.name ?? resolveInlineTitle(tab.path, tab.inlineDrawing), place: labelOf(tab.path) }
+    }
+    return { root: rootOfPath(roots, tab.path), name: tab.name ?? labelOf(tab.path) }
   }
 
   // Overflow polish (I3): tabs shrink to a floor and the strip scrolls, so scroll the active
@@ -963,13 +994,14 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
           // Under the blank tab, and under the Inbox tab (YAZ-5011), no tab of the strip is the active one (YAZ-2655).
           const isActive = !blank && inbox?.active !== true && id === active
           // A display name stands in for the page name (YAZ-2949 D5); every file call still takes the path.
-          const inlineTitle = inlineDrawing === undefined ? '' : (inlineTitles.get(`${path}\0${inlineDrawing}`) ?? '')
+          const inlineTitle = inlineDrawing === undefined ? '' : resolveInlineTitle(path, inlineDrawing)
           const label = name ?? (inlineDrawing !== undefined ? (inlineTitle !== '' ? inlineTitle : `${labelOf(path)} · Drawing`) : labelOf(path))
           // The tooltip's first line: the page, and " › bullet" when the tab is zoomed (YAZ-3647 E4).
           const shownAt = atBullet(path, zoom)
-          // Which copy of its page this tab is (YAZ-4156 10), as the tab board's "1 of 2" (YAZ-2940 D11): copies tell apart.
-          const count = copies.count.get(path) ?? 1
+          // Which copy of its page (or inline drawing, YAZ-6468) this tab is (YAZ-4156 10), as the tab board's "1 of 2" (YAZ-2940 D11): copies tell apart.
+          const count = copies.count.get(copyKey({ path, inlineDrawing })) ?? 1
           const copy = count > 1 ? copies.copy[i] + 1 : 0
+          const previewPath = inlineDrawing !== undefined ? inlineDrawingRowPath(path, inlineDrawing) : path
           const tip = [name === undefined && shownAt === labelOf(path) ? path : `${shownAt}\n${path}`]
           if (copy > 0) tip.push(`${copy} of ${count}`)
           // The preview tab says why it is italic and how to keep it (YAZ-4156 11).
@@ -1007,7 +1039,7 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
                 isActive || id === renaming
                   ? undefined
                   : () => {
-                      tabPreview.hoverCard(id, path)
+                      tabPreview.hoverCard(id, previewPath)
                       hoverWake(id)
                     }
               }
@@ -1048,7 +1080,7 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
                 // A right-click in the name's field is the field's own (YAZ-2949): no tab menu over it.
                 if (id === renaming) return
                 e.preventDefault()
-                setMenu({ x: e.clientX, y: e.clientY, id, path, named: name !== undefined, lists: listState?.(path) ?? null })
+                setMenu({ x: e.clientX, y: e.clientY, id, path, named: name !== undefined, inlineDrawing, lists: listState?.(path) ?? null })
               }}
             >
               {id === renaming ? (
@@ -1130,7 +1162,34 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
       )}
       <div className="tabbar-tail" {...endSlot} />
       <CardPreviewHost store={tabPreview.store} cardOf={previewTab} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} side="below" />
-      {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} moveTargets={onMoveTargets?.(menu.path)} onMoveToWindow={onMoveToWindow} onHighlightWindow={onHighlightWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onRenameFile={onRenameFile} onToggleFocus={onToggleFocus} onToggleFavorite={onToggleFavorite} onNotice={onNotice} />}
+      {menu !== null && (
+        <TabMenu
+          menu={menu}
+          label={labelOf(menu.path)}
+          onClose={() => setMenu(null)}
+          onMoveToRight={onMoveToRight}
+          onMoveToNewWindow={onMoveToNewWindow}
+          moveTargets={onMoveTargets?.(menu.path)}
+          onMoveToWindow={onMoveToWindow}
+          onHighlightWindow={onHighlightWindow}
+          onDuplicate={onDuplicate}
+          onRename={onSetName === undefined ? undefined : setRenaming}
+          onResetName={(id) => onSetName?.(id, null)}
+          onShowInSidebar={onShowInSidebar}
+          onShowInPage={(path) => {
+            void flushRenamedPath(path)
+            if (onOpenPage !== undefined) onOpenPage(path)
+            else {
+              const pageTab = pages.find((t) => t.path === path && t.inlineDrawing === undefined)
+              if (pageTab !== undefined) onActivate(pageTab.id)
+            }
+          }}
+          onRenameFile={onRenameFile}
+          onToggleFocus={onToggleFocus}
+          onToggleFavorite={onToggleFavorite}
+          onNotice={onNotice}
+        />
+      )}
       {/* The Inbox tab's menu (YAZ-5016, YAZ-5054): only the tab's own items. It shows no file, so no file item (Copy path, Reveal in Finder, Rename file …). */}
       {inboxMenu !== null && inbox !== undefined && (
         <ContextMenu

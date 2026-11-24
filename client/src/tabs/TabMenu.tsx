@@ -1,4 +1,7 @@
 import { isSupportedFile } from '@shared/fileKind'
+import { landOnInlineDrawing } from '../editor/drawing/inlineDrawingLand'
+import { copyText } from '../lib/copyText'
+import { resolveInlineCopyPath } from '../lib/inlinePath'
 import { osVerbs } from '../lib/osVerbs'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { CopyIcon, EyeIcon, HeartIcon, PencilIcon } from '../views/view/icons'
@@ -16,6 +19,8 @@ export interface TabMenuAt {
   path: string
   /** The tab has a display name (YAZ-2949 D3): offers "Reset to page name". */
   named: boolean
+  /** 0-based index when this tab shows an inline Excalidraw drawing inside `path` (YAZ-6468). */
+  inlineDrawing?: number
   /**
    * Whether the page is in Focus and in Favorites (YAZ-3264 D2), read when the menu opened (S14).
    * Absent or null hides both items: a page in no vault of the window, or one whose lists are not read yet (S7, S8).
@@ -52,6 +57,8 @@ export interface TabMenuProps {
   onResetName?: (id: string) => void
   /** Reveal this exact tab in the sidebar without activating it. */
   onShowInSidebar?: (path: string) => void
+  /** "Show in page" for an inline drawing tab (YAZ-6468): opens the parent page after landing on the drawing. */
+  onShowInPage?: (path: string, index: number) => void
   /** "Rename file" (YAZ-4248): the file shows in the sidebar, as "Show in sidebar" does, and its own rename starts there. */
   onRenameFile?: (path: string) => void
   /** "Add to focus" / "Remove from focus" (YAZ-3264 D2): App's lists (D1), with the state the menu read. No jump to the Focus tab (D3). */
@@ -73,7 +80,7 @@ export interface TabMenuProps {
  * display name (YAZ-2949), the review toggle (YAZ-2322), and Focus and Favorites (YAZ-3264). Drawn as data by the sidebar's own
  * `ContextMenu` (YAZ-2949 D6), so its groups have the same lines as every other menu of the app.
  */
-export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [], onMoveToWindow, onHighlightWindow, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onRenameFile, onToggleFocus, onToggleFavorite, onNotice, leading = [], trailing = [] }: TabMenuProps) {
+export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [], onMoveToWindow, onHighlightWindow, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onShowInPage, onRenameFile, onToggleFocus, onToggleFavorite, onNotice, leading = [], trailing = [] }: TabMenuProps) {
   const unit = useUnit()
   /** The menu's OS actions (YAZ-963): the sidebar's verbs and notices (`lib/osVerbs.ts`), a stale tab named by its label. */
   const os = osVerbs((message) => onNotice?.(message), () => label)
@@ -94,6 +101,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     if (scopes === undefined || set === undefined) return []
     return [scopeGroup(kind, scopes, (scope, on) => set(kind, [menu.path], scope, on))]
   }
+  const inlineDrawingIndex = menu.inlineDrawing
   const sections: MenuSection[] = [
     leading,
     [
@@ -103,6 +111,18 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
       ...(moveTo.length === 0 ? [] : [{ id: 'move-to', label: 'Move to', children: moveTo }]),
     ],
     [
+      ...(inlineDrawingIndex === undefined
+        ? []
+        : [
+            {
+              id: 'show-in-page',
+              label: unit('Show in page'),
+              onSelect: () => {
+                landOnInlineDrawing(menu.path, inlineDrawingIndex)
+                onShowInPage?.(menu.path, inlineDrawingIndex)
+              },
+            },
+          ]),
       { id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: () => onShowInSidebar?.(menu.path) },
       ...(lists === null || onToggleFocus === undefined
         ? []
@@ -116,7 +136,20 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
               ...(lists.intoFolder === undefined ? {} : { children: [...focusPlaces(lists.folders ?? [], lists.focus ? (lists.folderId ?? null) : undefined, (to) => lists.intoFolder?.([menu.path], to)), ...tabScopeRows('focus')] }),
             },
           ]),
-      { id: 'copy-path', label: 'Copy path', icon: <CopyIcon />, onSelect: () => void navigator.clipboard.writeText(menu.path) },
+      {
+        id: 'copy-path',
+        label: 'Copy path',
+        icon: <CopyIcon />,
+        onSelect: () => {
+          if (inlineDrawingIndex !== undefined) {
+            void resolveInlineCopyPath({ kind: 'drawing', page: menu.path, index: inlineDrawingIndex }).then((resolved) => {
+              copyText(resolved, 'path', (message) => onNotice?.(message))
+            })
+            return
+          }
+          void navigator.clipboard.writeText(menu.path)
+        },
+      },
     ],
     [
       // Never "Rename": that word renames on disk in the file menu (YAZ-2949 D3, the vault menu's words).
@@ -124,8 +157,8 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
       ...(menu.named && onResetName !== undefined ? [{ id: 'reset-name', label: unit('Reset to page name'), onSelect: () => onResetName(menu.id) }] : []),
     ],
     // "Rename file" (YAZ-4248), a group of its own after the tab's name, so the file's name and the tab's are apart.
-    // Grey on a tab that shows no file (a folder page, Settings).
-    onRenameFile === undefined ? [] : [{ id: 'rename-file', label: 'Rename file', icon: <PencilIcon />, disabled: !isSupportedFile(menu.path), onSelect: () => onRenameFile(menu.path) }],
+    // Omitted for inline drawing tabs (YAZ-6468: would rename the parent Markdown page unexpectedly); grey on a tab that shows no file.
+    onRenameFile === undefined || inlineDrawingIndex !== undefined ? [] : [{ id: 'rename-file', label: 'Rename file', icon: <PencilIcon />, disabled: !isSupportedFile(menu.path), onSelect: () => onRenameFile(menu.path) }],
     [
       ...(lists === null || onToggleFavorite === undefined
         ? []

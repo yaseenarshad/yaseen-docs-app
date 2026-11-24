@@ -6,6 +6,7 @@ import { useUnit } from '../vault/unitWord'
 import { LinkFoldersContext } from './view/PagesFromPicker'
 import { columnTyping, optionOrderFor, optionParentFor } from './editorType'
 import { alsoIn } from '@shared/alsoIn'
+import { diskPathOf, parseInlineRef } from '@shared/inlineRef'
 import { type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { OtherFilesFolderMove, type FolderTray } from './view/otherFilesMove'
 import { DEFAULT_FOLDER_PAGES, MAX_COLLAPSED_GROUP_KEYS, type DiagramDarkColors, type FolderPagesSettings, type IndexRecord, type PropertiesResponse } from '@shared/types'
@@ -42,7 +43,7 @@ import { Toolbar } from './view/Toolbar'
 import { CARD_TABLE_ITEM, type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { NO_READ_ONLY, readOnlyTip, writableKey } from './readOnlyRows'
-import { type CardRow, cardLineChange, cardRowOfRecord, cardRowRecords, cardRowsOf } from './cardRows'
+import { cardLineChange, cardRowOfRecord, cardRowRecords, cardRowsOf } from './cardRows'
 import { cardColumnsOf, cardLensOn, throughCardLens } from './cardView'
 import { cardFolderHost } from './cardHost'
 import { createCardFile } from '../review/newCardFile'
@@ -386,9 +387,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const openFilter = useCallback(() => setFilterAsks((n) => n + 1), [])
   const windowLink = useMemo(pageWindowLink, [])
   const lastWindow = useRef<PageWindowMemory | null>(null)
-  /** The card rows inside pages by path (YAZ-5319): no file is at their path, so they have no hover panel. Set below, read at render. */
-  const cardInPage = useRef<ReadonlyMap<string, CardRow> | null>(null)
-  const itemProps = useCallback((path: string) => (rowPage(path) !== path || !hoverPreview || cardInPage.current?.has(path) === true ? { 'data-hover-item': path, onMouseEnter: noHover, onMouseLeave: noHover } : { 'data-hover-item': path, onMouseEnter: () => hoverCard(path, path), onMouseLeave: () => leaveCard(path) }), [hoverCard, leaveCard, hoverPreview])
+  // Inline card rows (`<page>#<id>`) flow through the same hover preview path (YAZ-6469).
+  const itemProps = useCallback((path: string) => (rowPage(path) !== path || !hoverPreview ? { 'data-hover-item': path, onMouseEnter: noHover, onMouseLeave: noHover } : { 'data-hover-item': path, onMouseEnter: () => hoverCard(path, path), onMouseLeave: () => leaveCard(path) }), [hoverCard, leaveCard, hoverPreview])
   const viewHover = useMemo<ViewHover>(() => ({ itemProps }), [itemProps])
   // New records (a sync, another window's edit) can remove or move the item under the panel, and a removed item
   // fires no `mouseleave`: the panel goes.
@@ -440,7 +440,6 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const records = useMemo(() => (cards ? cardRowRecords(pageRecords) : withFolders ? [...pageRecords, ...folderRows] : pageRecords), [cards, withFolders, pageRecords, folderRows])
   /** Each card row by its path (YAZ-5319); null while the view lists pages. */
   const cardRowAt = useMemo(() => (cards ? new Map(records.map((r) => [r.path, cardRowOfRecord(r)!] as const)) : null), [cards, records])
-  cardInPage.current = useMemo(() => (cardRowAt === null ? null : new Map([...cardRowAt].filter(([, row]) => row.pageTitle !== null))), [cardRowAt])
   /** A card row in a read-only page is read only (YAZ-3076 D6); the pages' set for pages. */
   const rowsReadOnly = useMemo(() => (cardRowAt === null || readOnly.size === 0 ? readOnly : new Set([...cardRowAt].filter(([, row]) => readOnly.has(row.page)).map(([path]) => path))), [cardRowAt, readOnly])
   /** The views' one write, for the Cards table's host: set once `update` is made below. */
@@ -515,15 +514,18 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     folder.renderPageEditor === undefined
       ? undefined
       : (path: string) => {
+          const inlineRef = parseInlineRef(path)
+          if (inlineRef?.kind === 'card') landOnCard(inlineRef.page, inlineRef.id)
+          const target = diskPathOf(path)
           // An open card takes the page in place (YAZ-5582: a click on another card swaps it, never a second card); an
           // unpinned card that a click outside just closed comes back as it was, the same click.
           const open = openPageWindow(windowKey)
           const last = open ?? lastWindow.current
-          const { pinned } = last ?? pageWindowMemory(path, defaults.keepWindowPinned)
+          const { pinned } = last ?? pageWindowMemory(target, defaults.keepWindowPinned)
           // The place and size: the open card's, else the page's last (YAZ-3746 13H, also from before a restart), else the default.
-          const { placed, width, height } = open ?? savedPageWindowBox(folderPath) ?? lastWindow.current ?? pageWindowMemory(path)
+          const { placed, width, height } = open ?? savedPageWindowBox(folderPath) ?? lastWindow.current ?? pageWindowMemory(target)
           // The Properties panel stays open or closed over the swap (YAZ-3746 13Q), and the page zoom stays (YAZ-5607).
-          keepPageWindow(windowKey, { path, placed, width, height, pinned, properties: last?.properties, zoom: last?.zoom })
+          keepPageWindow(windowKey, { path: target, placed, width, height, pinned, properties: last?.properties, zoom: last?.zoom })
           setOpens((n) => n + 1)
         }
   const closeWindow = useCallback(() => {
@@ -1513,9 +1515,12 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         <PageWindow
           key={`${windowKey}:${opens}`}
           // A folder row's window shows its folder page (YAZ-4579 D32): the editor a folder tab has, on the directory.
-          renderEditor={(path) => renderPageEditor(rowPage(path))}
+          renderEditor={(path) => renderPageEditor(rowPage(diskPathOf(path)))}
           link={windowLink}
-          titleOf={(path) => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')}
+          titleOf={(path) => {
+            const target = diskPathOf(path)
+            return (records.find((r) => r.path === path) ?? pageRecords.find((r) => r.path === target))?.title ?? target.slice(target.lastIndexOf('/') + 1).replace(/\.md$/i, '')
+          }}
           memory={pageWindow}
           // ↗ opens a new tab (YAZ-3746 13I) and the window stays open on this tab (13AJ); a host without that door opens
           // in this tab, as before, and the window closes with the page it was on.
