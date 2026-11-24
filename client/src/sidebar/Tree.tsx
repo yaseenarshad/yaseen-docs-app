@@ -1,6 +1,9 @@
 import { Fragment, memo, useRef, useSyncExternalStore, type CSSProperties, type ReactElement } from 'react'
 import { carriedOrder } from '@shared/filesOrder'
+import { isInlineRef } from '@shared/inlineRef'
 import type { TabSort, TreeNode } from '@shared/types'
+import { landOnCard } from '../editor/card/cardOpen'
+import { landOnInlineDrawing } from '../editor/drawing/inlineDrawingLand'
 import type { Needle } from '../links/completion'
 import { marked } from '../search/marked'
 import { CardIcon } from '../search/CardIcon'
@@ -22,7 +25,7 @@ import { iconsChangedBelow, rowIcon, type RowIcons } from './rowIcons'
 import { NO_APP_ROWS, appRowsLast, keepsOrder, shownLabel, sortLevel, timeOf } from './treeSort'
 import { shortRelativeTime } from '../lib/relativeTime'
 import { formatDateTime } from '../lib/format'
-import { newWindowClick } from '../lib/newWindowClick'
+import { isNewWindowClick, newWindowClick } from '../lib/newWindowClick'
 import { subscribeTourPlaces, tourPlaces } from '../course/tourBus'
 
 /** Inline "New page" / "New folder" input pending inside the tree (GRO-2022). */
@@ -436,9 +439,9 @@ function TreeLevel({
   // The course's guided tour (YAZ-5123) marks its Course Cards folder and Course page; null outside a tour.
   const tour = useSyncExternalStore(subscribeTourPlaces, tourPlaces)
   const recurse = { shift, vaultRows, appRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, ids, marks, cardRows, onOpenCard, onCardContextMenu, onHoverFile, tooLarge, shareBadges, icons, cardFiles, sort, dates, scores, manual, manualOrder }
-  /** A board or page row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
+  /** A board, page, or inline item row's hover handlers (YAZ-3028 D11, YAZ-3075 D4, YAZ-6469): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
-    onHoverFile === undefined || !hasHoverPreview(path) ? {} : {
+    onHoverFile === undefined || (!hasHoverPreview(path) && !isInlineRef(path)) ? {} : {
           // A pointer that comes in with a button down is in a press or a reorder, not a hover (YAZ-3467, audit 4).
           onMouseEnter: (e: React.MouseEvent) => {
             if (e.buttons === 0) onHoverFile({ path })
@@ -551,14 +554,31 @@ function TreeLevel({
               type="button"
               className={`tree__row tree__row--file tree__row--card${selection.paths.has(card.path) ? ' tree__row--selected' : ''}`}
               style={{ paddingLeft: 8 + level * 14 + 28 }}
-              title={card.name}
+              title={card.page !== undefined ? `${card.name} — ${card.page}` : card.name}
+              data-path={card.path}
+              {...hoverOf(card.path)}
               onClick={(e) => {
+                const page = card.page ?? card.path
+                if (isNewWindowClick(e)) {
+                  if (card.inlineDrawing === true && card.index !== undefined) landOnInlineDrawing(page, card.index)
+                  else if (card.id !== undefined) landOnCard(page, card.id)
+                  newWindowClick(e, page)
+                  return
+                }
                 selection.set(card.path)
                 onOpenCard?.(card, e.metaKey)
+              }}
+              onDoubleClick={(e) => {
+                if (!e.shiftKey && !e.metaKey && card.inlineDrawing !== true) {
+                  const page = card.page ?? card.path
+                  if (card.id !== undefined) landOnCard(page, card.id)
+                  onKeepFile(page)
+                }
               }}
               onContextMenu={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
+                selection.set(card.path)
                 onCardContextMenu?.(e, card)
               }}
             >
