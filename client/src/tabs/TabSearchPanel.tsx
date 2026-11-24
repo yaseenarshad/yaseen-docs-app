@@ -8,6 +8,7 @@
  * is under its folder, as Explore does (`inPlace`).
  */
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
+import { inlineDrawingRowPath, parseInlineRef } from '@shared/inlineRef'
 import type { WatchSource } from '../hooks/useWatch'
 import { useLatestTrees } from '../lib/pageLabel'
 import { fetchTree } from '../lib/treeFeed'
@@ -39,10 +40,12 @@ export interface TabSearchPanelProps {
   /** This window's watch feed for a vault it shows; undefined for any other. */
   watchOf: (root: string) => WatchSource | undefined
   onPick: (path: string) => void
+  /** Optional handler when picking an inline Excalidraw drawing row so the caller opens an `InlineDrawingTab` directly (YAZ-6468). */
+  onPickInlineDrawing?: (page: string, index: number) => void
   onClose: () => void
 }
 
-export function TabSearchPanel({ places, label, at, watchOf, onPick, onClose }: TabSearchPanelProps) {
+export function TabSearchPanel({ places, label, at, watchOf, onPick, onPickInlineDrawing, onClose }: TabSearchPanelProps) {
   const [query, setQuery] = useState('')
   const roots = useMemo(() => places.map((place) => place.root), [places])
   // The trees of the target's vaults: the other files (drawings, PDFs) are the tree's, as in the search bar.
@@ -61,7 +64,21 @@ export function TabSearchPanel({ places, label, at, watchOf, onPick, onClose }: 
   )
   const all = useSearchResults(vaults, query, NO_PINS)
   const results = useMemo(() => all.filter((row) => row.kind === 'file'), [all])
-  const pick = (hit: SearchCandidate): void => onPick(hit.path)
+  const pick = (hit: SearchCandidate): void => {
+    const ref = parseInlineRef(hit.path)
+    if (hit.inlineDrawing === true || ref?.kind === 'drawing') {
+      const page = hit.page ?? (ref?.kind === 'drawing' ? ref.page : hit.path)
+      const index = hit.index ?? (ref?.kind === 'drawing' ? ref.index : 0)
+      if (onPickInlineDrawing !== undefined) onPickInlineDrawing(page, index)
+      else onPick(inlineDrawingRowPath(page, index))
+      return
+    }
+    if (ref?.kind === 'card') {
+      onPick(ref.page)
+      return
+    }
+    onPick(hit.path)
+  }
   const { sel, setSelected, onKeys } = useResultKeys(results, pick)
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Escape') {

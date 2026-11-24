@@ -1,13 +1,16 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { BOARD_TYPE_NAME } from '@shared/fileKind'
+import { inlineDrawingRowPath } from '@shared/inlineRef'
 import { MAX_WINDOW_ROOTS, placeVault, rootOfPath, type CanvasCard, type TabAction, type CanvasLayout, type TabCanvasPatch, type DiagramDarkColors, type StoredTab, type TabRef, type WindowEntry } from '@shared/types'
 import { api } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
+import { latestIndex, onIndex } from '../lib/indexFeed'
 import { isFolderPath, pageLabel, useLatestTrees, type PathTitles } from '../lib/pageLabel'
 import { storage } from '../lib/storage'
 import { vaultRefusal } from '../vault/slots'
 import type { Tab } from '../workspace/useWorkspace'
 import type { ListState } from '../lists/useVaultListsHere'
-import { arrivalIn, BOARD, buildBoard, cellKey, copiesOf, departureFrom, dropOutcome, fieldOf, frameDrop, layoutCanvas, nearest, placeCard, refsOf, storedAt, tidyFrame, tidyGroup, withoutTitle, type BoardPage, type BoardTab, type CanvasPlan, type Field, type FrameInput, type Island, type Rect, type Way } from './board'
+import { arrivalIn, BOARD, buildBoard, cellKey, copiesOf, copyKey, departureFrom, dropOutcome, fieldOf, frameDrop, layoutCanvas, nearest, placeCard, refsOf, storedAt, tidyFrame, tidyGroup, withoutTitle, type BoardPage, type BoardTab, type CanvasPlan, type Field, type FrameInput, type Island, type Rect, type Way } from './board'
 import { setBoardHighlight } from './boardHighlight'
 import { holdOverStrip, releaseOverStrip } from './stripDrop'
 import { TabMenu, type MoveTarget, type TabMenuAt } from './TabMenu'
@@ -21,6 +24,7 @@ import { autoWindowLabel, windowLabel } from './windowLabel'
 import { AsleepIcon } from '../views/view/icons'
 import './tabs.css'
 import { useUnit } from '../vault/unitWord'
+import { FileIcon } from '../sidebar/FileIcon'
 import { PlaceName } from '../sidebar/PlaceName'
 import { dirname } from '../lib/paths'
 
@@ -28,6 +32,8 @@ export { SETTLE_MS, TOOLBAR_INSET } from './useCamera'
 
 /** A drawing's picture on its card (YAZ-3343 D6): its own chunk, which brings the picture code and the engines. */
 const CardPicture = lazy(() => import('./CardPicture'))
+/** An inline Excalidraw drawing's preview on its card (YAZ-6468): its own lazy chunk. */
+const InlineRefPreview = lazy(() => import('../sidebar/InlineHoverPreview'))
 
 /** How long the board's zoom takes, in ms. The board hands it to the tab stack as `--tab-zoom-ms`, for its own animation and for the page layer's (tabs.css). */
 export const ZOOM_MS = 250
@@ -80,6 +86,10 @@ export interface TabOverviewProps {
   onNewWindow?: () => Promise<string>
   /** A pick of "Open tabs here…" for THIS window (D22): a background tab of the page; the board stays. */
   onOpenTabHere?: (path: string) => void
+  /** A pick of an inline Excalidraw drawing in "Open tabs here…" for THIS window (YAZ-6468). */
+  onOpenInlineDrawingHere?: (path: string, index: number) => void
+  /** Open the parent Markdown page for an inline drawing card's "Show in page" menu item (YAZ-6468). */
+  onOpenPage?: (path: string) => void
   /** A page's menu is a tab's menu (`TabMenu`): these are the strip's own doors. */
   onMoveToRight?: (path: string) => void
   /** The other windows that can take a tab of `path` (YAZ-3091 D2): asked only while a tab menu is open, for its "Move to ▸". */
@@ -206,9 +216,14 @@ function stripOf(w: WindowEntry): { tabs: BoardTab[]; active: string | null; str
   const { copy } = copiesOf(strip)
   let active: string | null = null
   const tabs = strip.map((t, i) => {
-    const id = `${w.id}\n${t.path}\n${copy[i]}`
+    const id = `${w.id}\n${copyKey(t)}\n${copy[i]}`
     if (t.path === w.file && (t.active === true || active === null)) active = id
-    return { id, path: t.path, ...(t.name === undefined ? {} : { name: t.name }) }
+    return {
+      id,
+      path: t.path,
+      ...(t.name === undefined ? {} : { name: t.name }),
+      ...(t.inlineDrawing === undefined ? {} : { inlineDrawing: t.inlineDrawing }),
+    }
   })
   return { tabs, active, strip }
 }
@@ -251,6 +266,8 @@ interface CardProps {
   armed: boolean
   /** Its drawing's picture shows (D6): it is on screen and the zoom shows detail. */
   picture: boolean
+  /** 0-based index when this card is an inline Excalidraw drawing tab (YAZ-6468). */
+  inlineDrawing?: number
   /** A tab of this window asleep to save memory (YAZ-3737 D11): the zzz mark after its title. */
   asleep: boolean
   root: string | null
@@ -275,6 +292,10 @@ const Card = memo(function Card(p: CardProps) {
   if (p.renaming) cls.push('taboverview__page--renaming')
   if (p.copyText !== null) cls.push('taboverview__page--copy')
   if (p.folder !== null) cls.push('taboverview__page--framed')
+  const inlineDrawingRef = useMemo(
+    () => (p.inlineDrawing === undefined ? null : { kind: 'drawing' as const, page: p.path, index: p.inlineDrawing }),
+    [p.path, p.inlineDrawing],
+  )
   return (
     <div
       className={cls.join(' ')}
@@ -285,8 +306,9 @@ const Card = memo(function Card(p: CardProps) {
       // The stops are found by card id; the page's file stays readable for the e2e specs.
       data-tab={p.id}
       data-path={p.path}
+      data-inline-drawing={p.inlineDrawing}
       data-win={p.win}
-      title={p.named ? `${p.page}\n${p.path}` : p.path}
+      title={p.named || p.inlineDrawing !== undefined ? `${p.page}\n${p.path}` : p.path}
       style={{ left: p.x, top: p.y }}
       onClick={(e) => p.actions.click(p.id, e)}
       onContextMenu={(e) => p.actions.menu(p.id, e)}
@@ -300,15 +322,22 @@ const Card = memo(function Card(p: CardProps) {
           <TabNameField className="taboverview__rename" label={p.label} pageName={p.page} onCommit={(next) => p.actions.rename(p.id, next)} onDone={p.actions.renamed} />
         </span>
       ) : (
-        <span className="taboverview__title">
-          {p.label}
+        <span className={`taboverview__title${p.inlineDrawing !== undefined ? ' taboverview__title--drawing' : ''}`}>
+          {p.inlineDrawing !== undefined && <FileIcon path={`${p.path}.excalidraw`} />}
+          {p.inlineDrawing !== undefined ? <span className="taboverview__title-text">{p.label}</span> : p.label}
           {p.asleep && <AsleepIcon className="taboverview__asleep" />}
         </span>
       )}
       {/* YAZ-5402: the folder icon before the folder. */}
       {p.folder !== null && <PlaceName className="taboverview__folder" path={dirname(p.path)} kind="folder" label={p.folder} />}
       {p.named && <span className="taboverview__pagename">{unit('Page')}: {p.page}</span>}
-      {p.picture && p.root !== null ? (
+      {inlineDrawingRef !== null && p.root !== null ? (
+        <span className="taboverview__shot">
+          <Suspense fallback={<span className="taboverview__lines">{p.lines}</span>}>
+            <InlineRefPreview inlineRef={inlineDrawingRef} root={p.root} diagramDarkColors={p.darkColors} compact className="taboverview__inline-shot" />
+          </Suspense>
+        </span>
+      ) : p.picture && p.root !== null ? (
         <span className="taboverview__shot">
           <Suspense fallback={<span className="taboverview__lines">{p.lines}</span>}>
             <CardPicture root={p.root} path={p.path} kind={p.lines} darkColors={p.darkColors} />
@@ -367,9 +396,32 @@ type Gesture =
  * end of the top row, is about every tab the board is about, whatever the filter shows; the board only asks:
  * App owns the sheet and the close.
  */
-export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId, asleep = NONE_ASLEEP, darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveTargets, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onMoveToSlot, onTakeAt, onAskVault, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, listState, onToggleFocus, onToggleFavorite, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere, filesWindow = false }: TabOverviewProps) {
+export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId, asleep = NONE_ASLEEP, darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveTargets, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onMoveToSlot, onTakeAt, onAskVault, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onOpenPage, onNotice, listState, onToggleFocus, onToggleFavorite, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere, onOpenInlineDrawingHere, filesWindow = false }: TabOverviewProps) {
   const unit = useUnit()
   const [query, setQuery] = useState('')
+  const [inlineTitles, setInlineTitles] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const [indexTick, setIndexTick] = useState(0)
+  useEffect(() => {
+    const onTitle = (e: Event) => {
+      const { path: p, index, title: t } = (e as CustomEvent<{ path: string; index: number; title: string }>).detail
+      const key = `${p}\0${index}`
+      setInlineTitles((prev) => {
+        if ((prev.get(key) ?? '') === t) return prev
+        const next = new Map(prev)
+        if (t === '') next.delete(key)
+        else next.set(key, t)
+        return next
+      })
+    }
+    window.addEventListener('mdapp:inline-drawing-title', onTitle)
+    return () => window.removeEventListener('mdapp:inline-drawing-title', onTitle)
+  }, [])
+  const hasInlineTabs = tabs.some((t) => t.inlineDrawing !== undefined)
+  useEffect(() => {
+    if (!hasInlineTabs) return
+    const offs = roots.map((root) => onIndex(root, () => setIndexTick((n) => n + 1)))
+    return () => offs.forEach((off) => off())
+  }, [roots, hasInlineTabs])
   const [cursor, setCursor] = useState<string | null>(active)
   const [pageMenu, setPageMenu] = useState<TabMenuAt | null>(null)
   /** The frame a "Move to ▸" row points at, lit on the board while the row is under the pointer (D31). */
@@ -458,14 +510,30 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
 
   // The windows and their groups, built once per change of what they are made of (plain arithmetic, a few hundred cards at most).
   const model = useMemo(() => {
-    const strip: StoredTab[] = tabs.map((t) => ({ path: t.path, ...(t.name === undefined ? {} : { name: t.name }), ...(t.id === active ? { active: true as const } : {}) }))
+    const resolveInlineTitle = (path: string, index: number, winRoots: readonly string[]): string | undefined => {
+      const liveTitle = inlineTitles.get(`${path}\0${index}`)
+      if (liveTitle !== undefined && liveTitle !== '') return liveTitle
+      const scopeRecords = previewScope?.(path)?.wikilinks.records
+      const home = rootOfPath(winRoots, path) ?? winRoots[0]
+      const records = scopeRecords !== undefined && scopeRecords.length > 0 ? scopeRecords : home === undefined ? undefined : latestIndex(home)?.records
+      const rec = records?.find((r) => r.path === path)
+      const title = rec?.inlineDrawings?.find((d) => d.index === index)?.title ?? rec?.inlineDrawings?.[index]?.title
+      return title !== undefined && title !== '' ? title : undefined
+    }
+    const enrich = (list: readonly BoardTab[], winRoots: readonly string[]): BoardTab[] =>
+      list.map((t) => {
+        if (t.inlineDrawing === undefined) return t
+        const inlineTitle = resolveInlineTitle(t.path, t.inlineDrawing, winRoots)
+        return inlineTitle === undefined ? t : { ...t, inlineTitle }
+      })
+    const strip: StoredTab[] = tabs.map((t) => ({ path: t.path, ...(t.name === undefined ? {} : { name: t.name }), ...(t.inlineDrawing === undefined ? {} : { inlineDrawing: t.inlineDrawing }), ...(t.id === active ? { active: true as const } : {}) }))
     const mineAuto = autoWindowLabel({ file: tabs.find((t) => t.id === active)?.path ?? null, tabs: tabs.map((t) => t.path), tabStrip: strip, roots }, titles)
     // A Files window is no frame (YAZ-3357 D8): the board starts with the other windows.
-    const windows: BoardWindow[] = filesWindow ? [] : [{ win: windowId, mine: true, roots, tabs, active, label: myName ?? mineAuto, auto: mineAuto, named: myName !== undefined }]
+    const windows: BoardWindow[] = filesWindow ? [] : [{ win: windowId, mine: true, roots, tabs: enrich(tabs, roots), active, label: myName ?? mineAuto, auto: mineAuto, named: myName !== undefined }]
     for (const w of others) {
       const { tabs: wTabs, active: wActive } = stripOf(w)
       const auto = autoWindowLabel(w, titles)
-      windows.push({ win: w.id, mine: false, roots: w.roots, tabs: wTabs, active: wActive, label: windowLabel(w, titles), auto, named: w.name !== undefined })
+      windows.push({ win: w.id, mine: false, roots: w.roots, tabs: enrich(wTabs, w.roots), active: wActive, label: windowLabel(w, titles), auto, named: w.name !== undefined })
     }
     const info = new Map<string, CardInfo>()
     const frames: FrameInput[] = windows.map((w) => {
@@ -481,7 +549,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     })
     return { windows, frames, info, byWin: new Map(windows.map((w) => [w.win, w])) }
     // `labelOf` reads `roots`, `titles` and the trees, all of them deps.
-  }, [tabs, active, others, roots, vaultNames, titles, termsKey, windowId, myName, trees, filesWindow])
+  }, [tabs, active, others, roots, vaultNames, titles, termsKey, windowId, myName, trees, filesWindow, inlineTitles, indexTick, previewScope])
   const wrapW = view !== null && view.w > 0 ? view.w - 2 * BOARD.padX : Infinity
   /** Where frames stand (D16: an empty frame drags freely too): the stored ones, and the board's own until they are stored. */
   const frameAnchors = useMemo(() => {
@@ -835,7 +903,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       menuOn(e, () =>
         live.current.picked.has(id) && live.current.pick.length > 1
           ? setPickMenu({ x: e.clientX, y: e.clientY })
-          : setPageMenu({ x: e.clientX, y: e.clientY, id, path: card.page.path, named: card.page.named, lists: listState?.(card.page.path) ?? null }),
+          : setPageMenu({ x: e.clientX, y: e.clientY, id, path: card.page.path, named: card.page.named, inlineDrawing: card.page.inlineDrawing, lists: listState?.(card.page.path) ?? null }),
       )
     },
     hover: (id: string) => {
@@ -843,7 +911,10 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       if (gesture.current !== null) return
       // The preview's dwell is the tiny store's: no render of the board (D18).
       const card = live.current.info.get(id)
-      if (card !== undefined) cardPreview.hoverCard(id, card.page.path)
+      if (card !== undefined) {
+        const target = card.page.inlineDrawing !== undefined ? inlineDrawingRowPath(card.page.path, card.page.inlineDrawing) : card.page.path
+        cardPreview.hoverCard(id, target)
+      }
       if (id === live.current.current) return
       typed.current = false
       setCursor(id)
@@ -937,8 +1008,10 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   // follows the highlight while it is held; let go, it closes. Whatever Settings › Preview on hover says: it is a key.
   useEffect(() => {
     const card = current === null ? undefined : info.get(current)
-    if (spaceHeld && current !== null && card !== undefined) cardPreview.showNow(current, card.page.path)
-    else cardPreview.endSpace()
+    if (spaceHeld && current !== null && card !== undefined) {
+      const target = card.page.inlineDrawing !== undefined ? inlineDrawingRowPath(card.page.path, card.page.inlineDrawing) : card.page.path
+      cardPreview.showNow(current, target)
+    } else cardPreview.endSpace()
   }, [spaceHeld, current])
 
   // The pictures follow the plan too: a card that moved, or a filter that brought a drawing on screen.
@@ -1236,6 +1309,14 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
     if (w?.mine === true || win === windowId) onOpenTabHere?.(path)
     else api.window.moveTo(win, path, { background: true }).catch(() => onNotice?.(ADD_REFUSED))
   }
+  const openInlineDrawingIn = (win: string, page: string, index: number): void => {
+    const w = byWin.get(win)
+    if (rootOfPath(w?.roots ?? roots, page) === null) return void onNotice?.(ADD_REFUSED)
+    if (w?.mine === true || win === windowId) {
+      if (onOpenInlineDrawingHere !== undefined) onOpenInlineDrawingHere(page, index)
+      else onOpenTabHere?.(inlineDrawingRowPath(page, index))
+    } else api.window.moveTo(win, inlineDrawingRowPath(page, index), { background: true }).catch(() => onNotice?.(ADD_REFUSED))
+  }
   /**
    * "Move to new window" on a card (D37): QUIET from the board. This window's card by its own door, another
    * window's by asking that window (its text saved first). The new window's frame then stands beside its source's.
@@ -1323,7 +1404,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         page={page.page}
         named={page.named}
         folder={group === undefined ? card.folder : null}
-        lines={withoutTitle(linesOf(page.path), page.page)}
+        lines={page.inlineDrawing !== undefined ? BOARD_TYPE_NAME.drawing : withoutTitle(linesOf(page.path), page.page)}
         copyText={page.copies > 1 ? `${page.copy + 1} of ${page.copies}` : null}
         x={pos.x - (group?.x ?? 0)}
         y={pos.y - (group?.y ?? 0)}
@@ -1334,6 +1415,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
         renaming={id === renaming}
         armed={armed === `card:${id}`}
         picture={pictured.has(id)}
+        inlineDrawing={page.inlineDrawing}
         asleep={w?.mine === true && asleep.has(id)}
         root={card.root}
         darkColors={darkColors}
@@ -1341,9 +1423,14 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       />
     )
   }
-  const previewCard = (id: string): { root: string | null; name: string } | null => {
+  const previewCard = (id: string): { root: string | null; name: string; place?: string } | null => {
     const card = info.get(id)
-    return card === undefined ? null : { root: card.root, name: card.page.label }
+    if (card === undefined) return null
+    if (card.page.inlineDrawing !== undefined) {
+      const drawingName = card.page.named ? card.page.label : (card.page.inlineTitle ?? '')
+      return { root: card.root, name: drawingName, place: card.page.page }
+    }
+    return { root: card.root, name: card.page.label }
   }
   const menuGroup = islandMenu === null ? undefined : groupsByKey.get(islandMenu.key)
   const menuGroupMine = menuGroup !== undefined && byWin.get(menuGroup.win)?.mine === true
@@ -1684,6 +1771,17 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           onRename={menuCard.mine && onSetName === undefined ? undefined : setRenaming}
           onResetName={(id) => setCardName(id, null)}
           onShowInSidebar={menuCard.mine ? onShowInSidebar : () => askTab(pageMenu.id, { kind: 'show-in-sidebar' })}
+          onShowInPage={
+            menuCard.mine
+              ? (path) => {
+                  if (onOpenPage !== undefined) onOpenPage(path)
+                  else {
+                    const pageTab = tabs.find((t) => t.path === path && t.inlineDrawing === undefined)
+                    if (pageTab !== undefined) onOpen(pageTab.id)
+                  }
+                }
+              : undefined
+          }
           // The tab row's two items, in its places and with its glyphs (YAZ-3264 D2, D4, D6): this window writes them for any card of a vault it shows.
           onToggleFocus={onToggleFocus}
           onToggleFavorite={onToggleFavorite}
@@ -1831,6 +1929,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           at={searchAt(searchFor)}
           watchOf={watchOf}
           onPick={(path) => openTabIn(searchFor, path)}
+          onPickInlineDrawing={(page, index) => openInlineDrawingIn(searchFor, page, index)}
           onClose={() => {
             setSearchFor(null)
             inputRef.current?.focus()

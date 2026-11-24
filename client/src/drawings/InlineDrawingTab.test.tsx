@@ -60,6 +60,7 @@ vi.mock('./ExcalidrawSurface', async (importOriginal) => ({
 }))
 
 import { api } from '../api'
+import * as inlineDrawingLand from '../editor/drawing/inlineDrawingLand'
 import { InlineDrawingTab } from './InlineDrawingTab'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -330,5 +331,48 @@ describe('InlineDrawingTab live AI merge (YAZ-6369)', () => {
     await act(async () => keepMineBtn!.click())
     await flush()
     expect(surface.clashes).toEqual([[]])
+  })
+})
+
+describe('InlineDrawingTab parent-page link / Show in page (YAZ-6468)', () => {
+  it('renders parent page link in the header bar and jumps straight to the drawing on click', async () => {
+    const landSpy = vi.spyOn(inlineDrawingLand, 'landOnInlineDrawing').mockImplementation(() => undefined)
+    const onShowInPage = vi.fn()
+    const onOpenLink = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <InlineDrawingTab
+          root="/v"
+          path="/v/Notes.md"
+          index={0}
+          watch={fakeWatch().watch}
+          onShowInPage={onShowInPage}
+          onOpenLink={onOpenLink}
+        />,
+      )
+    })
+
+    const btn = container.querySelector<HTMLButtonElement>('.inline-drawing-tab__page')
+    expect(btn).not.toBeNull()
+    expect(btn?.textContent).toBe('Notes')
+    expect(btn?.getAttribute('aria-label')).toBe('Show in page: Notes')
+
+    act(() => btn!.click())
+    expect(landSpy).toHaveBeenCalledExactlyOnceWith('/v/Notes.md', 0)
+    expect(onShowInPage).toHaveBeenCalledExactlyOnceWith('/v/Notes.md', 0)
+    expect(onOpenLink).not.toHaveBeenCalled()
+
+    // Falls back to onOpenLink when onShowInPage is omitted.
+    await act(async () => {
+      root?.render(<InlineDrawingTab root="/v" path="/v/Notes.md" index={0} watch={fakeWatch().watch} onOpenLink={onOpenLink} />)
+    })
+    act(() => container!.querySelector<HTMLButtonElement>('.inline-drawing-tab__page')!.click())
+    expect(landSpy).toHaveBeenCalledTimes(2)
+    expect(onOpenLink).toHaveBeenCalledExactlyOnceWith('/v/Notes.md')
+
+    landSpy.mockRestore()
   })
 })

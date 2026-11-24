@@ -297,3 +297,54 @@
 .editor--drawing .excalidraw .drawing-editor__chips .read-only-message {
   z-index: calc(var(--zIndex-ui-top, 100) + 1);
 }
+
+/* Inline drawing tab header bar: editable title on the left, subtle parent-page link on the right (YAZ-6468). */
+.inline-drawing-tab__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+
+.inline-drawing-tab__title {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 2px 0;
+}
+
+.inline-drawing-tab__page {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 1 auto;
+  max-width: 40%;
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.inline-drawing-tab__page:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+.inline-drawing-tab__page-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

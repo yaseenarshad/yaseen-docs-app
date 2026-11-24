@@ -13,7 +13,9 @@
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { inlineCardRowPath } from '@shared/inlineRef'
 import type { AnchorRect } from '../../sidebar/previewPlacement'
+import { linkCard } from './linkResolve'
 import { linkPosAtDOM, wikilinkInnerAt } from './wikilinkClick'
 import { WIKILINK_CLASS, WIKILINK_UNRESOLVED_CLASS, linkPageName, type WikilinkResolveSource } from './wikilinkPlugin'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
@@ -58,6 +60,9 @@ function resolveInnerPath(inner: string, source: WikilinkResolveSource, viewOnly
   if (page === '') return null
   const viewTarget = viewOnlyLinkTarget(inner)
   if (viewTarget !== null) return viewTarget.hasSubtarget ? null : (viewOnly.resolve?.(viewTarget.page) ?? null)
+  // Hovering a `[[CARD-ID]]` link previews the card itself, not the top of its parent page (YAZ-6468).
+  const card = linkCard(inner, source)
+  if (card !== null) return inlineCardRowPath(card.path, card.id)
   return source.resolve?.(page) ?? null
 }
 

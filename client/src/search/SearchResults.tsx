@@ -10,6 +10,7 @@
  * Each label marks the parts the query matched, as the search tree does (YAZ-3748 B3, `marked`).
  */
 import { useEffect, useMemo, useRef } from 'react'
+import { parseInlineRef } from '@shared/inlineRef'
 import { readNeedle } from '../links/completion'
 import { marked } from './marked'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
@@ -17,6 +18,8 @@ import { PlaceName } from '../sidebar/PlaceName'
 import { dirname } from '../lib/paths'
 import { FolderIcon } from '../views/view/icons'
 import type { SearchCandidate } from './searchCandidates'
+
+const RAW_DRAWING_LABEL_RE = /#drawing-\d+$/
 
 interface SearchResultsProps {
   results: readonly SearchCandidate[]
@@ -43,39 +46,47 @@ export function SearchResults({ results, query, selected, onSelect, onActivate, 
 
   return (
     <ul className="search-results" role="listbox" aria-label="Search results">
-      {results.map((r, i) => (
-        <li
-          // `␟` (U+241F) separates the key's parts: a printable character that cannot appear in a
-          // path or a name, so the key stays unique. It replaces a literal NUL, which did the same
-          // job but made this file grep-invisible — `grep` treats a NUL byte as binary and skips it.
-          key={`${r.path}␟${r.name}`}
-          ref={i === selected ? selectedRow : null}
-          role="option"
-          aria-selected={i === selected}
-          // e2e anchors rows by aria-label (Playwright's hasText cannot read them otherwise).
-          aria-label={`Search result ${r.label}${r.kind === 'dir' ? ', folder' : ''}`}
-          className={`search-results__row${i === selected ? ' search-results__row--active' : ''}${r.kind === 'dir' ? ' search-results__row--dir' : ''}`}
-          title={r.path}
-          onClick={(e) => {
-            // A click moves selection to the clicked row, so the next arrow key continues from it.
-            onSelect(i)
-            onActivate(r, e.metaKey)
-          }}
-          onContextMenu={(e) => {
-            onSelect(i) // a right-click highlights the row too — the tree's rule (D9, YAZ-1674)
-            onRowContextMenu(r, e)
-          }}
-        >
-          <span className="search-results__label">
-            <FileIcon path={r.path} folder={r.kind === 'dir'} />
-            {r.kind === 'dir' && <FolderIcon size={12} className="search-results__glyph" />}
-            {marked(r.label, needle)}
-            {r.kind === 'file' && <NameEnding path={r.path} />}
-          </span>
-          {/* YAZ-5402: the folder icon before the folder's path. */}
-          {r.folder !== '' && <PlaceName className="search-results__folder" path={dirname(r.path)} kind="folder" label={r.folder} />}
-        </li>
-      ))}
+      {results.map((r, i) => {
+        const inlineRef = parseInlineRef(r.path)
+        const isInlineDrawing = r.inlineDrawing === true || inlineRef?.kind === 'drawing'
+        const isInlineCard = !isInlineDrawing && (r.card === true || inlineRef?.kind === 'card')
+        const isInline = isInlineDrawing || inlineRef !== null
+        const pagePath = r.page ?? (inlineRef !== null ? inlineRef.page : r.path)
+        const displayLabel = isInlineDrawing && (r.label === '' || RAW_DRAWING_LABEL_RE.test(r.label)) ? 'Untitled drawing' : r.label
+        return (
+          <li
+            // `␟` (U+241F) separates the key's parts: a printable character that cannot appear in a
+            // path or a name, so the key stays unique. It replaces a literal NUL, which did the same
+            // job but made this file grep-invisible — `grep` treats a NUL byte as binary and skips it.
+            key={`${r.path}␟${r.name}`}
+            ref={i === selected ? selectedRow : null}
+            role="option"
+            aria-selected={i === selected}
+            // e2e anchors rows by aria-label (Playwright's hasText cannot read them otherwise).
+            aria-label={`Search result ${displayLabel}${r.kind === 'dir' ? ', folder' : ''}`}
+            className={`search-results__row${i === selected ? ' search-results__row--active' : ''}${r.kind === 'dir' ? ' search-results__row--dir' : ''}`}
+            title={pagePath}
+            onClick={(e) => {
+              // A click moves selection to the clicked row, so the next arrow key continues from it.
+              onSelect(i)
+              onActivate(r, e.metaKey)
+            }}
+            onContextMenu={(e) => {
+              onSelect(i) // a right-click highlights the row too — the tree's rule (D9, YAZ-1674)
+              onRowContextMenu(r, e)
+            }}
+          >
+            <span className="search-results__label">
+              <FileIcon path={isInlineDrawing ? `${pagePath}.excalidraw` : pagePath} folder={r.kind === 'dir'} card={isInlineCard} />
+              {r.kind === 'dir' && <FolderIcon size={12} className="search-results__glyph" />}
+              {marked(displayLabel, needle)}
+              {r.kind === 'file' && !isInline && !isInlineCard && <NameEnding path={r.path} />}
+            </span>
+            {/* YAZ-5402: the folder icon before the folder's path. */}
+            {r.folder !== '' && <PlaceName className="search-results__folder" path={dirname(pagePath)} kind="folder" label={r.folder} />}
+          </li>
+        )
+      })}
     </ul>
   )
 }
