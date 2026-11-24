@@ -1,7 +1,7 @@
 /** The explore stack's model (YAZ-2571): the layer list, its cap, the top page, and where each layer stands. */
 import { describe, expect, it } from 'vitest'
 import { exploreRecents, MAX_EXPLORE_RECENTS, moveExploreRecent, rememberExploreRecent, resetExploreRecents } from './exploreRecents'
-import { EDGE_GAP, firstLayerBox, frontOrder, LAYER_STEP, layerBoxes, layerPlace, MAX_LAYERS, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, newLayerId, PAGE_WIDTH, panelWidth, pushLayer, raiseLayer, savedLayerBox, saveLayerBox, SEARCH_WIDTH, layerKindOf, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type LayerBox } from './layers'
+import { EDGE_GAP, firstLayerBox, frontOrder, isSteppableRow, LAYER_STEP, layerBoxes, layerPlace, layerRowPath, MAX_LAYERS, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, newLayerId, PAGE_WIDTH, panelWidth, pushLayer, raiseLayer, savedLayerBox, saveLayerBox, SEARCH_WIDTH, layerKindOf, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type LayerBox, type StepRow } from './layers'
 
 const search = (): ExploreLayer => ({ id: newLayerId(), kind: 'search' })
 const page = (path: string): ExploreLayer => ({ id: newLayerId(), kind: 'page', path, mode: 'read' })
@@ -127,6 +127,44 @@ describe('‹ › through the search (round 3)', () => {
     expect(stepResult(without, 2, '/v/b.md', 1)).toEqual({ at: 2, path: '/v/c.md' })
     expect(stepResult(without, 2, '/v/b.md', -1)).toEqual({ at: 0, path: '/v/a.md' })
     expect(stepPlace(without, 2, '/v/b.md')).toBe(0)
+  })
+
+  it('YAZ-6470 (#8): includes inline cards and inline drawings in stepResult, stepPlace, and stepCount while skipping folders and other files', () => {
+    const mixed: StepRow[] = [
+      { path: '/v/folder' },
+      { path: '/v/a.md' },
+      { path: '/v/a.md#YAZ-1', card: true },
+      { path: '/v/p.pdf' },
+      { path: '/v/a.md#drawing-0', inlineDrawing: true },
+      { path: '/v/b.md#YAZ-2' },
+      { path: '/v/b.md#drawing-1' },
+      { path: '/v/d.excalidraw' },
+    ]
+    expect(mixed.map(isSteppableRow)).toEqual([false, true, true, false, true, true, true, true])
+    expect(stepCount(mixed)).toBe(6)
+    expect(stepPlace(mixed, 1, '/v/a.md')).toBe(1)
+    expect(stepPlace(mixed, 2, '/v/a.md#YAZ-1')).toBe(2)
+    expect(stepPlace(mixed, 4, '/v/a.md#drawing-0')).toBe(3)
+    expect(stepPlace(mixed, 5, '/v/b.md#YAZ-2')).toBe(4)
+    expect(stepPlace(mixed, 6, '/v/b.md#drawing-1')).toBe(5)
+    expect(stepPlace(mixed, 7, '/v/d.excalidraw')).toBe(6)
+
+    // Stepping forward and backward across pages, inline cards, inline drawings, and standalone boards
+    expect(stepResult(mixed, 1, '/v/a.md', 1)).toEqual({ at: 2, path: '/v/a.md#YAZ-1' })
+    expect(stepResult(mixed, 2, '/v/a.md#YAZ-1', 1)).toEqual({ at: 4, path: '/v/a.md#drawing-0' })
+    expect(stepResult(mixed, 4, '/v/a.md#drawing-0', 1)).toEqual({ at: 5, path: '/v/b.md#YAZ-2' })
+    expect(stepResult(mixed, 5, '/v/b.md#YAZ-2', 1)).toEqual({ at: 6, path: '/v/b.md#drawing-1' })
+    expect(stepResult(mixed, 6, '/v/b.md#drawing-1', 1)).toEqual({ at: 7, path: '/v/d.excalidraw' })
+    expect(stepResult(mixed, 4, '/v/a.md#drawing-0', -1)).toEqual({ at: 2, path: '/v/a.md#YAZ-1' })
+    expect(stepResult(mixed, 2, '/v/a.md#YAZ-1', -1)).toEqual({ at: 1, path: '/v/a.md' })
+    expect(stepResult(mixed, 1, '/v/a.md', -1)).toBeNull()
+  })
+
+  it('YAZ-6470: layerRowPath maps inline cards and inline drawings back to their synthetic row paths', () => {
+    expect(layerRowPath({ id: 1, kind: 'page', path: '/v/a.md', mode: 'read' })).toBe('/v/a.md')
+    expect(layerRowPath({ id: 2, kind: 'page', path: '/v/a.md', mode: 'read', card: { id: 'YAZ-1', index: 0 } })).toBe('/v/a.md#YAZ-1')
+    expect(layerRowPath({ id: 3, kind: 'board', path: '/v/d.excalidraw' })).toBe('/v/d.excalidraw')
+    expect(layerRowPath({ id: 4, kind: 'board', path: '/v/a.md', inlineDrawing: { index: 2, title: 'Flow' } })).toBe('/v/a.md#drawing-2')
   })
 })
 
