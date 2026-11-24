@@ -156,7 +156,7 @@ const SIDEBAR_ROWS_BARE = SIDEBAR_ROWS.filter((id) => !id.startsWith('sidebarIco
 const SIDEBAR_ROWS_REVIEW = SIDEBAR_ROWS.flatMap((id) => (id === 'sidebarIconColors.page' ? [id, 'sidebarIconColors.card'] : [id]))
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'pageBulletIndent', 'pageBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'typingArrows', 'enterKeepsStylePages', 'enterKeepsStyleBoxes', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'findFolds', 'outsideChangeGlow', 'outsideListPinned', 'outsideOutlineThickness', 'outsideOutlineColors', 'codeBlockWidth']
+const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'pageBulletIndent', 'pageBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'typingArrows', 'enterKeepsStylePages', 'enterKeepsStyleBoxes', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'findFolds', 'outsideChangeGlow', 'outsideListPinned', 'outsideOutlineThickness', 'outsideOutlineColors', 'codeBlockWidth', 'inlineCodeStyle']
 /**
  * Settings › Tables (YAZ-4775), after Editor: the page tables' rows, moved off the Editor page with their keys. "All tables"
  * starts with Header row (YAZ-4774) and Width (YAZ-4783); Cell notes with the "+" (YAZ-4790).
@@ -2241,8 +2241,8 @@ describe('SettingsDialog search (D6)', () => {
     // And the guide lines' darkness (YAZ-4094 G3) on the Editor page, and the calendar tables' shade darkness (YAZ-4163 demo), on the Tables page (YAZ-4775).
     // And "Text color follows the fill" (YAZ-4404 4H) on the Drawings and diagrams page: its hint says "A dark fill".
     // The draw.io row is that page's last group since YAZ-4748 D11.
-    expect(headings(el)).toEqual(['Appearance', 'Editor › Outline', 'Tables › Calendar tables', 'Drawings and diagrams › New elements', 'Drawings and diagrams › draw.io diagrams', 'Hotkeys › ⌘⇧6', 'Hotkeys › Actions with no key'])
-    expect(rowIds(el)).toEqual(['theme', 'guideLineDarkness', 'tableShadeDarkness', 'canvas.fillSetsTextColor', 'diagramDarkColors', 'hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme'])
+    expect(headings(el)).toEqual(['Appearance', 'Editor › Outline', 'Editor › Code blocks', 'Tables › Calendar tables', 'Drawings and diagrams › New elements', 'Drawings and diagrams › draw.io diagrams', 'Hotkeys › ⌘⇧6', 'Hotkeys › Actions with no key'])
+    expect(rowIds(el)).toEqual(['theme', 'guideLineDarkness', 'inlineCodeStyle', 'tableShadeDarkness', 'canvas.fillSetsTextColor', 'diagramDarkColors', 'hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme'])
     expect(sections(el)).toEqual([]) // the page is gone while the query stands
     act(() => rowButtons(el, 'theme')[2].click())
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, theme: 'dark' })

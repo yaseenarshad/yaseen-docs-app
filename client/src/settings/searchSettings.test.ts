@@ -106,8 +106,9 @@ describe('settingCandidates', () => {
       'outsideListPinned',
       'outsideOutlineThickness',
       'outsideOutlineColors',
-      // Settings › Editor › Code blocks › Width (YAZ-4783 layer 3).
+      // Settings › Editor › Code blocks › Width (YAZ-4783 layer 3) and Inline code (YAZ-6452).
       'codeBlockWidth',
+      'inlineCodeStyle',
       // Settings › Tables, a page of its own after Editor (YAZ-4775); its "All tables" group (YAZ-4167 D16, YAZ-4162 D6,
       // D14) starts with Header row (YAZ-4774) and Width (YAZ-4783).
       // YAZ-5487: the Vault dropdown of the table look (table-look.json).
@@ -284,7 +285,7 @@ describe('searchSettings', () => {
     // And the guide lines' darkness (YAZ-4094 G3), and the calendar tables' shade darkness (YAZ-4163 demo).
     // And "Text color follows the fill" (YAZ-4404 4H): its hint says "A dark fill turns dark text white".
     // The draw.io row is the last of "Drawings and diagrams" since YAZ-4748 D11, so it comes after the drawing's row.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme', 'theme', 'guideLineDarkness', 'tableShadeDarkness', 'canvas.fillSetsTextColor', 'diagramDarkColors'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'dark'))).toEqual(['hotkey-diagram-adaptiveColors', 'hotkey-drawing-toggleTheme', 'theme', 'guideLineDarkness', 'inlineCodeStyle', 'tableShadeDarkness', 'canvas.fillSetsTextColor', 'diagramDarkColors'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'readable line'))).toEqual(['contentWidth'])
     // The sounds of Settings › Notifications (YAZ-3303) say "the Trash" in their hints.
     // "trash" is also the word of ⌘⌫ in the Window hotkeys (YAZ-3272 D20), and of a folder page's delete (YAZ-4592 S26).
@@ -354,6 +355,12 @@ describe('searchSettings', () => {
 
   it('YAZ-5977: "search size" and "explore size" find the pointer to the zoom menu', () => {
     for (const query of ['search size', 'explore size']) expect(ids(searchSettings(settingCandidates(ctx()), query))[0]).toBe('exploreSearchSize')
+  })
+
+  it('YAZ-6452: "inline code", "backtick", and "red" find inlineCodeStyle', () => {
+    expect(ids(searchSettings(settingCandidates(ctx()), 'inline code'))[0]).toBe('inlineCodeStyle')
+    expect(ids(searchSettings(settingCandidates(ctx()), 'backtick'))).toContain('inlineCodeStyle')
+    expect(ids(searchSettings(settingCandidates(ctx()), 'red'))).toContain('inlineCodeStyle')
   })
 
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {
