@@ -93,6 +93,14 @@ export const SortIcon = () => (
   </svg>
 )
 
+/** Circular refresh arrow for the tab-row "Refresh files" action (YAZ-6440). */
+export const RefreshIcon = () => (
+  <svg {...svg}>
+    <path d="M13 8a5 5 0 1 1-1.35-3.42L13 6" />
+    <path d="M13 2.75V6H9.75" />
+  </svg>
+)
+
 export const PropertiesIcon = () => (
   <svg {...svg}>
     <path d="M2 5h12M2 11h12" />

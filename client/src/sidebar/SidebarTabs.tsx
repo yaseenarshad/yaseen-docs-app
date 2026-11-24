@@ -36,6 +36,8 @@ interface SidebarTabsProps {
   /** Something is open, so a click collapses (YAZ-3938 D9): the chevrons point up; with all folded they point down. */
   foldOpen: boolean
   onFold: () => void
+  /** "Refresh files" in the tab-row menu (YAZ-6440). */
+  onRefresh?: () => void
 }
 
 /** Where the focus goes back to when the menu or the panel closes: the ⋯ button, a tab, or (null) the tab that shows. */
@@ -66,7 +68,7 @@ const isMenuKey = (e: { key: string; shiftKey: boolean; metaKey: boolean; ctrlKe
  * the row again only when a tab comes or goes (S30). With no observer, or no layout (jsdom), nothing
  * is measured and every tab fits.
  */
-export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs, onChangePrefs, sortShows, sortOpen, sortFiltered = false, sortLabel = 'Sort', onSort, foldShows, foldDisabled = false, foldLabel, foldOpen, onFold }: SidebarTabsProps) {
+export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs, onChangePrefs, sortShows, sortOpen, sortFiltered = false, sortLabel = 'Sort', onSort, foldShows, foldDisabled = false, foldLabel, foldOpen, onFold, onRefresh }: SidebarTabsProps) {
   const buttons: RowButtons = { sort: sortShows, fold: foldShows }
   const [fit, setFit] = useState(Number.POSITIVE_INFINITY)
   const layout = rowLayout(prefs, lens, fit, buttons)
@@ -195,6 +197,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
         onSort: () => onSort(anchor() ?? { x, y }),
         sortLabel,
         onFold,
+        onRefresh,
         iconOf: rowGlyph,
         // "Edit tab row…" opens the panel where the menu was, the right-clicked tab lit (S17).
         onEdit: () => {

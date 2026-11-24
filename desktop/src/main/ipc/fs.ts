@@ -32,6 +32,7 @@ import { putBack } from '../fs/trash'
 import { retitle } from '../fs/retitle'
 import { revealItem } from '../fs/reveal'
 import { tree } from '../fs/tree'
+import { resyncRoot } from '../fs/watchers'
 import { requireRequest, requireStringArray } from '../fs/validate'
 import { backfillCreated } from '../vaultIndex/backfillCreated'
 import type { Store } from '../store'
@@ -61,6 +62,7 @@ const repairOrder = (p: Promise<void>): Promise<void> => p.catch((err: unknown) 
 /** The fs half of `window.yaseenDocs` (`dialog:pick-folder` lives in `./dialog`). */
 export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor' | 'vaultNotice'>): void {
   handle(CONTRACT.tree, tree)
+  handle(CONTRACT.resync, async (raw: unknown) => resyncRoot(requireAbsPath(raw, 'root')))
   handle(CONTRACT.readFile, readFile)
   // The pages of the tab board (YAZ-2648 D6): read-only, one call for every open tab.
   handle(CONTRACT.readHeads, readHeads)

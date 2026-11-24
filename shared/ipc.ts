@@ -61,6 +61,8 @@ export const CONTRACT = {
     reply: invoke<[reply: RendererReply], void>('automation:reply', 1),
   },
   tree: invoke<[root: string], TreeResponse>('fs:tree', 1),
+  /** Re-walk the active watcher for `root` and announce any missed events; resolves `true` if anything changed (YAZ-6439). */
+  resync: invoke<[root: string], boolean>('fs:resync', 1),
   readFile: invoke<[path: string], FileResponse>('fs:read', 1),
   /** The top of each page in `paths`, in their order (YAZ-2648 D6): only the head is read off disk, never the file. `null` for a path that is no page or could not be read; one never fails the rest. */
   readHeads: invoke<[paths: readonly string[]], (FileHead | null)[]>('fs:read-heads', 1),

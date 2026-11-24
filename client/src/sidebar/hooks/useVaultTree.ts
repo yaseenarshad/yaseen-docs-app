@@ -9,7 +9,7 @@ import { copyFoldKey } from '@shared/foldKey'
 import { rootOfPath, stripSlash, type TreeNode, type TreeResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import type { WatchSource } from '../../hooks/useWatch'
-import { onFileRenamed } from '../../lib/indexFeed'
+import { fetchIndex, onFileRenamed } from '../../lib/indexFeed'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../../lib/leadingTrailing'
 import { storage } from '../../lib/storage'
 import { fetchTree, latestTree, onTree } from '../../lib/treeFeed'
@@ -77,6 +77,11 @@ export interface FolderShare {
 }
 
 const SHARED_FOLDERS: FolderShare = { shared: true, start: () => [], touch: () => undefined, touched: () => true }
+
+/** Minimum time away before window focus triggers a watcher resync (YAZ-6439). */
+const FOCUS_RESYNC_AWAY_MS = 2_000
+/** Minimum interval between focus-triggered resyncs per vault (YAZ-6439). */
+const FOCUS_RESYNC_THROTTLE_MS = 15_000
 
 export function useVaultTree(
   vaults: readonly SidebarVault[],
@@ -298,6 +303,45 @@ export function useVaultTree(
     },
     [],
   )
+
+  // Self-healing watcher resync on window focus (YAZ-6439): after >= 2 s away, throttled to once
+  // per 15 s per vault, ask main to resync each open vault's watcher. Only refresh the tree and
+  // index when main reports a missed change (zero renderer work when unchanged).
+  useEffect(() => {
+    let cancelled = false
+    let blurredAt: number | null = null
+    const lastResyncAt = new Map<string, number>()
+    const onBlur = (): void => {
+      blurredAt = Date.now()
+    }
+    const onFocus = (): void => {
+      if (blurredAt === null) return
+      const now = Date.now()
+      const away = now - blurredAt
+      blurredAt = null
+      if (away < FOCUS_RESYNC_AWAY_MS) return
+      for (const vault of live.current.roots) {
+        const last = lastResyncAt.get(vault)
+        if (last !== undefined && now - last < FOCUS_RESYNC_THROTTLE_MS) continue
+        lastResyncAt.set(vault, now)
+        void api.resync?.(vault)?.then(
+          (changed) => {
+            if (cancelled || changed !== true) return
+            refresh(vault)
+            void fetchIndex(vault, true).catch(() => undefined)
+          },
+          () => undefined,
+        )
+      }
+    }
+    window.addEventListener('blur', onBlur)
+    window.addEventListener('focus', onFocus)
+    return () => {
+      cancelled = true
+      window.removeEventListener('blur', onBlur)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [refresh])
 
   // The vaults whose stored lists `expanded` holds: a vault that joins brings its own, and one that
   // leaves takes its folders with it, as the store has them. The write waits for that render.

@@ -6,6 +6,7 @@ import { api, BridgeRequestError } from './api'
 function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn> } {
   const bridge = {
     tree: vi.fn(),
+    resync: vi.fn(),
     readFile: vi.fn(),
     readHeads: vi.fn(),
     readTextHead: vi.fn(),
