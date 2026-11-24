@@ -14,8 +14,10 @@ import {
   MAX_BUNDLE_NAME_LENGTH,
   pickApplicationsDir,
   readLauncherPlist,
+  removeOrphanLauncher,
   removeVaultLauncher,
   sanitizeBundleName,
+  scanInstalledLaunchers,
   vaultLauncherBinaryPath,
 } from './vaultLauncher'
 
@@ -281,6 +283,125 @@ describe('installVaultLauncher & removeVaultLauncher', () => {
       { name: 'NewName2', vaultPath: '/Users/me/VaultA', iconPng: FAKE_PNG, previousAppPath: thirdParty, binaryPath: fakeBinary },
       deps,
     )
+    expect(trashItem).not.toHaveBeenCalled()
+  })
+
+  it('does NOT trash the new bundle on a case-only rename on macOS, while still trashing on real rename (YAZ-6447 D2)', async () => {
+    const trashItem = vi.fn(async () => {})
+    const deps = { appDirs: [primaryApps], trashItem, execFile: async () => {}, platform: 'darwin' as const }
+
+    const first = await installVaultLauncher(
+      { name: 'all folders', vaultPath: 'workspace:ws-1', vaultUrl: 'yaseendocs://workspace/ws-1', iconPng: FAKE_PNG, binaryPath: fakeBinary },
+      deps,
+    )
+    expect(first.appPath).toBe(join(primaryApps, 'all folders.app'))
+
+    // Case-only rename: `all folders.app` -> `All Folders.app` must NOT call trashItem.
+    const recased = await installVaultLauncher(
+      {
+        name: 'All Folders',
+        vaultPath: 'workspace:ws-1',
+        vaultUrl: 'yaseendocs://workspace/ws-1',
+        iconPng: FAKE_PNG,
+        previousAppPath: first.appPath,
+        binaryPath: fakeBinary,
+      },
+      deps,
+    )
+    expect(recased.appPath).toBe(join(primaryApps, 'All Folders.app'))
+    expect(trashItem).not.toHaveBeenCalled()
+    expect(await readLauncherPlist(recased.appPath)).toMatchObject({ vaultPath: 'workspace:ws-1' })
+
+    // Real rename: `All Folders.app` -> `Every Folder.app` still trashes the old bundle.
+    const renamed = await installVaultLauncher(
+      {
+        name: 'Every Folder',
+        vaultPath: 'workspace:ws-1',
+        vaultUrl: 'yaseendocs://workspace/ws-1',
+        iconPng: FAKE_PNG,
+        previousAppPath: recased.appPath,
+        binaryPath: fakeBinary,
+      },
+      deps,
+    )
+    expect(renamed.appPath).toBe(join(primaryApps, 'Every Folder.app'))
+    expect(trashItem).toHaveBeenCalledTimes(1)
+    expect(trashItem).toHaveBeenCalledWith(recased.appPath)
+  })
+
+  it('scanInstalledLaunchers finds Yaseen Docs launchers and ignores third-party apps and hidden staging dirs', async () => {
+    const deps = { appDirs: [primaryApps], trashItem: async () => {}, execFile: async () => {} }
+    await mkdir(fallbackApps, { recursive: true })
+
+    // Install one vault launcher in primaryApps and one workspace launcher in fallbackApps.
+    const vaultRes = await installVaultLauncher({ name: 'Daily', vaultPath: '/Users/me/Daily', iconPng: FAKE_PNG, binaryPath: fakeBinary }, deps)
+    const wsRes = await installVaultLauncher(
+      { name: 'Work Suite', vaultPath: 'workspace:ws-7', vaultUrl: 'yaseendocs://workspace/ws-7', iconPng: FAKE_PNG, binaryPath: fakeBinary },
+      { ...deps, appDirs: [fallbackApps] },
+    )
+
+    // Add a third-party app, a hidden temp bundle, and a non-app file.
+    const thirdParty = join(primaryApps, 'Safari.app')
+    await mkdir(join(thirdParty, 'Contents'), { recursive: true })
+    await writeFile(
+      join(thirdParty, 'Contents', 'Info.plist'),
+      '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.apple.Safari</string></dict></plist>',
+      'utf8',
+    )
+    const hiddenTmp = join(primaryApps, '.yaseen-launcher-tmp-123.app')
+    await mkdir(join(hiddenTmp, 'Contents'), { recursive: true })
+    await writeFile(
+      join(hiddenTmp, 'Contents', 'Info.plist'),
+      buildLauncherPlist({ name: 'Tmp', bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}tmp`, vaultUrl: 'yaseendocs:///tmp', vaultPath: '/tmp' }),
+      'utf8',
+    )
+    await writeFile(join(primaryApps, 'README.txt'), 'not an app', 'utf8')
+
+    const missingDir = join(root, 'DoesNotExist')
+    const found = await scanInstalledLaunchers([primaryApps, fallbackApps, missingDir])
+    expect(found).toEqual([
+      {
+        appPath: vaultRes.appPath,
+        name: 'Daily',
+        info: {
+          bundleId: vaultRes.bundleId,
+          vaultPath: '/Users/me/Daily',
+          vaultUrl: 'yaseendocs:///Users/me/Daily',
+        },
+      },
+      {
+        appPath: wsRes.appPath,
+        name: 'Work Suite',
+        info: {
+          bundleId: wsRes.bundleId,
+          vaultPath: 'workspace:ws-7',
+          vaultUrl: 'yaseendocs://workspace/ws-7',
+        },
+      },
+    ])
+  })
+
+  it('removeOrphanLauncher trashes valid Yaseen Docs launchers, returns false when gone, and fails closed on third-party apps', async () => {
+    const trashItem = vi.fn(async () => {})
+    const deps = { appDirs: [primaryApps], trashItem, execFile: async () => {} }
+    const orphan = await installVaultLauncher({ name: 'Orphan', vaultPath: '/Users/me/Old', iconPng: FAKE_PNG, binaryPath: fakeBinary }, deps)
+
+    await expect(removeOrphanLauncher(orphan.appPath, { trashItem })).resolves.toBe(true)
+    expect(trashItem).toHaveBeenCalledWith(orphan.appPath)
+
+    // Missing bundle -> false.
+    await expect(removeOrphanLauncher(join(primaryApps, 'Missing.app'), { trashItem })).resolves.toBe(false)
+
+    // Third-party app -> refused (fails closed).
+    const thirdParty = join(primaryApps, 'Calendar.app')
+    await mkdir(join(thirdParty, 'Contents'), { recursive: true })
+    await writeFile(
+      join(thirdParty, 'Contents', 'Info.plist'),
+      '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.apple.iCal</string></dict></plist>',
+      'utf8',
+    )
+    trashItem.mockClear()
+    await expect(removeOrphanLauncher(thirdParty, { trashItem })).rejects.toThrow(/Refusing to remove/)
     expect(trashItem).not.toHaveBeenCalled()
   })
 

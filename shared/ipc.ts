@@ -15,7 +15,7 @@ import type { FoundPage } from './pageBirth'
 import type { CardSkillDuplicate, CardSkillFormats } from './cardSkillFolder'
 import type { CoursePatch } from './courseState'
 import type { CourseAudioChange, CourseAudioSound } from './courseAudio'
-import type { AddToAutoSyncResult, AutoSyncStatus, ConnectRepoResult, CopyAsMode, CopyAsRich, CreateVaultLauncherRequest, CreateWorkspaceLauncherRequest, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, GithubAuthStatus, GithubInstalledRepo, ListScope, PageMenuAction, PageMenuArg, MemoryTabFacts, VaultLauncherStatus } from './types'
+import type { AddToAutoSyncResult, AutoSyncStatus, ConnectRepoResult, CopyAsMode, CopyAsRich, CreateVaultLauncherRequest, CreateWorkspaceLauncherRequest, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, GithubAuthStatus, GithubInstalledRepo, LauncherListItem, ListScope, PageMenuAction, PageMenuArg, MemoryTabFacts, VaultLauncherStatus } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
 import type { IconPackInfo, IconPacksRequest, IconPacksStatus } from './iconPacks'
@@ -913,6 +913,9 @@ export const CONTRACT = {
     revealWorkspace: invoke<[workspaceId: string], void>('vault-launcher:reveal-workspace', 1),
     testWorkspace: invoke<[workspaceId: string], void>('vault-launcher:test-workspace', 1),
     workspaceIcons: invoke<[], Record<string, string>>('vault-launcher:workspace-icons', 0),
+    listAll: invoke<[], LauncherListItem[]>('vault-launcher:list-all', 0),
+    removeOrphan: invoke<[appPath: string], void>('vault-launcher:remove-orphan', 1),
+    onChanged: push<void>('vault-launcher:changed'),
   },
   /** The updater (YAZ-2976 D2): main owns it, and every window reads the same state. */
   update: {

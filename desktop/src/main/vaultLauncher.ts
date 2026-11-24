@@ -10,7 +10,7 @@
 import { execFile as nodeExecFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { constants as fsConstants } from 'node:fs'
-import { access, chmod, copyFile, mkdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
+import { access, chmod, copyFile, mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -64,6 +64,14 @@ export interface VaultLauncherDeps {
   execFile?: (file: string, args: readonly string[]) => Promise<void>
   /** Check whether a directory is writable. Defaults to `fs.access(dir, W_OK)`. */
   isWritable?: (dir: string) => Promise<boolean>
+  /** Platform override for case-insensitive path checks (defaults to `process.platform`). */
+  platform?: NodeJS.Platform
+}
+
+export interface ScannedLauncher {
+  appPath: string
+  name: string
+  info: LauncherPlistInfo
 }
 
 export interface LauncherPlistInfo {
@@ -241,12 +249,23 @@ export async function pickApplicationsDir(
   throw new Error(`No writable Applications folder found (checked: ${candidates.join(', ')})`)
 }
 
-function isOwnLauncher(info: LauncherPlistInfo | null): info is LauncherPlistInfo {
+export function isOwnLauncher(info: LauncherPlistInfo | null): info is LauncherPlistInfo {
   return info !== null && info.bundleId !== null && info.bundleId.startsWith(LAUNCHER_BUNDLE_ID_PREFIX)
 }
 
 function isLauncherForVault(info: LauncherPlistInfo | null, normalizedVaultPath: string): boolean {
   return isOwnLauncher(info) && info.vaultPath !== null && stripSlash(info.vaultPath) === normalizedVaultPath
+}
+
+async function isSameAppPath(a: string, b: string, platform: NodeJS.Platform): Promise<boolean> {
+  if (a === b) return true
+  if (platform === 'darwin' && a.toLowerCase() === b.toLowerCase()) return true
+  try {
+    const [statA, statB] = await Promise.all([stat(a), stat(b)])
+    return statA.dev === statB.dev && statA.ino === statB.ino
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -327,7 +346,13 @@ export async function installVaultLauncher(opts: InstallVaultLauncherOptions, de
   await exec(LSREGISTER_PATH, ['-f', target]).catch(() => {})
 
   // Rename cleanup: move the old `.app` to Trash if it differs from the new path and belongs to this vault.
-  if (previousResolved !== null && previousResolved !== targetResolved && (await pathExists(previousResolved))) {
+  // Never trash on a case-only rename on macOS APFS (or when both paths resolve to the same file).
+  const platform = deps.platform ?? process.platform
+  if (
+    previousResolved !== null &&
+    !(await isSameAppPath(previousResolved, targetResolved, platform)) &&
+    (await pathExists(previousResolved))
+  ) {
     const oldInfo = await readLauncherPlist(previousResolved)
     if (isLauncherForVault(oldInfo, normalizedVaultPath)) {
       await deps.trashItem(previousResolved)
@@ -335,6 +360,60 @@ export async function installVaultLauncher(opts: InstallVaultLauncherOptions, de
   }
 
   return { appPath: target, name, bundleId, vaultUrl }
+}
+
+/**
+ * Scan `/Applications` and `~/Applications` (or provided directories) for `.app` bundles
+ * whose `CFBundleIdentifier` belongs to Yaseen Docs launchers (`LAUNCHER_BUNDLE_ID_PREFIX`).
+ */
+export async function scanInstalledLaunchers(
+  appDirs: readonly string[] = ['/Applications', join(homedir(), 'Applications')],
+): Promise<ScannedLauncher[]> {
+  const results: ScannedLauncher[] = []
+  const seen = new Set<string>()
+  for (const dir of appDirs) {
+    let entries: string[]
+    try {
+      entries = await readdir(dir)
+    } catch {
+      continue
+    }
+    const appEntries = entries.filter((entry) => /\.app$/i.test(entry) && !entry.startsWith('.'))
+    const scanned = await Promise.all(
+      appEntries.map(async (entry): Promise<ScannedLauncher | null> => {
+        const appPath = join(dir, entry)
+        const info = await readLauncherPlist(appPath)
+        if (!isOwnLauncher(info)) return null
+        return { appPath, name: entry.replace(/\.app$/i, ''), info }
+      }),
+    )
+    for (const item of scanned) {
+      if (item === null) continue
+      const key = process.platform === 'darwin' ? resolve(item.appPath).toLowerCase() : resolve(item.appPath)
+      if (seen.has(key)) continue
+      seen.add(key)
+      results.push(item)
+    }
+  }
+  return results
+}
+
+/**
+ * Remove an orphaned Yaseen Docs `.app` launcher by moving it to the macOS Trash.
+ * Fails closed: refuses any bundle whose `CFBundleIdentifier` does not match `LAUNCHER_BUNDLE_ID_PREFIX`.
+ * Returns `false` if the bundle is already gone, `true` when trashed.
+ */
+export async function removeOrphanLauncher(
+  appPath: string,
+  deps: Pick<VaultLauncherDeps, 'trashItem'>,
+): Promise<boolean> {
+  if (!(await pathExists(appPath))) return false
+  const info = await readLauncherPlist(appPath)
+  if (!isOwnLauncher(info)) {
+    throw new Error(`Refusing to remove "${appPath}": it is not a Yaseen Docs launcher.`)
+  }
+  await deps.trashItem(appPath)
+  return true
 }
 
 /**

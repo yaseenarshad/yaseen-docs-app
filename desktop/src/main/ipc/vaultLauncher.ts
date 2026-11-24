@@ -1,12 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { CONTRACT } from '@shared/ipc'
 import { isRecord } from '@shared/guards'
 import { workspaceLink } from '@shared/links'
 import {
   cleanVaultLauncher,
   cleanVaultName,
+  type LauncherListItem,
   type VaultLauncherBadge,
   type VaultLauncherInfo,
   type VaultLauncherStatus,
@@ -14,6 +15,8 @@ import {
 } from '@shared/types'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import type { Store } from '../store'
+import { isOwnLauncher, readLauncherPlist, scanInstalledLaunchers, type ScannedLauncher } from '../vaultLauncher'
+import { broadcastAll } from './broadcast'
 import { handle } from './envelope'
 
 /** Maximum decoded PNG size for a vault launcher icon (2 MiB). */
@@ -42,6 +45,10 @@ export interface VaultLauncherBackend {
   reveal(appPath: string): Promise<void> | void
   launch(appPath: string): Promise<void> | void
   exists(path: string): boolean
+  /** Optional scan override (defaults to `scanInstalledLaunchers()` when `supported`). */
+  scan?: () => Promise<ScannedLauncher[]>
+  /** Optional orphan removal override (defaults to plist verification + `remove`). */
+  removeOrphan?: (appPath: string) => Promise<void>
 }
 
 /** Deterministic cached icon path under `<userData>/vault-icons/<sha256(root).slice(0,16)>.png`. */
@@ -154,16 +161,39 @@ export function createUnsupportedVaultLauncherBackend(): VaultLauncherBackend {
 }
 
 /**
- * Registers `vault-launcher:*` IPC handlers (YAZ-5967, YAZ-6374).
+ * Best-effort cleanup of a workspace's `.app` bundle and cached icon PNG when the workspace is removed
+ * (`window:remove-set`, YAZ-6447 D3). Never throws so workspace deletion always succeeds.
+ */
+export async function cleanupWorkspaceLauncher(
+  store: Store,
+  backend: VaultLauncherBackend,
+  workspaceId: string,
+  onIconChanged?: (iconPath: string) => void,
+  onChanged: () => void = () => broadcastAll(CONTRACT.vaultLauncher.onChanged.channel),
+): Promise<void> {
+  const launcher = store.get().vaultSets.find((s) => s.id === workspaceId)?.launcher
+  if (launcher === undefined) return
+  if (backend.exists(launcher.appPath)) {
+    await backend.remove(launcher.appPath, workspaceVaultPath(workspaceId)).catch(() => undefined)
+  }
+  await rm(launcher.iconPath, { force: true }).catch(() => undefined)
+  onIconChanged?.(launcher.iconPath)
+  onChanged()
+}
+
+/**
+ * Registers `vault-launcher:*` IPC handlers (YAZ-5967, YAZ-6374, YAZ-6447).
  *
  * Persists `FolderState.launcher` in `store`, caches 512x512 PNGs under `<userData>/vault-icons/`,
- * and invokes `onIconChanged(iconPath)` after create/remove so the Dock icon controller can evict its cache.
+ * invokes `onIconChanged(iconPath)` after create/remove so the Dock icon controller can evict its cache,
+ * and broadcasts `vault-launcher:changed` to keep icons in sync across all windows.
  */
 export function registerVaultLauncherIpc(
   store: Store,
   userData: string,
   backend: VaultLauncherBackend,
   onIconChanged?: (iconPath: string) => void,
+  onChanged: () => void = () => broadcastAll(CONTRACT.vaultLauncher.onChanged.channel),
 ): void {
   handle(CONTRACT.vaultLauncher.status, async (rawRoot: unknown): Promise<VaultLauncherStatus> => {
     const root = requireAbsPath(rawRoot, 'root')
@@ -221,6 +251,7 @@ export function registerVaultLauncherIpc(
 
     store.setFolder(root, { launcher })
     onIconChanged?.(iconPath)
+    onChanged()
 
     return {
       supported: backend.supported,
@@ -241,6 +272,7 @@ export function registerVaultLauncherIpc(
     await rm(launcher.iconPath, { force: true }).catch(() => undefined)
     store.setFolder(root, { launcher: null })
     onIconChanged?.(launcher.iconPath)
+    onChanged()
   })
 
   handle(CONTRACT.vaultLauncher.reveal, async (rawRoot: unknown): Promise<void> => {
@@ -333,6 +365,7 @@ export function registerVaultLauncherIpc(
 
     store.setVaultSetLauncher(workspaceId, launcher)
     onIconChanged?.(iconPath)
+    onChanged()
 
     return {
       supported: backend.supported,
@@ -353,6 +386,7 @@ export function registerVaultLauncherIpc(
     await rm(launcher.iconPath, { force: true }).catch(() => undefined)
     store.setVaultSetLauncher(workspaceId, null)
     onIconChanged?.(launcher.iconPath)
+    onChanged()
   })
 
   handle(CONTRACT.vaultLauncher.revealWorkspace, async (rawId: unknown): Promise<void> => {
@@ -386,5 +420,90 @@ export function registerVaultLauncherIpc(
       }),
     )
     return out
+  })
+
+  const normalizeAppKey = (appPath: string): string =>
+    process.platform === 'darwin' ? resolve(appPath).toLowerCase() : resolve(appPath)
+
+  handle(CONTRACT.vaultLauncher.listAll, async (): Promise<LauncherListItem[]> => {
+    if (!backend.supported) return []
+    const state = store.get()
+    const registeredPaths = new Set<string>()
+    const items: LauncherListItem[] = []
+
+    const vaultEntries = Object.entries(state.folders).filter(([, folder]) => folder.launcher !== undefined)
+    const vaultItems = await Promise.all(
+      vaultEntries.map(async ([root, folder]): Promise<LauncherListItem> => {
+        const launcher = folder.launcher!
+        registeredPaths.add(normalizeAppKey(launcher.appPath))
+        const iconDataUrl = await readIconDataUrl(launcher.iconPath)
+        return {
+          kind: 'vault',
+          id: root,
+          name: launcher.name,
+          appPath: launcher.appPath,
+          exists: backend.exists(launcher.appPath),
+          iconDataUrl,
+          targetName: folder.name ?? basename(root),
+          ...(launcher.target !== undefined ? { target: launcher.target } : {}),
+        }
+      }),
+    )
+    items.push(...vaultItems)
+
+    const workspaceSets = state.vaultSets.filter((set) => set.launcher !== undefined)
+    const workspaceItems = await Promise.all(
+      workspaceSets.map(async (set): Promise<LauncherListItem> => {
+        const launcher = set.launcher!
+        registeredPaths.add(normalizeAppKey(launcher.appPath))
+        const iconDataUrl = await readIconDataUrl(launcher.iconPath)
+        return {
+          kind: 'workspace',
+          id: set.id,
+          name: launcher.name,
+          appPath: launcher.appPath,
+          exists: backend.exists(launcher.appPath),
+          iconDataUrl,
+          targetName: set.name,
+        }
+      }),
+    )
+    items.push(...workspaceItems)
+
+    const scanned = backend.scan ? await backend.scan() : await scanInstalledLaunchers()
+    for (const entry of scanned) {
+      const key = normalizeAppKey(entry.appPath)
+      if (registeredPaths.has(key)) continue
+      registeredPaths.add(key)
+      items.push({
+        kind: 'orphan',
+        id: entry.appPath,
+        name: entry.name,
+        appPath: entry.appPath,
+        exists: true,
+        iconDataUrl: null,
+        targetName: entry.info.vaultPath ?? 'Unknown target',
+        ...(entry.info.vaultPath !== null ? { vaultPath: entry.info.vaultPath } : {}),
+      })
+    }
+
+    return items
+  })
+
+  handle(CONTRACT.vaultLauncher.removeOrphan, async (rawAppPath: unknown): Promise<void> => {
+    if (!backend.supported) {
+      throw new BridgeFailure('BAD_REQUEST', 'Vault launchers are only supported on macOS')
+    }
+    const appPath = requireAbsPath(rawAppPath, 'appPath')
+    if (backend.removeOrphan) {
+      await backend.removeOrphan(appPath)
+    } else {
+      const info = await readLauncherPlist(appPath)
+      if (!isOwnLauncher(info)) {
+        throw new BridgeFailure('BAD_REQUEST', `Refusing to remove "${appPath}": it is not a Yaseen Docs launcher.`)
+      }
+      await backend.remove(appPath, info.vaultPath ?? '')
+    }
+    onChanged()
   })
 }
