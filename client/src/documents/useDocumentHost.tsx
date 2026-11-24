@@ -53,6 +53,7 @@ import { ReadOnlyChip } from '../editor/ReadOnlyChip'
 import { SaveIndicator } from '../editor/SaveIndicator'
 import { SyncIndicator } from '../editor/SyncIndicator'
 import { useTimedUnlock, type AllowFor } from '../editor/useTimedUnlock'
+import { registerPageUnlockFlush, usePageUnlockUntil } from '../editor/pageUnlockStore'
 import type { WatchSource } from '../hooks/useWatch'
 import { Autosave, SaveConflict, type SaveStatus } from '../lib/autosave'
 import { mayTakeFocus } from '../lib/focusHandoff'
@@ -103,9 +104,18 @@ export interface DocumentHostOptions extends DocumentHostProps {
   readOnly?: boolean
   /**
    * `false`: the file has no read-only switch (a code file, YAZ-3448) — no cog row, no chip, and the
-   * host never writes one. Absent = true, a board's switch.
+   * host never writes one.
+   * `'timed'`: the document is governed by a parent page's read-only state (e.g. an inline drawing tab,
+   * YAZ-6460 item 13) — respects both `readOnly` and `VaultReadOnly`, shows the timed `ReadOnlyChip`
+   * without "Turn Read only off" and without a cog "Read only" row, and never calls `board:set-read-only`.
+   * Absent / `true`: a board's own read-only switch.
    */
-  readOnlySwitch?: boolean
+  readOnlySwitch?: boolean | 'timed'
+  /**
+   * When `true` (YAZ-6460 item 13), inherits timed "Allow edits" unlocks published for `path` by an open
+   * parent page tab (`pageUnlockStore`) and flushes pending edits before that parent page relocks.
+   */
+  inheritPageUnlock?: boolean
   /**
    * The switch main just wrote, told before the autosave lets a queued save run (YAZ-4809 5F): a host whose `write`
    * puts the switch back in the file (a diagram) must know it then, not at its next render.
@@ -135,25 +145,42 @@ export function useDocumentHost(options: DocumentHostOptions) {
   const [conflictMtime, setConflictMtime] = useState<number | null>(null)
   /** The file's read-only switch as the file last said it (see the module doc). */
   const [switchOn, setReadOnlyShown] = useState(options.readOnly === true)
-  /** The vault's Read only (YAZ-4939), for a file with a switch: a code tab draws its own chip and reads the vault itself. */
-  const vaultLocked = useContext(VaultReadOnly).on && options.readOnlySwitch !== false
+  const hasFileSwitch = options.readOnlySwitch !== false && options.readOnlySwitch !== 'timed'
+  const hasChip = options.readOnlySwitch !== false
+  /** The vault's Read only (YAZ-4939), for a file with a switch or timed chip: a code tab draws its own chip and reads the vault itself. */
+  const vaultLocked = useContext(VaultReadOnly).on && hasChip
   /** The timed "Allow edits" of THIS tab (YAZ-4939): at zero the document saves, then locks again. */
   const unlock = useTimedUnlock(() => autosave.current?.flush())
+  /** An inherited timed unlock from an open parent page tab (YAZ-6460 item 13), when opted in. */
+  const inheritedUntil = usePageUnlockUntil(options.inheritPageUnlock === true ? path : null)
+  const effectiveUntil =
+    unlock.until === null
+      ? inheritedUntil
+      : inheritedUntil === null
+        ? unlock.until
+        : Math.max(unlock.until, inheritedUntil)
   /** The document is under Read only: its own switch or the vault's. The chip shows while this is true. */
   const lockedBase = switchOn || vaultLocked
-  const readOnly = lockedBase && unlock.until === null
+  const readOnly = lockedBase && effectiveUntil === null
+  const canLock = unlock.until !== null && inheritedUntil === null
   /** The chip's "Allow edits?" box (YAZ-3076 D4): this tab's own, and gone once read only is. */
   const [askingUnlock, setAskingUnlock] = useState(false)
   useEffect(() => {
     if (!lockedBase) setAskingUnlock(false)
   }, [lockedBase])
-  const lockRef = useRef({ lockedBase, until: unlock.until })
-  lockRef.current = { lockedBase, until: unlock.until }
+  useEffect(() => {
+    if (options.inheritPageUnlock !== true) return
+    return registerPageUnlockFlush(path, () => {
+      if (!retired.current) return autosave.current?.flush()
+    })
+  }, [options.inheritPageUnlock, path])
+  const lockRef = useRef({ lockedBase, until: effectiveUntil })
+  lockRef.current = { lockedBase, until: effectiveUntil }
   // The chips' live state, read by `<DocumentChips>` alone (YAZ-2073 5D).
-  const [chips] = useState(() => createStore<ChipState>({ status: 'saved', sync, onSyncNow, readOnly: options.readOnly === true, askingUnlock: false, editingUntil: null, canTurnOff: options.readOnly === true, readOnlyActions: options.readOnlySwitch === false ? null : NO_READ_ONLY_ACTIONS, pageRows: null }))
+  const [chips] = useState(() => createStore<ChipState>({ status: 'saved', sync, onSyncNow, readOnly: options.readOnly === true, askingUnlock: false, editingUntil: null, canTurnOff: hasFileSwitch && options.readOnly === true, canLock: false, readOnlyActions: !hasChip ? null : NO_READ_ONLY_ACTIONS, pageRows: null }))
   useLayoutEffect(() => chips.set({ sync, onSyncNow }), [chips, sync, onSyncNow])
   // "Turn Read only off" is the file's own switch, and not there while the vault's lock would keep the document locked anyway (YAZ-4939).
-  useLayoutEffect(() => chips.set({ readOnly: lockedBase, askingUnlock, editingUntil: unlock.until, canTurnOff: switchOn && !vaultLocked }), [chips, lockedBase, askingUnlock, unlock.until, switchOn, vaultLocked])
+  useLayoutEffect(() => chips.set({ readOnly: lockedBase, askingUnlock, editingUntil: effectiveUntil, canTurnOff: hasFileSwitch && switchOn && !vaultLocked, canLock }), [chips, lockedBase, askingUnlock, effectiveUntil, hasFileSwitch, switchOn, vaultLocked, canLock])
 
   const save = useCallback(
     async (_version: number, expectedMtime: number): Promise<{ mtime: number }> => {
@@ -353,7 +380,7 @@ export function useDocumentHost(options: DocumentHostOptions) {
   const setReadOnly = useCallback(
     async (on: boolean): Promise<void> => {
       const a = autosave.current
-      if (a === null || retired.current || engine.current.readOnlySwitch === false) return
+      if (a === null || retired.current || engine.current.readOnlySwitch === false || engine.current.readOnlySwitch === 'timed') return
       const { root, path: file } = engine.current
       try {
         await a.writeBeside((expectedMtime) =>
@@ -382,22 +409,26 @@ export function useDocumentHost(options: DocumentHostOptions) {
   useLayoutEffect(
     () =>
       chips.set({
-        readOnlyActions: engine.current.readOnlySwitch === false ? null : {
-          toggle: () => (lockRef.current.lockedBase ? (lockRef.current.until !== null ? lock() : setAskingUnlock(true)) : void setReadOnly(true)),
-          ask: () => setAskingUnlock(true),
-          allow: (choice) => {
-            setAskingUnlock(false)
-            allowFor(choice)
-          },
-          turnOff: () => {
-            setAskingUnlock(false)
-            void setReadOnly(false)
-          },
-          lock,
-          cancel: () => setAskingUnlock(false),
-        },
+        readOnlyActions: !hasChip
+          ? null
+          : {
+              toggle: hasFileSwitch
+                ? () => (lockRef.current.lockedBase ? (lockRef.current.until !== null ? lock() : setAskingUnlock(true)) : void setReadOnly(true))
+                : undefined,
+              ask: () => setAskingUnlock(true),
+              allow: (choice) => {
+                setAskingUnlock(false)
+                allowFor(choice)
+              },
+              turnOff: () => {
+                setAskingUnlock(false)
+                void setReadOnly(false)
+              },
+              lock,
+              cancel: () => setAskingUnlock(false),
+            },
       }),
-    [chips, setReadOnly, allowFor, lock],
+    [chips, hasChip, hasFileSwitch, setReadOnly, allowFor, lock],
   )
 
   const conflictBar = conflictMtime !== null && <ConflictBar onReload={() => void reload()} onKeepBoth={options.keepBoth !== undefined ? keepBoth : undefined} onKeepMine={keepMine} />
@@ -406,7 +437,7 @@ export function useDocumentHost(options: DocumentHostOptions) {
 
 /** The cog's row and the chip's answers (YAZ-3076 D3, D4; the time choices, "Turn Read only off" and "Lock now" of YAZ-4939). */
 interface ReadOnlyActions {
-  toggle: () => void
+  toggle?: () => void
   ask: () => void
   allow: (choice: AllowFor) => void
   turnOff: () => void
@@ -414,7 +445,7 @@ interface ReadOnlyActions {
   cancel: () => void
 }
 
-const NO_READ_ONLY_ACTIONS: ReadOnlyActions = { toggle: () => undefined, ask: () => undefined, allow: () => undefined, turnOff: () => undefined, lock: () => undefined, cancel: () => undefined }
+const NO_READ_ONLY_ACTIONS: ReadOnlyActions = { ask: () => undefined, allow: () => undefined, turnOff: () => undefined, lock: () => undefined, cancel: () => undefined }
 
 /** What the chips show: the save status (the autosave reports it), the vault's sync, App's, and the file's read-only switch. */
 interface ChipState {
@@ -428,6 +459,8 @@ interface ChipState {
   editingUntil: number | null
   /** The box offers "Turn Read only off": the file's own switch is on and the vault's lock is not. */
   canTurnOff: boolean
+  /** The chip offers "Lock now": this tab owns its active unlock (not merely inheriting a parent page's unlock). */
+  canLock: boolean
   /** null: the file has no switch (`readOnlySwitch: false`). */
   readOnlyActions: ReadOnlyActions | null
   /** The cog's rows after "Read only", made while it is open: a drawing sets them from an effect (YAZ-3943 D5, D13); null = none. */
@@ -442,12 +475,12 @@ interface ChipState {
  * drawn first; the same element across the store's renders, so a save's status moves leave it alone.
  */
 export function DocumentChips({ store, className, lead }: { store: Store<ChipState>; className: string; lead?: ReactNode }) {
-  const { status, sync, onSyncNow, readOnly, askingUnlock, editingUntil, canTurnOff, readOnlyActions: actions, pageRows } = useSyncExternalStore(store.subscribe, store.getState)
+  const { status, sync, onSyncNow, readOnly, askingUnlock, editingUntil, canTurnOff, canLock, readOnlyActions: actions, pageRows } = useSyncExternalStore(store.subscribe, store.getState)
   return (
     <div className={className}>
       {lead}
-      {(actions !== null || pageRows !== null) && <PageSettings readOnly={readOnly} onToggleReadOnly={actions?.toggle} rows={pageRows ?? undefined} />}
-      {actions !== null && readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={actions.ask} onAllow={actions.allow} onCancel={actions.cancel} onTurnOff={canTurnOff ? actions.turnOff : undefined} editingUntil={editingUntil} onLock={actions.lock} />}
+      {(actions?.toggle !== undefined || pageRows !== null) && <PageSettings readOnly={readOnly} onToggleReadOnly={actions?.toggle} rows={pageRows ?? undefined} />}
+      {actions !== null && readOnly && <ReadOnlyChip asking={askingUnlock} onAsk={actions.ask} onAllow={actions.allow} onCancel={actions.cancel} onTurnOff={canTurnOff ? actions.turnOff : undefined} editingUntil={editingUntil} onLock={canLock ? actions.lock : undefined} />}
       {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
       <SaveIndicator status={status} />
     </div>

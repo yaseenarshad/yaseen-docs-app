@@ -67,6 +67,7 @@ import { doneCardEmbedAt } from './card/embedCard'
 import { tellCardFoldChange } from './card/cardFold'
 import { HeadChipsSlot, LAYER_ESCAPE, LayerZoom, StatusChips } from './StatusChips'
 import { useTimedUnlock } from './useTimedUnlock'
+import { flushPageUnlockDependents, usePublishPageUnlock } from './pageUnlockStore'
 import { NO_VAULT_READ_ONLY, VaultReadOnly, type BeforeVaultLock, type VaultReadOnlyScope } from '../vault/readOnlyVault'
 import { PageMenu } from './pageMenu'
 import { ZOOM_EVENT } from './zoomRequest'
@@ -887,8 +888,9 @@ function CrepeHost({
       cardBlockViewOfDom(openCard)?.done()
       doneCardEmbedAt(openCard)
     }
-    return autosave.flushNow()
+    return flushPageUnlockDependents(file.path).then(() => autosave.flushNow())
   })
+  usePublishPageUnlock(file.path, unlock.until)
   const readOnly = lockedBase && unlock.until === null
   /**
    * Esc and ⌘↵ in the text lock this page again while its timed unlock runs (YAZ-4997): save, then lock, as Lock now.
@@ -1818,7 +1820,7 @@ function CrepeHost({
       )}
       {inlineDrawing.modalProps !== null && (
         <Suspense fallback={null}>
-          <DrawingModal key={inlineDrawing.modalProps.key} root={root} inline={inlineDrawing.modalProps.inline} theme={appliedTheme()} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} canvasPanel={canvasPanel} onCanvasPanelChange={onChangeCanvasPanel} watch={watch} outsideChangeGlow={outsideChangeGlow} outsideOutlineThickness={outsideOutlineThickness} outsideOutlineColors={outsideOutlineColors} onClose={inlineDrawing.modalProps.onClose} hotkeys={hotkeys} hotkeysAside={hotkeysAside} onNotice={onNotice} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} linkActions={linkActions} newPageFolderFor={newPageFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
+          <DrawingModal key={inlineDrawing.modalProps.key} root={root} inline={inlineDrawing.modalProps.inline} inlineReadOnly={readOnly} theme={appliedTheme()} canvasPrefs={canvasPrefs} onCanvasPrefsChange={onCanvasPrefsChange} canvasPanel={canvasPanel} onCanvasPanelChange={onChangeCanvasPanel} watch={watch} outsideChangeGlow={outsideChangeGlow} outsideOutlineThickness={outsideOutlineThickness} outsideOutlineColors={outsideOutlineColors} onClose={inlineDrawing.modalProps.onClose} hotkeys={hotkeys} hotkeysAside={hotkeysAside} onNotice={onNotice} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} linkActions={linkActions} newPageFolderFor={newPageFolderFor} hoverLinks={hoverDrawingLinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
         </Suspense>
       )}
       {/* The image lightbox (YAZ-1656) — the same modal-beside-the-editor shape as the drawing
