@@ -1,11 +1,11 @@
 import { existsSync } from 'node:fs'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { INBOX_FILTERS, MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, normalizeFilesZoom, placeVaults, rootOfPath, stripSlash, type FilesAction, type FilesPreviewRequest, type InboxCarry, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type ScreenPoint, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { APP_ZOOM_STEPS, INBOX_FILTERS, MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, SIDEBAR_DEFAULT_W, SIDEBAR_ZOOM_MAX, SIDEBAR_ZOOM_MIN, cleanVaultName, isSidebarLens, normalizeSidebarZoom, placeVaults, rootOfPath, stripSlash, type FilesAction, type FilesPreviewRequest, type InboxCarry, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type ScreenPoint, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isFiniteNumber, isRecord } from '@shared/guards'
 import { cardSkillVault } from '@shared/appVaults'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
-import { normalizeRightPanel, normalizeTabs, readStoredTab, readTabRef, type Store } from '../store'
+import { clampSidebarWidth, normalizeRightPanel, normalizeTabs, readStoredTab, readTabRef, type Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { handle, handleWithEvent } from './envelope'
 
@@ -76,6 +76,38 @@ function optionalSidebarLens(raw: Record<string, unknown>): SidebarLens | undefi
   if (v === undefined) return undefined
   if (!isSidebarLens(v)) throw new BridgeFailure('BAD_REQUEST', "'sidebarLens' must be 'files', 'focus', 'favorites', 'sessions' or 'recents'")
   return v
+}
+
+/** `zoom` (YAZ-6490): absent (untouched), or a finite number normalized to 50–200. */
+function optionalZoom(raw: Record<string, unknown>): number | undefined {
+  const v = raw.zoom
+  if (v === undefined) return undefined
+  if (!isFiniteNumber(v)) throw new BridgeFailure('BAD_REQUEST', "'zoom' must be a finite number")
+  return normalizeSidebarZoom(v)
+}
+
+/** `exploreSize` (YAZ-6490): absent (untouched), or one of `APP_ZOOM_STEPS`. */
+function optionalExploreSize(raw: Record<string, unknown>): number | undefined {
+  const v = raw.exploreSize
+  if (v === undefined) return undefined
+  if (!(APP_ZOOM_STEPS as readonly unknown[]).includes(v)) throw new BridgeFailure('BAD_REQUEST', "'exploreSize' must be an App zoom step")
+  return v as number
+}
+
+/** `tocZoom` (YAZ-6490): absent (untouched), or a finite number clamped to 50–200. */
+function optionalTocZoom(raw: Record<string, unknown>): number | undefined {
+  const v = raw.tocZoom
+  if (v === undefined) return undefined
+  if (!isFiniteNumber(v)) throw new BridgeFailure('BAD_REQUEST', "'tocZoom' must be a finite number")
+  return Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, Math.round(v)))
+}
+
+/** `sidebarWidth` (YAZ-6490): absent (untouched), or a finite number clamped to `[SIDEBAR_MIN_W, SIDEBAR_MAX_W]`. */
+function optionalSidebarWidth(raw: Record<string, unknown>): number | undefined {
+  const v = raw.sidebarWidth
+  if (v === undefined) return undefined
+  if (!isFiniteNumber(v)) throw new BridgeFailure('BAD_REQUEST', "'sidebarWidth' must be a finite number")
+  return clampSidebarWidth(v)
 }
 
 /**
@@ -214,7 +246,8 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc, hooks
   }
 
   handleWithEvent(CONTRACT.window.identity, async (e): Promise<WindowIdentity> => {
-    const { id, root, roots, file, tabs, tabStrip, name, rightPanel, sidebarCollapsed, sidebarLens, kind, zoom } = entryFor(e)
+    const { settings } = store.get()
+    const { id, root, roots, file, tabs, tabStrip, name, rightPanel, sidebarCollapsed, sidebarLens, kind, zoom, exploreSize, tocZoom, sidebarWidth } = entryFor(e)
     // A new window's page view goes out with its FIRST identity only (YAZ-2951 S17): a reload starts fresh.
     const startView = windows.takeStartView(id)
     // The page after a memory reload (YAZ-3737 D4, D12) gets each tab's view and the size it reloaded at, once.
@@ -228,8 +261,12 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc, hooks
     if (kind === 'files') windows.filesWide(id, false)
     // The card skill's copy (YAZ-5108), once main made it: the window shows it as the app's own vault.
     const cardSkill = cardSkillVault()
+    const resolvedZoom = normalizeSidebarZoom(zoom, settings.newWindowSidebarZoom)
+    const resolvedExploreSize = (APP_ZOOM_STEPS as readonly unknown[]).includes(exploreSize) ? (exploreSize as number) : settings.newWindowExploreSize
+    const resolvedTocZoom = isFiniteNumber(tocZoom) ? Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, tocZoom)) : settings.newWindowTocZoom
+    const resolvedSidebarWidth = isFiniteNumber(sidebarWidth) ? clampSidebarWidth(sidebarWidth) : SIDEBAR_DEFAULT_W
     // The copies and display names (YAZ-3057) go out with EVERY identity read: a reload keeps them, as a restart does.
-    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(reload !== undefined ? { reloadViews: reload.views, reloadedAtMb: reload.mb } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(startCollapsed ? { startCollapsed: true as const } : {}), ...(kind === undefined ? {} : { kind }), ...(kind === 'files' ? { zoom: normalizeFilesZoom(zoom) } : {}), ...(cardSkill === null ? {} : { cardSkill }), ...(windows.isReadOnly?.(id) ? { readOnly: true as const } : {}) }
+    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(reload !== undefined ? { reloadViews: reload.views, reloadedAtMb: reload.mb } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(startCollapsed ? { startCollapsed: true as const } : {}), ...(kind === undefined ? {} : { kind }), zoom: resolvedZoom, exploreSize: resolvedExploreSize, tocZoom: resolvedTocZoom, sidebarWidth: resolvedSidebarWidth, ...(cardSkill === null ? {} : { cardSkill }), ...(windows.isReadOnly?.(id) ? { readOnly: true as const } : {}) }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {
@@ -243,6 +280,10 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc, hooks
     const rightPanel = optionalRightPanel(patch)
     const sidebarCollapsed = optionalSidebarCollapsed(patch)
     const sidebarLens = optionalSidebarLens(patch)
+    const zoom = optionalZoom(patch)
+    const exploreSize = optionalExploreSize(patch)
+    const tocZoom = optionalTocZoom(patch)
+    const sidebarWidth = optionalSidebarWidth(patch)
     // A `name` in the patch is an unknown key and is ignored: a window is named through `window:set-name` alone (YAZ-3343 D14).
     const entry = entryFor(e)
     // The tabs invariant holds on the entry AS WRITTEN (GRO-2232): the loader's repair rule,
@@ -260,19 +301,16 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc, hooks
       roots,
       ...(sidebarCollapsed !== undefined ? { sidebarCollapsed } : {}),
       ...(sidebarLens !== undefined ? { sidebarLens } : {}),
+      ...(zoom !== undefined ? { zoom } : {}),
+      ...(exploreSize !== undefined ? { exploreSize } : {}),
+      ...(tocZoom !== undefined ? { tocZoom } : {}),
+      ...(sidebarWidth !== undefined ? { sidebarWidth } : {}),
       file: nextFile,
       tabs: nextTabs,
       // A patch without the strip keeps the stored one; the store makes it true to the new `tabs` (YAZ-3057).
       ...(tabStrip !== undefined ? { tabStrip } : {}),
       rightPanel: normalizeRightPanel(rightPanel ?? entry.rightPanel, nextTabs),
     }, opened)
-  })
-
-  // `window:files-zoom` (YAZ-3389 D13): the caller's OWN Files window sidebar zoom, a percent; main normalizes and stores it.
-  handleWithEvent(CONTRACT.window.filesZoom, async (e, percent: unknown) => {
-    if (typeof percent !== 'number' || !Number.isFinite(percent)) throw new BridgeFailure('BAD_REQUEST', 'percent must be a finite number')
-    const id = windows.idFor(e.sender)
-    if (id === undefined || !windows.setFilesZoom(id, percent)) throw new BridgeFailure('BAD_REQUEST', 'sender is not a Files window')
   })
 
   // `window:files-zoom-menu` (YAZ-3444): the caller's OWN Files window's zoom menu opened or closed; main holds that

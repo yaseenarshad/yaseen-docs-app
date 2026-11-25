@@ -1470,7 +1470,7 @@ describe('createWindowManager: openWindow / duplicateWindow (D6 plumbing)', () =
     createWindowManager(store, host).popOut(from, '/b/y.md')
     expect(created).toHaveLength(1)
     const entry = created[0].entry
-    expect(entry).toEqual({ id: entry.id, root: '/a', roots: ['/a', '/b'], file: '/b/y.md', tabs: ['/b/y.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, sidebarLens: 'focus', bounds: { x: 100 + WINDOW_CASCADE_PX, y: 100 + WINDOW_CASCADE_PX, width: 800, height: 600 } })
+    expect(entry).toEqual({ id: entry.id, root: '/a', roots: ['/a', '/b'], file: '/b/y.md', tabs: ['/b/y.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, sidebarLens: 'focus', bounds: { x: 100 + WINDOW_CASCADE_PX, y: 100 + WINDOW_CASCADE_PX, width: 800, height: 600 }, zoom: 100, exploreSize: 125, tocZoom: 100, sidebarWidth: 260 })
     expect(entry.id).not.toBe('w1')
     expect(entry.roots).not.toBe(from.roots) // by value, as ⌘⇧N (YAZ-2602 S34)
     // The source is untouched here: the renderer closes its own tab once the new window is there (D2).
@@ -1745,7 +1745,7 @@ describe('createWindowManager: the Inbox tab goes to another window (YAZ-5054)',
     const from = store.get().windows.find((w) => w.id === 'w1')!
     const id = manager.inboxToNewWindow(from, carry)
     const made = created.at(-1)!
-    expect(made.entry).toEqual({ id, root: '/a', roots: ['/a', '/b'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, sidebarLens: 'focus', bounds: { x: 10 + WINDOW_CASCADE_PX, y: 10 + WINDOW_CASCADE_PX, width: 800, height: 600 } })
+    expect(made.entry).toEqual({ id, root: '/a', roots: ['/a', '/b'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, sidebarLens: 'focus', bounds: { x: 10 + WINDOW_CASCADE_PX, y: 10 + WINDOW_CASCADE_PX, width: 800, height: 600 }, zoom: 100, exploreSize: 125, tocZoom: 100, sidebarWidth: 260 })
     expect(made.entry.roots).not.toBe(from.roots)
     expect(made.win.webContents.send).not.toHaveBeenCalled()
     manager.handleLinkReady(made.win.webContents)
@@ -2361,13 +2361,12 @@ describe('Files windows (YAZ-3357)', () => {
     expect(besideFilesBounds({ x: 1000, y: 80, width: 260, height: 700 }, [AREA])).toEqual({ x: 800, y: 80, width: 640, height: 700 })
   })
 
-  it('D5, D6: openFilesWindow stores kind files, takes the source\'s vaults (or the one asked for) and lens, and the source does not change', () => {
+  it('D5, D6: openFilesWindow stores kind files, takes the source\'s vaults (or the one asked for), sidebar width, zoom, and lens, and the source does not change', () => {
     const { manager, created } = seedFiles()
-    store.setSidebarWidth(300)
-    store.upsertWindow({ ...store.get().windows.find((w) => w.id === 'w3')!, sidebarLens: 'focus' })
+    store.upsertWindow({ ...store.get().windows.find((w) => w.id === 'w3')!, sidebarLens: 'focus', sidebarWidth: 300, zoom: 125, exploreSize: 150, tocZoom: 90 })
     expect(manager.openFilesWindow('w3', null)).toBe(true)
     const made = created.at(-1)!.entry
-    expect(made).toMatchObject({ kind: 'files', root: '/c', roots: ['/c'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'focus', bounds: { x: 140, y: 140, width: 300, height: 600 } })
+    expect(made).toMatchObject({ kind: 'files', root: '/c', roots: ['/c'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'focus', zoom: 125, exploreSize: 150, tocZoom: 90, sidebarWidth: 300, bounds: { x: 140, y: 140, width: 300, height: 600 } })
     expect(store.get().windows.find((w) => w.id === 'w3')?.bounds).toEqual({ x: 440, y: 140, width: 800, height: 600 })
     expect(manager.openFilesWindow('w1', '/z')).toBe(true)
     expect(created.at(-1)!.entry.roots).toEqual(['/z'])
@@ -2382,10 +2381,10 @@ describe('Files windows (YAZ-3357)', () => {
       return created.at(-1)!.entry.bounds
     }
     // The narrowest sidebar, 180 page px, is 225 screen px: flush left of w1 (x 400).
-    store.setSidebarWidth(180)
+    store.upsertWindow({ ...store.get().windows.find((w) => w.id === 'w1')!, sidebarWidth: 180 })
     expect(opened('w1')).toEqual({ x: 175, y: 100, width: 225, height: 600 })
     // The default sidebar, 260 page px, is 325 screen px.
-    store.setSidebarWidth(260)
+    store.upsertWindow({ ...store.get().windows.find((w) => w.id === 'w1')!, sidebarWidth: 260 })
     expect(opened('w1')).toEqual({ x: 75, y: 100, width: 325, height: 600 })
     // A collapsed source and no source give the default Files window width, 280 page px: 350 screen px.
     store.upsertWindow({ ...store.get().windows.find((w) => w.id === 'w1')!, sidebarCollapsed: true })
@@ -2483,35 +2482,45 @@ describe('Files windows (YAZ-3357)', () => {
     expect(f.flushCount()).toBe(1)
   })
 
-  it('a Files window opens at its source\'s sidebar zoom (YAZ-3487, demo round 3; it was one step above, YAZ-3389 D13) and keeps its own; a full window stores none; a new one starts with its tree closed', () => {
+  it('YAZ-6490: copied windows inherit source zoom, exploreSize, tocZoom, and sidebarWidth; brand-new openWindow uses Mac-local defaults', () => {
     const { manager, created } = seedFiles()
-    const zoomOf = (id: string) => store.get().windows.find((w) => w.id === id)?.zoom
-    // From a full window: the shared sidebar zoom as it is (100 → 100, 150 → 150).
+    // Brand-new window with no source uses settings.newWindow* defaults + SIDEBAR_DEFAULT_W:
+    store.setSettings({ ...store.get().settings, newWindowSidebarZoom: 125, newWindowExploreSize: 150, newWindowTocZoom: 90 })
+    manager.openWindow({ root: '/a', file: null })
+    expect(created.at(-1)!.entry).toMatchObject({ zoom: 125, exploreSize: 150, tocZoom: 90, sidebarWidth: 260 })
+
+    // Give w1 custom per-window prefs distinct from the new-window defaults:
+    const custom = { zoom: 150, exploreSize: 175, tocZoom: 75, sidebarWidth: 340 }
+    store.upsertWindow({ ...store.get().windows.find((w) => w.id === 'w1')!, ...custom })
+    const w1 = store.get().windows.find((w) => w.id === 'w1')!
+
+    // duplicateWindow (openBlank), openBehind, popOut, inboxToNewWindow, openFilesWindow, and filesToNormal all inherit:
+    manager.duplicateWindow(w1)
+    expect(created.at(-1)!.entry).toMatchObject(custom)
+
+    const behindId = manager.openBehind(w1)
+    expect(store.get().windows.find((w) => w.id === behindId)).toMatchObject(custom)
+
+    manager.popOut(w1, '/a/x.md')
+    expect(created.at(-1)!.entry).toMatchObject(custom)
+
+    const inboxId = manager.inboxToNewWindow(w1, { root: '/a' })
+    expect(store.get().windows.find((w) => w.id === inboxId)).toMatchObject(custom)
+
     manager.openFilesWindow('w1', null)
-    const made = created.at(-1)!.entry
-    expect(made.zoom).toBe(100)
-    expect(manager.takeStartCollapsed(made.id)).toBe(true)
-    expect(manager.takeStartCollapsed(made.id)).toBe(false) // once
-    store.setSettings({ ...store.get().settings, sidebarZoom: 150 })
-    manager.openFilesWindow('w2', null)
-    expect(created.at(-1)!.entry.zoom).toBe(150)
-    // From a Files window: ITS zoom, never the shared one.
-    expect(manager.setFilesZoom(made.id, 75)).toBe(true)
-    expect(zoomOf(made.id)).toBe(75)
-    manager.openFilesWindow(made.id, null)
-    expect(created.at(-1)!.entry.zoom).toBe(75)
-    manager.setFilesZoom(made.id, 200)
-    manager.openFilesWindow(made.id, null)
-    expect(created.at(-1)!.entry.zoom).toBe(200)
-    // A write is normalized: off-range clamps, an old Chromium level is the default.
-    manager.setFilesZoom(made.id, 999)
-    expect(zoomOf(made.id)).toBe(200)
-    manager.setFilesZoom(made.id, 3)
-    expect(zoomOf(made.id)).toBe(125)
-    // A full window has no zoom of its own: nothing is written.
-    expect(manager.setFilesZoom('w1', 150)).toBe(false)
-    expect(store.get().windows.find((w) => w.id === 'w1')).not.toHaveProperty('zoom')
-    expect(store.get().settings.sidebarZoom).toBe(150)
+    const filesEntry = created.at(-1)!.entry
+    expect(filesEntry).toMatchObject({ kind: 'files', ...custom })
+    expect(manager.takeStartCollapsed(filesEntry.id)).toBe(true)
+    expect(manager.takeStartCollapsed(filesEntry.id)).toBe(false) // once
+
+    // Files -> Files and Files -> Full inherit the Files window's own prefs:
+    store.upsertWindow({ ...filesEntry, zoom: 200, exploreSize: 110, tocZoom: 125, sidebarWidth: 310 })
+    manager.openFilesWindow(filesEntry.id, null)
+    expect(created.at(-1)!.entry).toMatchObject({ kind: 'files', zoom: 200, exploreSize: 110, tocZoom: 125, sidebarWidth: 310 })
+
+    expect(manager.filesToNormal(filesEntry.id)).toBe(true)
+    expect(created.at(-1)!.entry).toMatchObject({ zoom: 200, exploreSize: 110, tocZoom: 125, sidebarWidth: 310 })
+    expect(created.at(-1)!.entry).not.toHaveProperty('kind')
   })
 
   it('D2: the target is the most recently focused live FULL window that shows the vault, else the first; never a Files window or a hidden one', () => {

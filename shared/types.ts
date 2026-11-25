@@ -2687,11 +2687,11 @@ export interface SettingsState {
    */
   hotkeysAside: Partial<Record<string, boolean>>
   /**
-   * The zoom of the sidebar's lists in percent (YAZ-3389): the tree, the search results and every other
-   * tab's list, never the sidebar's header, tab row or footer. One value for every window. The steps are
-   * `SIDEBAR_ZOOM_STEPS`; a stored value is kept within 50–200 (`SIDEBAR_ZOOM_MIN` / `_MAX`).
+   * Default Sidebar zoom in percent for brand-new windows with no source window (YAZ-6490).
+   * Copied windows inherit their source window's zoom instead. Stays on this Mac (`LOCAL_SETTINGS`).
+   * The steps are `SIDEBAR_ZOOM_STEPS`; a stored value is kept within 50–200 (`SIDEBAR_ZOOM_MIN` / `_MAX`).
    */
-  sidebarZoom: number
+  newWindowSidebarZoom: number
   /**
    * Settings › Sidebar › Row spacing (YAZ-5885 D1–D3): the height of one row of the sidebar's lists in CSS px, before
    * the sidebar zoom. Compact 22 (VS Code) · Default 25.5 (the look before) · Roomy 30 · any Custom px within 20–40
@@ -2700,24 +2700,23 @@ export interface SettingsState {
    */
   sidebarRowHeight: number
   /**
-   * The zoom of a page's table of contents in percent (YAZ-3939 D7–D11): its names and their fold arrows, never its
-   * header or the rail. One value for every page and window; the code Outline keeps 100%. The steps are the sidebar's
-   * (`SIDEBAR_ZOOM_STEPS`); a stored value is kept within 50–200.
+   * Default Table of Contents zoom in percent for brand-new windows with no source window (YAZ-6490).
+   * Copied windows inherit their source window's TOC zoom instead. Stays on this Mac (`LOCAL_SETTINGS`).
+   * The steps are `SIDEBAR_ZOOM_STEPS`; a stored value is kept within 50–200.
    */
-  tocZoom: number
+  newWindowTocZoom: number
   /**
    * The App size in percent (YAZ-3432): the Chromium page zoom of EVERY window, a Files window too, set by main
    * (`webContents.setZoomFactor`). Only `APP_ZOOM_STEPS`; anything else is stored as 100. Mouse only: the footer's
-   * zoom menu writes it, never ⌘+ / ⌘− / ⌘0. The sidebar zoom and a page's zoom stack on it.
+   * zoom menu writes it, never ⌘+ / ⌘− / ⌘0. The sidebar zoom and a page's zoom stack on it. Stays on this Mac (`LOCAL_SETTINGS`).
    */
   appZoom: number
   /**
-   * Search size in percent (YAZ-5881 D1, D2; named Explore size before YAZ-5977, the key kept): the search panel's
-   * width and all that is in it (its input, its rows), on `APP_ZOOM_STEPS`; 125 by default (`EXPLORE_SIZE_DEFAULT`).
-   * Page, board and card windows keep the app's size (their text has the Explore page zoom alone). The footer's zoom
-   * menu writes it, and ⌘+ / ⌘− / ⌘0 while the search panel is in front (D3).
+   * Default Search size in percent for brand-new windows with no source window (YAZ-6490): on `APP_ZOOM_STEPS`;
+   * 125 by default (`EXPLORE_SIZE_DEFAULT`). Copied windows inherit their source window's Search size instead.
+   * Stays on this Mac (`LOCAL_SETTINGS`).
    */
-  exploreSize: number
+  newWindowExploreSize: number
   /**
    * Explore window width (YAZ-5976): the width, in px, a fresh Explore page or board window starts at — `null` (Default)
    * is the page panel's own width (`PAGE_WIDTH`, explore/layers.ts); a number (`EXPLORE_WIDTH_MIN`–`EXPLORE_WIDTH_MAX`)
@@ -2789,11 +2788,11 @@ export type GoToPlace = { kind: 'tab'; tab: SidebarLens } | { kind: 'folder' | '
 export const DEFAULT_GO_TO: GoToPlace = { kind: 'tab', tab: 'files' }
 
 /**
- * The settings that stay on this Mac when a settings folder is set (YAZ-3276 D1): a path, a panel memory
- * and a drag width each fit one Mac only, like `AppState.sidebarWidth`. So does the code tab's helper switch
+ * The settings that stay on this Mac when a settings folder is set (YAZ-3276 D1, YAZ-6490): paths, panel memory,
+ * drag widths, App size, and new-window zoom defaults each fit one Mac only. So does the code tab's helper switch
  * (YAZ-3500): its helpers are a download on this Mac. Every other field travels.
  */
-export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers', 'iconPacksFolder', 'sidebarRowHeight']
+export const LOCAL_SETTINGS: readonly (keyof SettingsState)[] = ['libraryFolder', 'canvasPanel', 'tableOfContentsWidth', 'codeLanguageHelpers', 'iconPacksFolder', 'sidebarRowHeight', 'appZoom', 'newWindowSidebarZoom', 'newWindowExploreSize', 'newWindowTocZoom']
 
 /**
  * The places a hover preview opens (YAZ-3403), each with its own switch in Settings › Files & Links › Preview on hover.
@@ -3402,11 +3401,11 @@ export const DEFAULT_SETTINGS: SettingsState = {
   gestureSounds: true,
   hotkeys: {},
   hotkeysAside: {},
-  sidebarZoom: 100,
+  newWindowSidebarZoom: 100,
   sidebarRowHeight: 25.5,
-  tocZoom: 100,
+  newWindowTocZoom: 100,
   appZoom: 100,
-  exploreSize: 125,
+  newWindowExploreSize: 125,
   exploreWidth: null,
   codeReadOnly: false,
   codeWrap: true,
@@ -3465,19 +3464,14 @@ export const FILES_WINDOW_DEFAULT_W = 280
 export const FILES_WINDOW_DEFAULT_H = 800
 /** How wide a Files window grows while Tabs Mission Control shows in it (YAZ-3357 D3); clamped to the screen. */
 export const FILES_WINDOW_WIDE_W = 1200
-/**
- * The sidebar zoom a Files window has when nothing better is known (YAZ-3389 D13): one step above the default
- * sidebar zoom, as ⌘⇧W gives a Files window over a full window at 100%. Also what an old stored Chromium level becomes.
- */
-export const FILES_WINDOW_ZOOM_DEFAULT = 125
 /** The old Chromium zoom levels a Files window kept before YAZ-3389 D13 (−8 … 9): never a sidebar zoom percent. */
 const OLD_FILES_ZOOM_LEVEL_MAX = 9
 /**
- * A Files window's own sidebar zoom in percent (YAZ-3389 D13), from any value: missing, not a finite number, or an old
- * Chromium level (−8 … 9) → `FILES_WINDOW_ZOOM_DEFAULT`; otherwise rounded and clamped to `SIDEBAR_ZOOM_MIN` … `_MAX`.
+ * A window's own sidebar zoom in percent (YAZ-6490), from any value: missing, not a finite number, or an old
+ * Chromium level (−8 … 9) → `fallback` (default `100`); otherwise rounded and clamped to `SIDEBAR_ZOOM_MIN` … `_MAX`.
  */
-export function normalizeFilesZoom(v: unknown): number {
-  if (typeof v !== 'number' || !Number.isFinite(v) || Math.abs(v) <= OLD_FILES_ZOOM_LEVEL_MAX) return FILES_WINDOW_ZOOM_DEFAULT
+export function normalizeSidebarZoom(v: unknown, fallback = 100): number {
+  if (typeof v !== 'number' || !Number.isFinite(v) || Math.abs(v) <= OLD_FILES_ZOOM_LEVEL_MAX) return fallback
   return Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, Math.round(v)))
 }
 /**
@@ -3571,12 +3565,16 @@ export interface WindowEntry {
    */
   kind?: WindowKind
   /**
-   * A Files window's own sidebar zoom in percent (YAZ-3389 D13, which replaced YAZ-3357 D11's Chromium level): only
-   * its list grows, as `settings.sidebarZoom` does in a full window, and the zoom menu's − % + and an unclaimed ⌘+ / ⌘− / ⌘0
-   * there change this value, never the shared one. ⌘⇧W starts it AT the sidebar zoom of the window it came
-   * from (YAZ-3487; it was one step above). Kept by the store on every Files window (`normalizeFilesZoom`); absent on a full window.
+   * This window's own sidebar zoom in percent (50–200, YAZ-6490): applies to both full windows and Files windows.
+   * Only the sidebar's lists grow; the header, tab row, footer, menus and pages keep their size.
    */
   zoom?: number
+  /** This window's own Explore Search size in percent (`APP_ZOOM_STEPS`, default 125; YAZ-6490). */
+  exploreSize?: number
+  /** This window's own Table of Contents zoom in percent (50–200, default 100; YAZ-6490). */
+  tocZoom?: number
+  /** This window's own sidebar width in CSS px, within [SIDEBAR_MIN_W, SIDEBAR_MAX_W] (default SIDEBAR_DEFAULT_W; YAZ-6490). */
+  sidebarWidth?: number
 }
 
 /** How much a page is used (YAZ-2663 D2): `score` is what its uses were worth at `last`, the time (ms) it last came on show. */
@@ -3903,8 +3901,6 @@ export interface RestoreSessionResult {
 export interface AppState {
   version: 1
   settings: SettingsState
-  /** Sidebar width in px, within [SIDEBAR_MIN_W, SIDEBAR_MAX_W]. */
-  sidebarWidth: number
   /** Most-recent first, max 10, de-duplicated. */
   recents: RecentRoots
   windows: WindowEntry[]
@@ -4080,7 +4076,7 @@ export function sameTabCanvas(a: TabCanvasState, b: TabCanvasState): boolean {
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [], settingsFolder: null, approvedPictureFolders: [], settingsSavedAt: 0, tabCanvas: defaultTabCanvas(), course: defaultCourseState() }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [], settingsFolder: null, approvedPictureFolders: [], settingsSavedAt: 0, tabCanvas: defaultTabCanvas(), course: defaultCourseState() }
 }
 
 export function defaultFolderState(): FolderState {
@@ -4760,8 +4756,14 @@ export interface WindowIdentity {
   cardSkill?: string
   /** `'files'` for a Files window (YAZ-3357 D1), as `WindowEntry.kind`. */
   kind?: WindowKind
-  /** A Files window's own sidebar zoom in percent (YAZ-3389 D13), as `WindowEntry.zoom`; absent on a full window. */
+  /** This window's own sidebar zoom in percent (50–200, YAZ-6490), as `WindowEntry.zoom`. */
   zoom?: number
+  /** This window's own Explore Search size in percent (`APP_ZOOM_STEPS`, YAZ-6490), as `WindowEntry.exploreSize`. */
+  exploreSize?: number
+  /** This window's own Table of Contents zoom in percent (50–200, YAZ-6490), as `WindowEntry.tocZoom`. */
+  tocZoom?: number
+  /** This window's own sidebar width in CSS px (YAZ-6490), as `WindowEntry.sidebarWidth`. */
+  sidebarWidth?: number
   /**
    * Transient read-only window (YAZ-4502): opened with `--read-only`, keeps the vault read-only in memory without
    * writing `.yaseendocs/read-only.json`. Given out by EVERY identity read (so reloads keep it); never persisted to `WindowEntry`.

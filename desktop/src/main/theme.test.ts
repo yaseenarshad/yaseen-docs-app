@@ -57,7 +57,7 @@ describe('subscribeNativeTheme', () => {
     subscribeNativeTheme(store, apply)
     expect(apply).toHaveBeenCalledExactlyOnceWith('system')
 
-    store.setSidebarWidth(321) // unrelated write
+    store.pushRecent('/v', 1) // unrelated write
     store.setSettings({ ...DEFAULT_SETTINGS, lineSpacing: 2 }) // settings write, same theme
     expect(apply).toHaveBeenCalledTimes(1)
 

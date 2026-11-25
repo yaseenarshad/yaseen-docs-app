@@ -58,8 +58,13 @@ interface SidebarStubProps {
   /** A Files window's header button (YAZ-3357 D8): Tabs Mission Control. */
   onShowAllTabs?: () => void
   onToNormalWindow?: () => void
-  filesZoom?: number
-  onFilesZoom?: (percent: number) => void
+  sidebarZoom?: number
+  onSidebarZoom?: (percent: number) => void
+  exploreSize?: number
+  onExploreSize?: (size: number) => void
+  defaultSidebarZoom?: number
+  defaultExploreSize?: number
+  onSetDefaultZooms?: (sidebar: number, explore: number) => void
   /** A Files window's floating preview (YAZ-3357 D9): its popup, or 'overlay'. */
   previewFloat?: unknown
   /** The vault rows the user closed (YAZ-2602 R9): App's, for the session. */
@@ -335,6 +340,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const linkTabAction = new Set<(req: { ref: TabRef; action: TabAction }) => void>()
   const linkFromFiles = new Set<(action: FilesAction) => void>()
   const linkTakeInbox = new Set<(carry: InboxCarry) => void>()
+  const linkOpenTarget = new Set<(req: { root: string; target: 'inbox' | 'today' }) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
   const fileDeleted = new Set<(ev: { path: string; kind: 'file' | 'dir' }) => void>()
   const dragLanded = new Set<(ev: { paths: string[] }) => void>()
@@ -382,7 +388,6 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     state: {
       get: vi.fn(async () => state),
       setSettings: vi.fn(async () => undefined),
-      setSidebarWidth: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
       removeRecent: vi.fn(async () => undefined),
       setFolder: vi.fn(async () => undefined),
@@ -406,7 +411,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         sidebarCollapsed: identity.sidebarCollapsed ?? false,
         sidebarLens: identity.sidebarLens ?? 'favorites',
       })),
-      setIdentity: vi.fn(async () => undefined),
+      setIdentity: vi.fn(async (_patch: Partial<Omit<WindowIdentity, 'id'>>) => undefined),
       open: vi.fn(),
       // ⌘⇧N (YAZ-2951 D5): the window saves its page, then asks main for the copy with its page view.
       duplicate: vi.fn(async (_view?: PageView) => undefined),
@@ -437,7 +442,6 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       filesWide: vi.fn(async (_open: boolean) => undefined),
       filesPreview: vi.fn(async (_req: unknown) => undefined),
       filesToNormal: vi.fn(async () => undefined),
-      filesZoom: vi.fn(async (_percent: number) => undefined),
       setRoots: vi.fn(async (_id: string, _roots: readonly string[]) => undefined),
       popOutTab: vi.fn(async (_from: string, _ref: TabRef) => undefined),
       addVaultAndTake: vi.fn(async (_to: string, _vault: string, _from: string, _ref: TabRef) => undefined),
@@ -562,6 +566,11 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       onTakeInbox: vi.fn((l: (carry: InboxCarry) => void) => {
         linkTakeInbox.add(l)
         return () => linkTakeInbox.delete(l)
+      }),
+      // A Vault App launcher target (`?open=inbox` or `?open=today`, YAZ-5967 / YAZ-6503).
+      onOpenTarget: vi.fn((l: (req: { root: string; target: 'inbox' | 'today' }) => void) => {
+        linkOpenTarget.add(l)
+        return () => linkOpenTarget.delete(l)
       }),
       ready: vi.fn(async () => undefined),
     },
@@ -704,6 +713,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitTabAction: (req: { ref: TabRef; action: TabAction }) => linkTabAction.forEach((l) => l(req)),
     emitFromFiles: (action: FilesAction) => linkFromFiles.forEach((l) => l(action)),
     emitTakeInbox: (carry: InboxCarry) => linkTakeInbox.forEach((l) => l(carry)),
+    emitOpenTarget: (req: { root: string; target: 'inbox' | 'today' }) => linkOpenTarget.forEach((l) => l(req)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
     emitDragLanded: (paths: string[]) => dragLanded.forEach((l) => l({ paths })),
     emitFileDeleted: (path: string, kind: 'file' | 'dir' = 'file') => fileDeleted.forEach((l) => l({ path, kind })),
@@ -1615,8 +1625,8 @@ describe('"Hide all others" in Files (YAZ-5790)', () => {
       expect(workspace.style.willChange).toBe('transform')
       animCalls[0]!.anim.onfinish?.()
       expect(workspace.style.willChange).toBe('')
-      // Unrelated state:changed broadcasts (e.g. recents/window updates with global sidebarWidth=220) must NOT clobber Tab A's restored 340px width.
-      act(() => emitStateChanged({ ...enabledState, sidebarWidth: 220 }))
+      // Unrelated state:changed broadcasts must NOT clobber Tab A's restored 340px width.
+      act(() => emitStateChanged({ ...enabledState, settingsSavedAt: 1 }))
       expect(shell().style.width).toBe('340px')
       act(() => tabButtons()[1]!.click())
       expect(shell().style.width).toBe('220px')
@@ -1721,15 +1731,28 @@ describe('App guide lines and folding defaults (YAZ-4094, YAZ-4119 fix 3)', () =
   })
 })
 
-describe('App sidebar zoom from the menu keys (YAZ-3389 D6)', () => {
-  it('with no page focused, ⌘+ at 200 writes nothing, and ⌘0 at 150 writes 100 over the other settings', async () => {
-    const at200: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarZoom: 200, theme: 'dark' } }
-    const { bridge, emitStateChanged, emitZoom } = await mount(at200, { id: 'w1', root: '/v', file: null, tabs: [] })
+describe('App sidebar zoom from the menu keys (YAZ-3389 D6, YAZ-6490)', () => {
+  it('with no page focused, ⌘+ at 200 writes nothing, and ⌘0 writes 100 to this window identity without touching settings; Set as default updates Mac-local defaults only', async () => {
+    const state: AppState = { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, theme: 'dark' } }
+    const { bridge, emitStateChanged, emitZoom } = await mount(state, { id: 'w1', root: '/v', file: null, tabs: [], zoom: 200, exploreSize: 150, tocZoom: 125 })
+    expect(captured.sidebar?.sidebarZoom).toBe(200)
+    expect(captured.sidebar?.exploreSize).toBe(150)
     act(() => emitZoom(1))
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith({ zoom: expect.anything() })
     expect(bridge.state.setSettings).not.toHaveBeenCalled()
-    act(() => emitStateChanged({ ...at200, settings: { ...at200.settings, sidebarZoom: 150 } }))
+    act(() => emitZoom(-1))
+    expect(captured.sidebar?.sidebarZoom).toBe(150)
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ zoom: 150 })
+    // Another window's settings broadcast (e.g. changing newWindowSidebarZoom) does not change this window's zoom:
+    act(() => emitStateChanged({ ...state, settings: { ...state.settings, newWindowSidebarZoom: 90, newWindowExploreSize: 110 } }))
+    expect(captured.sidebar?.sidebarZoom).toBe(150)
+    expect(captured.sidebar?.exploreSize).toBe(150)
+    // Set as default saves this window's Sidebar zoom & Search size into settings:
+    act(() => captured.sidebar!.onSetDefaultZooms!(150, 150))
+    expect(bridge.state.setSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, theme: 'dark', newWindowSidebarZoom: 150, newWindowExploreSize: 150 })
     act(() => emitZoom(0))
-    expect(bridge.state.setSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarZoom: 100, theme: 'dark' })
+    expect(captured.sidebar?.sidebarZoom).toBe(100)
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ zoom: 100 })
   })
 })
 
@@ -1872,7 +1895,7 @@ describe('App sidebar resize (YAZ-738)', () => {
     expect(sideW()).toBe(260)
     act(() => drag(el, 120))
     expect(sideW()).toBe(380)
-    expect(bridge.state.setSidebarWidth.mock.calls).toEqual([[380]])
+    expect(bridge.window.setIdentity.mock.calls.filter(([p]) => 'sidebarWidth' in p)).toEqual([[{ sidebarWidth: 380 }]])
   })
 
   it('YAZ-3511 D18, edge case 62: a drag goes well past 520 px and stops where the page keeps 360 px', async () => {
@@ -1882,7 +1905,7 @@ describe('App sidebar resize (YAZ-738)', () => {
     expect(sideW()).toBe(900)
     act(() => drag(el, 5000))
     expect(sideW()).toBe(1600 - 360)
-    expect(bridge.state.setSidebarWidth.mock.calls.at(-1)).toEqual([1240])
+    expect(bridge.window.setIdentity.mock.calls.filter(([p]) => 'sidebarWidth' in p).at(-1)).toEqual([{ sidebarWidth: 1240 }])
   })
 
   it('YAZ-3719 1A: while the edge is held, no frame takes the mouse, so a release over a diagram still ends the drag', async () => {
@@ -1900,7 +1923,7 @@ describe('App sidebar resize (YAZ-738)', () => {
     act(() => void window.dispatchEvent(new MouseEvent('mousemove', { clientX: 120 })))
     act(() => void window.dispatchEvent(new MouseEvent('mouseup', { clientX: 120 })))
     expect(sideW()).toBe(260)
-    expect(bridge.state.setSidebarWidth).not.toHaveBeenCalled()
+    expect(bridge.window.setIdentity.mock.calls.filter(([p]) => 'sidebarWidth' in p)).toEqual([])
   })
 
   it('the width goes to the sidebar alone, never to the whole window as an inherited variable (YAZ-2194)', async () => {
@@ -1920,7 +1943,7 @@ describe('App sidebar resize (YAZ-738)', () => {
     act(() => void window.dispatchEvent(new MouseEvent('mouseup', { clientX: 120 })))
     expect(captured.sidebarRenders).toBe(before + STRICT_RENDER)
     expect(sideW()).toBe(380)
-    expect(bridge.state.setSidebarWidth.mock.calls).toEqual([[380]])
+    expect(bridge.window.setIdentity.mock.calls.filter(([p]) => 'sidebarWidth' in p)).toEqual([[{ sidebarWidth: 380 }]])
   })
 
   it('the right panel still flips to overlay live, at the move that crosses the threshold (YAZ-2239)', async () => {
@@ -1946,7 +1969,7 @@ describe('App sidebar resize (YAZ-738)', () => {
     act(() => drag(el, 50 - 260))
     expect(visibleSidebar(el)).toBeNull()
     expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: true })
-    expect(bridge.state.setSidebarWidth).not.toHaveBeenCalled()
+    expect(bridge.window.setIdentity.mock.calls.filter(([p]) => 'sidebarWidth' in p)).toEqual([])
     act(() => emitToggleSidebar())
     expect(visibleSidebar(el)).not.toBeNull()
     expect(sideW()).toBe(260)
@@ -2906,6 +2929,68 @@ describe('App ⌘-click on the daily page button (YAZ-3776)', () => {
     expect(tabs(el)).toEqual(['plan', `${today()}*`, 'garden'])
     expect(captured.sidebar?.lens).toBe('files')
     expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: `${v}/Daily/${today()}.md`, focus: false })
+  })
+
+  it('YAZ-6503: a ?open=today launcher opens today\'s daily page without expanding a collapsed sidebar or revealing in Files', async () => {
+    const v = `/daily-${++n}`
+    const dailyPath = `${v}/Daily/${today()}.md`
+    const files: Record<string, { content: string; mtime: number }> = { [dailyPath]: { content: '# Today\n', mtime: 1 } }
+    const { el, bridge, emitOpenTarget } = await mount(
+      { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, dailyPages: true, dailyPageFolder: 'Daily' } },
+      { id: 'w1', root: v, file: `${v}/Projects/plan.md`, tabs: [`${v}/Projects/plan.md`], sidebarCollapsed: true, sidebarLens: 'recents' },
+      files,
+      (b) => {
+        b.bridge.index.mockImplementation(async (root: string) => ({ root, records: [], folders: [], generatedAt: 1, ids: false }))
+        b.bridge.tree.mockImplementation(async (root: string) => ({
+          root,
+          tree: [
+            { type: 'dir', name: 'Daily', path: `${v}/Daily`, children: [page(dailyPath)] },
+            { type: 'dir', name: 'Projects', path: `${v}/Projects`, children: [page(`${v}/Projects/plan.md`)] },
+          ],
+          generatedAt: 1,
+        }))
+      },
+    )
+    expect(visibleSidebar(el)).toBeNull()
+    act(() => emitOpenTarget({ root: v, target: 'today' }))
+    await act(async () => {})
+    await act(async () => {})
+    expect(tabs(el)).toEqual(['plan', `${today()}*`])
+    // Sidebar stays collapsed and never switches to Files or requests a reveal.
+    expect(visibleSidebar(el)).toBeNull()
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ sidebarCollapsed: false }))
+    expect(captured.sidebar?.lens).toBe('recents')
+    expect(captured.sidebar?.revealRequest ?? null).toBeNull()
+  })
+
+  it('YAZ-6503: a ?open=today launcher when today\'s daily note is already active keeps an open sidebar on its current tab with no reveal jump', async () => {
+    const v = `/daily-${++n}`
+    const dailyPath = `${v}/Daily/${today()}.md`
+    const files: Record<string, { content: string; mtime: number }> = { [dailyPath]: { content: '# Today\n', mtime: 1 } }
+    const { el, emitOpenTarget } = await mount(
+      { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, dailyPages: true, dailyPageFolder: 'Daily' } },
+      { id: 'w1', root: v, file: dailyPath, tabs: [dailyPath, `${v}/Projects/plan.md`], sidebarCollapsed: false, sidebarLens: 'recents' },
+      files,
+      (b) => {
+        b.bridge.index.mockImplementation(async (root: string) => ({ root, records: [], folders: [], generatedAt: 1, ids: false }))
+        b.bridge.tree.mockImplementation(async (root: string) => ({
+          root,
+          tree: [
+            { type: 'dir', name: 'Daily', path: `${v}/Daily`, children: [page(dailyPath)] },
+            { type: 'dir', name: 'Projects', path: `${v}/Projects`, children: [page(`${v}/Projects/plan.md`)] },
+          ],
+          generatedAt: 1,
+        }))
+      },
+    )
+    expect(tabs(el)).toEqual([`${today()}*`, 'plan'])
+    expect(captured.sidebar?.lens).toBe('recents')
+    act(() => emitOpenTarget({ root: v, target: 'today' }))
+    await act(async () => {})
+    await act(async () => {})
+    expect(tabs(el)).toEqual([`${today()}*`, 'plan'])
+    expect(captured.sidebar?.lens).toBe('recents')
+    expect(captured.sidebar?.revealRequest ?? null).toBeNull()
   })
 
   it('YAZ-4985: in a read-only vault today\'s page is a New page, so it asks first; Cancel makes nothing, "Unlock for 10 minutes" makes it', async () => {
@@ -8305,17 +8390,17 @@ describe('App Files window (YAZ-3357)', () => {
     expect(bridge.window.filesToNormal).toHaveBeenCalledTimes(1)
   })
 
-  it('YAZ-3389 D13: the sidebar zoom is the window\'s own — an unclaimed ⌘+ / ⌘0 and the footer write `window:files-zoom`, never the shared settings', async () => {
+  it('YAZ-3389 D13, YAZ-6490: the sidebar zoom is the window\'s own — an unclaimed ⌘+ / ⌘0 and the footer write `window:set-identity`, never the shared settings', async () => {
     const { bridge, emitZoom } = await mount({ ...defaultAppState(), windows: [entry({ ...FILES, zoom: 150 })] }, { ...FILES, zoom: 150 })
-    expect((await filesSidebar()).filesZoom).toBe(150)
+    expect((await filesSidebar()).sidebarZoom).toBe(150)
     act(() => emitZoom(1))
-    expect(captured.sidebar!.filesZoom).toBe(200)
+    expect(captured.sidebar!.sidebarZoom).toBe(200)
     // At the wall nothing is written; the footer's value and ⌘0 are the window's too.
     act(() => emitZoom(1))
-    act(() => captured.sidebar!.onFilesZoom!(125))
+    act(() => captured.sidebar!.onSidebarZoom!(125))
     act(() => emitZoom(0))
-    expect(bridge.window.filesZoom.mock.calls).toEqual([[200], [125], [100]])
-    expect(captured.sidebar!.filesZoom).toBe(100)
+    expect(bridge.window.setIdentity.mock.calls.filter(([p]) => 'zoom' in p)).toEqual([[{ zoom: 200 }], [{ zoom: 125 }], [{ zoom: 100 }]])
+    expect(captured.sidebar!.sidebarZoom).toBe(100)
     expect(bridge.state.setSettings).not.toHaveBeenCalled()
   })
 

@@ -156,9 +156,9 @@ test('step 1 — the sidebar edge drags 260 → 380', async () => {
   expect(await sidebarWidth(win)).toBe(WIDENED_W)
 })
 
-test('step 2 — the width survives quit → relaunch, on disk as AppState.sidebarWidth', async () => {
+test('step 2 — the width survives quit → relaunch, on disk as WindowEntry.sidebarWidth', async () => {
   await quitApp(app) // the REAL quit path: the pending state write is flushed before exit
-  expect((await readState(userData)).sidebarWidth).toBe(WIDENED_W)
+  expect((await readState(userData)).windows.find((w) => w.id === 'w1')?.sidebarWidth).toBe(WIDENED_W)
 
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')

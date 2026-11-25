@@ -47,7 +47,6 @@ export function writeState(profile, wins, settings = {}) {
   const state = {
     version: 1,
     settings,
-    sidebarWidth: 280,
     recents: [...new Set(wins.map((w) => w.root))].map((p) => ({ path: p, lastOpened: Date.now() })),
     windows: wins.map((w, i) => ({
       id: w.id,
@@ -57,6 +56,7 @@ export function writeState(profile, wins, settings = {}) {
       rightPanel: { open: false, width: 420, items: [], expanded: null },
       sidebarCollapsed: false,
       sidebarLens: 'files',
+      sidebarWidth: 280,
       bounds: { x: 40 + i * 40, y: 40 + i * 30, width: 1280, height: 860 },
     })),
     folders: Object.fromEntries(wins.map((w) => [w.root, { expanded: [], lastFile: w.tabs[0] ?? null, folds: {}, baseGroups: {}, name: null }])),

@@ -180,7 +180,7 @@ test('step 1 — "Zoom the sidebar in": 125%, a tree row 1.25× taller, the head
 
 test('step 2 — quit and launch again: the state file says 125 and the sidebar comes back at 125%', async () => {
   await quitApp(app)
-  expect((await readState(userData)).settings.sidebarZoom).toBe(125)
+  expect((await readState(userData)).windows.find((w) => w.id === 'w1')?.zoom).toBe(125)
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')
   await expect(zoomChip(win)).toHaveText('125%')
@@ -221,9 +221,9 @@ test('step 6 — a Files window (D13): it opens at the zoom of the window that o
   await clickMenuItem(app, 'menu.view.zoom-in', filesId)
   await expect(zoomChip(files)).toHaveText('150%')
   await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === filesId)?.zoom).toBe(150)
-  // The full window and the shared setting never moved; no window has a Chromium zoom.
+  // The full window never moved; no window has a Chromium zoom.
   await expect(zoomChip(win)).toHaveText('100%')
-  expect((await readState(userData)).settings.sidebarZoom).toBe(100)
+  expect((await readState(userData)).windows.find((w) => w.id === 'w1')?.zoom).toBe(100)
   expect(await zoomLevel(app, filesId)).toBe(0)
   expect(await zoomLevel(app)).toBe(0)
   await shoot(files, 'sidebarzoom-06-files-window')
@@ -263,7 +263,7 @@ test('step 8 — YAZ-3401: with an update ready, the footer fits from 180 px up,
   try {
     if (app !== undefined) await quitApp(app) // undefined when this step runs alone (`-g "step 8"`)
     const seed = seededState(vault, null)
-    seed.sidebarWidth = SIDEBAR_MIN_W
+    seed.windows[0].sidebarWidth = SIDEBAR_MIN_W
     app = await launchApp({ userData, seedState: seed, env: { YASEEN_DOCS_UPDATE_FEED: `http://127.0.0.1:${(server.address() as AddressInfo).port}/releases` } })
     win = await appWindow(app, 'w1')
     await clickMenuItem(app, 'menu.app.check-updates', 'w1')

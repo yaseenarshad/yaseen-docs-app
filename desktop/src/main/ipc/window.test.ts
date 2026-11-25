@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { ipcMain } from 'electron'
-import { MAX_FOLD_KEYS_PER_FILE, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type PageView, type StartView, type TabRef, type TearOffResult, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { MAX_FOLD_KEYS_PER_FILE, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, SIDEBAR_DEFAULT_W, SIDEBAR_MAX_W, SIDEBAR_MIN_W, defaultRightPanelIdentity, type PageView, type StartView, type TabRef, type TearOffResult, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { CONTRACT, SPECIAL, type Envelope } from '@shared/ipc'
 import { setCardSkillVault } from '@shared/appVaults'
 import { createStore, type Store } from '../store'
@@ -71,7 +71,6 @@ let manager: {
   openFromFiles: ReturnType<typeof vi.fn<(from: string, action: unknown) => boolean>>
   filesWide: ReturnType<typeof vi.fn<(id: string, open: boolean) => boolean>>
   filesPreview: ReturnType<typeof vi.fn<(id: string, req: unknown) => boolean>>
-  setFilesZoom: ReturnType<typeof vi.fn<(id: string, percent: number) => boolean>>
   filesZoomMenu: ReturnType<typeof vi.fn<(id: string, open: boolean) => boolean>>
   filesToNormal: ReturnType<typeof vi.fn<(id: string) => boolean>>
 }
@@ -85,7 +84,7 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   store.upsertWindow(entry)
   unregister = windows.register({ webContents: sender }, 'w1')
-  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), inboxToNewWindow: vi.fn(() => 'w9'), moveInboxTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), tearOff: vi.fn((): TearOffResult => 'opened'), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), addVaultAndTake: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), raise: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), appNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeReload: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), takeStartCollapsed: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), setFilesZoom: vi.fn(() => true), filesZoomMenu: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
+  manager = { idFor: windows.idFor, openWindow: vi.fn(), duplicateWindow: vi.fn(), popOut: vi.fn(), moveTo: vi.fn(() => true), inboxToNewWindow: vi.fn(() => 'w9'), moveInboxTo: vi.fn(() => true), focusTab: vi.fn(() => true), closeTabs: vi.fn(() => true), moveTab: vi.fn(() => true), tearOff: vi.fn((): TearOffResult => 'opened'), setName: vi.fn(() => true), closeOther: vi.fn(() => true), setRoots: vi.fn(() => true), addVaultAndTake: vi.fn(() => true), popOutTab: vi.fn(() => true), showWindow: vi.fn(() => true), raise: vi.fn(() => true), hiddenWindows: vi.fn(() => ['w9']), minimizedWindows: vi.fn(() => ['w2']), highlightTab: vi.fn(), tabAction: vi.fn(() => true), openBehind: vi.fn(() => 'w9'), highlight: vi.fn(), openRecentBeside: vi.fn(() => true), openAlone: vi.fn(() => true), openVaultSet: vi.fn(() => ({ opened: true, missing: [] })), closeWindow: vi.fn(), handleFlushed: vi.fn(), handleLinkReady: vi.fn(), vaultNotice: vi.fn(), appNotice: vi.fn(), takeStartView: vi.fn(() => undefined), takeReload: vi.fn(() => undefined), takeStartEmpty: vi.fn(() => false), takeStartCollapsed: vi.fn(() => false), openFilesWindow: vi.fn(() => true), openFromFiles: vi.fn(() => true), filesWide: vi.fn(() => true), filesPreview: vi.fn(() => true), filesZoomMenu: vi.fn(() => true), filesToNormal: vi.fn(() => true) }
   registerWindowIpc(store, manager)
 })
 afterEach(async () => {
@@ -107,7 +106,7 @@ describe('window lookup', () => {
 describe('registerWindowIpc', () => {
   it('registers every window channel the preload invokes, `link:ready` and the paste fallback (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.inboxToNewWindow.channel, CONTRACT.window.moveInboxTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.tearOff.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.addVaultAndTake.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.raise.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.pageClosed.channel, CONTRACT.window.forgetClosed.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.openFiles.channel, CONTRACT.window.openFromFiles.channel, CONTRACT.window.filesWide.channel, CONTRACT.window.filesPreview.channel, CONTRACT.window.filesToNormal.channel, CONTRACT.window.filesZoom.channel, CONTRACT.window.filesZoomMenu.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
+    expect(channels).toEqual([CONTRACT.window.identity.channel, CONTRACT.window.setIdentity.channel, CONTRACT.window.open.channel, CONTRACT.window.duplicate.channel, CONTRACT.window.popOut.channel, CONTRACT.window.moveTo.channel, CONTRACT.window.inboxToNewWindow.channel, CONTRACT.window.moveInboxTo.channel, CONTRACT.window.focusTab.channel, CONTRACT.window.closeTabs.channel, CONTRACT.window.moveTab.channel, CONTRACT.window.tearOff.channel, CONTRACT.window.setName.channel, CONTRACT.window.closeOther.channel, CONTRACT.window.openBehind.channel, CONTRACT.window.setRoots.channel, CONTRACT.window.addVaultAndTake.channel, CONTRACT.window.popOutTab.channel, CONTRACT.window.showWindow.channel, CONTRACT.window.raise.channel, CONTRACT.window.hiddenWindows.channel, CONTRACT.window.minimizedWindows.channel, CONTRACT.window.highlightTab.channel, CONTRACT.window.tabAction.channel, CONTRACT.window.highlight.channel, CONTRACT.window.openRecent.channel, CONTRACT.window.openAlone.channel, CONTRACT.window.pageClosed.channel, CONTRACT.window.forgetClosed.channel, CONTRACT.window.openSet.channel, CONTRACT.window.saveSet.channel, CONTRACT.window.renameSet.channel, CONTRACT.window.removeSet.channel, CONTRACT.window.saveSession.channel, CONTRACT.window.restoreSession.channel, CONTRACT.window.renameSession.channel, CONTRACT.window.setSessionTabs.channel, CONTRACT.window.removeSession.channel, CONTRACT.window.closeSelf.channel, CONTRACT.window.openFiles.channel, CONTRACT.window.openFromFiles.channel, CONTRACT.window.filesWide.channel, CONTRACT.window.filesPreview.channel, CONTRACT.window.filesToNormal.channel, CONTRACT.window.filesZoomMenu.channel, CONTRACT.link.ready.channel, SPECIAL.menuPasteTextFallback.channel].sort())
   })
 
   it('native paste fallback inserts the captured text into only the registered sender', async () => {
@@ -122,13 +121,13 @@ describe('registerWindowIpc', () => {
   })
 
   it('window:identity answers the complete per-window identity for a registered sender', async () => {
-    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files' }))
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', zoom: 100, exploreSize: 125, tocZoom: 100, sidebarWidth: SIDEBAR_DEFAULT_W }))
   })
 
   it('YAZ-5108: window:identity names the card skill\'s copy once main made it, and the window\'s own roots stay as stored', async () => {
     setCardSkillVault('/Users/demo/Library/Application Support/Yaseen Docs/card-skill')
     try {
-      expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', cardSkill: '/Users/demo/Library/Application Support/Yaseen Docs/card-skill' }))
+      expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', zoom: 100, exploreSize: 125, tocZoom: 100, sidebarWidth: SIDEBAR_DEFAULT_W, cardSkill: '/Users/demo/Library/Application Support/Yaseen Docs/card-skill' }))
     } finally {
       setCardSkillVault(null)
     }
@@ -192,7 +191,7 @@ describe('registerWindowIpc', () => {
     expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'focus' }])
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'favorites' })).toEqual(ok(undefined))
     expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'favorites' }])
-    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'favorites' }))
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'favorites', zoom: 100, exploreSize: 125, tocZoom: 100, sidebarWidth: SIDEBAR_DEFAULT_W }))
     // The Sessions tab is a stored lens too (YAZ-3147 D4, S35).
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { sidebarLens: 'sessions' })).toEqual(ok(undefined))
     expect(store.get().windows).toEqual([{ ...entry, sidebarLens: 'sessions' }])
@@ -210,7 +209,7 @@ describe('registerWindowIpc', () => {
   it('window:set-identity holds no focus list: the list is the vault\'s, behind `focus.set` (YAZ-2702 Decision 1) — a `focusList` in a patch is an unknown key, and neither the entry nor window:identity gains it', async () => {
     expect(await registered(CONTRACT.window.setIdentity.channel)({ sender }, { focusList: ['/v/a', '/v/b.md'], sidebarCollapsed: true })).toEqual(ok(undefined))
     expect(store.get().windows).toEqual([{ ...entry, sidebarCollapsed: true }])
-    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: true, sidebarLens: 'files' }))
+    expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: true, sidebarLens: 'files', zoom: 100, exploreSize: 125, tocZoom: 100, sidebarWidth: SIDEBAR_DEFAULT_W }))
   })
 
   describe('the vault list (YAZ-2602 D1, S76)', () => {
@@ -572,23 +571,28 @@ describe('registerWindowIpc', () => {
     expect(manager.filesWide).toHaveBeenCalledExactlyOnceWith('w1', false)
   })
 
-  it('YAZ-3389 D13: a Files window\'s identity carries its own sidebar zoom, normalized; window:files-zoom checks the percent and writes the CALLER\'s window only', async () => {
+  it('YAZ-6490: window:identity and window:set-identity carry and validate per-window zoom, exploreSize, tocZoom, and sidebarWidth for every window (full and Files alike)', async () => {
     const identity = registered(CONTRACT.window.identity.channel)
-    const set = registered(CONTRACT.window.filesZoom.channel)
-    // A full window: no zoom of its own on the identity, and main refuses the write (its zoom is settings.sidebarZoom).
-    expect(await identity({ sender })).toEqual(ok(expect.not.objectContaining({ zoom: expect.anything() })))
-    manager.setFilesZoom.mockReturnValueOnce(false)
-    expect(await set({ sender }, 150)).toEqual(bad('BAD_REQUEST'))
-    // A Files window: a stored old Chromium level reads as the default, a stored percent as itself.
+    const set = registered(CONTRACT.window.setIdentity.channel)
+    // Full window reads defaults when entry has none:
+    expect(await identity({ sender })).toEqual(ok(expect.objectContaining({ zoom: 100, exploreSize: 125, tocZoom: 100, sidebarWidth: SIDEBAR_DEFAULT_W })))
+    // Valid updates persist and round-trip:
+    expect(await set({ sender }, { zoom: 150, exploreSize: 175, tocZoom: 90, sidebarWidth: 340 })).toEqual(ok(undefined))
+    expect(await identity({ sender })).toEqual(ok(expect.objectContaining({ zoom: 150, exploreSize: 175, tocZoom: 90, sidebarWidth: 340 })))
+    // Clamping / normalization:
+    expect(await set({ sender }, { zoom: 999, tocZoom: 10, sidebarWidth: 9999 })).toEqual(ok(undefined))
+    expect(await identity({ sender })).toEqual(ok(expect.objectContaining({ zoom: 200, tocZoom: 50, sidebarWidth: SIDEBAR_MAX_W })))
+    expect(await set({ sender }, { sidebarWidth: 5 })).toEqual(ok(undefined))
+    expect(await identity({ sender })).toEqual(ok(expect.objectContaining({ sidebarWidth: SIDEBAR_MIN_W })))
+    // Invalid types/values are rejected as BAD_REQUEST:
+    for (const badPatch of [{ zoom: '150' }, { zoom: Number.NaN }, { exploreSize: 133 }, { exploreSize: '125' }, { tocZoom: Number.POSITIVE_INFINITY }, { sidebarWidth: '300' }]) {
+      expect(await set({ sender }, badPatch)).toEqual(bad('BAD_REQUEST'))
+    }
+    // Files window uses the exact same path (and old Chromium level 3 falls back to newWindowSidebarZoom):
     store.upsertWindow({ ...entry, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), kind: 'files', zoom: 3 })
-    expect(await identity({ sender })).toEqual(ok(expect.objectContaining({ kind: 'files', zoom: 125 })))
-    store.upsertWindow({ ...entry, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), kind: 'files', zoom: 150 })
-    expect(await identity({ sender })).toEqual(ok(expect.objectContaining({ zoom: 150 })))
-    expect(await set({ sender }, 200)).toEqual(ok(undefined))
-    expect(manager.setFilesZoom).toHaveBeenLastCalledWith('w1', 200)
-    for (const junk of ['150', Number.NaN, null]) expect(await set({ sender }, junk)).toEqual(bad('BAD_REQUEST'))
-    expect(await set({ sender: stranger }, 150)).toEqual(bad('BAD_REQUEST'))
-    expect(manager.setFilesZoom).toHaveBeenCalledTimes(2)
+    expect(await identity({ sender })).toEqual(ok(expect.objectContaining({ kind: 'files', zoom: 100 })))
+    expect(await set({ sender }, { zoom: 125, exploreSize: 150, tocZoom: 110, sidebarWidth: 310 })).toEqual(ok(undefined))
+    expect(await identity({ sender })).toEqual(ok(expect.objectContaining({ kind: 'files', zoom: 125, exploreSize: 150, tocZoom: 110, sidebarWidth: 310 })))
   })
 
   it('YAZ-3444: window:files-zoom-menu takes a boolean and tells main about the CALLER\'s Files window only; a full window is refused', async () => {
@@ -897,7 +901,7 @@ describe('registerWindowIpc', () => {
       expect(await setIdentity()({ sender }, { tabs: ['/v/a.md', '/v/b.md'], tabStrip, file: '/v/a.md' })).toEqual(ok(undefined))
       expect(store.get().windows[0].tabStrip).toEqual(tabStrip)
       for (let read = 0; read < 2; read++) {
-        expect(await identity()({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], tabStrip, rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files' }))
+        expect(await identity()({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], tabStrip, rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', zoom: 100, exploreSize: 125, tocZoom: 100, sidebarWidth: SIDEBAR_DEFAULT_W }))
       }
       const answered = (await identity()({ sender })) as { value: { tabStrip: unknown[] } }
       expect(answered.value.tabStrip[0]).not.toBe(store.get().windows[0].tabStrip?.[0])
@@ -958,7 +962,7 @@ describe('registerWindowIpc', () => {
       const start: StartView = { path: '/v/a.md', view: VIEW }
       manager.takeStartView.mockReturnValueOnce(start)
       const identity = registered(CONTRACT.window.identity.channel)
-      expect(await identity({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', startView: start }))
+      expect(await identity({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', zoom: 100, exploreSize: 125, tocZoom: 100, sidebarWidth: SIDEBAR_DEFAULT_W, startView: start }))
       expect(manager.takeStartView).toHaveBeenCalledWith('w1')
       const again = (await identity({ sender })) as { value: WindowIdentity }
       expect(again.value).not.toHaveProperty('startView')

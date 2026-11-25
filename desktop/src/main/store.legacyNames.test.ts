@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DEFAULT_SETTINGS, SIDEBAR_DEFAULT_W, defaultAppState, type AppState } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, type AppState } from '@shared/types'
 import { createStore, mergeFolderSettings, sanitizeSettings } from './store'
 
 let dir: string
@@ -79,7 +79,7 @@ describe('YAZ-5036: the saved names that said "note" move to "page" once', () =>
     const store = createStore(file)
     expect(store.get().settings).toMatchObject(NEW)
     expect(store.get().settings.hotkeys).toEqual({ 'page.bold': 'CmdOrCtrl+Alt+B', 'page.foldAll': null, 'app.dailyPage': 'CmdOrCtrl+Alt+T' })
-    store.setSidebarWidth(SIDEBAR_DEFAULT_W + 10)
+    store.pushRecent('/v', 1)
     await store.flush()
     const saved = (await onDisk()).settings as unknown as Record<string, unknown>
     expect(saved).toMatchObject(NEW)

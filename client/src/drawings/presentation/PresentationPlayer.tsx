@@ -309,7 +309,7 @@ export function PresentationPlayer({ engine, excalidrawAPI, initialFrameId = nul
       } else if (event.shiftKey && (key === 't' || key === 'T')) {
         // Shift, so plain `t` still reaches the engine's text tool.
         toggleTools()
-      } else if (key === 'Tab' && !toolsVisible) {
+      } else if (key === 'Tab' && !event.metaKey && !event.ctrlKey && !event.altKey && !toolsVisible) {
         // With tools shown the overlay is no longer modal, so the trap would make the toolbar
         // unreachable by keyboard.
         const controls = overlayRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')

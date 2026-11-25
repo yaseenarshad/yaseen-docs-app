@@ -468,7 +468,7 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
     <div ref={rootRef} className="page-settings"
       onKeyDown={(event) => {
         if (!open) return
-        if (event.key === 'Tab') {
+        if (event.key === 'Tab' && !event.metaKey && !event.ctrlKey && !event.altKey) {
           tabAcross(event)
           return
         }
