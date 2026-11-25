@@ -744,6 +744,15 @@ button {
   --inline-code-plum-fg: #d8b4fe;
   --inline-code-plum-bg: rgba(216, 180, 254, 0.16);
 }
+/* Inline code flows with adjacent punctuation (YAZ-6505, matching YAZ-4991 pills and YAZ-5683 table cells):
+   Crepe's reset.css sets `display: inline-block` on `.milkdown .ProseMirror code`, which treats inline code as an
+   atomic box and lets Chromium break a line right before closing punctuation like `)` or `.`. Inline + cloned
+   box-decoration keeps `Application)` together and lets multi-word inline code wrap cleanly across lines. */
+.milkdown .ProseMirror :not(pre) > code {
+  display: inline;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
 /* 'classic' intentionally has no override rule so it falls through to Crepe's original red-on-grey inline code style. */
 [data-inline-code-style='default'] .milkdown .ProseMirror code {
   color: var(--inline-code-default-fg);
