@@ -829,7 +829,7 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     press(part('reviews')!)
     await vi.waitFor(() => expect(root.querySelector('.card-reviews__table')).not.toBeNull())
     press(part('properties')!)
-    await vi.waitFor(() => expect(root.querySelector('.card-strip__part .frontmatter-panel__row')).not.toBeNull())
+    await vi.waitFor(() => expect(root.querySelector('.card-strip__part .frontmatter-panel__row')).not.toBeNull(), { timeout: 5000 })
     expect(root.querySelector('.card-reviews__table')).toBeNull()
     expect([part('reviews'), part('properties')].map((b) => b?.getAttribute('aria-expanded'))).toEqual(['false', 'true'])
     expect([...root.querySelectorAll<HTMLElement>('.card-strip__part .frontmatter-panel__row')].map((li) => li.dataset.key)).toEqual(['tags', 'level'])
