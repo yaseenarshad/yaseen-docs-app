@@ -89,12 +89,13 @@ describe('inlineRowMenu (YAZ-6469)', () => {
       ['Open in'],
     ])
 
-    // With Explore callback: includes Open in Explore
+    // With Explore + New window callbacks: includes Open in new window right after Open in new tab (YAZ-6513)
     const onOpenInlineDrawingExplore = vi.fn()
-    const h = makeHandlers({ onOpenInlineDrawingExplore })
+    const onOpenNewWindow = vi.fn()
+    const h = makeHandlers({ onOpenInlineDrawingExplore, onOpenNewWindow })
     const sections = inlineRowMenuSections(drawingRow, h)
     expect(groupLabels(sections)).toEqual([
-      ['Show in page', 'Open in new tab', 'Open in Explore', 'Show in sidebar'],
+      ['Show in page', 'Open in new tab', 'Open in new window', 'Open in Explore', 'Show in sidebar'],
       ['Copy path'],
       ['Open in'],
     ])
@@ -110,6 +111,9 @@ describe('inlineRowMenu (YAZ-6469)', () => {
 
     ;(findItem(sections, 'Open in new tab') as MenuAction).onSelect()
     expect(h.openSearchCard).toHaveBeenCalledExactlyOnceWith(drawingRow, true)
+
+    ;(findItem(sections, 'Open in new window') as MenuAction).onSelect()
+    expect(onOpenNewWindow).toHaveBeenCalledExactlyOnceWith(PAGE)
 
     ;(findItem(sections, 'Open in Explore') as MenuAction).onSelect()
     expect(onOpenInlineDrawingExplore).toHaveBeenCalledExactlyOnceWith(PAGE, 0)
@@ -145,10 +149,11 @@ describe('inlineRowMenu (YAZ-6469)', () => {
       size: 1,
     })
 
-    const h = makeHandlers()
+    const onOpenNewWindow = vi.fn()
+    const h = makeHandlers({ onOpenNewWindow })
     const sections = inlineRowMenuSections(cardRow, h)
     expect(groupLabels(sections)).toEqual([
-      ['Show in page', 'Open in new tab', 'Open in Explore', 'Show in sidebar'],
+      ['Show in page', 'Open in new tab', 'Open in new window', 'Open in Explore', 'Show in sidebar'],
       ['Copy path', 'Copy card ID', 'Copy card link'],
       ['Open in'],
     ])
@@ -162,6 +167,10 @@ describe('inlineRowMenu (YAZ-6469)', () => {
     ;(findItem(sections, 'Open in new tab') as MenuAction).onSelect()
     expect(h.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(PAGE)
     expect(takeCardLanding(PAGE, 'GEO-140')).toBe(true)
+
+    // Open in new window (YAZ-6513)
+    ;(findItem(sections, 'Open in new window') as MenuAction).onSelect()
+    expect(onOpenNewWindow).toHaveBeenCalledExactlyOnceWith(PAGE)
 
     // Open in Explore dispatches CARD_OPEN when no custom callback is supplied
     const received: CardOpenRequest[] = []

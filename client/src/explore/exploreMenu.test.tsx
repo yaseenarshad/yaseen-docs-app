@@ -64,6 +64,7 @@ function makeDoors(overrides: Partial<ExploreInlineMenuDoors> = {}): ExploreInli
     openInlineDrawingTab: vi.fn(),
     openInTab: vi.fn(),
     linkActions: {
+      openNewWindow: vi.fn(),
       openVsCode: vi.fn(),
       reveal: vi.fn(),
     },
@@ -86,7 +87,7 @@ describe('exploreInlineSections (YAZ-6470 #5)', () => {
     const sections = exploreInlineSections({ kind: 'drawing', page: '/v/Architecture.md', index: 0, name: 'Auth Flow' }, doors)
     const labels = flatItems(sections).map((i) => (i.kind === undefined ? i.label : ''))
 
-    expect(labels).toEqual(['Open in Explore', 'Show in page', 'Open in new tab', 'Copy path', 'Open in'])
+    expect(labels).toEqual(['Open in Explore', 'Show in page', 'Open in new tab', 'Open in new window', 'Copy path', 'Open in'])
     expect(labels).not.toContain('Rename file')
 
     findAction(sections, 'Open in Explore').onSelect()
@@ -100,6 +101,10 @@ describe('exploreInlineSections (YAZ-6470 #5)', () => {
     findAction(sections, 'Open in new tab').onSelect()
     expect(doors.openInlineDrawingTab).toHaveBeenCalledWith('/v/Architecture.md', 0, false)
     expect(doors.closeStack).toHaveBeenCalledTimes(1)
+
+    findAction(sections, 'Open in new window').onSelect()
+    expect(doors.linkActions?.openNewWindow).toHaveBeenCalledWith('/v/Architecture.md')
+    expect(doors.closeStack).toHaveBeenCalledTimes(2)
 
     findAction(sections, 'Copy path').onSelect()
     await Promise.resolve()
@@ -120,7 +125,7 @@ describe('exploreInlineSections (YAZ-6470 #5)', () => {
     const sections = exploreInlineSections({ kind: 'card', page: '/v/Architecture.md', id: 'YAZ-42', index: 0, name: 'OAuth Card' }, doors)
     const labels = flatItems(sections).map((i) => (i.kind === undefined ? i.label : ''))
 
-    expect(labels).toEqual(['Open in Explore', 'Open card', 'Open in new tab', 'Copy path', 'Copy card ID', 'Copy card link', 'Open in'])
+    expect(labels).toEqual(['Open in Explore', 'Open card', 'Open in new tab', 'Open in new window', 'Copy path', 'Copy card ID', 'Copy card link', 'Open in'])
     expect(labels).not.toContain('Rename file')
 
     findAction(sections, 'Open in Explore').onSelect()
@@ -133,6 +138,10 @@ describe('exploreInlineSections (YAZ-6470 #5)', () => {
     expect(landOnCard).toHaveBeenCalledWith('/v/Architecture.md', 'YAZ-42')
     expect(doors.openInTab).toHaveBeenCalledWith('/v/Architecture.md')
     expect(doors.closeStack).toHaveBeenCalledTimes(1)
+
+    findAction(sections, 'Open in new window').onSelect()
+    expect(doors.linkActions?.openNewWindow).toHaveBeenCalledWith('/v/Architecture.md')
+    expect(doors.closeStack).toHaveBeenCalledTimes(2)
 
     findAction(sections, 'Copy path').onSelect()
     await Promise.resolve()

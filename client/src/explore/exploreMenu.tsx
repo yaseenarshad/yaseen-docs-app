@@ -155,6 +155,7 @@ export function exploreInlineSections(target: ExploreInlineTarget, doors: Explor
             }
           }),
         },
+        ...(a.openNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', onSelect: then(() => a.openNewWindow?.(target.page)) }]),
       ],
       [
         {
@@ -183,6 +184,7 @@ export function exploreInlineSections(target: ExploreInlineTarget, doors: Explor
           doors.openInTab(target.page)
         }),
       },
+      ...(a.openNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', onSelect: then(() => a.openNewWindow?.(target.page)) }]),
     ],
     [
       {
