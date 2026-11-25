@@ -316,4 +316,82 @@ describe('renderer acknowledgement', () => {
     requests.reply(1, { id: page.send.mock.calls[0][1].id, ok: false, error: { code: 'NOT_FOUND', message: 'no', details: { views: [] } } })
     await expect(result).rejects.toMatchObject({ code: 'NOT_FOUND', details: { views: [] } })
   })
+  it('tracks readiness via isReady and honors custom timeout on sendCommand (YAZ-6539)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const requests = new RendererRequests('automation:request'), page = { id: 5, send: vi.fn() }
+      expect(requests.isReady(5)).toBe(false)
+      requests.setReady(page, true)
+      expect(requests.isReady(5)).toBe(true)
+      const pending = requests.sendCommand(page, { action: 'inspect' }, 2000)
+      const failed = expect(pending).rejects.toMatchObject({ code: 'RENDERER_TIMEOUT' })
+      await vi.advanceTimersByTimeAsync(2000)
+      await failed
+      requests.closed(5)
+      expect(requests.isReady(5)).toBe(false)
+    } finally { vi.useRealTimers() }
+  })
+})
+
+describe('multi-tab paths[], focus: false, and tiling on navigation.open (YAZ-6539)', () => {
+  it('opens a batch of paths in order, collects partial missingPaths, and fails NOT_FOUND if all are missing', async () => {
+    const a = join(root, 'Mochi/card.md')
+    const b = join(root, 'Mochi/second.md')
+    const missing = join(root, 'Mochi/absent.md')
+    await writeFile(b, 'second')
+
+    const app = host([entry('w1', [root])])
+    const res = await checked(navigate(app, { root, paths: [a, missing, b], activePath: b, tabMode: 'new' }))
+    expect(res).toMatchObject({ window: 'w1', missingPaths: [missing] })
+    expect(app.apply).toHaveBeenLastCalledWith('w1', {
+      paths: [a, b],
+      activePath: b,
+      tabMode: 'new',
+    })
+
+    // Fails fast with OUTSIDE_SCOPE even when an earlier entry is missing.
+    await expect(navigate(app, { root, paths: [missing, tmpdir()] })).rejects.toMatchObject({ code: 'OUTSIDE_SCOPE' })
+    // Fails NOT_FOUND when every path in the batch is missing.
+    await expect(navigate(app, { root, paths: [missing] })).rejects.toMatchObject({ code: 'NOT_FOUND', details: { missingPaths: [missing] } })
+    // Rejects combining path + paths or activePath not in paths.
+    await expect(navigate(app, { root, path: a, paths: [b] })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    await expect(navigate(app, { root, paths: [a], activePath: b })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+  })
+
+  it('supports focus: false (inactive open / no raise on reuse) and tile/display placement', async () => {
+    const displays = [
+      { id: 1, label: 'Primary', primary: true, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 25, width: 1920, height: 1055 } },
+      { id: 2, label: 'Left', primary: false, bounds: { x: -1920, y: 0, width: 1920, height: 1080 }, workArea: { x: -1920, y: 25, width: 1920, height: 1055 } },
+    ]
+    const app = host()
+    app.displays = () => displays
+    app.moveWindow = vi.fn(async (_id, bounds, focus) => ({ displayId: 2, bounds, focused: focus, exitedFullScreen: false }))
+
+    // New window with focus: false + tile + negative-coord display
+    await checked(navigate(app, { root, mode: 'new', focus: false, tile: 'left', display: 2 }))
+    expect(app.open).toHaveBeenCalledWith({
+      root,
+      roots: [root],
+      file: null,
+      bounds: { x: -1920, y: 25, width: 960, height: 1055 },
+      inactive: true,
+    })
+    expect(app.raise).not.toHaveBeenCalled()
+
+    // Reused window with focus: false + tile moves without focusing
+    const reused = host([entry('w1', [root])])
+    reused.displays = () => displays
+    reused.moveWindow = vi.fn(async (_id, bounds, focus) => ({ displayId: 1, bounds, focused: focus, exitedFullScreen: false }))
+    await checked(navigate(reused, { root, focus: false, tile: 'right', display: 'primary' }))
+    expect(reused.moveWindow).toHaveBeenCalledWith('w1', { x: 960, y: 25, width: 960, height: 1055 }, false)
+    expect(reused.raise).not.toHaveBeenCalled()
+
+    // Reused window with focus: false and no tile skips raise
+    const quiet = host([entry('w1', [root])])
+    await checked(navigate(quiet, { root, focus: false }))
+    expect(quiet.raise).not.toHaveBeenCalled()
+
+    // Invalid display fails before opening or mutating anything
+    await expect(navigate(app, { root, tile: 'left', display: 999 })).rejects.toMatchObject({ code: 'DISPLAY_NOT_FOUND' })
+  })
 })

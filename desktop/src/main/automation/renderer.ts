@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { AUTOMATION_LIMITS, AutomationFailure } from '@shared/automation'
-import type { NavigationTarget, RendererCommand, RendererReply } from '@shared/automationNavigation'
+import type { NavigationTarget, RendererCommand, RendererCommandBody, RendererReply } from '@shared/automationNavigation'
 
 export interface RendererPage {
   id: number
@@ -13,6 +13,10 @@ export class RendererRequests {
   private readonly ready = new Set<number>()
   private readonly pending = new Map<string, Pending>()
   constructor(private readonly channel: string) {}
+
+  isReady(pageId: number): boolean {
+    return this.ready.has(pageId)
+  }
 
   setReady(page: RendererPage, ready: boolean): void {
     if (!ready) { this.ready.delete(page.id); return }
@@ -30,12 +34,12 @@ export class RendererRequests {
     if (request?.page.id === pageId) request.finish(reply)
   }
 
-  navigate(page: RendererPage, target: NavigationTarget): Promise<unknown> {
-    const command: RendererCommand = { id: randomUUID(), action: 'navigate', target }
+  sendCommand(page: RendererPage, body: RendererCommandBody, timeoutMs: number = AUTOMATION_LIMITS.waitMs): Promise<unknown> {
+    const command = { id: randomUUID(), ...body } as RendererCommand
     const { id } = command
     return new Promise((resolve, reject) => {
-      // Navigations run one at a time: a window that never answers holds the next one no longer than the CLI's default wait (YAZ-4638).
-      const timer = setTimeout(() => finish({ id, ok: false, error: { code: 'RENDERER_TIMEOUT', message: 'The window did not show the target in time. Its final state is unknown.' } }), AUTOMATION_LIMITS.waitMs)
+      // Commands hold a window no longer than the configured wait (YAZ-4638, YAZ-6539).
+      const timer = setTimeout(() => finish({ id, ok: false, error: { code: 'RENDERER_TIMEOUT', message: 'The window did not answer in time. Its final state is unknown.' } }), timeoutMs)
       const finish = (reply: RendererReply) => {
         clearTimeout(timer); this.pending.delete(id)
         if (reply.ok) resolve(reply.value)
@@ -45,6 +49,10 @@ export class RendererRequests {
       this.pending.set(id, request)
       if (this.ready.has(page.id)) this.send(request)
     })
+  }
+
+  navigate(page: RendererPage, target: NavigationTarget): Promise<unknown> {
+    return this.sendCommand(page, { action: 'navigate', target })
   }
 
   private send(request: Pending): void {

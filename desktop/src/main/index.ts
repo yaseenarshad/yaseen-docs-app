@@ -190,18 +190,24 @@ const previewByOwner = new Map<number, BrowserWindow>()
 const previewPopups = new WeakSet<BrowserWindow>()
 
 const manager = createWindowManager(store, {
-  create(entry: WindowEntry, opts?: { hidden: true }) {
+  create(entry: WindowEntry, opts?: { hidden?: true; inactive?: true }) {
     const hidden = opts?.hidden === true
+    const inactive = opts?.inactive === true
     const win = new BrowserWindow({
       ...entry.bounds,
-      // A window the tab board made (YAZ-3343) is built HIDDEN: it shows when the board shows it.
-      ...((hiddenE2E || hidden) && { show: false }),
+      // A window the tab board made (YAZ-3343) is built HIDDEN; an inactive automation window (YAZ-6539) reveals via showInactive() on ready-to-show.
+      ...((hiddenE2E || hidden || inactive) && { show: false }),
       // The backing store matches the theme (K, GRO-2218): no white flash on dark launches.
       backgroundColor: windowBackgroundColor(store.get().settings.theme, nativeTheme.shouldUseDarkColors),
-      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, plugins: true, zoomFactor: appZoomFactor(store.get().settings), ...((hiddenE2E || hidden) && { backgroundThrottling: false }) },
+      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, plugins: true, zoomFactor: appZoomFactor(store.get().settings), ...((hiddenE2E || hidden || inactive) && { backgroundThrottling: false }) },
     })
-    // A hidden e2e window must never surface: `focus()` and `show()` would order it front.
-    if (hiddenE2E) win.show = win.focus = () => {}
+    // A hidden e2e window must never surface: `focus()`, `show()`, and `showInactive()` would order it front.
+    if (hiddenE2E) win.show = win.focus = win.showInactive = () => {}
+    if (inactive && !hidden && !hiddenE2E) {
+      win.once('ready-to-show', () => {
+        if (!win.isDestroyed()) win.showInactive()
+      })
+    }
     win.webContents.setWindowOpenHandler(createWindowOpenHandler(openLink, entry.kind === 'files'))
     // The Files window's preview popup (YAZ-3357 D9): parented to it, so it moves and closes with it; deaf to the
     // mouse, so the pointer stays on the rows; and it makes no popup of its own.
