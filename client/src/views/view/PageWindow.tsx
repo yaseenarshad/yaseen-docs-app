@@ -4,6 +4,7 @@ import type { Group, Row } from '../engine'
 import { PropertiesOpenMemory } from '../../editor/propertiesOpenMemory'
 import { PageZoomMemory } from '../../editor/DocumentZoom'
 import { isPageKey } from '../../editor/pageKeys'
+import { isIdleEscape } from '../../lib/escapeOrder'
 import { cssZoom } from '../../lib/cssZoom'
 import { storage } from '../../lib/storage'
 import { TOP_SPOT, type GroupSpot, childSpot, spotKey } from './groupDrag'
@@ -386,9 +387,9 @@ export function PageWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
       return
     }
     if (event.key !== 'Escape' || pinned) return
-    // A pop-up of the editor (the `[[` picker, a menu) took this Esc when the caret is still in the card. The editor's
-    // own Esc goes back to the sidebar (`escapeToSidebar`): the card closes then too.
-    if (event.defaultPrevented && cardRef.current?.contains(document.activeElement)) return
+    // A pop-up of the editor (the `[[` picker, a menu, a cell note) took this Esc when the caret is still in the card.
+    // An idle Esc from the editor (only prevented by ProseMirror's captureKeyDown fallback) closes the card (YAZ-6492).
+    if (event.defaultPrevented && !isIdleEscape(event.target) && cardRef.current?.contains(document.activeElement)) return
     event.preventDefault()
     event.stopPropagation()
     onClose()

@@ -1502,15 +1502,18 @@ export function App() {
     return went
   }, [])
   /**
-   * The last Esc (YAZ-4995, `lib/escapeOrder.ts`): what no menu, dialog or Explore layer took (the Inbox is a tab, YAZ-5011). The sidebar's
-   * search goes back to its tab; then the sidebar closes, and the keyboard goes from it to the page, in place.
+   * The last Esc (YAZ-4995, YAZ-6492, `lib/escapeOrder.ts`): what no menu, dialog, find bar, or Explore layer took (the
+   * Inbox is a tab, YAZ-5011). An overlay right panel closes first; then the sidebar's search (when focus is in the
+   * sidebar) goes back to its tab; then the left sidebar closes, keeping document focus and active selection intact.
    */
   useEscapeLast(
-    () => ({ aside: sidebarCollapsedRef.current ? null : sidebarRef.current, searchShown: sidebarLens === 'search', canClose: !filesWindow }),
+    () => ({ aside: sidebarCollapsedRef.current ? null : sidebarRef.current, searchShown: sidebarLens === 'search', canClose: !filesWindow, rightOverlayOpen: rightPanel.open && rightOverlay }),
     (step) => {
+      if (step === 'closeRightOverlay') return setRightOpen(false)
       if (step === 'leaveSearch') return changeLens(lastNonSearchLens.current)
       const active = document.activeElement
-      if (active === null || active === document.body || sidebarRef.current?.contains(active) === true) {
+      const hasSelection = (document.getSelection()?.isCollapsed ?? true) === false
+      if (sidebarRef.current?.contains(active) === true || ((active === null || active === document.body) && !hasSelection)) {
         if (!focusOpenDocument(document, true)) leaveToPage()
       }
       if (!sidebarCollapsedRef.current) toggleSidebar()

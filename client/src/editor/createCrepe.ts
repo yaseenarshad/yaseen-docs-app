@@ -357,7 +357,7 @@ import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outl
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
 import { foldAllRows } from './outline/foldAllRows'
 import { openBulletRow } from './outline/openBulletRow'
-import { focusSidebar } from '../lib/focusHandoff'
+import { allowIdleEscape } from '../lib/escapeOrder'
 import { createWikilinkClick, wikilinkFollower, type LinkFollow, type LinkWhere, type WikilinkNav } from './wikilink/wikilinkClick'
 import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
 import { createWikilinkMenu, linkMenuOf } from './wikilink/wikilinkMenu'
@@ -461,8 +461,8 @@ export interface CreateCrepeOptions {
    */
   lockAgain?: () => boolean
   /**
-   * What Esc does in the text when nothing else takes it: absent, it steps out to the sidebar (YAZ-936). An Explore
-   * layer's editor hands it to its layer instead (back to reading, YAZ-4997). True: it was taken.
+   * What Esc does in the text when nothing else takes it: absent, ProseMirror declines so idle Esc bubbles to App's
+   * `useEscapeLast` (YAZ-6492). An Explore layer's editor or CardPane hands it to its host instead. True: it was taken.
    */
   onEscape?: () => boolean
   /**
@@ -684,19 +684,22 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
 }
 
 /**
- * Escape steps OUT of the text and back to the sidebar (YAZ-936), so the keyboard walk resumes
- * exactly where the page was picked: on the Search tab the search bar gets the caret, empty or not
- * (YAZ-2638 D2); on Files, Focus and Favorites the tree's active row gets it. Priority 10 —
- * anything that means something by Esc (the `[[` picker's dismiss at 100, menus) wins first; and
- * it DECLINES when neither is on screen (collapsed sidebar), so Esc stays free everywhere else.
+ * Editor-level Escape fallback (priority 10 — after `[[` picker at 100, cell notes at 90, find bar at 20).
+ * A timed-unlocked page locks first (YAZ-4997); an Explore layer or CardPane takes Esc via `onEscape`. In a regular
+ * page neither is active, so this declines and lets idle Esc bubble to App's `useEscapeLast` (YAZ-6492).
  */
-const escapeToSidebar = (lockAgain?: () => boolean, onEscape: () => boolean = focusSidebar) =>
+const escapeToSidebar = (lockAgain?: () => boolean, onEscape?: () => boolean) =>
   $shortcut(() => ({
     EscapeToSidebar: {
       key: 'Escape',
       priority: 10,
       // An unlocked page locks first (YAZ-4997): this Esc saves it and locks it again, and only a later Esc goes on.
-      onRun: () => () => lockAgain?.() === true || onEscape(),
+      // When idle, mark `view.dom` so `useEscapeLast` / `PageWindow` ignore ProseMirror's `captureKeyDown` keyCode 27 preventDefault.
+      onRun: (ctx) => (_state, _dispatch, view) => {
+        if (lockAgain?.() === true || onEscape?.() === true) return true
+        allowIdleEscape(view?.dom ?? ctx.get(editorViewCtx).dom)
+        return false
+      },
     },
   }))
 

@@ -3171,6 +3171,97 @@ describe('App ⌘K search (D4, YAZ-804)', () => {
     expect(visibleSidebar(el)).toBeNull()
   })
 
+  it('YAZ-6492: Esc closes an overlay Right Panel before the left sidebar (from page or inside Right Panel, and even if sidebar is closed); docked Right Panel stays open', async () => {
+    // Narrow window -> right panel opens in overlay mode
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 900 })
+    const { el } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md'],
+      rightPanel: { open: true, width: 440, items: ['/v/b.md'], expanded: '/v/b.md' },
+    })
+    expect(el.querySelector('.right-panel--overlay')).not.toBeNull()
+    expect(visibleSidebar(el)).not.toBeNull()
+
+    // Focus inside the overlay Right Panel -> 1st Esc closes ONLY the overlay Right Panel (no double-trigger to sidebar)
+    const rightHide = el.querySelector<HTMLButtonElement>('.right-panel__hide')!
+    rightHide.focus()
+    act(() => void rightHide.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('.right-panel--overlay')).toBeNull()
+    expect(visibleSidebar(el)).not.toBeNull()
+
+    // Reopen Right Panel (overlay), focus in main document -> 1st Esc closes overlay Right Panel, 2nd Esc closes left sidebar
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Show right panel"]')?.click())
+    expect(el.querySelector('.right-panel--overlay')).not.toBeNull()
+    const instance = document.createElement('div')
+    instance.className = 'editor-instance'
+    const pm = document.createElement('div')
+    pm.className = 'ProseMirror'
+    pm.setAttribute('contenteditable', 'true')
+    pm.tabIndex = -1
+    pm.textContent = 'hello'
+    instance.appendChild(pm)
+    el.appendChild(instance)
+    pm.focus()
+
+    act(() => void pm.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('.right-panel--overlay')).toBeNull()
+    expect(visibleSidebar(el)).not.toBeNull()
+
+    act(() => void pm.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(visibleSidebar(el)).toBeNull()
+    expect(document.activeElement).toBe(pm)
+
+    // With left sidebar already closed, reopen Right Panel (narrow enough to overlay: 440 + 360 = 800 > 700) -> Esc still closes it
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 700 })
+    act(() => void window.dispatchEvent(new Event('resize')))
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Show right panel"]')?.click())
+    expect(el.querySelector('.right-panel--overlay')).not.toBeNull()
+    act(() => void pm.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('.right-panel--overlay')).toBeNull()
+
+    // Wide window -> docked Right Panel is NOT closed by Esc; Esc closes sidebar instead
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1400 })
+    act(() => void window.dispatchEvent(new Event('resize')))
+    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Show right panel"]')?.click())
+    expect(el.querySelector('[aria-label="Right panel"]')).not.toBeNull()
+    expect(el.querySelector('.right-panel--overlay')).toBeNull()
+    act(() => void pm.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('[aria-label="Right panel"]')).not.toBeNull()
+    instance.remove()
+  })
+
+  it('YAZ-6492: Esc from a Markdown or Monaco editor closes the sidebar in 1 press even when sidebar is on Search, keeping focus and selection intact', async () => {
+    const { el, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarLens: 'files' })
+    act(() => emitSearch())
+    expect(captured.sidebar?.lens).toBe('search')
+
+    const instance = document.createElement('div')
+    instance.className = 'editor-instance'
+    const pm = document.createElement('div')
+    pm.className = 'ProseMirror'
+    pm.setAttribute('contenteditable', 'true')
+    pm.tabIndex = -1
+    pm.textContent = 'selected words'
+    instance.appendChild(pm)
+    el.appendChild(instance)
+    pm.focus()
+    const range = document.createRange()
+    range.setStart(pm.firstChild!, 0)
+    range.setEnd(pm.firstChild!, 8)
+    const sel = document.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+
+    act(() => void pm.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(visibleSidebar(el)).toBeNull()
+    expect(document.activeElement).toBe(pm)
+    expect(sel.toString()).toBe('selected')
+    instance.remove()
+    sel.removeAllRanges()
+  })
+
   it('S16 (YAZ-2638): a switch to a different vault from the Search tab lands on Files (YAZ-1846), on a sidebar of its own key — so the text is gone', async () => {
     const { el, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => emitSearch())

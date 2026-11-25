@@ -87,22 +87,107 @@ const Chevron = () => (
 export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
   const unit = useUnit()
   const state = useSyncExternalStore(channel.subscribe, channel.getState)
+  const barRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [foldMenu, setFoldMenu] = useState(false)
+  const foldMenuRef = useRef(foldMenu)
+  foldMenuRef.current = foldMenu
   const foldRef = useRef<HTMLDivElement>(null)
 
-  // The fold menu closes on a press outside it, and with the bar.
+  // The fold menu closes on a press outside it, on plain Esc (before the bar or page), and with the bar.
   useEffect(() => {
     if (!foldMenu) return
     const onDown = (event: PointerEvent): void => {
       if (!(event.target instanceof Node) || foldRef.current?.contains(event.target) !== true) setFoldMenu(false)
     }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented || event.key !== 'Escape' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.isComposing) return
+      if (scope !== 'settings' && document.querySelector('.settings-dialog, .drawing-modal-overlay') !== null) return
+      event.preventDefault()
+      event.stopPropagation()
+      setFoldMenu(false)
+    }
     window.addEventListener('pointerdown', onDown, true)
-    return () => window.removeEventListener('pointerdown', onDown, true)
-  }, [foldMenu])
+    window.addEventListener('keydown', onKey, true)
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true)
+      window.removeEventListener('keydown', onKey, true)
+    }
+  }, [foldMenu, scope])
   useEffect(() => {
     if (!state.open) setFoldMenu(false)
   }, [state.open])
+
+  // YAZ-6492: in a Read-only page ProseMirror skips `findEscapeKeymap`, and clicks on the page margin or a find button
+  // leave focus outside the input. Listen on `window` while open so unhandled plain Esc closes this find bar first
+  // (before `useEscapeLast` closes the sidebar), while letting menus/dialogs/pickers over the page close before it.
+  useEffect(() => {
+    if (!state.open) return
+    const plain = (e: KeyboardEvent) => e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.isComposing
+    const visible = (el: Element | null): boolean =>
+      el instanceof HTMLElement &&
+      el.isConnected &&
+      (typeof el.checkVisibility === 'function'
+        ? el.checkVisibility({ visibilityProperty: true })
+        : el.closest('[hidden]') === null && el.dataset.show !== 'false' && el.ownerDocument.defaultView?.getComputedStyle(el).visibility !== 'hidden')
+    const OTHER_OWNERS = '[role="dialog"], [role="menu"], [role="listbox"], .ctx-menu, .quicklook'
+    let blockedByOther = false
+    const onCapture = (event: KeyboardEvent): void => {
+      if (!plain(event)) {
+        blockedByOther = false
+        return
+      }
+      const bar = barRef.current
+      const host = hostRef.current
+      blockedByOther = [...document.querySelectorAll<HTMLElement>(OTHER_OWNERS)].some((el) => {
+        if (!visible(el)) return false
+        if (el.matches('.search-results') && el.closest('aside') !== null) return false
+        if (foldRef.current?.contains(el) === true) return false
+        if (el === host || (bar !== null && el.contains(bar)) || (host !== null && el.contains(host))) return false
+        return true
+      })
+    }
+    const onBubble = (event: KeyboardEvent): void => {
+      const blocked = blockedByOther
+      blockedByOther = false
+      if (blocked || !plain(event) || event.defaultPrevented) return
+      const bar = barRef.current
+      const host = hostRef.current
+      if (!visible(bar) || !visible(host)) return
+      const target = event.target instanceof Element ? event.target : null
+      const active = document.activeElement instanceof Element ? document.activeElement : null
+      const inBar = (target !== null && bar!.contains(target)) || (active !== null && bar!.contains(active))
+      const inHost = (target !== null && host!.contains(target)) || (active !== null && host!.contains(active))
+      let owns = inBar || inHost
+      if (!owns) {
+        const who = target ?? active
+        const inSettings = document.querySelector('.settings-dialog') !== null
+        const inDrawing = document.querySelector('.drawing-modal-overlay') !== null
+        if (scope === 'settings' || inSettings || inDrawing) {
+          owns = false
+        } else if (who !== null && who.closest('.find-bar, .editor--code, .sidebar, aside') !== null) {
+          owns = false
+        } else if (who !== null && who.closest('.explore') !== null && host!.closest('.explore') === null) {
+          owns = false
+        } else if (scope === 'page') {
+          owns = who === null || who.closest('.folder-page-doc, [data-find-host]') === null
+        } else {
+          owns = ![...document.querySelectorAll<HTMLElement>('.find-bar')].some((el) => el !== bar && visible(el))
+        }
+      }
+      if (!owns) return
+      event.preventDefault()
+      if (scope === 'settings') event.stopPropagation()
+      if (foldMenuRef.current) setFoldMenu(false)
+      else channel.close()
+    }
+    window.addEventListener('keydown', onCapture, true)
+    window.addEventListener('keydown', onBubble)
+    return () => {
+      window.removeEventListener('keydown', onCapture, true)
+      window.removeEventListener('keydown', onBubble)
+    }
+  }, [state.open, channel, scope, hostRef])
 
   const focusInput = (): void => {
     const input = inputRef.current
@@ -181,7 +266,7 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
   return (
     <div className={`find-bar-dock find-bar-dock--${scope}${state.open ? ' find-bar-dock--open' : ''}`}>
       {state.open && (
-        <div className="find-bar">
+        <div ref={barRef} className="find-bar">
           <input
             ref={inputRef}
             className="find-bar__input"
