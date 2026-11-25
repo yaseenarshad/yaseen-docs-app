@@ -252,8 +252,8 @@ const inboxOf = ({ review, dueCount, reviewing }: Inbox): Partial<Vault> => ({ .
  * says otherwise. Card review (YAZ-4967) is off, with nothing due and no review open.
  */
 const oneVault = ({ root = '/v', watch = { subscribe: () => () => undefined }, indexSource = indexFor(true), ...over }: Partial<SidebarProps>): Vault[] => [
-  // `idsInSearch` and `idsInFiles` (YAZ-4940) ride on the vault: a test hands them as if they were props.
-  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, review: false, dueCount: 0, reviewing: false, ...inboxOf(over), ...('idsInSearch' in over ? { idsInSearch: (over as { idsInSearch?: Vault['idsInSearch'] }).idsInSearch } : {}), ...('idsInFiles' in over ? { idsInFiles: (over as { idsInFiles?: Vault['idsInFiles'] }).idsInFiles } : {}) },
+  // `idsInSearch`, `setIdsInSearch`, and `idsInFiles` (YAZ-4940, YAZ-6502) ride on the vault: a test hands them as if they were props.
+  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, review: false, dueCount: 0, reviewing: false, ...inboxOf(over), ...('idsInSearch' in over ? { idsInSearch: (over as { idsInSearch?: Vault['idsInSearch'] }).idsInSearch } : {}), ...('setIdsInSearch' in over ? { setIdsInSearch: (over as { setIdsInSearch?: Vault['setIdsInSearch'] }).setIdsInSearch } : {}), ...('idsInFiles' in over ? { idsInFiles: (over as { idsInFiles?: Vault['idsInFiles'] }).idsInFiles } : {}) },
 ]
 
 async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: ReturnType<typeof installBridge>) => unknown) {
@@ -2820,34 +2820,45 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(cursor(el)).toEqual(['Zed'])
   })
 
-  it('YAZ-2677 S70: the row of a page found by its number shows its full ID in front of its title; found by its title, it shows the title alone', async () => {
+  it('YAZ-2677 S70, YAZ-6502: the row of a page found by its number shows its ID on the right (`.tree__id`) with no left prefix; found by its title under match-only, it shows no ID', async () => {
     const { el, input, v } = await search('12', {}, {
       records: (root) => pagePaths(VAULT(root)).map((path) => record(root, path, path.endsWith('/Zed.md') ? { id: 'YAZ-12' } : {})),
     })
-    expect(shape(el)).toEqual(['Plans', '  YAZ-12 — Zed'])
-    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__label')?.textContent).toBe('YAZ-12 — Zed')
+    expect(shape(el)).toEqual(['Plans', '  Zed'])
+    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__label')?.textContent).toBe('Zed')
+    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__id')?.textContent).toBe('#12')
     await type(input, 'yaz 12')
-    expect(shape(el)).toEqual(['Plans', '  YAZ-12 — Zed'])
+    expect(shape(el)).toEqual(['Plans', '  Zed'])
+    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__id')?.textContent).toBe('#12')
     await type(input, 'zed')
     expect(shape(el)).toEqual(['Plans', '  Zed'])
+    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__id')).toBeNull()
   })
 
-  it('YAZ-2571 round 5: `#12` finds by the ID number alone, the exact number first, and marks the typed digits in the ID; a bare `12` marks the ID\'s number; a title match leaves the ID plain', async () => {
+  it('YAZ-2571 round 5, YAZ-6502: `#12` finds by the ID number alone, the exact number first, and marks the typed digits in `.tree__id`; a bare `12` marks the ID\'s number; a title match leaves `.tree__id` plain', async () => {
     const ids: Record<string, string> = { '/Plans/Zed.md': 'YAZ-12', '/Alpha.md': 'YAZ-120', '/plan.md': 'YAZ-3' }
     const records = (root: string) => pagePaths(VAULT(root)).map((path) => record(root, path, ids[path.slice(root.length)] !== undefined ? { id: ids[path.slice(root.length)] } : {}))
     const { el, input, v } = await search('#12', { idsInSearch: () => 'match' } as Partial<SidebarProps>, { records })
-    expect(shape(el)).toEqual(['Plans', '  YAZ-12 — Zed', 'YAZ-120 — Alpha'])
-    expect(cursor(el)).toEqual(['YAZ-12 — Zed'])
-    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__label')?.innerHTML).toBe('YAZ-<mark class="tree__mark">12</mark> — Zed')
-    expect(row(el, `${v}/Alpha.md`)?.querySelector('.tree__label')?.innerHTML).toBe('YAZ-<mark class="tree__mark">12</mark>0 — Alpha')
+    expect(shape(el)).toEqual(['Plans', '  Zed', 'Alpha'])
+    expect(cursor(el)).toEqual(['Zed'])
+    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__label')?.innerHTML).toBe('Zed')
+    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__id')?.innerHTML).toBe('#<mark class="tree__mark">12</mark>')
+    expect(row(el, `${v}/Alpha.md`)?.querySelector('.tree__label')?.innerHTML).toBe('Alpha')
+    expect(row(el, `${v}/Alpha.md`)?.querySelector('.tree__id')?.innerHTML).toBe('#<mark class="tree__mark">12</mark>0')
     await type(input, '12')
-    expect(shape(el)).toEqual(['Plans', '  YAZ-12 — Zed'])
-    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__label')?.innerHTML).toBe('YAZ-<mark class="tree__mark">12</mark> — Zed')
+    expect(shape(el)).toEqual(['Plans', '  Zed'])
+    expect(row(el, `${v}/Plans/Zed.md`)?.querySelector('.tree__id')?.innerHTML).toBe('#<mark class="tree__mark">12</mark>')
     await type(input, '#3')
-    expect(shape(el)).toEqual(['YAZ-3 — plan'])
+    expect(shape(el)).toEqual(['plan'])
+    expect(row(el, `${v}/plan.md`)?.querySelector('.tree__id')?.innerHTML).toBe('#<mark class="tree__mark">3</mark>')
     act(() => root?.unmount())
-    const always = await search('zed', { idsInSearch: () => 'always' } as Partial<SidebarProps>, { records })
-    expect(row(always.el, `${always.v}/Plans/Zed.md`)?.querySelector('.tree__label')?.innerHTML).toBe('YAZ-12 — <mark class="tree__mark">Zed</mark>')
+    const number = await search('zed', { idsInSearch: () => 'number' } as Partial<SidebarProps>, { records })
+    expect(row(number.el, `${number.v}/Plans/Zed.md`)?.querySelector('.tree__label')?.innerHTML).toBe('<mark class="tree__mark">Zed</mark>')
+    expect(row(number.el, `${number.v}/Plans/Zed.md`)?.querySelector('.tree__id')?.innerHTML).toBe('#12')
+    act(() => root?.unmount())
+    const full = await search('zed', { idsInSearch: () => 'full' } as Partial<SidebarProps>, { records })
+    expect(row(full.el, `${full.v}/Plans/Zed.md`)?.querySelector('.tree__label')?.innerHTML).toBe('<mark class="tree__mark">Zed</mark>')
+    expect(row(full.el, `${full.v}/Plans/Zed.md`)?.querySelector('.tree__id')?.innerHTML).toBe('YAZ-12')
   })
 
   it('YAZ-2571 round 5: in a vault without IDs `#5` reads as text, as before', async () => {
@@ -2855,16 +2866,26 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(shape(el)).toEqual(['Plan 5', 'Release #5'])
   })
 
-  it('YAZ-4940: with the vault\'s "Show IDs in search" on Always, a page found by its title shows its ID in front too; with "Only when it matches", the title alone', async () => {
+  it('YAZ-4940, YAZ-6502: Show IDs in search renders #12 (number), YAZ-12 (full), or right-side ID only on ID match (match/off)', async () => {
     const records = (root: string) => pagePaths(VAULT(root)).map((path) => record(root, path, path.endsWith('/Zed.md') ? { id: 'YAZ-12' } : {}))
-    const always = await search('zed', { idsInSearch: () => 'always' } as Partial<SidebarProps>, { records })
-    expect(shape(always.el)).toEqual(['Plans', '  YAZ-12 — Zed'])
+    const number = await search('zed', { idsInSearch: () => 'number' } as Partial<SidebarProps>, { records })
+    expect(row(number.el, `${number.v}/Plans/Zed.md`)?.querySelector('.tree__label')?.textContent).toBe('Zed')
+    expect(row(number.el, `${number.v}/Plans/Zed.md`)?.querySelector('.tree__id')?.textContent).toBe('#12')
+    act(() => root?.unmount())
+    const full = await search('zed', { idsInSearch: () => 'full' } as Partial<SidebarProps>, { records })
+    expect(row(full.el, `${full.v}/Plans/Zed.md`)?.querySelector('.tree__id')?.textContent).toBe('YAZ-12')
     // The harness holds ONE root: the first sidebar goes before the second mounts, or its window listeners outlive the test.
     act(() => root?.unmount())
     const match = await search('zed', { idsInSearch: () => 'match' } as Partial<SidebarProps>, { records })
-    expect(shape(match.el)).toEqual(['Plans', '  Zed'])
+    expect(row(match.el, `${match.v}/Plans/Zed.md`)?.querySelector('.tree__id')).toBeNull()
     await type(match.input, '12')
-    expect(shape(match.el)).toEqual(['Plans', '  YAZ-12 — Zed'])
+    expect(row(match.el, `${match.v}/Plans/Zed.md`)?.querySelector('.tree__label')?.textContent).toBe('Zed')
+    expect(row(match.el, `${match.v}/Plans/Zed.md`)?.querySelector('.tree__id')?.textContent).toBe('#12')
+    act(() => root?.unmount())
+    const off = await search('zed', { idsInSearch: () => 'off' } as Partial<SidebarProps>, { records })
+    expect(row(off.el, `${off.v}/Plans/Zed.md`)?.querySelector('.tree__id')).toBeNull()
+    await type(off.input, '12')
+    expect(row(off.el, `${off.v}/Plans/Zed.md`)?.querySelector('.tree__id')?.textContent).toBe('#12')
   })
 
   it('YAZ-3748 D3: `yaseen workflow` finds `1-yaseen-engineering-workflow` by its words and marks each word; the parts between stay plain. B2: the bar draws no spelling line', async () => {
@@ -3115,17 +3136,19 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
       expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(`${v}/Geography.md`)
     })
 
-    it('an exact ID finds its card: `geo-140` highlights the card in the page, and Enter opens the page at it; `geo-150` finds the card file', async () => {
+    it('an exact ID finds its card: `geo-140` highlights the card in the page with right-side `.tree__id`, and Enter opens the page at it; `geo-150` finds the card file', async () => {
       const { el, v, input, props } = await withReview('geo-140', true)
-      expect(cardRow(el).map((b) => b.textContent)).toEqual(['GEO-140 — Capital of France'])
-      expect(cursor(el)).toEqual(['GEO-140 — Capital of France'])
+      expect(cardRow(el).map((b) => b.querySelector('.tree__label')?.textContent)).toEqual(['Capital of France'])
+      expect(cardRow(el).map((b) => b.querySelector('.tree__id')?.innerHTML)).toEqual(['#<mark class="tree__mark">140</mark>'])
+      expect(cursor(el)).toEqual(['Capital of France'])
       await press(input, 'Enter')
       expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Geography.md`)
       expect(takeCardLanding(`${v}/Geography.md`, 'GEO-140')).toBe(true)
       await type(input, 'geo-150')
       // One row, the card file's own, found by its card's ID (its label is the tree's title; this test feeds no titles).
       expect(shape(el)).toHaveLength(1)
-      expect(row(el, `${v}/capital-of-spain-geo-150.md`)?.textContent).toMatch(/^GEO-150 — /)
+      expect(row(el, `${v}/capital-of-spain-geo-150.md`)?.querySelector('.tree__label')?.textContent).not.toMatch(/^GEO-150 — /)
+      expect(row(el, `${v}/capital-of-spain-geo-150.md`)?.querySelector('.tree__id')?.innerHTML).toBe('#<mark class="tree__mark">150</mark>')
     })
 
     it('Review off: no card in a page; the card file is a page row, found by its title', async () => {
@@ -12600,10 +12623,10 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     expect(highlighted(el)).toBe('/v/plan old/x.md')
   })
 
-  it('S9, S34, D3, D4, D7, D12: the button opens the Search menu — Best match first, no Manual, "Show last updated", then Type and Time — and a pick writes `searchSort` or `rowDates` alone', async () => {
+  it('S9, S34, D3, D4, D7, D12, YAZ-6502: the button opens the Search menu — Best match first, no Manual, "Show last updated", "Show IDs" (when vault has IDs), then Type and Time — and a pick writes `searchSort` or `rowDates` alone', async () => {
     const { el, props } = await search()
     act(() => sortButton(el)?.click())
-    expect(items(el)).toEqual(['Best match✓', 'Name', 'Last updated', 'Show last updated✓', 'TypeAll types', 'TimeAny time', 'Include inside pages✓'])
+    expect(items(el)).toEqual(['Best match✓', 'Name', 'Last updated', 'Show last updated✓', 'Show IDsNumber (#12)', 'TypeAll types', 'TimeAny time', 'Include inside pages✓'])
     await act(async () => itemByLabel(el, 'Last updated')?.click())
     expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, searchSort: { by: 'updated', reverse: false } })
     act(() => sortButton(el)?.click())
@@ -13251,6 +13274,148 @@ describe('Show IDs in the files list (YAZ-4940 part 2)', () => {
     expect(idOf(el, '/v/a.md')).toBeNull()
     act(() => indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), id: 'EMB-46' }], [], true))
     expect(idOf(el, '/v/a.md')).toBe('#46')
+  })
+})
+
+describe('Show IDs in Search (YAZ-6502): right-side slot, independent toggle, and Search ↑↓ menu', () => {
+  const M = 60_000
+  const pageNode = (path: string, mtime = Date.now() - 10 * M): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime, kind: 'markdown' })
+  const dirNode = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
+  const rowOf = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.sidebar__body .tree__row[data-path="${path}"]`)
+  const sortBtn = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.sidebar__sort')
+  const menuItems = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu:not(.ctx-menu__sub) .ctx-menu__item')].map((b) => `${b.textContent}${b.dataset.hint ?? ''}`)
+
+  const mountSearch = async (opts: {
+    idsEnabled?: boolean
+    rule?: 'off' | 'number' | 'full' | 'match'
+    rowDatesSearch?: boolean
+    setIdsInSearch?: (next: 'off' | 'number' | 'full' | 'match') => void
+    query?: string
+  } = {}) => {
+    const { idsEnabled = true, rule = 'number', rowDatesSearch = true, setIdsInSearch, query = 'zed' } = opts
+    const tree: TreeNode[] = [dirNode('/v/Plans', [pageNode('/v/Plans/Zed.md', Date.now() - 10 * M)])]
+    const records: IndexRecord[] = [{ ...indexRecord('/v/Plans/Zed.md'), ...(idsEnabled && { id: 'WIKI-2921' }) }]
+    const folders: IndexRecord[] = [{ ...indexRecord('/v/Plans/.folder.md'), title: 'Plans', ...(idsEnabled && { id: 'WIKI-100' }) }]
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, records, folders, idsEnabled)
+    const m = await mount(
+      {
+        lens: 'search',
+        indexSource,
+        settings: { ...DEFAULT_SETTINGS, rowDates: { ...DEFAULT_ROW_DATES, search: rowDatesSearch } },
+        idsInSearch: () => rule,
+        ...(setIdsInSearch !== undefined && { setIdsInSearch }),
+      } as Partial<SidebarProps>,
+      (b) => {
+        b.tree.mockResolvedValue({ root: '/v', tree, generatedAt: 1 })
+        b.index.mockResolvedValue({ root: '/v', records, folders, generatedAt: 1, ids: idsEnabled } as never)
+      },
+    )
+    if (query !== '') await type(searchBar(m.el)!, query)
+    return m
+  }
+
+  it('shows both `.tree__id` and `.tree__date` in order (`#2921` before `10m`), ID only, Time only, and neither; context-only parent folders show no ID while matched folders show theirs', async () => {
+    // 1) Both ON: `.tree__id` immediately precedes `.tree__date` on the right; context-only parent folder Plans shows no `.tree__id`.
+    const both = await mountSearch({ rule: 'number', rowDatesSearch: true, query: 'zed' })
+    const zedBoth = rowOf(both.el, '/v/Plans/Zed.md')!
+    expect(zedBoth.querySelector('.tree__label')?.textContent).toBe('Zed')
+    expect(zedBoth.querySelector('.tree__id')?.textContent).toBe('#2921')
+    expect(zedBoth.querySelector('.tree__date')?.textContent).toBe('10m')
+    expect(zedBoth.querySelector('.tree__id')?.nextElementSibling?.className).toBe('tree__date')
+    expect(rowOf(both.el, '/v/Plans')?.classList.contains('tree__row--context')).toBe(true)
+    expect(rowOf(both.el, '/v/Plans')?.querySelector('.tree__id')).toBeNull()
+    // Searching for the folder itself makes Plans a hit, so its folder ID appears on the right.
+    await type(searchBar(both.el)!, 'plans')
+    expect(rowOf(both.el, '/v/Plans')?.classList.contains('tree__row--context')).toBe(false)
+    expect(rowOf(both.el, '/v/Plans')?.querySelector('.tree__label')?.textContent).toBe('Plans')
+    expect(rowOf(both.el, '/v/Plans')?.querySelector('.tree__id')?.textContent).toBe('#100')
+    act(() => root?.unmount())
+
+    // 2) ID only (Show last updated OFF): `.tree__id` present, `.tree__date` absent.
+    const idOnly = await mountSearch({ rule: 'number', rowDatesSearch: false, query: 'zed' })
+    const zedIdOnly = rowOf(idOnly.el, '/v/Plans/Zed.md')!
+    expect(zedIdOnly.querySelector('.tree__id')?.textContent).toBe('#2921')
+    expect(zedIdOnly.querySelector('.tree__date')).toBeNull()
+    act(() => root?.unmount())
+
+    // 3) Time only (Show IDs Off, Show last updated ON): `.tree__id` absent on title match, `.tree__date` present.
+    const timeOnly = await mountSearch({ rule: 'off', rowDatesSearch: true, query: 'zed' })
+    const zedTimeOnly = rowOf(timeOnly.el, '/v/Plans/Zed.md')!
+    expect(zedTimeOnly.querySelector('.tree__id')).toBeNull()
+    expect(zedTimeOnly.querySelector('.tree__date')?.textContent).toBe('10m')
+    act(() => root?.unmount())
+
+    // 4) Neither (Show IDs Off, Show last updated OFF).
+    const neither = await mountSearch({ rule: 'off', rowDatesSearch: false, query: 'zed' })
+    const zedNeither = rowOf(neither.el, '/v/Plans/Zed.md')!
+    expect(zedNeither.querySelector('.tree__id')).toBeNull()
+    expect(zedNeither.querySelector('.tree__date')).toBeNull()
+  })
+
+  it('Search ↑↓ menu shows "Show IDs" flyout only when a vault has IDs enabled, hides it completely when no vault has IDs enabled, and updates all ID-enabled vaults in a multi-vault window', async () => {
+    const setIds = vi.fn()
+    const withIds = await mountSearch({ idsEnabled: true, rule: 'number', setIdsInSearch: setIds, query: '' })
+    act(() => sortBtn(withIds.el)?.click())
+    expect(menuItems(withIds.el)).toEqual(['Best match✓', 'Name', 'Last updated', 'Show last updated✓', 'Show IDsNumber (#12)', 'TypeAll types', 'TimeAny time', 'Include inside pages✓'])
+    const sub = openFlyout(withIds.el, 'Show IDs')
+    expect(sub.map((b) => `${b.textContent}${b.dataset.hint ?? ''}`)).toEqual(['Off', 'Number (#12)✓', 'Full ID', 'Only on ID match'])
+    act(() => sub[2].click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith('full')
+    act(() => root?.unmount())
+
+    // Non-IDs vault: Show IDs is hidden completely, leaving only Show last updated.
+    const withoutIds = await mountSearch({ idsEnabled: false, query: '' })
+    act(() => sortBtn(withoutIds.el)?.click())
+    expect(menuItems(withoutIds.el)).toEqual(['Best match✓', 'Name', 'Last updated', 'Show last updated✓', 'TypeAll types', 'TimeAny time', 'Include inside pages✓'])
+    act(() => root?.unmount())
+
+    // Multi-vault window: two ID vaults + one non-ID vault; clicking Show IDs updates both ID vaults and skips the non-ID vault.
+    const setA = vi.fn()
+    const setB = vi.fn()
+    const setC = vi.fn()
+    const silentWatch = { subscribe: () => () => undefined }
+    const multi = await mount({
+      lens: 'search',
+      vaults: [
+        { root: '/a', name: 'A', watch: silentWatch, index: indexFor(true), review: false, dueCount: 0, reviewing: false, idsInSearch: () => 'number', setIdsInSearch: setA },
+        { root: '/b', name: 'B', watch: silentWatch, index: indexFor(false), review: false, dueCount: 0, reviewing: false, idsInSearch: () => 'off', setIdsInSearch: setB },
+        { root: '/c', name: 'C', watch: silentWatch, index: indexFor(true), review: false, dueCount: 0, reviewing: false, idsInSearch: () => 'number', setIdsInSearch: setC },
+      ],
+    })
+    act(() => sortBtn(multi.el)?.click())
+    const multiSub = openFlyout(multi.el, 'Show IDs')
+    act(() => multiSub[3].click())
+    expect(setA).toHaveBeenCalledExactlyOnceWith('match')
+    expect(setB).not.toHaveBeenCalled()
+    expect(setC).toHaveBeenCalledExactlyOnceWith('match')
+  })
+
+  it('live-updates Search rows immediately when idsInSearch changes without changing the query', async () => {
+    let current: 'off' | 'number' | 'full' | 'match' = 'number'
+    const tree: TreeNode[] = [pageNode('/v/Zed.md', Date.now() - 10 * M)]
+    const records: IndexRecord[] = [{ ...indexRecord('/v/Zed.md'), id: 'WIKI-2921' }]
+    const indexSource = createWikilinkResolveSource()
+    indexSource.update(() => null, records, [], true)
+    const { el, rerender } = await mount(
+      {
+        lens: 'search',
+        indexSource,
+        idsInSearch: () => current,
+      } as Partial<SidebarProps>,
+      (b) => {
+        b.tree.mockResolvedValue({ root: '/v', tree, generatedAt: 1 })
+        b.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids: true } as never)
+      },
+    )
+    await type(searchBar(el)!, 'zed')
+    expect(rowOf(el, '/v/Zed.md')?.querySelector('.tree__id')?.textContent).toBe('#2921')
+    current = 'full'
+    await rerender({})
+    expect(rowOf(el, '/v/Zed.md')?.querySelector('.tree__id')?.textContent).toBe('WIKI-2921')
+    current = 'off'
+    await rerender({})
+    expect(rowOf(el, '/v/Zed.md')?.querySelector('.tree__id')).toBeNull()
   })
 })
 

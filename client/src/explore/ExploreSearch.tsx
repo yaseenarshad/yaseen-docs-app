@@ -257,9 +257,9 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
               const opened = shownRecent.opened.length
               const heading = !showRecents ? null : i === 0 && opened > 0 ? 'Opened' : i === opened ? 'Edited' : null
               const at = !showRecents ? undefined : recentList[i]?.at
-              // The ID as a chip after the title (round 1, item 1), by the vault's rule (YAZ-4940); a row found by its ID loses the `ID — ` of its label, so the ID shows once.
+              // The ID as a chip after the title (round 1, item 1), by the vault's rule (YAZ-4940, YAZ-6502); a row found by its ID loses the `ID — ` of its label, so the ID shows once.
               const id = shownId(r, idsInSearch(r.path))
-              const label = id !== null && r.label.startsWith(`${id} — `) ? r.label.slice(id.length + 3) : r.label
+              const label = r.id !== undefined && r.label.startsWith(`${r.id} — `) ? r.label.slice(r.id.length + 3) : r.label
               return (
               <Fragment key={`${r.path}␟${r.name}`}>
               {heading !== null && (

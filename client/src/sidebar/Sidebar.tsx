@@ -107,6 +107,8 @@ export interface SidebarVault {
   index: WikilinkResolveSource
   /** This vault's "Show IDs in search" (YAZ-4940), read when the search rows draw; absent → only on a row found by its ID. */
   idsInSearch?: () => IdsInSearch
+  /** Saves this vault's "Show IDs in search" choice (YAZ-6502), used by the Search ↑↓ menu. */
+  setIdsInSearch?: (next: IdsInSearch) => void
   /** This vault's "Show IDs in the files list" (YAZ-4940): each page row of Files, Focus and Favorites ends with its ID's number ("#12") or the full ID. Absent → off. */
   idsInFiles?: IdsInFiles
   /**
@@ -2681,6 +2683,18 @@ export function Sidebar({
             sortTab === 'search' ? filterSection(searchFilter.includeInline !== undefined || settings.searchIncludeInline ? searchFilter : { ...searchFilter, includeInline: false }, setSearchFilter, reviewRoots.size > 0, unit) : undefined,
             // YAZ-4450 D4: each list's own switch, in a window with two or more vaults only.
             multi && (sortTab === 'focus' || sortTab === 'favorites') ? workspaceRow(sortTab) : undefined,
+            // YAZ-6502: Show IDs submenu on Search only when at least one vault in the window has IDs enabled.
+            (() => {
+              if (sortTab !== 'search') return undefined
+              const idVaults = vaults.filter((v) => v.app !== true && v.index.ids)
+              if (idVaults.length === 0) return undefined
+              return {
+                value: idVaults[0].idsInSearch?.() ?? 'number',
+                set: (next: IdsInSearch) => {
+                  for (const vault of idVaults) vault.setIdsInSearch?.(next)
+                },
+              }
+            })(),
           )}
           onClose={() => setSortMenu(null)}
         />

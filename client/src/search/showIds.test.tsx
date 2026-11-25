@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { idNumber } from '@shared/pageId'
-import { DEFAULT_SHOW_IDS, sanitizeShowIds, shownId, useAllPathIds, usePageId, type PathIds } from './showIds'
+import { DEFAULT_SHOW_IDS, IDS_IN_SEARCH, sanitizeShowIds, shownId, useAllPathIds, usePageId, type PathIds } from './showIds'
+import { idNeedle, marked } from './marked'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { pathInfo } from '../editor/wikilink/linkPillLook'
 import type { IndexRecord } from '@shared/types'
@@ -11,36 +12,69 @@ import type { IndexRecord } from '@shared/types'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('Show IDs in search', () => {
-  it('reads the vault file; Always is the default, and anything else reads as Always', () => {
-    expect(DEFAULT_SHOW_IDS).toEqual({ search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+  it('reads the vault file; Number is the default, legacy always migrates to number, and all four choices round-trip (YAZ-6502)', () => {
+    expect(IDS_IN_SEARCH).toEqual(['off', 'number', 'full', 'match'])
+    expect(DEFAULT_SHOW_IDS).toEqual({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'off' })).toEqual({ search: 'off', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'number' })).toEqual({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'full' })).toEqual({ search: 'full', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
     expect(sanitizeShowIds({ search: 'match' })).toEqual({ search: 'match', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds({ search: 'always' })).toEqual({ search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds({ search: 'sometimes' })).toEqual({ search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds(null)).toEqual({ search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'always' })).toEqual({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'sometimes' })).toEqual({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds(null)).toEqual({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
   })
 
-  it('a row shows its ID always, or only when the search found it by its ID (`searchRows` put "ID — " in front of its label); a row with no ID shows none', () => {
+  it('shownId formats number (#38) and full (WIKI-38), and keeps #38 on ID-matched rows under match or off (YAZ-6502)', () => {
     const byTitle = { id: 'WIKI-38', label: 'S3 (AWS)' }
     const byId = { id: 'WIKI-38', label: 'WIKI-38 — S3 (AWS)' }
-    expect(shownId(byTitle, 'always')).toBe('WIKI-38')
+    const oldId = { id: 'a1b2c3d4e5f6', label: 'Legacy' }
+    expect(shownId(byTitle, 'number')).toBe('#38')
+    expect(shownId(byTitle, 'full')).toBe('WIKI-38')
     expect(shownId(byTitle, 'match')).toBeNull()
-    expect(shownId(byId, 'always')).toBe('WIKI-38')
-    expect(shownId(byId, 'match')).toBe('WIKI-38')
-    expect(shownId({ label: 'Plain' }, 'always')).toBeNull()
+    expect(shownId(byTitle, 'off')).toBeNull()
+    expect(shownId(byId, 'number')).toBe('#38')
+    expect(shownId(byId, 'full')).toBe('WIKI-38')
+    expect(shownId(byId, 'match')).toBe('#38')
+    expect(shownId(byId, 'off')).toBe('#38')
+    expect(shownId(oldId, 'number')).toBe('a1b2c3d4e5f6')
+    expect(shownId(oldId, 'full')).toBe('a1b2c3d4e5f6')
+    expect(shownId({ label: 'Plain' }, 'number')).toBeNull()
+    expect(shownId({ label: 'Plain' }, 'full')).toBeNull()
+  })
+
+  it('idNeedle highlights matched digits inside both #2921 and WIKI-2921 for digit, #prefix, and full-ID queries', () => {
+    const byId = { id: 'WIKI-2921', label: 'WIKI-2921 — Architecture' }
+    const multiHyphen = { id: 'AB-CD-305', label: 'AB-CD-305 — Spec' }
+    const byTitle = { id: 'WIKI-2921', label: 'Architecture' }
+    const renderHtml = (text: string, row: { id?: string; label: string }, query: string) => {
+      const el = document.createElement('div')
+      const root = createRoot(el)
+      act(() => root.render(<>{marked(text, idNeedle(row, query))}</>))
+      const html = el.innerHTML
+      act(() => root.unmount())
+      return html
+    }
+    expect(renderHtml('#2921', byId, '#2921')).toBe('#<mark class="tree__mark">2921</mark>')
+    expect(renderHtml('#2921', byId, '#29')).toBe('#<mark class="tree__mark">29</mark>21')
+    expect(renderHtml('#2921', byId, '2921')).toBe('#<mark class="tree__mark">2921</mark>')
+    expect(renderHtml('#2921', byId, 'WIKI-2921')).toBe('#<mark class="tree__mark">2921</mark>')
+    expect(renderHtml('WIKI-2921', byId, 'WIKI-2921')).toBe('WIKI-<mark class="tree__mark">2921</mark>')
+    expect(renderHtml('#305', multiHyphen, 'AB-CD-305')).toBe('#<mark class="tree__mark">305</mark>')
+    expect(idNeedle(byTitle, 'arch')).toBeUndefined()
   })
 })
 
 describe('Show IDs in the title and in the files list (YAZ-4940 part 2)', () => {
   it('an old file with `search` alone reads as title On, files list Off, tabs Off, tabsLayout Inline; fields round-trip; anything else is the default', () => {
     expect(sanitizeShowIds({ search: 'match' })).toEqual({ search: 'match', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds({ search: 'always', title: false, files: 'full', tabs: 'number', tabsLayout: 'stacked' })).toEqual({ search: 'always', title: false, files: 'full', tabs: 'number', tabsLayout: 'stacked' })
-    expect(sanitizeShowIds({ title: 'off', files: 'on', tabs: true, tabsLayout: 'two-lines' })).toEqual({ search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds({ title: false })).toEqual({ search: 'always', title: false, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'full', title: false, files: 'full', tabs: 'number', tabsLayout: 'stacked' })).toEqual({ search: 'full', title: false, files: 'full', tabs: 'number', tabsLayout: 'stacked' })
+    expect(sanitizeShowIds({ title: 'off', files: 'on', tabs: true, tabsLayout: 'two-lines' })).toEqual({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ title: false })).toEqual({ search: 'number', title: false, files: 'off', tabs: 'off', tabsLayout: 'inline' })
   })
 
   it('"In the files list" has three choices; the old file\'s `true` (round 2\'s On) reads as Number, `false` or nothing as Off', () => {
-    expect(sanitizeShowIds({ search: 'always', files: true })).toEqual({ search: 'always', title: true, files: 'number', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds({ search: 'always', files: false })).toEqual({ search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'always', files: true })).toEqual({ search: 'number', title: true, files: 'number', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'always', files: false })).toEqual({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
     expect(sanitizeShowIds({ search: 'always' }).files).toBe('off')
     expect(sanitizeShowIds({ files: 'number' }).files).toBe('number')
     expect(sanitizeShowIds({ files: 'full' }).files).toBe('full')

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { IdsInSearch } from '../search/showIds'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { ExploreSearch, type SearchLink } from './ExploreSearch'
 
@@ -45,7 +46,7 @@ const CANDIDATES: SearchCandidate[] = [
   },
 ]
 
-function mount(candidates: readonly SearchCandidate[] = CANDIDATES) {
+function mount(candidates: readonly SearchCandidate[] = CANDIDATES, idsInSearch: (path: string) => IdsInSearch = () => 'match') {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -64,7 +65,7 @@ function mount(candidates: readonly SearchCandidate[] = CANDIDATES) {
         onOpen={onOpen}
         onOpenInTab={onOpenInTab}
         onRowMenu={vi.fn()}
-        idsInSearch={() => 'match'}
+        idsInSearch={idsInSearch}
         active
       />,
     )
@@ -114,5 +115,48 @@ describe('ExploreSearch filter + inline drawings (YAZ-6143)', () => {
     act(() => pagesBtn.click())
     const labels = [...container!.querySelectorAll('.explore__name')].map((el) => el.textContent?.trim())
     expect(labels).toEqual(['CI/CD'])
+  })
+
+  it('YAZ-6502: strips `WIKI-2921 — ` from title on ID match and renders `#2921` / `WIKI-2921` chip with matched digits marked', () => {
+    const withId: SearchCandidate[] = [
+      { kind: 'file', name: 'Architecture', lower: 'architecture', label: 'Architecture', path: '/vault/Architecture.md', folder: '', id: 'WIKI-2921' },
+    ]
+    const setQuery = (value: string) => {
+      const input = container!.querySelector<HTMLInputElement>('.explore__input')!
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      act(() => {
+        setter.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+
+    // Number (#12): title match shows plain #2921; ID match strips WIKI-2921 — and highlights digits in #2921.
+    mount(withId, () => 'number')
+    setQuery('arch')
+    expect(container!.querySelector('.explore__name')?.textContent).toBe('Architecture')
+    expect(container!.querySelector('.explore__id')?.innerHTML).toBe('#2921')
+    setQuery('2921')
+    expect(container!.querySelector('.explore__name')?.textContent).toBe('Architecture')
+    expect(container!.querySelector('.explore__id')?.innerHTML).toBe('#<mark class="tree__mark">2921</mark>')
+
+    // Full ID: shows WIKI-2921 and highlights digits on ID match without duplicating prefix in title.
+    act(() => root!.unmount())
+    mount(withId, () => 'full')
+    setQuery('arch')
+    expect(container!.querySelector('.explore__id')?.innerHTML).toBe('WIKI-2921')
+    setQuery('WIKI-2921')
+    expect(container!.querySelector('.explore__name')?.textContent).toBe('Architecture')
+    expect(container!.querySelector('.explore__id')?.innerHTML).toBe('WIKI-<mark class="tree__mark">2921</mark>')
+
+    // Off and Match: hide on title match, still strip WIKI-2921 — and highlight #2921 on ID match.
+    for (const rule of ['off', 'match'] as const) {
+      act(() => root!.unmount())
+      mount(withId, () => rule)
+      setQuery('arch')
+      expect(container!.querySelector('.explore__id')).toBeNull()
+      setQuery('#2921')
+      expect(container!.querySelector('.explore__name')?.textContent).toBe('Architecture')
+      expect(container!.querySelector('.explore__id')?.innerHTML).toBe('#<mark class="tree__mark">2921</mark>')
+    }
   })
 })

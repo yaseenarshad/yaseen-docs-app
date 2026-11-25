@@ -19,7 +19,7 @@ import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { dirname } from '../lib/paths'
 import type { IndexRecord } from '@shared/types'
 
-export { DEFAULT_SHOW_IDS, IDS_IN_TABS, SHOW_IDS_FILE, TAB_ID_LAYOUTS, sanitizeShowIds, type IdsInFiles, type IdsInSearch, type IdsInTabs, type ShowIdsSettings, type TabIdLayout } from '@shared/showIds'
+export { DEFAULT_SHOW_IDS, IDS_IN_SEARCH, IDS_IN_TABS, SHOW_IDS_FILE, TAB_ID_LAYOUTS, idInFiles, sanitizeShowIds, type IdsInFiles, type IdsInSearch, type IdsInTabs, type ShowIdsSettings, type TabIdLayout } from '@shared/showIds'
 
 export interface ShowIdsState {
   settings: ShowIdsSettings
@@ -68,10 +68,16 @@ export function useShowIds(root: string | null): ShowIdsState {
   return { settings, save, inSearch, inTitle }
 }
 
-/** The ID a row shows, by the vault's choice: always, or only on a row the search found by its ID (`searchRows` put `ID — ` in front of its label). */
+/**
+ * The ID a search row shows, by the vault's choice (YAZ-4940, YAZ-6502): Number ("#2921"), Full ID ("WIKI-2921"),
+ * or only when the search found the row by its ID (`searchRows` put `ID — ` in front of its label). Under `match`
+ * or `off`, an ID-matched row still shows its number ("#2921") so the matched digits highlight cleanly.
+ */
 export function shownId(row: { id?: string; label: string }, rule: IdsInSearch): string | null {
   if (row.id === undefined) return null
-  return rule === 'always' || row.label.startsWith(`${row.id} — `) ? row.id : null
+  if (rule === 'full') return row.id
+  if (rule === 'number') return idInFiles(row.id, 'number')
+  return row.label.startsWith(`${row.id} — `) ? idInFiles(row.id, 'number') : null
 }
 
 /**
