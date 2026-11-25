@@ -529,7 +529,7 @@ function titleField(value: string, doors: CardEditorDoors, down: () => void, rea
   field.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) doors.done()
     else if (event.key === 'Escape') doors.done()
-    else if (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey) || (event.key === 'ArrowDown' && onLastLine(field))) down()
+    else if (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) || (event.key === 'ArrowDown' && onLastLine(field))) down()
     else return
     event.preventDefault()
     event.stopPropagation()

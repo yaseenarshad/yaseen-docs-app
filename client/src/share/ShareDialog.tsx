@@ -74,7 +74,7 @@ function Picker<V extends string>(props: { label: string; value: V; choices: rea
     buttonRef.current?.focus()
   }
   const onMenuKey = (e: ReactKeyboardEvent) => {
-    if (e.key === 'Tab') {
+    if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault()
       close()
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {

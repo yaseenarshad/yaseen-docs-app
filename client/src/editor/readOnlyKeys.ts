@@ -186,11 +186,9 @@ export const readOnlyKeys = $prose(
           // the next / previous cell, as in a normal page, but straight to the table's own move: a cell bullet's
           // indent (the page's Tab before the table's) never runs, and the last cell adds no row (YAZ-4433).
           keydown: (view, event) => {
-            if (event.key !== 'Tab' || !refuse(view, event)) return false
-            if (!event.metaKey && !event.ctrlKey && !event.altKey) {
-              followCaret(view, domCaret(view))
-              goToNextCell(event.shiftKey ? -1 : 1)(view.state, viewOnly(view.dispatch))
-            }
+            if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey || !refuse(view, event)) return false
+            followCaret(view, domCaret(view))
+            goToNextCell(event.shiftKey ? -1 : 1)(view.state, viewOnly(view.dispatch))
             return true
           },
           input: (view) => {
