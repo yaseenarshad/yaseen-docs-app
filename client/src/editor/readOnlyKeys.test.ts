@@ -665,4 +665,20 @@ describe('a read-only page keeps its caret and keys (YAZ-4433)', () => {
     view.dom.dispatchEvent(clipboard('paste', { 'text/plain': 'PASTED' }).event)
     expect(told).toEqual([])
   })
+
+  it('YAZ-6512: Ctrl+Tab and Ctrl+Shift+Tab pass through uncanceled on a read-only page so tab switching works; plain Tab still stays blocked', async () => {
+    const { crepe, view } = await locked('L2 a', 2)
+    const ctrlTab = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+    view.dom.dispatchEvent(ctrlTab)
+    expect(ctrlTab.defaultPrevented).toBe(false)
+
+    const ctrlShiftTab = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })
+    view.dom.dispatchEvent(ctrlShiftTab)
+    expect(ctrlShiftTab.defaultPrevented).toBe(false)
+
+    const plainTab = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', bubbles: true, cancelable: true })
+    view.dom.dispatchEvent(plainTab)
+    expect(plainTab.defaultPrevented).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe(PAGE)
+  })
 })

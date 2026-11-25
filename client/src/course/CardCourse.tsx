@@ -608,7 +608,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
     // No key typed in the course travels on to the app (its Esc, its shortcuts).
     e.stopPropagation()
     // Docked, Tab goes on into the app: only the full layer keeps the keyboard inside.
-    if (e.key !== 'Tab' || keys.current.docked) return
+    if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey || keys.current.docked) return
     const all = [...(layer.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])]
     if (all.length === 0) return
     const i = all.indexOf(document.activeElement as HTMLElement)
