@@ -33,6 +33,7 @@ import { UnitContext, useVaultUnit } from '../vault/unitWord'
 import { usePageId } from '../search/showIds'
 import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { fileKind } from '@shared/fileKind'
+import { inlineDrawingRowPath } from '@shared/inlineRef'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { isCardFileContent } from '@shared/cardFileFormat'
 import { CODE_WIDTH_KEY, readBlockWidth, readCardSides, readOutsideGlow, readPagePosition, readPageSwitches, readPageWidth, TABLE_WIDTH_KEY, writeBlockWidth, writeCardSides, writeOutsideGlow, writePagePosition, writePageSwitch, writePageWidth, type PageSwitchKey, type PageSwitches } from '@shared/pageSwitches'
@@ -439,13 +440,14 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       // The pills' icons, and a board embed as its window, read only (round 1, item 2): what the page tab draws.
       linkLook: { icon: (target, folder) => fileIconDecoration(icons, target, folder) },
       boardEmbeds: { root },
-      // Read-safe inline drawing actions (YAZ-6470): Copy path (<page>:<line>) and Open in new tab; edit actions stay hidden while reading.
+      // Read-safe inline drawing actions (YAZ-6470, YAZ-6548): Copy path (<page>:<line>), Open in Explore, and Open in new tab; edit actions stay hidden while reading.
       inlineDrawing: {
         root,
         pagePath: path,
         onCopyPath: (index) => {
           void resolveInlineCopyPath({ kind: 'drawing', page: path, index }).then((p) => copyText(p, 'path', (m) => doors.current.onNotice(m)))
         },
+        onOpenExplore: (index) => doors.current.onOpenLink(inlineDrawingRowPath(path, index)),
         ...(canOpenDrawingTab && {
           onOpenInTab: (index, background) => doors.current.onOpenInlineDrawingTab?.(path, index, background),
         }),

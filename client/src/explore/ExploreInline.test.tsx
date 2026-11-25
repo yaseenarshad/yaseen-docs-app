@@ -30,6 +30,7 @@ type Crepe = {
       pagePath?: string | null
       onCopyPath?: (index: number) => void
       onOpenInTab?: (index: number, background: boolean) => void
+      onOpenExplore?: (index: number, title?: string) => void
     }
   }
   create: Mock
@@ -546,5 +547,33 @@ describe('YAZ-6470 #9: ExplorePage read-mode inline drawing actions and edit tra
     // Stays reading and opens ReadOnlyChip's "Allow edits?" box
     expect(top().querySelector('[data-editor]')).toBeNull()
     expect(top().querySelector('.read-only-chip__ask')).not.toBeNull()
+  })
+
+  it('YAZ-6548: requestLayer with synthetic inline drawing ref or standalone board opens ExploreBoard directly, and ExplorePage inlineDrawing.onOpenExplore pushes ExploreBoard', async () => {
+    await mount({ requestLayer: { kind: 'page', path: '/v/Architecture.md#drawing-0' } })
+    await flush()
+    await flush()
+    expect(top().dataset.kind).toBe('board')
+    expect(top().querySelector('.explore__title')?.textContent).toBe('Auth Flow')
+    expect(boards.made.at(-1)?.host.ref.inlineJson).toBe(SCENE_0)
+
+    await mount({ requestLayer: { kind: 'page', path: '/v/Standalone.excalidraw' } })
+    await flush()
+    await flush()
+    expect(top().dataset.kind).toBe('board')
+    expect(boards.made.at(-1)?.host.ref.path).toBe('/v/Standalone.excalidraw')
+
+    // ExplorePage read-mode inlineDrawing.onOpenExplore pushes ExploreBoard on top
+    await mount({ requestLayer: { kind: 'page', path: '/v/Architecture.md' } })
+    await flush()
+    await flush()
+    const crepe = crepes[crepes.length - 1]!
+    expect(crepe.opts.inlineDrawing?.onOpenExplore).toBeDefined()
+    act(() => crepe.opts.inlineDrawing!.onOpenExplore!(1))
+    await flush()
+    await flush()
+    expect(top().dataset.kind).toBe('board')
+    expect(top().querySelector('.explore__title')?.textContent).toBe('Token Graph')
+    expect(boards.made.at(-1)?.host.ref.inlineJson).toBe(SCENE_1)
   })
 })

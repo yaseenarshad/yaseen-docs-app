@@ -21,6 +21,7 @@ import { createWikilinkCandidateSource } from '../wikilink/wikilinkPicker'
 import { createWikilinkResolveSource, linksAsShown } from '../wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import { clipboardPlainText } from '../clipboardPlainText'
+import { READ_ONLY_EDIT, type ReadOnlyEditEvent } from '../readOnlyEdit'
 import { BOARD_EMBED_CLASS, BOARD_EMBED_SYNTAX_CLASS, boardEmbedStats } from './boardEmbed'
 
 /** One fake window: the host it was given, and every call made on it since. */
@@ -334,6 +335,89 @@ describe('open and the menu (2C)', () => {
     fakes.list[0]!.host.onOpen!('backgroundTab')
     expect(wikilinkNav.openCurrent).toHaveBeenCalledWith('/v/CloudFront.drawio')
     expect(wikilinkNav.openBackground).toHaveBeenCalledWith('/v/CloudFront.drawio')
+  })
+
+  it('YAZ-6548: double-click on embedded .excalidraw opens popup (with tellReadOnlyEdit when read-only); ⌘-click still follows', async () => {
+    const openNewTab = vi.fn()
+    const wikilinkNav = { ...nav(), openNewTab }
+    const onEditInPopup = vi.fn()
+    const { root, view } = await mount('![[Sketch.excalidraw]]\n', {
+      wikilinkNav,
+      viewOnlyLinks: viewOnlyResolving(),
+      boardEmbeds: { root: '/v', onEditInPopup },
+    })
+    await windows(1)
+
+    // Plain double-click opens popup editor, not a new tab.
+    fakes.list[0]!.host.onOpen!('thisTab')
+    expect(onEditInPopup).toHaveBeenCalledExactlyOnceWith('Sketch.excalidraw')
+    expect(wikilinkNav.openCurrent).not.toHaveBeenCalled()
+
+    // Cmd-click / Cmd-Shift-click still follow to background/new tab.
+    fakes.list[0]!.host.onOpen!('backgroundTab')
+    fakes.list[0]!.host.onOpen!('newTab')
+    expect(wikilinkNav.openBackground).toHaveBeenCalledWith('/v/Sketch.excalidraw')
+    expect(openNewTab).toHaveBeenCalledWith('/v/Sketch.excalidraw')
+
+    // Read-only double-click routes through tellReadOnlyEdit unlock-and-resume.
+    view.setProps({ editable: () => false })
+    let captured: ReadOnlyEditEvent | null = null
+    root.addEventListener(READ_ONLY_EDIT, (e) => {
+      captured = e as ReadOnlyEditEvent
+    })
+    onEditInPopup.mockClear()
+    fakes.list[0]!.host.onOpen!('thisTab')
+    expect(onEditInPopup).not.toHaveBeenCalled()
+    expect(captured).not.toBeNull()
+    expect(captured!.detail).toBe('drawing')
+    captured!.resume?.()
+    expect(onEditInPopup).toHaveBeenCalledExactlyOnceWith('Sketch.excalidraw')
+  })
+
+  it('YAZ-6548: right-click menu on embedded .excalidraw and .drawio includes Open in Explore; read-only .excalidraw keeps Edit drawing via tellReadOnlyEdit', async () => {
+    const openExplore = vi.fn()
+    const onEditInPopup = vi.fn()
+    const { root, view } = await mount('![[Sketch.excalidraw]]\n\n![[CloudFront.drawio]]\n', {
+      wikilinkNav: { ...nav(), openExplore },
+      viewOnlyLinks: viewOnlyResolving(),
+      boardEmbeds: { root: '/v', onEditInPopup },
+    })
+    await windows(2)
+
+    const openMenuItems = (i: number) => {
+      document.querySelectorAll('.ctx-menu').forEach((el) => el.remove())
+      fakes.list[i]!.host.onContextMenu!(new MouseEvent('contextmenu', { clientX: 5, clientY: 5 }))
+      return Array.from(document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item'))
+    }
+
+    const drawItems = openMenuItems(0)
+    expect(drawItems.map((b) => b.textContent)).toContain('Open in Explore')
+    drawItems.find((b) => b.textContent === 'Open in Explore')!.click()
+    expect(openExplore).toHaveBeenLastCalledWith('/v/Sketch.excalidraw')
+
+    const diagItems = openMenuItems(1)
+    expect(diagItems.map((b) => b.textContent)).toContain('Open in Explore')
+    diagItems.find((b) => b.textContent === 'Open in Explore')!.click()
+    expect(openExplore).toHaveBeenLastCalledWith('/v/CloudFront.drawio')
+
+    // Read-only embedded .excalidraw keeps Edit drawing in right-click menu and triggers tellReadOnlyEdit.
+    view.setProps({ editable: () => false })
+    let captured: ReadOnlyEditEvent | null = null
+    root.addEventListener(READ_ONLY_EDIT, (e) => {
+      captured = e as ReadOnlyEditEvent
+    })
+    const roItems = openMenuItems(0)
+    const roLabels = roItems.map((b) => b.textContent)
+    expect(roLabels).toContain('Open in Explore')
+    expect(roLabels).toContain('Edit drawing')
+    expect(roLabels).not.toContain('Show as link')
+    expect(roLabels).not.toContain('Remove embed')
+    roItems.find((b) => b.textContent === 'Edit drawing')!.click()
+    expect(onEditInPopup).not.toHaveBeenCalled()
+    expect(captured).not.toBeNull()
+    expect(captured!.detail).toBe('drawing')
+    captured!.resume?.()
+    expect(onEditInPopup).toHaveBeenCalledExactlyOnceWith('Sketch.excalidraw')
   })
 
   it('the menu: the pill rows, the window`s rows, then Edit drawing, Show as link, Edit link, Remove embed', async () => {

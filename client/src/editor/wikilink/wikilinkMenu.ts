@@ -25,7 +25,7 @@ import { boardCheckOf, cardCheckOf } from '../drawing/boardEmbedScan'
 import { boardEmbedTarget } from '../drawing/boardEmbedText'
 import { inCellOrPage } from '../table/cellBlocks'
 import { OPEN_ID_LINK } from './idLinkCaret'
-import { fileKind } from '@shared/fileKind'
+import { layerKindOf } from '../../explore/layers'
 import { newEmbed } from '@shared/embedOptions'
 import { linkPosAtDOM, wikilinkMatchAt, type LinkFollow, type WikilinkNav } from './wikilinkClick'
 import { WIKILINK_CLASS, cardLinkTitle, cardResolverOf, idLinkTitle, linkDisplayText, linkIsResolved, linkPageId, linkPageName, linkPath, linkSplit, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
@@ -132,8 +132,8 @@ export function linkMenuOf(inner: string, source: WikilinkResolveSource, nav: Wi
     // `[[#heading]]` of this page: the heading jump is GRO-2239, so nothing to open.
     open: page === '' ? undefined : () => follow(inner, 'thisTab'),
     openNew: page === '' ? undefined : () => follow(inner, 'backgroundTab'),
-    // "Open in Explore" (YAZ-4936): a page that is there, where the host has the door.
-    openExplore: path !== null && fileKind(path) === 'markdown' && nav.openExplore !== undefined ? () => follow(inner, 'explore') : undefined,
+    // "Open in Explore" (YAZ-4936, YAZ-6548): a page or board that is there, where the host has the door.
+    openExplore: path !== null && layerKindOf(path) !== null && nav.openExplore !== undefined ? () => follow(inner, 'explore') : undefined,
     ...(id !== null && title !== undefined
       ? { copyNameAndId: () => copyText(nameAndId(title, id), 'name and ID', nav.onNotice, undefined, true) }
       : shown !== '' && found ? { copyName: () => copyText(shown, 'name', nav.onNotice, undefined, true) } : {}),

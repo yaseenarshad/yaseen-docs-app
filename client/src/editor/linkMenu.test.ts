@@ -173,6 +173,63 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     expect(shape(menuOf(folder.root, folder.view, 'Projects'))).not.toContain('Open in Explore')
   })
 
+  it('YAZ-6548: "Open in Explore" appears on drawing (.excalidraw) and diagram (.drawio) wikilinks and opens them in Explore; PDFs stay omitted', async () => {
+    const source = createWikilinkResolveSource()
+    source.update(resolve, records, folders, true, ['YAS'])
+    const viewOnly = {
+      ready: true,
+      catalog: null,
+      targets: [],
+      resolve: (t: string) => (t === 'Sketch.excalidraw' || t === 'Flow.drawio' || t === 'Doc.pdf' ? `/vault/${t}` : null),
+      subscribe: () => () => {},
+    }
+    const openExplore = vi.fn()
+    const m = await mountWith('a [[Sketch.excalidraw]] b [[Flow.drawio]] c [[Doc.pdf]]\n', () => ({
+      wikilinks: source,
+      viewOnlyLinks: viewOnly,
+      wikilinkNav: { root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn(), openExplore },
+      vaultsOfLetters: vaultsOf,
+    }))
+    const drawMenu = menuOf(m.root, m.view, 'Sketch')
+    expect(shape(drawMenu)).toContain('Open in Explore')
+    rowOf(drawMenu, 'Open in Explore').click()
+    expect(openExplore).toHaveBeenLastCalledWith('/vault/Sketch.excalidraw')
+
+    const diagMenu = menuOf(m.root, m.view, 'Flow')
+    expect(shape(diagMenu)).toContain('Open in Explore')
+    rowOf(diagMenu, 'Open in Explore').click()
+    expect(openExplore).toHaveBeenLastCalledWith('/vault/Flow.drawio')
+
+    expect(shape(menuOf(m.root, m.view, 'Doc.pdf'))).not.toContain('Open in Explore')
+  })
+
+  it('YAZ-6548: Markdown pills to .excalidraw and .drawio have "Open in Explore" and open through `openPath` with "explore"', async () => {
+    for (const [label, target] of [
+      ['sketch', '/Other/Sketch.excalidraw'],
+      ['flow', '/Other/Flow.drawio'],
+    ] as const) {
+      const openPath = vi.fn()
+      const m = await mountWith(`[${label}](../Other/${target.split('/').pop()})\n`, (acts) => ({
+        markdownLinkNav: {
+          ...acts,
+          open: vi.fn(),
+          copy: vi.fn().mockResolvedValue(undefined),
+          onNotice: vi.fn(),
+          inApp: () => target,
+          vaultPath: () => target,
+          vaultTag: () => 'Other Vault',
+          icon: () => ({ class: 'file-icon' }),
+          openPath,
+          exploreClick: () => false,
+        },
+      }))
+      const menu = menuOf(m.root, m.view, label)
+      expect(shape(menu).slice(0, 4)).toEqual(['Open', 'Open in new tab', 'Open in new window', 'Open in Explore'])
+      rowOf(menu, 'Open in Explore').click()
+      expect(openPath).toHaveBeenCalledWith(target, 'explore')
+    }
+  })
+
   it('a folder link: no top line, top-level "Open in new window" (YAZ-6513, matching sidebar YAZ-4778), and Open in ▸ holds OS targets', async () => {
     const { root, view, acts } = await mount('pad [[Projects]] tail\n')
     const menu = menuOf(root, view, 'Projects')

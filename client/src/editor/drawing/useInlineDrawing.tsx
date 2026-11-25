@@ -56,6 +56,8 @@ export interface InlineDrawingHost {
   onNotice?: (message: string, kind?: NoticeKind) => void
   /** Opens the `index`-th (0-based) inline drawing block of this page in its own tab. */
   onOpenInTab?: (index: number, background: boolean) => void
+  /** Opens the `index`-th (0-based) inline drawing block of this page in Explore (YAZ-6548). */
+  onOpenExplore?: (index: number, title?: string) => void
 }
 
 export interface InlineDrawingModalState {
@@ -233,6 +235,12 @@ export function useInlineDrawing(host: InlineDrawingHost): {
     })
   }, [])
 
+  const openInExploreFromView = useCallback((index: number, title?: string) => {
+    void Promise.resolve(hostRef.current.flushPage()).then(() => {
+      hostRef.current.onOpenExplore?.(index, title)
+    })
+  }, [])
+
   const copyPath = useCallback((index: number) => {
     const h = hostRef.current
     const text = inlineDrawingPathAtLine(h.path, h.disk(), index)
@@ -306,6 +314,7 @@ export function useInlineDrawing(host: InlineDrawingHost): {
   }, [])
 
   const hasOpenInTab = host.onOpenInTab !== undefined
+  const hasOpenExplore = host.onOpenExplore !== undefined
 
   const inlineProps = useMemo<InlineDrawingDeps>(
     () => ({
@@ -315,9 +324,10 @@ export function useInlineDrawing(host: InlineDrawingHost): {
       onMoveToFile: (pos) => void moveToFile(pos),
       onDelete: requestDelete,
       onOpenInTab: hasOpenInTab ? openInTabFromView : undefined,
+      onOpenExplore: hasOpenExplore ? openInExploreFromView : undefined,
       onCopyPath: copyPath,
     }),
-    [host.root, host.path, openEdit, moveToFile, requestDelete, hasOpenInTab, openInTabFromView, copyPath],
+    [host.root, host.path, openEdit, moveToFile, requestDelete, hasOpenInTab, openInTabFromView, hasOpenExplore, openInExploreFromView, copyPath],
   )
 
   const modalProps = useMemo<InlineDrawingModalState | null>(() => {
