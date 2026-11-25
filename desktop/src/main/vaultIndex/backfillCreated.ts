@@ -6,6 +6,7 @@ import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@sha
 import type { BackfillCreatedResult } from '@shared/ipc'
 import { CREATED_KEY } from '@shared/pageCreated'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES } from '@shared/types'
+import { withSuppressedEdit } from '../fs/externalEditSuppress'
 import { atomicWrite } from '../fs/fsUtils'
 import { idsOwnedBy, ownOnly, walk } from './scan'
 
@@ -51,7 +52,7 @@ export async function backfillCreated(root: string): Promise<BackfillCreatedResu
           skipped += 1
           continue
         }
-        await atomicWrite(file, next)
+        await withSuppressedEdit(file, () => atomicWrite(file, next))
         written += 1
       } else {
         if (Object.prototype.hasOwnProperty.call(properties, CREATED_KEY)) {
@@ -59,7 +60,7 @@ export async function backfillCreated(root: string): Promise<BackfillCreatedResu
           continue
         }
         const next = setFrontmatterProperty(text, CREATED_KEY, iso)
-        await atomicWrite(file, next)
+        await withSuppressedEdit(file, () => atomicWrite(file, next))
         written += 1
       }
     } catch {

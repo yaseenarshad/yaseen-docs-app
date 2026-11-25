@@ -430,6 +430,15 @@ export function onExternalRename(listener: ExternalRenameListener | undefined): 
   externalRenamed = listener
 }
 
+/** Hears each cold-start reconcile diff (`cacheStatus === 'hit'`, YAZ-6501): keeps `vaultIndex` decoupled from `store`. */
+type ColdStartDiffListener = (diff: ColdStartDiff) => void
+let coldStartDiffListener: ColdStartDiffListener | undefined
+
+/** One listener, set at startup (`registerExternalEdits`). */
+export function onColdStartDiff(listener: ColdStartDiffListener | undefined): void {
+  coldStartDiffListener = listener
+}
+
 let isTransientReadOnlyRoot: ((root: string) => boolean) | undefined
 
 /** One checker, set by the bridge at startup: skips automatic ID sweeps and writes for transient read-only roots (YAZ-4502). */
@@ -590,6 +599,7 @@ async function build(root: string): Promise<Entry> {
     })
     entry.records = records
     entry.coldDiff = diff
+    if (diff.cacheStatus === 'hit') coldStartDiffListener?.(diff)
     const { letters, ...held } = await vaultIds(root)
     let answer = held.answer
     const own = await ownPart(root, entry)

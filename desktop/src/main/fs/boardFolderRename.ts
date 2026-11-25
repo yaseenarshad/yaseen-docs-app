@@ -18,6 +18,7 @@ import { BOARDS } from './boardDocument'
 import { readBoardHead } from './boardHead'
 import { readBoundedRegularFile } from './boundedRead'
 import { parseScene } from './drawing'
+import { withSuppressedEdit } from './externalEditSuppress'
 import { atomicWrite, vaultFiles } from './fsUtils'
 
 /** `abs` as a vault-relative `/` path of `root`, or null when it is not inside it. */
@@ -52,7 +53,7 @@ async function writeFolder(file: string, folder: string): Promise<boolean> {
     const { scene } = parseScene(snap.data.toString('utf8'), file, 'IO_ERROR')
     const next = serializeBoard(withPicturesOut(scene, true, snap.mtime, Date.now(), folder))
     if ((await stat(file)).mtimeMs !== snap.mtime) return false
-    await atomicWrite(file, next)
+    await withSuppressedEdit(file, () => atomicWrite(file, next))
     return true
   } catch {
     // A board that is not a scene, or that went: nothing to name.

@@ -3638,6 +3638,51 @@ export function addEdit(edits: Readonly<Record<string, number>>, file: string, n
   return next
 }
 
+/** One batched edit entry for `addEdits` / `store.addEdits` (YAZ-6501). */
+export interface EditEntry {
+  file: string
+  at: number
+}
+
+/**
+ * Pure: `edits` with a batch of `entries` applied at once (YAZ-6501); null when nothing changes.
+ * Preserves `EDIT_GAP_MS` (60s) and caps at `MAX_EDITS` (500) newest-first. With `onlyNewer: true`
+ * (cold-start diffs and watcher echoes), an existing entry is never overwritten by an older or
+ * equal timestamp, and a newer timestamp within `EDIT_GAP_MS` is skipped.
+ */
+export function addEdits(
+  edits: Readonly<Record<string, number>>,
+  entries: readonly EditEntry[],
+  opts?: { onlyNewer?: boolean },
+): Record<string, number> | null {
+  if (entries.length === 0) return null
+  const merged = new Map<string, number>()
+  for (const { file, at } of entries) {
+    if (!Number.isFinite(at)) continue
+    const prev = merged.get(file)
+    if (prev === undefined || at > prev) merged.set(file, at)
+  }
+  const next: Record<string, number> = { ...edits }
+  let applied = false
+  for (const [file, at] of merged) {
+    const last = edits[file]
+    if (opts?.onlyNewer === true) {
+      if (last !== undefined && (at <= last || at - last < EDIT_GAP_MS)) continue
+    } else {
+      if (last !== undefined && at >= last && at - last < EDIT_GAP_MS) continue
+    }
+    next[file] = at
+    applied = true
+  }
+  if (!applied) return null
+  const pairs = Object.entries(next)
+  if (pairs.length <= MAX_EDITS) return next
+  const kept = Object.fromEntries(pairs.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, MAX_EDITS))
+  const keptKeys = Object.keys(kept)
+  if (keptKeys.length === Object.keys(edits).length && keptKeys.every((k) => kept[k] === edits[k])) return null
+  return kept
+}
+
 /**
  * View state that only means something inside that folder (the retired localStorage mdapp.expanded / lastFile / folds).
  * `expanded` is a SESSION list (YAZ-1642): shared by every window on the

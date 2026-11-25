@@ -2,6 +2,7 @@ import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { ATOMIC_TMP_HEX_LEN, isAtomicTmp } from '@shared/fileKind'
 import { GITHUB_FILE_LIMIT_BYTES, type ConnectRepoResult, type GithubSyncMerge, type GithubSyncStatus } from '@shared/types'
+import { withSuppressedRoot } from '../fs/externalEditSuppress'
 import { gitAuthEnv } from './askpass'
 import { detectRepo } from './detect'
 import { git, GIT_TIMEOUT_CODE, installGitHint, resolveGit, zList, type GitResult } from './exec'
@@ -313,21 +314,26 @@ export async function syncPass(
   if (behind > 0 && !flush) {
     const span = (await git(bin, root, ['rev-parse', 'HEAD', '@{u}'])).stdout.split('\n')
     let refused = null as GitResult | null // set in the callback; the cast stops TS narrowing it to null
-    const outcome = await parkWhileRebasing(bin, root, tooLarge, async () => {
-      const rebased = await git(bin, root, [...identArgs, 'rebase', '@{u}'])
-      if (rebased.code === 0) return true
-      // YAZ-3044 A1: an autosave landed between the commit and the rebase, and git refused to
-      // start. Nothing is stopped and nothing is lost: the next pass commits that save and rebases.
-      if (REBASE_REFUSED.test(`${rebased.stderr}\n${rebased.stdout}`)) {
-        refused = rebased
-        return false
-      }
-      // YAZ-3039: settle the drawing conflicts and finish; it aborts (losslessly) whatever it cannot
-      // settle — a page conflict above all, which keeps Docs' own words below (YAZ-3028 D4).
-      const report = await resolveRebase(bin, root, { before: span[0] ?? 'HEAD', upstream: span[1] ?? '@{u}' })
-      merged = report ?? []
-      return report !== null
-    })
+    const outcome = await withSuppressedRoot(
+      root,
+      () =>
+        parkWhileRebasing(bin, root, tooLarge, async () => {
+          const rebased = await git(bin, root, [...identArgs, 'rebase', '@{u}'])
+          if (rebased.code === 0) return true
+          // YAZ-3044 A1: an autosave landed between the commit and the rebase, and git refused to
+          // start. Nothing is stopped and nothing is lost: the next pass commits that save and rebases.
+          if (REBASE_REFUSED.test(`${rebased.stderr}\n${rebased.stdout}`)) {
+            refused = rebased
+            return false
+          }
+          // YAZ-3039: settle the drawing conflicts and finish; it aborts (losslessly) whatever it cannot
+          // settle — a page conflict above all, which keeps Docs' own words below (YAZ-3028 D4).
+          const report = await resolveRebase(bin, root, { before: span[0] ?? 'HEAD', upstream: span[1] ?? '@{u}' })
+          merged = report ?? []
+          return report !== null
+        }),
+      2_000,
+    )
     if (outcome !== true && outcome !== false) return withTooLarge(await fromFailure(root, repo, outcome, opts?.auth, token !== null), tooLarge)
     if (refused !== null) return withTooLarge({ root, state: 'pending', message: firstMeaningfulLine(refused), repo }, tooLarge)
     if (!outcome) {
@@ -341,7 +347,7 @@ export async function syncPass(
   // GitHub: one commit on top puts GitHub's file back first. YAZ-5445: the quit flush too (it is local, no fetch): with
   // HEAD on top of the last fetch its push is a fast forward, so it must not carry the list. Behind it (no rebase on a
   // flush), the push is refused anyway, and the next open rebases and follows.
-  const followed = hasUpstream && (!flush || behind === 0) ? await followRemoteList(bin, root) : false
+  const followed = hasUpstream && (!flush || behind === 0) ? await withSuppressedRoot(root, () => followRemoteList(bin, root), 2_000) : false
 
   // ---------- 4. publish ----------
   if (ahead > 0 || followed) {
@@ -440,23 +446,29 @@ export async function connectVaultToRepo(root: string, repoFullName: string, opt
  * user's own stash — which a blind restore-and-drop would copy over their file and delete.
  */
 export async function parkWhileRebasing(bin: string, root: string, tooLarge: readonly string[], rebase: () => Promise<boolean>): Promise<boolean | GitResult> {
-  const tracked = tooLarge.length === 0 ? [] : zList(await git(bin, root, ['ls-files', '-z', '--', ...tooLarge.map((p) => `:(literal)${p}`)]))
-  if (tracked.length === 0) return rebase()
-  const specs = tracked.map((p) => `:(literal)${p}`)
-  const stashTip = async () => (await git(bin, root, ['rev-parse', '-q', '--verify', 'refs/stash'])).stdout.trim()
-  const before = await stashTip()
-  const parked = await git(bin, root, ['stash', 'push', '-q', '-m', 'yaseendocs: held back while rebasing', '--', ...specs])
-  if (parked.code !== 0) return parked
-  const ours = await stashTip()
-  if (ours === '' || ours === before) return rebase() // nothing was parked: nothing to put back, and no entry of ours to drop
-  try {
-    return await rebase()
-  } finally {
-    await git(bin, root, ['checkout', ours, '--', ...specs])
-    await git(bin, root, ['reset', '-q', '--', ...specs])
-    const at = zList(await git(bin, root, ['stash', 'list', '-z', '--format=%H'])).indexOf(ours)
-    if (at >= 0) await git(bin, root, ['stash', 'drop', '-q', `stash@{${at}}`])
-  }
+  return withSuppressedRoot(
+    root,
+    async () => {
+      const tracked = tooLarge.length === 0 ? [] : zList(await git(bin, root, ['ls-files', '-z', '--', ...tooLarge.map((p) => `:(literal)${p}`)]))
+      if (tracked.length === 0) return rebase()
+      const specs = tracked.map((p) => `:(literal)${p}`)
+      const stashTip = async () => (await git(bin, root, ['rev-parse', '-q', '--verify', 'refs/stash'])).stdout.trim()
+      const before = await stashTip()
+      const parked = await git(bin, root, ['stash', 'push', '-q', '-m', 'yaseendocs: held back while rebasing', '--', ...specs])
+      if (parked.code !== 0) return parked
+      const ours = await stashTip()
+      if (ours === '' || ours === before) return rebase() // nothing was parked: nothing to put back, and no entry of ours to drop
+      try {
+        return await rebase()
+      } finally {
+        await git(bin, root, ['checkout', ours, '--', ...specs])
+        await git(bin, root, ['reset', '-q', '--', ...specs])
+        const at = zList(await git(bin, root, ['stash', 'list', '-z', '--format=%H'])).indexOf(ours)
+        if (at >= 0) await git(bin, root, ['stash', 'drop', '-q', `stash@{${at}}`])
+      }
+    },
+    2_000,
+  )
 }
 
 /** A failure status still carries the held-back list, so the sidebar icons do not blink off while offline. */

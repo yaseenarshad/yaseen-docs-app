@@ -7,6 +7,7 @@ import { cardFileId, cardFileTitle, isCardKind } from '@shared/cardFileFormat'
 import { PAGE_ID_KEY, canonicalPageId, isPageId, isNumberId, isOldId, lettersKept, lettersOwn, pageIdNumber, numberId, vaultPageId } from '@shared/pageId'
 import { TITLE_KEY, pageFileName, titleOf } from '@shared/pageName'
 import { VAULT_CONFIG_DIR, isFolderSettingsPath, type IdsState, type IndexRecord, type RenameFileResponse } from '@shared/types'
+import { withSuppressedEdit } from '../fs/externalEditSuppress'
 import { readFile, writeFile } from '../fs/file'
 import { renameFile } from '../fs/rename'
 import { readConfigDetailed, writeConfig } from '../vaultConfig'
@@ -74,7 +75,7 @@ export function rewriteFile(file: string, change: IdChange, opts?: { own?: boole
     const page = await readFile(file).catch(() => null)
     if (page === null) return null
     const next = rewriteIds(page.content, change, opts)
-    if (next.changed > 0) await writeFile({ path: file, content: next.content, expectedMtime: page.mtime })
+    if (next.changed > 0) await withSuppressedEdit(file, () => writeFile({ path: file, content: next.content, expectedMtime: page.mtime }))
     return next
   }
   return attempt().catch(attempt)

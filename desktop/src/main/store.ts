@@ -135,6 +135,7 @@ import {
   TOC_MIN_W,
   addClosed,
   addEdit,
+  addEdits,
   addOpen,
   addRecentRoot,
   cleanVaultKey,
@@ -162,6 +163,7 @@ import {
   type CommentsOrder,
   type CommentsResolvedPlace,
   type CommentProfile,
+  type EditEntry,
   type FolderPatch,
   type FolderState,
   type GoToPlace,
@@ -329,6 +331,8 @@ export interface Store {
    * or of a hidden file of the vault (a dot name inside it), commits nothing.
    */
   addEdit(roots: readonly string[], file: string, now?: number): void
+  /** Batched edit log update for `vault` (YAZ-6501): applies all valid entries in ONE commit, preserving `EDIT_GAP_MS` and `MAX_EDITS`. */
+  addEdits(vault: string, entries: readonly EditEntry[], opts?: { onlyNewer?: boolean }): void
   /** Closed pages (YAZ-3487 D9): each of `files` goes to the vault of `roots` that holds it (the most specific), at `now`, in ONE commit. A file no vault holds is left out; nothing left commits nothing. */
   addClosed(roots: readonly string[], files: readonly string[], now?: number): void
   /** "Remove from Recently closed" (YAZ-3487 D14): drop `files` from their vaults' lists; with `null`, clear the list of each vault of `roots`. ONE commit; nothing to drop commits nothing. */
@@ -1665,6 +1669,18 @@ export function createStore(filePath: string): Store {
       if (vault === null || file.slice(vault.length).split('/').some((part) => part.startsWith('.'))) return
       const edits = addEdit(folderOf(vault).edits, file, now)
       if (edits !== null) commit({ ...state, folders: { ...state.folders, [vault]: { ...folderOf(vault), edits } } })
+    },
+
+    addEdits(vault, entries, opts) {
+      const root = stripSlash(vault)
+      if (root === '' || entries.length === 0) return
+      const valid = entries.filter(({ file }) => {
+        if (file === root || rootOfPath([root], file) !== root) return false
+        return !file.slice(root.length).split(/[\\/]/).some((part) => part.startsWith('.'))
+      })
+      if (valid.length === 0) return
+      const edits = addEdits(folderOf(root).edits, valid, opts)
+      if (edits !== null) commit({ ...state, folders: { ...state.folders, [root]: { ...folderOf(root), edits } } })
     },
 
     addClosed(roots, files, now = Date.now()) {

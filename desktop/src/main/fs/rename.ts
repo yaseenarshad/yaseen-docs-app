@@ -3,6 +3,7 @@ import { lstat, readdir, rename, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { RenameFileResponse } from '@shared/types'
 import { canRenameWithoutConversion } from '@shared/fileKind'
+import { withSuppressedEdit, withSuppressedRoot } from './externalEditSuppress'
 import { BridgeFailure, fsCall, requireAbsPath } from './fsUtils'
 import { requireRequest } from './validate'
 
@@ -67,7 +68,7 @@ export async function renameFile(req: unknown): Promise<RenameFileResponse> {
     if (parent === null) throw new BridgeFailure('NOT_FOUND', 'the target folder does not exist', { path: parentP })
     if (!parent.isDirectory()) throw new BridgeFailure('NOT_A_DIRECTORY', 'the target parent is not a folder', { path: parentP })
     await requireFreeTarget(src, newP, await lstat(oldP))
-    await rename(oldP, newP)
+    await (kind === 'dir' ? withSuppressedRoot(newP, () => rename(oldP, newP)) : withSuppressedEdit(newP, () => rename(oldP, newP)))
     return { oldPath: oldP, newPath: newP, kind }
   })
 }

@@ -4,7 +4,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { APP_ZOOM_STEPS, addClosed, addEdit, addOpen, addRecentRoot, cleanVaultKey, cleanVaultLauncher, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, DEFAULT_TOOLBAR, HIGHLIGHT_CUSTOM_COLORS_KEPT, INLINE_CODE_PRESETS, isInlineCodeStyle, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ROW_HEIGHT_DEFAULT, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type InlineCodeStyle, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { APP_ZOOM_STEPS, addClosed, addEdit, addEdits, addOpen, addRecentRoot, cleanVaultKey, cleanVaultLauncher, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, DEFAULT_TOOLBAR, HIGHLIGHT_CUSTOM_COLORS_KEPT, INLINE_CODE_PRESETS, isInlineCodeStyle, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ROW_HEIGHT_DEFAULT, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type InlineCodeStyle, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { settingsFileText, travels } from '@shared/settingsSync'
 import { MAX_PICTURE_FOLDERS } from './fs/picturesFolders'
@@ -3370,6 +3370,54 @@ describe('the save log (YAZ-3235 D1)', () => {
     store.removePath('/v/papers/b.md')
     store.removePath('/v/papers/sub')
     expect(store.get().folders['/v'].edits).toEqual({ '/v/papers/a2.md': T, '/v/x.md': T + 3 })
+  })
+
+  it('YAZ-6501: addEdits batches multiple entries with EDIT_GAP_MS, MAX_EDITS newest-first cap, and onlyNewer guard; store.addEdits commits once and filters dot/outside paths', async () => {
+    expect(addEdits({}, [])).toBeNull()
+    const batch = addEdits({}, [
+      { file: '/v/a.md', at: T },
+      { file: '/v/a.md', at: T + 500 }, // duplicate in batch keeps latest
+      { file: '/v/b.md', at: T + 1000 },
+    ])
+    expect(batch).toEqual({ '/v/a.md': T + 500, '/v/b.md': T + 1000 })
+
+    // EDIT_GAP_MS skips entries within 60s; onlyNewer also skips older/equal timestamps
+    expect(addEdits(batch!, [{ file: '/v/a.md', at: T + 500 + EDIT_GAP_MS - 1 }])).toBeNull()
+    expect(addEdits(batch!, [{ file: '/v/a.md', at: T }], { onlyNewer: true })).toBeNull()
+    expect(addEdits(batch!, [{ file: '/v/a.md', at: T + 500 }], { onlyNewer: true })).toBeNull()
+    expect(addEdits(batch!, [{ file: '/v/a.md', at: T + 500 + EDIT_GAP_MS }], { onlyNewer: true })).toEqual({
+      '/v/a.md': T + 500 + EDIT_GAP_MS,
+      '/v/b.md': T + 1000,
+    })
+
+    // MAX_EDITS newest-first cap; entries older than all MAX_EDITS commit nothing (null)
+    const full: Record<string, number> = {}
+    for (let i = 0; i < MAX_EDITS; i++) full[`/v/n${i}.md`] = T + i + 10
+    expect(addEdits(full, [{ file: '/v/ancient.md', at: T }])).toBeNull()
+    const capped = addEdits(full, [
+      { file: '/v/new1.md', at: T + MAX_EDITS + 100 },
+      { file: '/v/new2.md', at: T + MAX_EDITS + 200 },
+    ])!
+    expect(Object.keys(capped)).toHaveLength(MAX_EDITS)
+    expect(capped['/v/n0.md']).toBeUndefined()
+    expect(capped['/v/n1.md']).toBeUndefined()
+    expect(capped['/v/new1.md']).toBe(T + MAX_EDITS + 100)
+    expect(capped['/v/new2.md']).toBe(T + MAX_EDITS + 200)
+
+    // store.addEdits commits in ONE atomic write and drops dot-files, vault root itself, and outside paths
+    const { store, seen } = counted()
+    store.addEdits('/v', [
+      { file: '/v/one.md', at: T },
+      { file: '/v/two.md', at: T + 1 },
+      { file: '/v/.folder.md', at: T + 2 },
+      { file: '/v/.yaseendocs/ids.json', at: T + 3 },
+      { file: '/v', at: T + 4 },
+      { file: '/other/three.md', at: T + 5 },
+    ])
+    expect(seen).toHaveLength(1)
+    expect(store.get().folders['/v'].edits).toEqual({ '/v/one.md': T, '/v/two.md': T + 1 })
+    await store.flush()
+    expect((await onDisk()).folders['/v'].edits).toEqual({ '/v/one.md': T, '/v/two.md': T + 1 })
   })
 })
 
