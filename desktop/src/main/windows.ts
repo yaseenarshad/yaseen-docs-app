@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
 import type { LinkOpenTarget } from '@shared/links'
-import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, placeVaults, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type InboxCarry, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type ScreenPoint, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type TearOffResult, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, SIDEBAR_DEFAULT_W, defaultRightPanelIdentity, normalizeRoots, normalizeSidebarZoom, placeVaults, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type InboxCarry, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type ScreenPoint, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type TearOffResult, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 import { appZoomFactor } from './appZoom'
@@ -376,11 +376,6 @@ export interface WindowManager extends WindowLookup {
   /** The Files window `id`'s floating preview (YAZ-3357 D9): beside the window on the row's height (`filesPreviewBounds`), or hidden with null. `false` = no live Files window. */
   filesPreview(id: string, req: FilesPreviewRequest | null): boolean
   /**
-   * The zoom menu's − % + or an unclaimed ⌘+ / ⌘− / ⌘0 in the Files window `id` (YAZ-3389 D13): store its own sidebar zoom,
-   * `percent` normalized (`normalizeFilesZoom`). Any other window: nothing (`false`); a full window's zoom is `settings.sidebarZoom`.
-   */
-  setFilesZoom(id: string, percent: number): boolean
-  /**
    * "Make full window" (YAZ-3357 D13): a full window on the Files window `id`'s vaults and lens opens where it
    * stands — as tall, at a normal width, clamped — with no tab (`startEmpty`), then `id` closes by its real close. `false` = not
    * a live Files window.
@@ -389,7 +384,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'inboxToNewWindow' | 'moveInboxTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'addVaultAndTake' | 'popOutTab' | 'showWindow' | 'raise' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'appNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'> & Partial<Pick<WindowManager, 'isReadOnly' | 'isTransientReadOnlyRoot'>>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'inboxToNewWindow' | 'moveInboxTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'addVaultAndTake' | 'popOutTab' | 'showWindow' | 'raise' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'appNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'filesZoomMenu' | 'filesToNormal'> & Partial<Pick<WindowManager, 'isReadOnly' | 'isTransientReadOnlyRoot'>>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -822,17 +817,33 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const tellHidden = (): void => tell(CONTRACT.window.onHiddenWindows.channel, hiddenWins)
   /** A window cascaded from `from` (GRO-2167). */
   const cascadeFrom = (from: WindowEntry): WindowEntry['bounds'] => clampBounds({ ...from.bounds, x: from.bounds.x + WINDOW_CASCADE_PX, y: from.bounds.y + WINDOW_CASCADE_PX }, host.workAreas())
+  /** Mac-local defaults for a brand-new window with no source window (YAZ-6490). */
+  const defaultWindowPrefs = (): Pick<WindowEntry, 'zoom' | 'exploreSize' | 'tocZoom' | 'sidebarWidth'> => {
+    const { newWindowSidebarZoom, newWindowExploreSize, newWindowTocZoom } = store.get().settings
+    return { zoom: newWindowSidebarZoom, exploreSize: newWindowExploreSize, tocZoom: newWindowTocZoom, sidebarWidth: SIDEBAR_DEFAULT_W }
+  }
+  /** Inherit per-window zoom and sidebar width from `from`, falling back to Mac-local defaults (YAZ-6490). */
+  const inheritWindowPrefs = (from: WindowEntry | undefined): Pick<WindowEntry, 'zoom' | 'exploreSize' | 'tocZoom' | 'sidebarWidth'> => {
+    const defaults = defaultWindowPrefs()
+    if (from === undefined) return defaults
+    return {
+      zoom: from.zoom === undefined ? defaults.zoom : normalizeSidebarZoom(from.zoom, defaults.zoom),
+      exploreSize: from.exploreSize ?? defaults.exploreSize,
+      tocZoom: from.tocZoom ?? defaults.tocZoom,
+      sidebarWidth: from.sidebarWidth ?? defaults.sidebarWidth,
+    }
+  }
   /**
    * A window on `from`'s vaults with NO tab (YAZ-3343 D22, D35): it boots on the blank tab, the caret in the search. The
-   * vaults, sidebar visibility and lens (YAZ-1628) by value, then each window keeps its own. The focus list is not the
-   * window's to copy (YAZ-2702 Decision 1), nor is its name (D14). `hidden`: built hidden (D23). Answers its id.
+   * vaults, sidebar visibility, lens (YAZ-1628), zoom and sidebar width (YAZ-6490) copy by value, then each window keeps
+   * its own. The focus list is not the window's to copy (YAZ-2702 Decision 1), nor is its name (D14). `hidden`: built hidden (D23). Answers its id.
    */
   const openBlank = (from: WindowEntry, hidden: boolean): string => {
     const id = randomUUID()
     emptyStarts.add(id)
     collapsedStarts.add(id)
     // From a Files window (YAZ-3357 D8, D14: its ⌘T, ⌘⇧N and the board's "New window") the sidebar shows, and the window stands right of it.
-    open({ id, root: from.root, roots: [...from.roots], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: isFilesWindow(from) ? false : from.sidebarCollapsed, sidebarLens: from.sidebarLens, bounds: madeFrom(from) }, hidden)
+    open({ id, root: from.root, roots: [...from.roots], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: isFilesWindow(from) ? false : from.sidebarCollapsed, sidebarLens: from.sidebarLens, bounds: madeFrom(from), ...inheritWindowPrefs(from) }, hidden)
     return id
   }
   /** A hidden window (YAZ-3343) shows and takes the focus; `false` = not live. A shown one is only focused. */
@@ -857,7 +868,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     // Nor its kind (YAZ-3357 D1): a tab moves to a full window.
     const { tabStrip: _from, name: _name, kind: _kind, ...source } = from
     // From the tab board it is QUIET (YAZ-3343 D37): the new window is HIDDEN until the board shows it (D23).
-    open({ ...source, id, roots: [...from.roots], file: path, tabs: [path], ...(carry?.name === undefined ? {} : { tabStrip: [{ path, name: carry.name }] }), rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: bounds ?? cascadeFrom(from) }, carry?.background === true)
+    open({ ...source, ...inheritWindowPrefs(from), id, roots: [...from.roots], file: path, tabs: [path], ...(carry?.name === undefined ? {} : { tabStrip: [{ path, name: carry.name }] }), rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: bounds ?? cascadeFrom(from) }, carry?.background === true)
     if (carry?.background === true) tellHidden()
   }
   /** A new full window; `bounds` = where a Files window puts it (YAZ-3357), else the default spot. Answers its id. */
@@ -867,7 +878,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     if (opts.readOnly !== true) recordUsed(opts.root)
     const id = randomUUID()
     if (opts.readOnly === true) readOnlyWins.add(id)
-    open({ id, root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, bounds: bounds ?? clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()) })
+    open({ id, root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, bounds: bounds ?? clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()), ...defaultWindowPrefs() })
     return id
   }
   /** Where a window made FROM `from` goes (YAZ-3357): cascaded off a full window, beside a Files window, which is too narrow to copy. */
@@ -1149,7 +1160,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const id = randomUUID()
       // Another window, as `openBlank`'s (not `from`'s strip, name, focus list or kind), with the sidebar hidden as a
       // moved tab's (`popOut`) — but from a Files window it shows, as every window made from one (YAZ-3357 D8).
-      open({ id, root: from.root, roots: [...from.roots], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: !isFilesWindow(from), sidebarLens: from.sidebarLens, bounds: madeFrom(from) })
+      open({ id, root: from.root, roots: [...from.roots], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: !isFilesWindow(from), sidebarLens: from.sidebarLens, bounds: madeFrom(from), ...inheritWindowPrefs(from) })
       const win = live.get(id)
       if (win !== undefined) sendLink(win, CONTRACT.link.onTakeInbox.channel, carry)
       return id
@@ -1414,16 +1425,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
           ? filesWindowBounds(null, onScreen(FILES_WINDOW_DEFAULT_W), areas)
           : isFilesWindow(source)
             ? clampBounds({ ...at, x: at.x + WINDOW_CASCADE_PX, y: at.y + WINDOW_CASCADE_PX }, areas)
-            : filesWindowBounds(at, onScreen(source.sidebarCollapsed ? FILES_WINDOW_DEFAULT_W : store.get().sidebarWidth), areas)
+            : filesWindowBounds(at, onScreen(source.sidebarCollapsed ? FILES_WINDOW_DEFAULT_W : (source.sidebarWidth ?? SIDEBAR_DEFAULT_W)), areas)
       const vaults = normalizeRoots(roots, roots[0])
-      // Its list at the source's sidebar zoom (YAZ-3487, demo round 3 — it was one step above, YAZ-3389 D13): a Files
-      // window's own zoom, else the shared `settings.sidebarZoom` (a full window, or no source). The App size is shared already.
-      const zoom = source !== undefined && isFilesWindow(source) ? normalizeFilesZoom(source.zoom) : store.get().settings.sidebarZoom
       // A NEW window: its tree starts with every folder closed (YAZ-3487, demo round 3).
       const id = randomUUID()
       collapsedStarts.add(id)
-      // The lens comes from the source (D6); the focus list is the vault's, and no name or tab comes along.
-      open({ id, kind: 'files', root: vaults[0], roots: vaults, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: source?.sidebarLens ?? DEFAULT_SIDEBAR_LENS, bounds, zoom })
+      // The lens, zoom and sidebar prefs come from the source (YAZ-6490); the focus list is the vault's, and no name or tab comes along.
+      open({ id, kind: 'files', root: vaults[0], roots: vaults, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: source?.sidebarLens ?? DEFAULT_SIDEBAR_LENS, bounds, ...inheritWindowPrefs(source) })
       return true
     },
 
@@ -1504,17 +1512,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const next = randomUUID()
       emptyStarts.add(next)
       // The new window first: the Files window's close must never be the app's last.
-      open({ id: next, root: entry.root, roots: [...entry.roots], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: entry.sidebarLens, bounds: clampBounds({ ...at, width: Math.max(at.width, DEFAULT_BOUNDS.width) }, host.workAreas()) })
+      open({ id: next, root: entry.root, roots: [...entry.roots], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: entry.sidebarLens, bounds: clampBounds({ ...at, width: Math.max(at.width, DEFAULT_BOUNDS.width) }, host.workAreas()), ...inheritWindowPrefs(entry) })
       win.close()
-      return true
-    },
-
-    setFilesZoom(id, percent) {
-      const entry = entryOf(id)
-      if (entry === undefined || !isFilesWindow(entry)) return false
-      const zoom = normalizeFilesZoom(percent)
-      // The same value writes nothing (YAZ-3394): no commit, no broadcast.
-      if (entry.zoom !== zoom) store.upsertWindow({ ...entry, zoom })
       return true
     },
 

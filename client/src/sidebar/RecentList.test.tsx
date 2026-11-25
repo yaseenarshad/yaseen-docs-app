@@ -230,7 +230,7 @@ describe('RecentList (YAZ-3235 D3 to D7)', () => {
     await mount(stateWith(logs))
     const drawn = renders
     // Each broadcast is a new copy of the whole state: a tab click, a fold, a save in another vault's other field.
-    b.emit({ ...stateWith(structuredClone(logs)), sidebarWidth: 300 })
+    b.emit({ ...stateWith(structuredClone(logs)), settingsSavedAt: 1 })
     b.emit(stateWith(structuredClone(logs)))
     expect(renders).toBe(drawn)
     b.emit(stateWith({ ...logs, '/v': { ...logs['/v'], '/v/c.md': at(2026, 10, 23, 14) } }))

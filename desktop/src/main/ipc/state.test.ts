@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
-import { DEFAULT_SETTINGS, MAX_CANVAS_CARDS, SIDEBAR_MAX_W, defaultRightPanelIdentity } from '@shared/types'
+import { DEFAULT_SETTINGS, MAX_CANVAS_CARDS, defaultRightPanelIdentity } from '@shared/types'
 import { CONTRACT, type Envelope } from '@shared/ipc'
 import { createStore, type Store } from '../store'
 import { registerStateIpc } from './state'
@@ -56,7 +56,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel, CONTRACT.state.setCourse.channel, CONTRACT.state.systemHotkeys.channel, CONTRACT.hotkeys.recording.channel, CONTRACT.hotkeys.drawingInFront.channel, CONTRACT.hotkeys.noPageInFront.channel].sort(),
+      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel, CONTRACT.state.setCourse.channel, CONTRACT.state.systemHotkeys.channel, CONTRACT.hotkeys.recording.channel, CONTRACT.hotkeys.drawingInFront.channel, CONTRACT.hotkeys.noPageInFront.channel].sort(),
     )
   })
 
@@ -141,14 +141,6 @@ describe('registerStateIpc', () => {
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, { lineSpacing: 1 })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setSettings.channel)({ sender }, 'nope')).toEqual(bad('BAD_REQUEST'))
     expect(store.get().settings).toEqual(next)
-  })
-
-  it('state:set-sidebar-width only takes a finite number, clamped', async () => {
-    expect(await registered(CONTRACT.state.setSidebarWidth.channel)({ sender }, 9999)).toEqual(ok(undefined))
-    expect(store.get().sidebarWidth).toBe(SIDEBAR_MAX_W)
-    expect(await registered(CONTRACT.state.setSidebarWidth.channel)({ sender }, Number.NaN)).toEqual(bad('BAD_REQUEST'))
-    expect(await registered(CONTRACT.state.setSidebarWidth.channel)({ sender }, '300')).toEqual(bad('BAD_REQUEST'))
-    expect(store.get().sidebarWidth).toBe(SIDEBAR_MAX_W)
   })
 
   it.each([
@@ -290,7 +282,7 @@ describe('registerStateIpc', () => {
     const halfGone = fakeWindow({ wcDestroyed: true })
     const other = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([live, gone, halfGone, other] as unknown as BrowserWindow[])
-    await registered(CONTRACT.state.setSidebarWidth.channel)({ sender }, 321)
+    await registered(CONTRACT.state.setSettings.channel)({ sender }, { ...DEFAULT_SETTINGS, theme: 'dark' })
     expect(live.webContents.send).toHaveBeenCalledTimes(1)
     expect(live.webContents.send).toHaveBeenCalledWith(CONTRACT.state.onChange.channel, store.get())
     expect(other.webContents.send).toHaveBeenCalledWith(CONTRACT.state.onChange.channel, store.get())

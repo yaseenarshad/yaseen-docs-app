@@ -1,11 +1,11 @@
 /**
  * THE ZOOM MENU in the footer (YAZ-3432): one quiet chip after the cog that shows the sidebar zoom ("100%"), between a −
  * and a + that step the sidebar zoom in one click, with no menu (YAZ-3487, demo round 3: as before YAZ-3432). A click
- * opens a small menu upward with three rows, each the same "− 100% +" (`ZoomStepper`): App size on top, the App size
- * of every window (`settings.appZoom`, along `APP_ZOOM_STEPS`); Sidebar, the zoom of the sidebar's lists (YAZ-3389; a
- * Files window's own zoom there, D13); and last, Search size (YAZ-5881 D1, YAZ-5977: `settings.exploreSize`, the same
- * steps). The keys never reach the App size: ⌘+ / ⌘− / ⌘0 zoom a page or the sidebar (`zoomRequest.ts`), and Search size
- * while Explore's search panel is in front (`ExploreStack`).
+ * opens a small menu upward with two groups, each row the same "− 100% +" (`ZoomStepper`): This window — Sidebar
+ * (`WindowEntry.zoom`, YAZ-6490) and Search size (`WindowEntry.exploreSize`, YAZ-6490), plus a quiet "Set as default"
+ * button for brand-new windows — and All windows — App size (`settings.appZoom`, along `APP_ZOOM_STEPS`). The keys
+ * never reach the App size: ⌘+ / ⌘− / ⌘0 zoom a page or the sidebar (`zoomRequest.ts`), and Search size while Explore's
+ * search panel is in front (`ExploreStack`).
  *
  * The menu goes to `document.body`: a fixed box inside a zoomed one scales and moves (`SessionList`). It is zoomed by
  * 1 / the page's zoom, so it keeps its size on the screen at every App size, and while it is open it keeps its place on
@@ -17,20 +17,25 @@
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { SIDEBAR_ZOOM_STEPS, stepZoom } from '@shared/types'
+import { EXPLORE_SIZE_DEFAULT, SIDEBAR_ZOOM_STEPS, stepZoom } from '@shared/types'
 import { ZoomStepper } from './ZoomStepper'
 import { withKeys } from '@shared/keyLabel'
 
 interface ZoomMenuProps {
-  /** The sidebar zoom in percent: the chip's label and the Sidebar row. */
+  /** This window's sidebar zoom in percent: the chip's label and the Sidebar row. */
   sidebar: number
   onSidebar: (percent: number) => void
-  /** The App size in percent (`settings.appZoom`). */
+  /** The App size in percent (`settings.appZoom`, all windows on this Mac). */
   app: number
   onApp: (percent: number) => void
-  /** Explore size in percent (`settings.exploreSize`, YAZ-5881): the Explore row. */
+  /** This window's Search size in percent (YAZ-5881, per-window since YAZ-6490). */
   explore: number
   onExplore: (percent: number) => void
+  /** New-window defaults (`settings.newWindowSidebarZoom` / `newWindowExploreSize`, YAZ-6490). */
+  defaultSidebar?: number
+  defaultExplore?: number
+  /** Save this window's Sidebar zoom and Search size as the Mac-local defaults for brand-new windows. */
+  onSetDefaults?: (sidebar: number, explore: number) => void
   /**
    * A Files window (YAZ-3444): told `true` when the menu opens and `false` when it goes, by any close or an unmount.
    * Main then holds that window's resize for a new App size until the close, so the window does not move under the menu.
@@ -41,7 +46,7 @@ interface ZoomMenuProps {
 /** The room between the chip and the menu, and the least between the menu and the window's right edge, in px. */
 const GAP = 4
 
-export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp, explore, onExplore, onOpenChange }: ZoomMenuProps) {
+export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp, explore, onExplore, defaultSidebar = 100, defaultExplore = EXPLORE_SIZE_DEFAULT, onSetDefaults, onOpenChange }: ZoomMenuProps) {
   // The menu's place while it is open, in SCREEN px (page px × the page's zoom at the open): its left edge and how far
   // its bottom is above the window's bottom. Screen px, so a new App size leaves it where it is. `dpr` is the screen's
   // own `devicePixelRatio` (the page's at 100%), so the page's zoom of any moment is `devicePixelRatio / dpr`.
@@ -113,9 +118,10 @@ export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp,
   }, [at, scale])
 
   const place: CSSProperties | undefined = at === null ? undefined : { left: at.left / scale - shift, bottom: at.bottom / scale }
-  // The chip shows the sidebar zoom alone; its tooltip and its accessible name tell both values (D1).
-  const both = `Zoom: sidebar ${Math.round(sidebar)}%, App size ${app}%`
+  // The chip shows the sidebar zoom alone; its tooltip and accessible name tell both values and their scope (YAZ-6490).
+  const both = `Sidebar ${Math.round(sidebar)}% (this window) · App size ${app}% (all windows)`
   const [min, max] = [SIDEBAR_ZOOM_STEPS[0], SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1]]
+  const differsFromDefault = onSetDefaults !== undefined && (Math.round(sidebar) !== Math.round(defaultSidebar) || explore !== defaultExplore)
   return (
     <div className="zoom-footer" role="group" aria-label="Sidebar zoom in the footer">
       <button type="button" className="zoom-stepper__step" aria-label="Zoom the sidebar out" title={withKeys('Zoom the sidebar out', '⌘−')} disabled={sidebar <= min} onClick={() => onSidebar(stepZoom(SIDEBAR_ZOOM_STEPS, sidebar, -1))}>
@@ -141,12 +147,29 @@ export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp,
           <div ref={menuRef} className="zoom-menu" role="dialog" aria-label="Zoom" style={place}>
             {/* 1 / the page's zoom: the two multiply to 1, so the menu is the same size at every App size. */}
             <div className="zoom-menu__body" style={{ zoom: 1 / scale }}>
-              <span className="zoom-menu__label">App size</span>
-              <ZoomStepper kind="app" value={app} onChange={onApp} />
+              <div className="zoom-menu__section-row">
+                <span className="zoom-menu__section">This window</span>
+                {differsFromDefault && (
+                  <button
+                    type="button"
+                    className="zoom-menu__default-btn"
+                    title="Use this window's Sidebar and Search size for brand-new windows"
+                    onClick={() => onSetDefaults(sidebar, explore)}
+                  >
+                    Set as default
+                  </button>
+                )}
+              </div>
               <span className="zoom-menu__label">Sidebar</span>
               <ZoomStepper kind="sidebar" value={sidebar} onChange={onSidebar} />
               <span className="zoom-menu__label">Search size</span>
               <ZoomStepper kind="explore" value={explore} onChange={onExplore} />
+              <div className="zoom-menu__divider" role="separator" />
+              <div className="zoom-menu__section-row">
+                <span className="zoom-menu__section">All windows</span>
+              </div>
+              <span className="zoom-menu__label">App size</span>
+              <ZoomStepper kind="app" value={app} onChange={onApp} />
             </div>
           </div>,
           document.body,

@@ -932,7 +932,6 @@ describe('subscribeMenuRebuild', () => {
     const rebuild = vi.fn()
     subscribeMenuRebuild(store, rebuild)
 
-    store.setSidebarWidth(321)
     store.setSettings(store.get().settings)
     store.upsertWindow(ENTRY)
     store.setFolder('/vaults/pages', { lastFile: null })
@@ -1080,7 +1079,6 @@ describe('subscribeMenuRebuildOnActiveFile', () => {
     const rebuild = vi.fn()
     subscribeMenuRebuildOnActiveFile(store, rebuild)
 
-    store.setSidebarWidth(300)
     store.pushRecent('/vaults/pages')
     store.setSettings(store.get().settings)
     expect(rebuild).not.toHaveBeenCalled()

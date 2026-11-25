@@ -380,7 +380,7 @@ export function searchByName(state: AppState): AppState {
  */
 const WHOLE_ROW_W = 320
 export function wholeRow(state: AppState): AppState {
-  state.sidebarWidth = WHOLE_ROW_W
+  for (const w of state.windows) w.sidebarWidth = WHOLE_ROW_W
   return state
 }
 
