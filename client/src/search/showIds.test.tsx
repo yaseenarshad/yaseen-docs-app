@@ -14,14 +14,14 @@ import type { IndexRecord } from '@shared/types'
 describe('Show IDs in search', () => {
   it('reads the vault file; Number is the default, legacy always migrates to number, and all four choices round-trip (YAZ-6502)', () => {
     expect(IDS_IN_SEARCH).toEqual(['off', 'number', 'full', 'match'])
-    expect(DEFAULT_SHOW_IDS).toEqual({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds({ search: 'off' })).toEqual({ search: 'off', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds({ search: 'number' })).toEqual({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds({ search: 'full' })).toEqual({ search: 'full', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds({ search: 'match' })).toEqual({ search: 'match', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds({ search: 'always' })).toEqual({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds({ search: 'sometimes' })).toEqual({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds(null)).toEqual({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(DEFAULT_SHOW_IDS).toEqual({ search: 'number', title: true, files: 'off', recents: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'off' })).toEqual({ search: 'off', title: true, files: 'off', recents: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'number' })).toEqual({ search: 'number', title: true, files: 'off', recents: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'full' })).toEqual({ search: 'full', title: true, files: 'off', recents: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'match' })).toEqual({ search: 'match', title: true, files: 'off', recents: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'always' })).toEqual({ search: 'number', title: true, files: 'off', recents: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'sometimes' })).toEqual({ search: 'number', title: true, files: 'off', recents: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds(null)).toEqual({ search: 'number', title: true, files: 'off', recents: 'off', tabs: 'off', tabsLayout: 'inline' })
   })
 
   it('shownId formats number (#38) and full (WIKI-38), and keeps #38 on ID-matched rows under match or off (YAZ-6502)', () => {
@@ -65,16 +65,16 @@ describe('Show IDs in search', () => {
 })
 
 describe('Show IDs in the title and in the files list (YAZ-4940 part 2)', () => {
-  it('an old file with `search` alone reads as title On, files list Off, tabs Off, tabsLayout Inline; fields round-trip; anything else is the default', () => {
-    expect(sanitizeShowIds({ search: 'match' })).toEqual({ search: 'match', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds({ search: 'full', title: false, files: 'full', tabs: 'number', tabsLayout: 'stacked' })).toEqual({ search: 'full', title: false, files: 'full', tabs: 'number', tabsLayout: 'stacked' })
-    expect(sanitizeShowIds({ title: 'off', files: 'on', tabs: true, tabsLayout: 'two-lines' })).toEqual({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds({ title: false })).toEqual({ search: 'number', title: false, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+  it('an old file with `search` alone reads as title On, files list Off, recents Off, tabs Off, tabsLayout Inline; fields round-trip; anything else is the default', () => {
+    expect(sanitizeShowIds({ search: 'match' })).toEqual({ search: 'match', title: true, files: 'off', recents: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'full', title: false, files: 'full', recents: 'number', tabs: 'number', tabsLayout: 'stacked' })).toEqual({ search: 'full', title: false, files: 'full', recents: 'number', tabs: 'number', tabsLayout: 'stacked' })
+    expect(sanitizeShowIds({ title: 'off', files: 'on', recents: 'all', tabs: true, tabsLayout: 'two-lines' })).toEqual({ search: 'number', title: true, files: 'off', recents: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ title: false })).toEqual({ search: 'number', title: false, files: 'off', recents: 'off', tabs: 'off', tabsLayout: 'inline' })
   })
 
   it('"In the files list" has three choices; the old file\'s `true` (round 2\'s On) reads as Number, `false` or nothing as Off', () => {
-    expect(sanitizeShowIds({ search: 'always', files: true })).toEqual({ search: 'number', title: true, files: 'number', tabs: 'off', tabsLayout: 'inline' })
-    expect(sanitizeShowIds({ search: 'always', files: false })).toEqual({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'always', files: true })).toEqual({ search: 'number', title: true, files: 'number', recents: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(sanitizeShowIds({ search: 'always', files: false })).toEqual({ search: 'number', title: true, files: 'off', recents: 'off', tabs: 'off', tabsLayout: 'inline' })
     expect(sanitizeShowIds({ search: 'always' }).files).toBe('off')
     expect(sanitizeShowIds({ files: 'number' }).files).toBe('number')
     expect(sanitizeShowIds({ files: 'full' }).files).toBe('full')

@@ -171,13 +171,14 @@ describe('"Add more for today" (YAZ-5042): `FolderState.added`, the day\'s added
 describe('Per-vault "Show last updated" (YAZ-6529): `FolderState.rowDates`', () => {
   it('saves independently per vault, survives reload, and drops junk values', async () => {
     const store = createStore(file)
-    const a = { files: true, focus: false, favorites: false, search: false }
+    const a = { files: true, focus: false, favorites: false, search: false, recents: false }
     const b = { files: false, focus: true, favorites: false, search: true }
     store.setFolder('/va', { rowDates: a })
     store.setFolder('/vb', { rowDates: b })
     expect(store.get().folders['/va'].rowDates).toEqual(a)
     expect(store.get().folders['/vb'].rowDates).toEqual(b)
     store.setFolder('/va', { rowDates: { files: 'yes' } as never })
+    store.setFolder('/va', { rowDates: { ...a, recents: 'no' } as never })
     expect(store.get().folders['/va'].rowDates).toEqual(a)
     await store.flush()
     const reloaded = createStore(file).get()
