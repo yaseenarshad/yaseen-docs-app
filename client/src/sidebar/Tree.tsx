@@ -536,10 +536,19 @@ function TreeLevel({
   const isCardFile = (node: TreeNode): boolean => node.type === 'file' && cardFiles?.has(node.path) === true
   /** A file row's kind for the Line set: a card file is `card`, a file with no viewer in the app `other`. */
   const fileKindOf = (node: Extract<TreeNode, { type: 'file' }>): string => (isCardFile(node) ? CARD_KIND_ICON : (node.kind ?? 'other'))
-  /** `YAZ-12 — ` in front of the row of an ID match (YAZ-2677 S70); nothing for any other row. */
-  const idFor = (path: string) => {
-    const id = marks?.ids?.get(path)
-    return id === undefined ? null : <>{marked(id, marks?.idMarks?.get(path))} — </>
+  /**
+   * Right-side ID slot (`.tree__id`): Search rows draw from `marks.ids` with matched-digit highlights (YAZ-6502);
+   * Files/Focus/Favorites page rows draw from `ids` (YAZ-4940). Folder rows show an ID only when matched in Search.
+   */
+  const rowId = (path: string, allowFilesId: boolean) => {
+    const searchId = marks?.ids?.get(path)
+    if (searchId !== undefined) {
+      if (!allowFilesId && !marks?.hits.has(path)) return null
+      return <span className="tree__id">{marked(searchId, marks?.idMarks?.get(path))}</span>
+    }
+    if (!allowFilesId) return null
+    const fileId = ids?.get(path)
+    return fileId === undefined ? null : <span className="tree__id">{fileId}</span>
   }
   /** A page row and, right under it, the rows of its cards that Search found (YAZ-5037, `cardRows`); any other row as it is. */
   const withCards = (node: TreeNode, row: ReactElement): ReactElement => {
@@ -584,9 +593,9 @@ function TreeLevel({
             >
               <span className="tree__label">
                 {card.inlineDrawing === true ? <FileIcon path="drawing.excalidraw" /> : <CardIcon />}
-                {idFor(card.path)}
                 {marked(card.name, needleFor(card.path))}
               </span>
+              {rowId(card.path, false)}
             </button>
           </li>
         ))}
@@ -709,7 +718,6 @@ function TreeLevel({
               >
                 <span className={`tree__chevron${expanded.has(foldOf(node)) ? ' tree__chevron--open' : ''}`} />
                 <span className="tree__label">
-                  {idFor(node.path)}
                   {vaultRows.has(node.path) ? node.name : marked(pageLabel(node.path, true, titles), needleFor(node.path))}
                 </span>
                 {/* The app's own vault is read only (YAZ-5108): a lock after its name. Inline style: no new CSS in the eager sheet. */}
@@ -719,6 +727,7 @@ function TreeLevel({
                   </span>
                 )}
                 {vaultTag(node.path)}
+                {!vaultRows.has(node.path) && rowId(node.path, false)}
                 {dates === true && !vaultRows.has(node.path) && <RowDate node={node} />}
               </button>
             )}
@@ -809,7 +818,6 @@ function TreeLevel({
               }}
             >
               <span className="tree__label">
-                {idFor(node.path)}
                 {marked(pageLabel(node.path, false, titles), needleFor(node.path))}
                 <NameEnding path={node.path} />
               </span>
@@ -817,7 +825,7 @@ function TreeLevel({
               <ShareMark badge={shareBadges?.get(node.path)} />
               {isShortcutRow(node) && <ShortcutIcon />}
               {vaultTag(node.path)}
-              {ids?.get(node.path) !== undefined && <span className="tree__id">{ids.get(node.path)}</span>}
+              {rowId(node.path, true)}
               {dates === true && <RowDate node={node} />}
             </button>
             {/* A New … picked on this pinned row (YAZ-4782): its name field right under it, where the item will stand. */}

@@ -489,7 +489,7 @@ describe('the explore stack', () => {
   it('round 1: the id of a page in an ID vault shows after its title, small and muted; a page without one shows none', async () => {
     await mount()
     await typeQuery('alp')
-    expect(top().querySelector('.search-results__row .explore__id')?.textContent).toBe('EMB-1')
+    expect(top().querySelector('.search-results__row .explore__id')?.textContent).toBe('#1')
     await typeQuery('bet')
     expect(top().querySelector('.search-results__row .explore__id')).toBeNull()
   })
@@ -815,19 +815,26 @@ describe('the explore stack', () => {
     expect(props.onClose).toHaveBeenCalledOnce()
   })
 
-  it('YAZ-4940: with "Only when the search matches the ID" the chip shows on a row found by its ID alone, and the title loses the "ID — " of its label; Always shows it on every row', async () => {
-    const rule = { value: 'match' as 'match' | 'always' }
+  it('YAZ-4940, YAZ-6502: Show IDs in search respects match, off, number, and full, and strips the "ID — " prefix from the title', async () => {
+    const rule = { value: 'match' as 'off' | 'number' | 'full' | 'match' }
     props.vaults = [{ ...vaults[0], idsInSearch: () => rule.value }]
     await mount()
     await typeQuery('alp')
     expect(top().querySelector('.search-results__row .explore__id')).toBeNull()
     await typeQuery('emb-1')
-    expect(top().querySelector('.search-results__row .explore__id')?.textContent).toBe('EMB-1')
+    expect(top().querySelector('.search-results__row .explore__id')?.textContent).toBe('#1')
     expect(rows()).toEqual(['Alpha'])
-    rule.value = 'always'
+    rule.value = 'number'
     await typeQuery('alp')
+    expect(top().querySelector('.search-results__row .explore__id')?.textContent).toBe('#1')
+    expect(rows()).toEqual(['Alpha'])
+    rule.value = 'full'
+    await typeQuery('alph')
     expect(top().querySelector('.search-results__row .explore__id')?.textContent).toBe('EMB-1')
     expect(rows()).toEqual(['Alpha'])
+    rule.value = 'off'
+    await typeQuery('alpha')
+    expect(top().querySelector('.search-results__row .explore__id')).toBeNull()
   })
 
   it('YAZ-4940: "Show IDs in the title" On draws the page ID after the layer head title; Off draws none', async () => {
@@ -1314,31 +1321,31 @@ describe('round 5: find a page by a short ID number (YAZ-2571)', () => {
     index.mockResolvedValue({ root: '/v', records: EMB, folders: [], generatedAt: 1, ids: true, size: EMB.length })
   })
 
-  it('`#5` shows EMB-5 alone, its chip with the 5 marked; `#3` shows EMB-3, then EMB-37', async () => {
+  it('`#5` shows #5 alone, its chip with the 5 marked; `#3` shows #3, then #37', async () => {
     await mount()
     await typeQuery('#5')
     expect(rows()).toEqual(['04 Resize04 Resize04 Resize04 Resize04 Resize04 Resize04'])
-    expect(chips()).toEqual(['EMB-<mark class="tree__mark">5</mark>'])
+    expect(chips()).toEqual(['#<mark class="tree__mark">5</mark>'])
     await typeQuery('#3')
-    expect(chips()).toEqual(['EMB-<mark class="tree__mark">3</mark>', 'EMB-<mark class="tree__mark">3</mark>7'])
+    expect(chips()).toEqual(['#<mark class="tree__mark">3</mark>', '#<mark class="tree__mark">3</mark>7'])
   })
 
-  it('a bare `5` shows EMB-5 first, its 5 marked; a row found by its title keeps a plain chip', async () => {
+  it('a bare `5` shows #5 first, its 5 marked; a row found by its title keeps a plain chip', async () => {
     await mount()
     await typeQuery('5')
     expect(rows()[0]).toBe('04 Resize04 Resize04 Resize04 Resize04 Resize04 Resize04')
-    expect(chips()).toEqual(['EMB-<mark class="tree__mark">5</mark>', 'EMB-6', 'EMB-16', 'EMB-37'])
+    expect(chips()).toEqual(['#<mark class="tree__mark">5</mark>', '#6', '#16', '#37'])
     for (const typed of ['emb-5', 'EMB5', 'emb 5']) {
       await typeQuery(typed)
-      expect(chips()[0]).toBe('EMB-<mark class="tree__mark">5</mark>')
+      expect(chips()[0]).toBe('#<mark class="tree__mark">5</mark>')
     }
   })
 
-  it('with "Only when the search matches the ID" the chip of `#5` shows too', async () => {
+  it('with "Only on ID match" the chip of `#5` shows too', async () => {
     props.vaults = [{ ...vaults[0], idsInSearch: () => 'match' }]
     await mount()
     await typeQuery('#5')
-    expect(chips()).toEqual(['EMB-<mark class="tree__mark">5</mark>'])
+    expect(chips()).toEqual(['#<mark class="tree__mark">5</mark>'])
   })
 
   it('a long name is cut on its own: the chip stands outside the part that is cut', async () => {

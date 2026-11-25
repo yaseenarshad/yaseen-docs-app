@@ -4,6 +4,7 @@
  * `tree__mark`: one look in both lists (`app.css`).
  */
 import type { ReactNode } from 'react'
+import { idNumber } from '@shared/pageId'
 import { readNeedle, type Needle } from '../links/completion'
 import { matchRanges } from '../links/matchRanges'
 import { idQuery } from './searchCandidates'
@@ -33,5 +34,5 @@ export function marked(label: string, needle: Needle | undefined) {
  */
 export function idNeedle(row: { id?: string; label: string }, query: string): Needle | undefined {
   if (row.id === undefined || !row.label.startsWith(`${row.id} — `)) return undefined
-  return readNeedle(idQuery(query) ?? row.id.slice(row.id.indexOf('-') + 1))
+  return readNeedle(idQuery(query) ?? idNumber(row.id) ?? row.id.slice(row.id.indexOf('-') + 1))
 }

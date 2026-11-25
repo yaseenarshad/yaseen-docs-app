@@ -41,7 +41,8 @@ import { isIconRules, MAX_ICON_MATCH, MAX_ICON_RULES, type IconRule } from '@sha
 import { oneRule, rowIcon, ruleFor, withRule } from './rowIcons'
 import { IconsContext } from './FileIcon'
 import { PICKER_W, suggestIcons } from './iconSuggestions'
-import { appRowsLast, keepsOrder, shownLabel, sortLevel, sortSections } from './treeSort'
+import { appRowsLast, keepsOrder, searchIdsOption, shownLabel, sortLevel, sortSections } from './treeSort'
+import { useVaultRowDates } from './useVaultRowDates'
 import { cardSkillFolder } from '@shared/cardSkillFolder'
 import { cardSkillPrompt } from '../vault/cardSkill'
 import { ACTIVE_TAB_SELECTOR, SidebarTabs } from './SidebarTabs'
@@ -107,6 +108,8 @@ export interface SidebarVault {
   index: WikilinkResolveSource
   /** This vault's "Show IDs in search" (YAZ-4940), read when the search rows draw; absent → only on a row found by its ID. */
   idsInSearch?: () => IdsInSearch
+  /** Saves this vault's "Show IDs in search" choice (YAZ-6502), used by the Search ↑↓ menu. */
+  setIdsInSearch?: (next: IdsInSearch) => void
   /** This vault's "Show IDs in the files list" (YAZ-4940): each page row of Files, Focus and Favorites ends with its ID's number ("#12") or the full ID. Absent → off. */
   idsInFiles?: IdsInFiles
   /**
@@ -831,7 +834,8 @@ export function Sidebar({
   const [searchFilter, setSearchFilter] = useState<SearchFilter>(NO_FILTER)
   // The file times stay live (D2) while something reads them: the tab's Last updated sort, any tab's dates (D10), or a
   // time filter (D14). Any tab's, not the shown one's: a tab change then reads no vault again (6 µs a save, not 42 ms a switch).
-  const liveTimes = sort?.by === 'updated' || Object.values(settings.rowDates).some(Boolean) || searchFilter.time !== 'any'
+  const [rowDates, setTabDate] = useVaultRowDates(vaults, settings.rowDates)
+  const liveTimes = sort?.by === 'updated' || Object.values(rowDates).some(Boolean) || searchFilter.time !== 'any'
   // A place for each page tab (YAZ-5701): the window keeps its open folders to itself, and starts from the place of
   // the tab on show (a New tab's own, YAZ-5757); with none, from the open folders the sidebar last showed. Only the
   // folders in this window's vaults: a vault switch keeps the place of the tab on show.
@@ -2095,11 +2099,11 @@ export function Sidebar({
     ids,
     onLeaveToPage,
     onHoverFile: hoverFile,
-    // The tab's own date switch (YAZ-3511 D10); the search tree reads Search's.
-    dates: sortedTab !== null && settings.rowDates[sortedTab],
+    // The tab's own date switch (YAZ-3511 D10, per-vault YAZ-6529); the search tree reads Search's.
+    dates: sortedTab !== null && rowDates[sortedTab],
   }
   // A search tree's own (YAZ-2620): its folds, its highlight and its marks; nothing in it creates, renames or drags. Its IDs are "Show IDs in search"'s (`marks`), not the files list's.
-  const searchTreeProps = { ...treeProps, ids: undefined, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, pageRows: NO_PAGE_ROWS, marks, cardRows, onOpenCard: openTreeCard, onCardContextMenu: openInlineRowMenu, sort: searchSort, dates: settings.rowDates.search, scores }
+  const searchTreeProps = { ...treeProps, ids: undefined, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, pageRows: NO_PAGE_ROWS, marks, cardRows, onOpenCard: openTreeCard, onCardContextMenu: openInlineRowMenu, sort: searchSort, dates: rowDates.search, scores }
 
   // A vault that could not be read says so on every tab: one line per vault, its own (YAZ-2602).
   const errorLines = errors.map((message, at) => (
@@ -2670,11 +2674,12 @@ export function Sidebar({
               // The vault keeps this Mac's Files sort (YAZ-5916 Q4): the phone sorts its tree by it.
               if (sortTab === 'files' && next.by !== 'best' && (next.by !== sort.by || next.reverse !== sort.reverse)) filesOrder.setSort({ by: next.by, reverse: next.reverse })
             },
-            // The tab's date switch (YAZ-3511 D7, D10), and on Search its filters (D13, D14).
-            { on: settings.rowDates[sortTab], set: (on) => onChangeSettings({ ...settings, rowDates: { ...settings.rowDates, [sortTab]: on } }) },
+            // The tab's date switch (YAZ-3511 D7, D10; per-vault YAZ-6529), and on Search its filters (D13, D14).
+            { on: rowDates[sortTab], set: (on) => setTabDate(sortTab, on) },
             sortTab === 'search' ? filterSection(searchFilter.includeInline !== undefined || settings.searchIncludeInline ? searchFilter : { ...searchFilter, includeInline: false }, setSearchFilter, reviewRoots.size > 0, unit) : undefined,
             // YAZ-4450 D4: each list's own switch, in a window with two or more vaults only.
             multi && (sortTab === 'focus' || sortTab === 'favorites') ? workspaceRow(sortTab) : undefined,
+            sortTab === 'search' ? searchIdsOption(vaults) : undefined,
           )}
           onClose={() => setSortMenu(null)}
         />

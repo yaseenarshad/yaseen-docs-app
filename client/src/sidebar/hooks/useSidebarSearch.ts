@@ -187,11 +187,12 @@ export function useSidebarSearch(
     return { top: top.nodes, rest: rest.nodes, open: new Set([...top.open, ...rest.open]), order: [...top.order, ...rest.order] }
   }, [tree, pinned, cut, full])
   // What that tree marks (🔒 D5): the matches, and the typed text as the matcher reads it (S40).
-  // And the full ID of each row found by its number (YAZ-2677 S70): `searchRows` puts it in front of that row's label.
-  // "Show IDs in search" (YAZ-4940): with Always, every row's ID; with "Only when it matches", the rows found by their ID.
+  // "Show IDs in search" (YAZ-4940, YAZ-6502): each row's right-side ID, formatted by its vault's rule.
+  // Track the current per-vault rules in a stable string key so changing Show IDs from the Search ↑↓ menu or Settings updates rows immediately.
+  const searchIdsKey = vaults.map((v) => v.idsInSearch?.() ?? 'match').join(',')
   const marks: TreeMarks = useMemo(() => {
     const roots = vaults.map((v) => v.root)
-    // A vault with no getter (a test's) keeps the sidebar's old rule; App hands every vault its setting (Always by default).
+    // A vault with no getter (a test's) keeps the sidebar's match-only rule; App hands every vault its setting (Number by default).
     const ruleOf = (path: string) => vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.idsInSearch?.() ?? 'match'
     const ids = new Map(
       results.flatMap((r) => {
@@ -205,7 +206,9 @@ export function useSidebarSearch(
       return needle === undefined ? [] : [[r.path, needle] as const]
     }))
     return { hits, needle: readNeedle(query), ...(ids.size > 0 && { ids }), ...(idMarks.size > 0 && { idMarks }) }
-  }, [hits, query, results, vaults])
+    // `searchIdsKey` invalidates `marks` whenever any vault's `showIds.settings.search` changes without rebuilding `searchVaults`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hits, query, results, vaults, searchIdsKey])
   // Best match's score of each row of the cut (D12), only while Best match sorts.
   const scores = useMemo(() => (bestMatch && found !== NO_FOUND ? bestScores(results, query, [...found.top, ...found.rest], found.open) : NO_SCORES), [bestMatch, results, query, found])
   // A fold clicked during a search lasts as long as its query (S15, S16) and lives here alone (R4):

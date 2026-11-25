@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { FileKind, TabSort, TreeNode, TreeResponse } from '@shared/types'
-import type { MenuAction, MenuSection } from './menuSections'
+import type { MenuAction, MenuParent, MenuSection } from './menuSections'
 import { sortLevel, sortSections, timeOf, withMtime } from './treeSort'
 
 const file = (path: string, mtime: number): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 1, mtime, kind: 'markdown' })
@@ -203,6 +203,30 @@ describe('sortSections (YAZ-3227 D4)', () => {
   it('the filter rows go last, Search only (YAZ-3511 D13, D14)', () => {
     const filters = [{ id: 'filter-type', label: 'Type', onSelect: vi.fn() }]
     expect(labels(sortSections('search', { by: 'best', reverse: false }, vi.fn(), OFF, filters)).at(-1)).toEqual(['Type'])
+  })
+
+  it('Search "Show IDs" flyout (YAZ-6502): present under "Show last updated" when searchIds is provided, absent otherwise, ignored on non-Search tabs', () => {
+    const setIds = vi.fn()
+    const without = sortSections('search', { by: 'best', reverse: false }, vi.fn(), { on: true, set: vi.fn() })
+    expect(labels(without)).toEqual([['Best match✓', 'Name', 'Last updated'], ['Show last updated✓']])
+
+    const withIds = sortSections('search', { by: 'best', reverse: false }, vi.fn(), { on: true, set: vi.fn() }, undefined, undefined, { value: 'number', set: setIds })
+    expect(labels(withIds)).toEqual([['Best match✓', 'Name', 'Last updated'], ['Show last updated✓', 'Show IDsNumber (#12)']])
+    const parent = withIds[1][1] as MenuParent
+    expect(parent.children).toHaveLength(1)
+    expect(parent.children[0].map((c) => `${c.label}${c.hint ?? ''}`)).toEqual(['Off', 'Number (#12)✓', 'Full ID', 'Only on ID match'])
+    // Clicking the already-active choice is a no-op; clicking another calls setIds once.
+    ;(parent.children[0][1] as MenuAction).onSelect()
+    expect(setIds).not.toHaveBeenCalled()
+    ;(parent.children[0][2] as MenuAction).onSelect()
+    expect(setIds).toHaveBeenCalledExactlyOnceWith('full')
+    ;(parent.children[0][0] as MenuAction).onSelect()
+    expect(setIds).toHaveBeenLastCalledWith('off')
+    ;(parent.children[0][3] as MenuAction).onSelect()
+    expect(setIds).toHaveBeenLastCalledWith('match')
+
+    // Non-Search tabs never include Show IDs.
+    expect(labels(sortSections('files', NAME, vi.fn(), OFF, undefined, undefined, { value: 'number', set: setIds })).flat()).not.toContain('Show IDsNumber (#12)')
   })
 })
 

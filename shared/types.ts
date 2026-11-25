@@ -3735,6 +3735,11 @@ export interface FolderState {
    * for this vault. Persisted, per machine; additive (old builds ignore it). Absent = no launcher.
    */
   launcher?: VaultLauncherInfo
+  /**
+   * Per-vault "Show last updated" switches by sidebar tab (YAZ-6529). Persisted per machine in `yaseendocs.json`,
+   * so read-only vaults keep their own switches without writing to disk inside the vault. Absent = fall back to `settings.rowDates`.
+   */
+  rowDates?: RowDates
 }
 
 /** Optional view opened when launching a vault via its macOS `.app` launcher (YAZ-5967). */
@@ -3870,8 +3875,16 @@ export function cleanCardsAdded(raw: unknown): CardsAdded | null {
   return { day, newCards, upNext }
 }
 
+/** Pure (the store and the bridge): a valid `RowDates`, or null — one boolean for every `SORT_MENU_TABS` tab (YAZ-6529). */
+export function cleanRowDates(raw: unknown): RowDates | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const r = raw as Record<string, unknown>
+  if (!SORT_MENU_TABS.every((tab) => typeof r[tab] === 'boolean')) return null
+  return { files: r.files as boolean, focus: r.focus as boolean, favorites: r.favorites as boolean, search: r.search as boolean }
+}
+
 /** What `state.setFolder` may merge into a bucket — every other field has its own targeted mutator. */
-export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key' | 'in' | 'upNext' | 'added'>> & {
+export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key' | 'in' | 'upNext' | 'added' | 'rowDates'>> & {
   launcher?: VaultLauncherInfo | null
 }
 

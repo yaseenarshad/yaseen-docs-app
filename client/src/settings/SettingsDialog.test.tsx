@@ -2946,8 +2946,8 @@ describe('This vault › Read only (YAZ-4939)', () => {
   })
 })
 
-describe('SettingsDialog: Show IDs (YAZ-4940, YAZ-6464), rows in one block under "This vault"', () => {
-  const SHOW_IDS: ShowIdsSettings = { search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' }
+describe('SettingsDialog: Show IDs (YAZ-4940, YAZ-6464, YAZ-6502), rows in one block under "This vault"', () => {
+  const SHOW_IDS: ShowIdsSettings = { search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' }
   const withShowIds = (idsOn: boolean, showIds: ShowIdsSettings = SHOW_IDS) => mountOn('Links & IDs', { ...DEFAULT_SETTINGS }, undefined, undefined, { enabled: idsOn, held: idsOn }, undefined, undefined, showIds)
   const pressed = (el: HTMLElement, id: string) => rowButtons(el, id).map((b) => b.getAttribute('aria-pressed'))
 
@@ -2957,6 +2957,9 @@ describe('SettingsDialog: Show IDs (YAZ-4940, YAZ-6464), rows in one block under
     const at = ids.indexOf('showIds')
     expect(ids.slice(at, at + 4)).toEqual(['showIds', 'showIds.title', 'showIds.files', 'showIds.tabs'])
     expect(row(el, 'showIds.tabsLayout')).toBeNull()
+    expect(row(el, 'showIds')?.querySelector('.setting__label')?.textContent).toBe('Show IDs in search')
+    expect(rowButtons(el, 'showIds').map((b) => b.textContent)).toEqual(['Off', 'Number (#12)', 'Full ID (EMB-12)', 'Only on ID match'])
+    expect(pressed(el, 'showIds')).toEqual(['false', 'true', 'false', 'false'])
     expect(row(el, 'showIds.title')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Show IDs')
     expect(row(el, 'showIds.title')?.querySelector('.setting__label')?.textContent).toBe('Show IDs in the title')
     expect(row(el, 'showIds.files')?.querySelector('.setting__label')?.textContent).toBe('Show IDs in the files list')
@@ -2973,9 +2976,9 @@ describe('SettingsDialog: Show IDs (YAZ-4940, YAZ-6464), rows in one block under
     const { el, saveShowIds } = withShowIds(true, { ...SHOW_IDS, files: 'number' })
     expect(pressed(el, 'showIds.files')).toEqual(['false', 'true', 'false'])
     act(() => rowButtons(el, 'showIds.files')[2].click())
-    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'full', tabs: 'off', tabsLayout: 'inline' })
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'number', title: true, files: 'full', tabs: 'off', tabsLayout: 'inline' })
     act(() => rowButtons(el, 'showIds.files')[0].click())
-    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'number', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
   })
 
   it('"in tabs" and "Tab ID layout" (YAZ-6464): Tab ID layout shows only when tabs !== off, and both save cleanly', () => {
@@ -2988,18 +2991,22 @@ describe('SettingsDialog: Show IDs (YAZ-4940, YAZ-6464), rows in one block under
     expect(pressed(el, 'showIds.tabs')).toEqual(['false', 'true', 'false'])
     expect(pressed(el, 'showIds.tabsLayout')).toEqual(['true', 'false'])
     act(() => rowButtons(el, 'showIds.tabsLayout')[1].click())
-    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'off', tabs: 'number', tabsLayout: 'stacked' })
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'number', title: true, files: 'off', tabs: 'number', tabsLayout: 'stacked' })
     act(() => rowButtons(el, 'showIds.tabs')[2].click())
-    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'off', tabs: 'full', tabsLayout: 'inline' })
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'number', title: true, files: 'off', tabs: 'full', tabsLayout: 'inline' })
   })
 
   it('a click saves the one choice with the others as they are', () => {
     const { el, saveShowIds } = withShowIds(true)
     act(() => rowButtons(el, 'showIds.title')[1].click())
-    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: false, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'number', title: false, files: 'off', tabs: 'off', tabsLayout: 'inline' })
     act(() => rowButtons(el, 'showIds.files')[1].click())
-    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'always', title: true, files: 'number', tabs: 'off', tabsLayout: 'inline' })
-    act(() => rowButtons(el, 'showIds')[1].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'number', title: true, files: 'number', tabs: 'off', tabsLayout: 'inline' })
+    act(() => rowButtons(el, 'showIds')[0].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'off', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    act(() => rowButtons(el, 'showIds')[2].click())
+    expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'full', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
+    act(() => rowButtons(el, 'showIds')[3].click())
     expect(saveShowIds).toHaveBeenLastCalledWith({ search: 'match', title: true, files: 'off', tabs: 'off', tabsLayout: 'inline' })
   })
 

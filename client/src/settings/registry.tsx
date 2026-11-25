@@ -2546,15 +2546,17 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'showIds',
             label: 'Show IDs in search',
-            hint: 'The sidebar search and Explore. Always: every result shows its ID ("WIKI-38 — S3 (AWS)"). Only when it matches: the ID shows on a result the search found by its ID.',
-            keywords: ['id', 'ids', 'search', 'explore', 'show', 'result'],
+            hint: 'Sidebar search and Explore results. Number shows "#12" on the right. Full ID shows "EMB-12". Only on ID match shows the ID when the search matches it. Off hides IDs unless the search matches an ID.',
+            keywords: ['id', 'ids', 'search', 'explore', 'show', 'result', 'number', 'full', 'off', 'match'],
             available: (ctx) => ctx.ids?.enabled === true && ctx.showIds !== undefined,
             render: ({ showIds }) =>
               showIds && (
                 <Segmented
                   options={[
-                    { label: 'Always', value: 'always' as const },
-                    { label: 'Only when the search matches the ID', value: 'match' as const },
+                    { label: 'Off', value: 'off' as const },
+                    { label: 'Number (#12)', value: 'number' as const },
+                    { label: 'Full ID (EMB-12)', value: 'full' as const },
+                    { label: 'Only on ID match', value: 'match' as const },
                   ]}
                   value={showIds.settings.search}
                   onChange={(search) => showIds.save({ ...showIds.settings, search })}
