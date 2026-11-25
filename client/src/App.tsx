@@ -1589,7 +1589,7 @@ export function App() {
     if (vault === null) throw new Error(`no vault of this window has the folder "${folder}". Make it, or change the daily pages folder in Settings › Files`)
     return { vault, tree: trees.find((t) => t.root === vault)!.tree }
   }, [])
-  const openDailyPage = useCallback((background = false, targetRoot?: string) => {
+  const openDailyPage = useCallback((background = false, targetRoot?: string, reveal = true) => {
     const { vaults, settings: now, dailyRoot } = placeInputs.current
     if (vaults.length === 0) return
     const title = dailyPageName(now.dailyPageFormat, new Date()).trim()
@@ -1629,11 +1629,11 @@ export function App() {
         (path) => {
           if (path === null) return
           if (background) return openBehindSidebar.current(path)
-          if (sidebarCollapsedRef.current) toggleSidebar()
+          if (reveal && sidebarCollapsedRef.current) toggleSidebar()
           openAsSidebar.current(path)
           // "The page at now" (YAZ-4164 D11): its editor takes the request when it shows; a background tab asks nothing.
           if (now.dailyPageOpens === 'now') requestGoToNow(path)
-          revealInFiles(path, false)
+          if (reveal) revealInFiles(path, false)
         },
         (err: unknown) => notify(`Can't open today's daily page: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       )
@@ -2824,7 +2824,8 @@ export function App() {
     if (at === -1) return setTodayTarget(null)
     if (vaults[at].wikilinks.resolve === null) return
     setTodayTarget(null)
-    openDailyPage(false, roots[at])
+    // YAZ-6503: a Vault App launcher `?open=today` focuses/opens today's page tab without forcing the sidebar open or revealing it in Files.
+    openDailyPage(false, roots[at], false)
   }, [todayTarget, roots, vaults, openDailyPage])
 
   // CLI navigation (YAZ-4502): show the page and the sidebar list, reveal the target there, pick the folder view, and
