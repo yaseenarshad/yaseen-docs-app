@@ -100,22 +100,28 @@ export function registerAutomationIpc(
       if (!win) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window closed.')
       let exitedFullScreen = false
       if (win.isFullScreen()) {
-        exitedFullScreen = true
         await new Promise<void>(resolve => {
           let done = false
           const finish = () => {
             if (done) return
             done = true
             clearTimeout(timer)
+            win.removeListener('leave-full-screen', onLeave)
+            win.removeListener('closed', finish)
             resolve()
+          }
+          const onLeave = () => {
+            exitedFullScreen = true
+            finish()
           }
           const timer = setTimeout(finish, FULLSCREEN_EXIT_TIMEOUT_MS)
           timer.unref?.()
-          win.once('leave-full-screen', finish)
+          win.once('leave-full-screen', onLeave)
           win.once('closed', finish)
           win.setFullScreen(false)
         })
         if (win.isDestroyed()) throw new AutomationFailure('WINDOW_CLOSED', 'The target window closed while exiting fullscreen.')
+        if (!win.isFullScreen()) exitedFullScreen = true
       }
       if (win.isMinimized()) win.restore()
       win.setBounds(bounds, false)

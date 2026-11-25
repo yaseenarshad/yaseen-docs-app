@@ -260,6 +260,9 @@ export interface CloseTabArgs {
 /** `tab.close` (YAZ-6539 Decisions 4 & 5): flushes and closes one or more tabs; keeps window open on Start page on last tab. */
 export async function closeTab(host: NavigationHost, args: CloseTabArgs) {
   const hasTabsList = Array.isArray(args.tabs) && args.tabs.length > 0
+  if (args.others === true && args.tabs !== undefined) {
+    throw new AutomationFailure('INVALID_INPUT', 'Do not combine others: true with tabs; use tab or path to keep one tab.')
+  }
   if (args.tab === undefined && args.path === undefined && !hasTabsList && args.others !== true) {
     throw new AutomationFailure('INVALID_INPUT', 'Specify tab, path, tabs, or others: true.')
   }

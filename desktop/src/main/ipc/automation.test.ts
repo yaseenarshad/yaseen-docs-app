@@ -153,3 +153,32 @@ it('wires displays, windowInfo, fullscreen-exiting moveWindow, focusWindow, mini
   expect(await cmd).toEqual({ tabs: [] })
   expect(screen.getPrimaryDisplay).toHaveBeenCalled()
 })
+
+it('reports exitedFullScreen: false and detaches listeners when fullscreen exit times out (YAZ-6539)', async () => {
+  vi.useFakeTimers()
+  const page = Object.assign(new EventEmitter(), { id: 13, send: vi.fn() })
+  let bounds = { x: 0, y: 0, width: 1200, height: 800 }
+  const win = Object.assign(new EventEmitter(), {
+    webContents: page,
+    isDestroyed: () => false,
+    isFocused: () => true,
+    isMinimized: () => false,
+    isFullScreen: () => true,
+    getBounds: () => ({ ...bounds }),
+    setBounds: vi.fn((next: typeof bounds) => { bounds = { ...next } }),
+    setFullScreen: vi.fn(),
+    restore: vi.fn(),
+    show: vi.fn(),
+    focus: vi.fn(),
+    minimize: vi.fn(),
+  })
+  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([win] as never)
+  const host = registerAutomationIpc({} as Store, { idFor: (s: unknown) => s === page ? 'w1' : undefined } as unknown as WindowManager)
+
+  const pending = host.moveWindow!('w1', { x: 0, y: 25, width: 960, height: 1055 }, false)
+  await vi.advanceTimersByTimeAsync(3500)
+  const res = await pending
+  expect(res.exitedFullScreen).toBe(false)
+  expect(win.listenerCount('leave-full-screen')).toBe(0)
+  expect(win.listenerCount('closed')).toBe(0)
+})

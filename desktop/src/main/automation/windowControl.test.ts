@@ -236,6 +236,7 @@ describe('tab.activate and tab.close', () => {
 
     await expect(closeTab(host, { window: 'w1' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
     await expect(closeTab(host, { window: 'w1', tabs: [] })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    await expect(closeTab(host, { window: 'w1', others: true, tabs: ['tab-1'] })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
     await expect(closeTab(host, { window: 'gone', others: true })).rejects.toMatchObject({ code: 'WINDOW_NOT_FOUND' })
   })
 })

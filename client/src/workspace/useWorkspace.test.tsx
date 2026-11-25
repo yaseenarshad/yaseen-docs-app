@@ -1969,5 +1969,6 @@ describe('YAZ-6539: open-batch and tabMode lazy-mount semantics', () => {
     expect(next.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md', '/v/c.md'])
     expect(next.rightPanel.items).toEqual(['/v/r.md'])
     expect(next.mounted).toEqual(['t1', next.tabs[2].id])
+    expect(next.history.steps.at(-1)?.path).toBe('/v/c.md')
   })
 })

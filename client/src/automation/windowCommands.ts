@@ -15,6 +15,8 @@ export interface WindowStateSnapshot {
   sidebarCollapsed: boolean
 }
 
+export const FLUSH_TIMEOUT_MS = 5_000
+
 export interface WindowCommandDeps {
   getState(): WindowStateSnapshot
   toggleSidebar(): void
@@ -28,6 +30,7 @@ export interface WindowCommandDeps {
   isDirty?(path: string): boolean
   flushWindow?(): Promise<boolean>
   flushPath?(path: string): Promise<void>
+  flushTimeoutMs?: number
 }
 
 function findTab(state: Pick<WindowStateSnapshot, 'tabs' | 'activeTab'>, tabId?: string, path?: string): Tab | null {
@@ -43,31 +46,55 @@ function findTab(state: Pick<WindowStateSnapshot, 'tabs' | 'activeTab'>, tabId?:
   return null
 }
 
-async function flushOrGuard(tabs: readonly Tab[], deps: WindowCommandDeps, force: boolean): Promise<void> {
-  if (tabs.length === 0) return
-  const paths = [...new Set(tabs.map((t) => t.path))]
-  let clean = true
-  const doFlushPath = deps.flushPath ?? flushRenamedPath
-  for (const p of paths) {
-    try {
-      await doFlushPath(p)
-    } catch {
-      clean = false
-    }
-  }
-  let windowClean = true
+async function raceTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<{ timedOut: false; value: T } | { timedOut: true }> {
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    windowClean = await (deps.flushWindow ?? flushWindow)()
-  } catch {
-    windowClean = false
+    return await Promise.race([
+      work.then((value) => ({ timedOut: false as const, value })),
+      new Promise<{ timedOut: true }>((resolve) => {
+        timer = setTimeout(() => resolve({ timedOut: true }), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
   }
-  if (force) return
+}
+
+async function flushOrGuard(tabs: readonly Tab[], deps: WindowCommandDeps, force: boolean): Promise<void> {
+  if (tabs.length === 0 || force) return
+  const paths = [...new Set(tabs.map((t) => t.path))]
+  const doFlushPath = deps.flushPath ?? flushRenamedPath
+  const timeoutMs = deps.flushTimeoutMs ?? FLUSH_TIMEOUT_MS
+  const outcome = await raceTimeout(
+    (async () => {
+      let clean = true
+      for (const p of paths) {
+        try {
+          await doFlushPath(p)
+        } catch {
+          clean = false
+        }
+      }
+      let windowClean = true
+      try {
+        windowClean = await (deps.flushWindow ?? flushWindow)()
+      } catch {
+        windowClean = false
+      }
+      return clean && windowClean
+    })(),
+    timeoutMs,
+  )
   const dirtySet = deps.isDirty === undefined ? new Set(dirtyPaths()) : null
   const isDirty = deps.isDirty ?? ((path: string) => dirtySet!.has(path))
   const stillDirty = tabs.filter((t) => isDirty(t.path))
-  if (!clean || !windowClean || stillDirty.length > 0) {
+  if (outcome.timedOut || !outcome.value || stillDirty.length > 0) {
     const failedIds = stillDirty.length > 0 ? stillDirty.map((t) => t.id) : tabs.map((t) => t.id)
-    throw new AutomationFailure('DIRTY_TAB', 'Unsaved edits could not be flushed.', { tabs: failedIds })
+    throw new AutomationFailure(
+      'DIRTY_TAB',
+      outcome.timedOut ? 'Timed out flushing unsaved edits.' : 'Unsaved edits could not be flushed.',
+      { tabs: failedIds, ...(outcome.timedOut ? { timedOut: true } : {}) },
+    )
   }
 }
 
@@ -132,6 +159,9 @@ export async function runWindowCommand(command: RendererCommand, deps: WindowCom
       const state = deps.getState()
       let targetTabs: Tab[] = []
       if (command.others === true) {
+        if (command.tabs !== undefined) {
+          throw new AutomationFailure('INVALID_INPUT', 'Do not combine others: true with tabs; use tab or path to keep one tab.')
+        }
         if (command.tab !== undefined || command.path !== undefined) {
           const keep = findTab(state, command.tab, command.path)
           if (keep === null) {

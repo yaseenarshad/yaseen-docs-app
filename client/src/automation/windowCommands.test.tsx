@@ -338,6 +338,29 @@ describe('runWindowCommand (YAZ-6539)', () => {
         details: { tabs: ['t2'] },
       })
       expect(hDirty.getTabsState().tabs).toHaveLength(3)
+
+      // Hung flush times out with DIRTY_TAB instead of stalling, and force: true bypasses it cleanly.
+      const hHung = createHarness()
+      const hungDeps = {
+        ...hHung.deps,
+        flushTimeoutMs: 25,
+        flushPath: vi.fn(() => new Promise<void>(() => undefined)),
+        flushWindow: vi.fn(() => new Promise<boolean>(() => undefined)),
+      }
+      await expect(runWindowCommand({ id: 'cl7b', action: 'tab.close', tab: 't1' }, hungDeps)).rejects.toMatchObject({
+        code: 'DIRTY_TAB',
+        details: { tabs: ['t1'], timedOut: true },
+      })
+      expect(hHung.getTabsState().tabs.map((t) => t.id)).toEqual(['t1', 't2', 't3'])
+
+      const forcedHung = await runWindowCommand({ id: 'cl7c', action: 'tab.close', tab: 't1', force: true }, hungDeps)
+      expect(forcedHung).toEqual({ closed: ['t1'], activeTab: 't2', closedWindow: false })
+      expect(hHung.getTabsState().tabs.map((t) => t.id)).toEqual(['t2', 't3'])
+
+      // Combining others: true with tabs is rejected as INVALID_INPUT.
+      await expect(runWindowCommand({ id: 'cl7d', action: 'tab.close', others: true, tabs: ['t2'] }, hHung.deps)).rejects.toMatchObject({
+        code: 'INVALID_INPUT',
+      })
     })
 
     it('keeps the window open on Start page (activeTab: null, closedWindow: false) when the last tab closes', async () => {

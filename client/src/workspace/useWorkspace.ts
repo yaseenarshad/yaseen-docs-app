@@ -668,7 +668,7 @@ function tabsStep(s: TabsState, a: TabsAction): TabsState {
       if (target === undefined) return s
       const nextMounted = mounted.includes(target.id) ? mounted : [...mounted, target.id]
       if (tabs === s.tabs && target.id === s.active && nextMounted === s.mounted && preview === s.preview && !s.blank) return s
-      return { tabs, active: target.id, mounted: nextMounted, history: s.history, preview, blank: false }
+      return withActive({ ...s, tabs, mounted, preview }, target.id)
     }
     case 'reset': {
       if (a.active === null) return s.tabs.length === 0 && s.active === null && s.mounted.length === 0 && !s.blank ? s : EMPTY
