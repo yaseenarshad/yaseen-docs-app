@@ -10,16 +10,38 @@ const context: AutomationContext = { profile: '/p', version: 'test', state: defa
 
 describe('the CLI command router (YAZ-4502)', () => {
   it('routes every command but the server’s own receipt read, and refuses any other name', () => {
-    expect(AUTOMATION_COMMANDS.map(command => command.name)).toEqual(['app.status', 'request.status', 'navigation.open'])
+    expect(AUTOMATION_COMMANDS.map(command => command.name)).toEqual([
+      'app.status',
+      'request.status',
+      'navigation.open',
+      'window.list',
+      'window.move',
+      'window.focus',
+      'window.minimize',
+      'window.close',
+      'tab.activate',
+      'tab.close',
+      'tab.move',
+    ])
     for (const { name } of AUTOMATION_COMMANDS) if (name !== 'request.status') expect(typeof routeFor(name).run, name).toBe('function')
     expect(() => routeFor('request.status')).toThrow(expect.objectContaining({ code: 'UNKNOWN_COMMAND' }))
     expect(() => prepareAutomation(context, request('file.write'))).toThrow(expect.objectContaining({ code: 'UNKNOWN_COMMAND' }))
   })
 
-  it('takes no lock for a read and serializes navigation, per window when one is named', () => {
+  it('takes no lock for reads, per-window locks for window/tab writes, and sorted locks for tab.move', () => {
     expect(prepareAutomation(context, request('app.status')).writes).toEqual([])
+    expect(prepareAutomation(context, request('window.list')).writes).toEqual([])
     expect(prepareAutomation(context, request('navigation.open', { root: '/v' })).writes).toEqual(['navigation'])
     expect(prepareAutomation(context, request('navigation.open', { window: 'w1' })).writes).toEqual(['navigation', 'window:w1'])
+    expect(prepareAutomation(context, request('window.move', { window: 'w1', tile: 'left' })).writes).toEqual(['window:w1'])
+    expect(prepareAutomation(context, request('window.focus', { window: 'w1' })).writes).toEqual(['window:w1'])
+    expect(prepareAutomation(context, request('window.minimize', { window: 'w1' })).writes).toEqual(['window:w1'])
+    expect(prepareAutomation(context, request('window.close', { window: 'w1' })).writes).toEqual(['window:w1'])
+    expect(prepareAutomation(context, request('tab.activate', { window: 'w1', tab: 'tab-1' })).writes).toEqual(['window:w1'])
+    expect(prepareAutomation(context, request('tab.close', { window: 'w1', tab: 'tab-1' })).writes).toEqual(['window:w1'])
+    expect(prepareAutomation(context, request('tab.move', { from: 'w-b', to: 'w-a', tab: 'tab-1' })).writes).toEqual(['window:w-a', 'window:w-b'])
+    expect(prepareAutomation(context, request('tab.move', { from: 'w-a', to: 'w-b', tab: 'tab-1' })).writes).toEqual(['window:w-a', 'window:w-b'])
+    expect(prepareAutomation(context, request('tab.move', { from: 'w-b', newWindow: true, tab: 'tab-1' })).writes).toEqual(['window:w-b'])
   })
 
   it('refuses unknown fields and wrong types before anything runs', () => {

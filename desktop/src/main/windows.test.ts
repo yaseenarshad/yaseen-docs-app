@@ -139,15 +139,20 @@ function makeHost(
   areas: WindowBounds[] = [AREA],
   exists: (path: string) => boolean = () => true,
   dirExists: (path: string) => boolean = () => true,
-): { host: WindowHost; created: Array<{ entry: WindowEntry; win: FakeWindow; hidden?: true }>; previews: Array<[FakeWindow, WindowBounds | null]>; cursor: { x: number; y: number } } {
-  const created: Array<{ entry: WindowEntry; win: FakeWindow; hidden?: true }> = []
+): { host: WindowHost; created: Array<{ entry: WindowEntry; win: FakeWindow; hidden?: true; inactive?: true }>; previews: Array<[FakeWindow, WindowBounds | null]>; cursor: { x: number; y: number } } {
+  const created: Array<{ entry: WindowEntry; win: FakeWindow; hidden?: true; inactive?: true }> = []
   const previews: Array<[FakeWindow, WindowBounds | null]> = []
   /** Where the pointer is (YAZ-3637): a test moves it. */
   const cursor = { x: 0, y: 0 }
   const host: WindowHost = {
     create(entry, opts) {
       const win = new FakeWindow({ ...entry.bounds })
-      created.push({ entry, win, ...(opts?.hidden === true ? { hidden: true as const } : {}) })
+      created.push({
+        entry,
+        win,
+        ...(opts?.hidden === true ? { hidden: true as const } : {}),
+        ...(opts?.inactive === true ? { inactive: true as const } : {}),
+      })
       return win as ManagedWindow
     },
     workAreas: () => areas,
@@ -2940,5 +2945,71 @@ describe('createWindowManager: routeToFile openTarget and missing vault notice (
       [CONTRACT.link.onOpenTarget.channel, { root: '/v/work', target: 'today' }],
       [CONTRACT.link.onOpenTarget.channel, { root: '/v/work', target: 'inbox' }],
     ])
+  })
+})
+
+describe('createWindowManager: automation bounds, inactive open, and flush-first close (YAZ-6539)', () => {
+  it('opens an automation window with clamped bounds and inactive flag without marking it hidden', () => {
+    const negative: WindowBounds = { x: -1920, y: 25, width: 1920, height: 1055 }
+    const { host, created } = makeHost([AREA, negative])
+    const manager = createWindowManager(store, host)
+
+    const id = manager.openAutomationWindow({
+      root: '/v',
+      file: null,
+      bounds: { x: -1920, y: 25, width: 960, height: 1055 },
+      inactive: true,
+    })
+
+    expect(created).toHaveLength(1)
+    expect(created[0].entry.id).toBe(id)
+    expect(created[0].entry.bounds).toEqual({ x: -1920, y: 25, width: 960, height: 1055 })
+    expect(created[0].inactive).toBe(true)
+    expect(created[0].hidden).toBeUndefined()
+    expect(manager.hiddenWindows()).toEqual([])
+  })
+
+  it('closeAutomationWindow flushes first, refuses dirty/timeout unless force is true, and returns missing for dead ids', async () => {
+    vi.useFakeTimers()
+    try {
+      const { host, created } = makeHost([AREA])
+      const manager = createWindowManager(store, host)
+      const keepId = manager.openAutomationWindow({ root: '/v1', file: null })
+      const targetId = manager.openAutomationWindow({ root: '/v2', file: null })
+      const targetWin = created[1].win
+
+      expect(await manager.closeAutomationWindow('no-such-window')).toBe('missing')
+
+      // Dirty flush without force -> returns 'dirty' and leaves window alive.
+      const dirtyPromise = manager.closeAutomationWindow(targetId, false)
+      expect(targetWin.flushCount()).toBe(1)
+      manager.handleFlushed(targetWin.webContents, false)
+      expect(await dirtyPromise).toBe('dirty')
+      expect(targetWin.isDestroyed()).toBe(false)
+
+      // Timeout without force -> returns 'timeout' and leaves window alive.
+      const timeoutPromise = manager.closeAutomationWindow(targetId, false)
+      expect(targetWin.flushCount()).toBe(2)
+      await vi.advanceTimersByTimeAsync(FLUSH_TIMEOUT_MS)
+      expect(await timeoutPromise).toBe('timeout')
+      expect(targetWin.isDestroyed()).toBe(false)
+
+      // Dirty flush WITH force -> destroys window and returns 'closed'.
+      const forcedPromise = manager.closeAutomationWindow(targetId, true)
+      expect(targetWin.flushCount()).toBe(3)
+      manager.handleFlushed(targetWin.webContents, false)
+      expect(await forcedPromise).toBe('closed')
+      expect(targetWin.isDestroyed()).toBe(true)
+
+      // Clean flush without force -> destroys window and returns 'closed'.
+      const keepWin = created[0].win
+      const cleanPromise = manager.closeAutomationWindow(keepId, false)
+      expect(keepWin.flushCount()).toBe(1)
+      manager.handleFlushed(keepWin.webContents, true)
+      expect(await cleanPromise).toBe('closed')
+      expect(keepWin.isDestroyed()).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

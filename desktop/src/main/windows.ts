@@ -102,9 +102,10 @@ export interface ManagedWindow {
 export interface WindowHost {
   /**
    * Builds the `BrowserWindow` at `entry.bounds` and loads `<renderer>?win=<entry.id>`. With `hidden` (YAZ-3343, a window
-   * the tab board made) it is built and loaded but NOT shown: it shows when the board shows it (`showWindow`).
+   * the tab board made) it is built and loaded but NOT shown: it shows when the board shows it (`showWindow`). With
+   * `inactive` (YAZ-6539, `--no-focus`) it is built hidden and revealed with `showInactive()` once ready without stealing focus.
    */
-  create(entry: WindowEntry, opts?: { hidden: true }): ManagedWindow
+  create(entry: WindowEntry, opts?: { hidden?: true; inactive?: true }): ManagedWindow
   /** Every display's workArea, primary first (`clampBounds` keeps the earliest area on ties). */
   workAreas(): WindowBounds[]
   /** Where the pointer is on the screen (YAZ-3637 D1): a drag that ended with no point is let go there. */
@@ -130,6 +131,8 @@ export interface WindowManager extends WindowLookup {
   automationWindows(): Array<WindowEntry & { readOnly?: true }>
   /** CLI navigation: `openWindow`, answering the new window's id. */
   openAutomationWindow(opts: OpenWindowOptions): string
+  /** CLI window close (YAZ-6539): flushes first; closes only when clean or `force === true`, awaiting `closed`. */
+  closeAutomationWindow(id: string, force?: boolean): Promise<'closed' | 'dirty' | 'timeout' | 'missing'>
   /** Transient read-only window opened via `--read-only` (YAZ-4502). Never persisted. */
   isReadOnly(id: string): boolean
   /** True iff `root` is open in >=1 live window and every live window holding `root` is transient read-only (YAZ-4502). */
@@ -701,8 +704,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     if (!sameBounds(bounds, entry.bounds)) store.upsertWindow({ ...entry, bounds })
   }
 
-  const attach = (entry: WindowEntry, hidden = false): void => {
-    const win = hidden ? host.create(entry, { hidden: true }) : host.create(entry)
+  const attach = (entry: WindowEntry, opts?: { hidden?: true; inactive?: true }): void => {
+    const hidden = opts?.hidden === true
+    const inactive = opts?.inactive === true
+    const win =
+      hidden || inactive
+        ? host.create(entry, { ...(hidden ? { hidden: true as const } : {}), ...(inactive ? { inactive: true as const } : {}) })
+        : host.create(entry)
     if (hidden) hiddenWins.add(entry.id)
     const { id } = entry
     const wcId = win.webContents.id
@@ -804,9 +812,9 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     })
   }
 
-  const open = (entry: WindowEntry, hidden = false): void => {
+  const open = (entry: WindowEntry, opts: boolean | { hidden?: true; inactive?: true } = false): void => {
     store.upsertWindow(entry)
-    attach(entry, hidden)
+    attach(entry, typeof opts === 'boolean' ? (opts ? { hidden: true } : undefined) : opts)
   }
   /** Every live window hears which windows are in `wins` (YAZ-3343 D23): the tab board tags their frames. */
   const tell = (channel: string, wins: ReadonlySet<string>): void => {
@@ -871,14 +879,18 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     open({ ...source, ...inheritWindowPrefs(from), id, roots: [...from.roots], file: path, tabs: [path], ...(carry?.name === undefined ? {} : { tabStrip: [{ path, name: carry.name }] }), rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, bounds: bounds ?? cascadeFrom(from) }, carry?.background === true)
     if (carry?.background === true) tellHidden()
   }
-  /** A new full window; `bounds` = where a Files window puts it (YAZ-3357), else the default spot. Answers its id. */
+  /** A new full window; `bounds` = where a Files window puts it (YAZ-3357), else `opts.bounds` (YAZ-6539) or the default spot. Answers its id. */
   const openWindow = (opts: OpenWindowOptions, bounds?: WindowBounds): string => {
     // A window opened on a vault is a use of that vault (YAZ-2555 D5); its first focus does not count.
     // Transient read-only windows (YAZ-4502) never bump recents.
     if (opts.readOnly !== true) recordUsed(opts.root)
     const id = randomUUID()
     if (opts.readOnly === true) readOnlyWins.add(id)
-    open({ id, root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, bounds: bounds ?? clampBounds({ ...DEFAULT_BOUNDS }, host.workAreas()), ...defaultWindowPrefs() })
+    const targetBounds = bounds ?? clampBounds(opts.bounds ?? { ...DEFAULT_BOUNDS }, host.workAreas())
+    open(
+      { id, root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, bounds: targetBounds, ...defaultWindowPrefs() },
+      opts.inactive === true ? { inactive: true } : false,
+    )
     return id
   }
   /** Where a window made FROM `from` goes (YAZ-3357): cascaded off a full window, beside a Files window, which is too narrow to copy. */
@@ -1031,6 +1043,32 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       return [readOnlyWins.has(id) ? { ...entry, readOnly: true as const } : entry]
     }),
     openAutomationWindow: openWindow,
+    async closeAutomationWindow(id, force = false) {
+      const win = liveWindow(id)
+      if (win === undefined) return 'missing'
+      const ack = await flushRenderer(win)
+      if (win.isDestroyed()) return 'closed'
+      if (ack !== 'clean' && !force) return ack
+      if (!quitting) {
+        closingWins.add(id)
+        if (!readOnlyWins.has(id)) commitBounds(id, win)
+      }
+      const closed = new Promise<void>((resolve) => {
+        let done = false
+        const finish = () => {
+          if (done) return
+          done = true
+          clearTimeout(timer)
+          resolve()
+        }
+        const timer = setTimeout(finish, 1000)
+        timer.unref?.()
+        win.on('closed', finish)
+      })
+      win.destroy()
+      await closed
+      return 'closed'
+    },
     isReadOnly: (id) => readOnlyWins.has(id),
     isTransientReadOnlyRoot(root) {
       const target = stripSlash(root)
