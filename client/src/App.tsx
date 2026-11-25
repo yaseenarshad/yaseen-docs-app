@@ -4097,6 +4097,14 @@ export function App() {
     if (nextC !== undefined) { sidebarCollapsedRef.current = nextC; setSidebarCollapsed(nextC) }
     if (nextW !== undefined) { sidebarWidthRef.current = nextW; setSidebarWidth(nextW) }
   }, [filesWindow, sidebarPlace, settings.sidebarPerTabWidth, shown])
+  // Auto-open a collapsed sidebar when the last open tab closes (YAZ-6533), keeping whatever sidebar tab it was on.
+  const openTabCount = tabs.length + (session !== null ? 1 : 0) + (blank ? 1 : 0)
+  const prevOpenTabs = useRef<{ root: string | null; count: number }>({ root, count: openTabCount })
+  useLayoutEffect(() => {
+    const prev = prevOpenTabs.current
+    prevOpenTabs.current = { root, count: openTabCount }
+    if (!filesWindow && root !== null && prev.root === root && prev.count > 0 && openTabCount === 0 && sidebarCollapsedRef.current) toggleSidebar()
+  }, [filesWindow, root, openTabCount, toggleSidebar])
   // Tab sleep (YAZ-3737 5A, S10): this window is hidden or minimized; then the active tab may sleep too. A boolean
   // each, so a hide of another window renders no App here.
   const hiddenHere = useWindowHidden(storage.getWindowId())

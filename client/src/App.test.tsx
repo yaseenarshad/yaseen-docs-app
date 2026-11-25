@@ -8843,3 +8843,32 @@ describe('App: the card course (YAZ-5120)', () => {
     })
   })
 })
+
+describe('App: auto-open sidebar when all tabs close (YAZ-6533)', () => {
+  it('keeps sidebar collapsed while tabs remain, opens it on its previous lens when the last tab closes, and lets it close again on Start page', async () => {
+    const { bridge, el, emitCloseTab, emitToggleSidebar } = await mount(
+      defaultAppState(),
+      { id: 'w1', root: '/v', file: '/v/b.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: true, sidebarLens: 'favorites' },
+      { '/v/a.md': { content: '# A\n', mtime: 1 }, '/v/b.md': { content: '# B\n', mtime: 1 } },
+    )
+    expect(visibleSidebar(el)).toBeNull()
+    // Closing the first of two tabs leaves the sidebar collapsed.
+    await act(async () => emitCloseTab())
+    expect(visibleSidebar(el)).toBeNull()
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith({ sidebarCollapsed: false })
+    // Closing the last tab opens the sidebar on its prior lens ('favorites').
+    await act(async () => emitCloseTab())
+    expect(visibleSidebar(el)).not.toBeNull()
+    expect(captured.sidebar?.lens).toBe('favorites')
+    expect(bridge.window.setIdentity).toHaveBeenCalledWith({ sidebarCollapsed: false })
+    // Collapsing again while empty stays collapsed.
+    await act(async () => emitToggleSidebar())
+    expect(visibleSidebar(el)).toBeNull()
+  })
+
+  it('does not auto-open a collapsed sidebar when a window boots already empty', async () => {
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'focus' })
+    expect(visibleSidebar(el)).toBeNull()
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith({ sidebarCollapsed: false })
+  })
+})
