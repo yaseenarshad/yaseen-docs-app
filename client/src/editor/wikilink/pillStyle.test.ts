@@ -117,7 +117,7 @@ describe('right-click a [[link]] › Pill style (YAZ-4924 round 5)', () => {
     crepe.setReadonly(true)
     rightClick(span(root, 'Known'))
     const row = Array.from(popupOf(view)!.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')).find((b) => b.textContent === 'Pill style')!
-    expect([row.disabled, row.dataset.hint, row.classList.contains('ctx-menu__item--parent')]).toEqual([true, 'This page is read only', false])
+    expect([row.disabled, row.dataset.hint, row.classList.contains('ctx-menu__item--parent')]).toEqual([true, 'Read only', false])
   })
 
   it('YAZ-6001 (D3): when highlight is hidden in the toolbar (card editors), Pill style hides the Highlight group and keeps Text + Back', async () => {
