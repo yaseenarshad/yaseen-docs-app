@@ -880,7 +880,7 @@ function CrepeHost({
     }
     return base
   }, [convert, file.path, inFolderPage, unit])
-  const inlineDrawing = useInlineDrawing({ root, path: file.path, title: () => titleRef.current, disk: () => diskRef.current, getView: () => (crepeRef.current === null ? null : editorViewOf(crepeRef.current)), flushPage: () => autosave.flushNow(), wikilinks, viewOnlyLinks, allowFileAction: vaultScope.allowFileAction, onNotice, onOpenInTab: tabId === undefined || onOpenInlineDrawing === undefined ? undefined : (index, background) => onOpenInlineDrawing(tabId, index, background), onOpenExplore: onOpenExplore === undefined ? undefined : (index) => onOpenExplore(inlineDrawingRowPath(file.path, index)) })
+  const inlineDrawing = useInlineDrawing({ root, path: file.path, title: () => titleRef.current, disk: () => diskRef.current, getView: () => (crepeRef.current === null ? null : editorViewOf(crepeRef.current)), flushPage: () => flushRenamedPath(file.path), wikilinks, viewOnlyLinks, allowFileAction: vaultScope.allowFileAction, onNotice, onOpenInTab: tabId === undefined || onOpenInlineDrawing === undefined ? undefined : (index, background) => onOpenInlineDrawing(tabId, index, background), onOpenExplore: onOpenExplore === undefined ? undefined : (index) => onOpenExplore(inlineDrawingRowPath(file.path, index)) })
   /** The timed "Allow edits" of THIS tab (YAZ-4939): at zero the page saves (including any open card editor, YAZ-6052), then locks again. */
   const unlock = useTimedUnlock(() => {
     const openCards = hostRef.current?.querySelectorAll('.card.card--editing') ?? []

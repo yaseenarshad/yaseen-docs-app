@@ -254,6 +254,26 @@ describe('a board src (2B)', () => {
     expect(onEditInPopup).toHaveBeenCalledExactlyOnceWith('/w', '/w/Sketch.excalidraw')
   })
 
+  it('shows Open in Explore in the right-click menu of a markdown-syntax board embed when wired (YAZ-6548)', async () => {
+    const openExplore = vi.fn()
+    const base = imageOptions()
+    const image: ImageOptions = {
+      ...base,
+      boards: {
+        ...base.boards!,
+        linkMenu: (path) => ({ labels: [], open: () => void path, openExplore: () => openExplore(path) }),
+      },
+    }
+    await mount('![Sketch](../w/Sketch.excalidraw)\n', image)
+    await windows(1)
+    fakes.list[0]!.host.onContextMenu!(new MouseEvent('contextmenu'))
+    const items = Array.from(document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item'))
+    const explore = items.find((b) => b.textContent === 'Open in Explore')
+    expect(explore).toBeDefined()
+    explore!.click()
+    expect(openExplore).toHaveBeenCalledExactlyOnceWith('/w/Sketch.excalidraw')
+  })
+
   it('an alias in the alt stays: `![CloudFront|My name](…)` writes `|My name|640x360 …`', async () => {
     const { crepe } = await mount('![CloudFront|My name](../w/CloudFront.drawio)\n')
     await windows(1)
