@@ -428,7 +428,9 @@ describe('"Show in sidebar" item (YAZ-2638 D1, D3)', () => {
     // A vault row of a search (S26) has no Open and no focus item: the item is the Open group's one item.
     const vault = build({ removeVault: '/v', showPath: '/v' })
     expect(vault[0].map((i) => i.label)).toEqual(['Show in sidebar'])
-    expect(itemOf(file, 'Show in sidebar')).toMatchObject({ id: 'show-in-sidebar' })
+    const show = itemOf(file, 'Show in sidebar')
+    expect(show).toMatchObject({ id: 'show-in-sidebar' })
+    expect(renderToStaticMarkup(show?.icon as ReactElement)).toContain('<svg')
   })
 
   it('S29, S30, S36: a select hands the caller the row, and no other handler runs', () => {

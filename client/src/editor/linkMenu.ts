@@ -56,6 +56,15 @@ const copyGlyph = () => glyph('15', '0 0 24 24', '2', [['rect', { x: '8', y: '8'
 const eyeGlyph = () => glyph('14', '0 0 16 16', '1.2', [['path', { d: 'M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4-6.5-4-6.5-4z' }], ['circle', { cx: '8', cy: '8', r: '1.8' }]])
 /** `HeartIcon`: "Add to favorites". */
 const heartGlyph = () => glyph('15', '0 0 24 24', '2', [['path', { d: 'M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z' }]])
+/** `ShowInSidebarIcon` (YAZ-6535): "Show in sidebar". */
+const showInSidebarGlyph = () =>
+  glyph('14', '0 0 16 16', '1.2', [
+    ['rect', { x: '1.5', y: '2.5', width: '13', height: '11', rx: '1.5' }],
+    ['line', { x1: '6.25', y1: '2.5', x2: '6.25', y2: '13.5' }],
+    ['line', { x1: '3.1', y1: '5.5', x2: '4.6', y2: '5.5' }],
+    ['rect', { x: '2.9', y: '7.2', width: '2.1', height: '1.6', rx: '0.5', fill: 'currentColor', stroke: 'none' }],
+    ['line', { x1: '3.1', y1: '10.5', x2: '4.6', y2: '10.5' }],
+  ])
 
 /**
  * What App lets a link menu do with the link's target (YAZ-3740): the tab menu's and the sidebar's doors. Each one
@@ -126,7 +135,7 @@ export function linkMenuRows(menu: LinkMenu): MenuRow[] {
     [row('VS Code', menu.openIn?.vsCode), row('Default app', menu.openIn?.defaultApp)],
     [row('Reveal in Finder', menu.openIn?.reveal)],
   ].map((list) => list.filter((child): child is MenuRow => child !== null))
-  group([row('Open', menu.open), row('Open in new tab', menu.openNew), row('Open in new window', menu.openNewWindow), row('Open in Explore', menu.openExplore), row('Show in sidebar', menu.showInSidebar)])
+  group([row('Open', menu.open), row('Open in new tab', menu.openNew), row('Open in new window', menu.openNewWindow), row('Open in Explore', menu.openExplore), row('Show in sidebar', menu.showInSidebar, undefined, showInSidebarGlyph)])
   group([row('Copy name and ID', menu.copyNameAndId), row('Copy name', menu.copyName), row('Copy ID', menu.copyId), row('Copy path', menu.copyPath, undefined, copyGlyph), row('Copy address', menu.copyAddress)])
   group([
     menu.favorite === undefined ? null : { label: menu.favorite.on ? 'Remove from favorites' : 'Add to favorites', run: menu.favorite.run, icon: heartGlyph },

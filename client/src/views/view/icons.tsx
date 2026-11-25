@@ -37,6 +37,19 @@ export function SidebarPanelIcon() {
   )
 }
 
+/** "Show in sidebar" menu glyph (YAZ-6535): sidebar panel with a highlighted row in the left rail. */
+export function ShowInSidebarIcon() {
+  return (
+    <svg {...svg}>
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+      <line x1="6.25" y1="2.5" x2="6.25" y2="13.5" />
+      <line x1="3.1" y1="5.5" x2="4.6" y2="5.5" />
+      <rect x="2.9" y="7.2" width="2.1" height="1.6" rx="0.5" fill="currentColor" stroke="none" />
+      <line x1="3.1" y1="10.5" x2="4.6" y2="10.5" />
+    </svg>
+  )
+}
+
 /** A calendar page, for the sidebar footer's "Open today's daily page" (YAZ-3607 D7). The cog's size and line. */
 export function CalendarIcon() {
   return (

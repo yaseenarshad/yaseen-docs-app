@@ -118,7 +118,9 @@ describe('inlineRowMenu (YAZ-6469)', () => {
     ;(findItem(sections, 'Open in Explore') as MenuAction).onSelect()
     expect(onOpenInlineDrawingExplore).toHaveBeenCalledExactlyOnceWith(PAGE, 0)
 
-    ;(findItem(sections, 'Show in sidebar') as MenuAction).onSelect()
+    const showInSidebar = findItem(sections, 'Show in sidebar') as MenuAction
+    expect(showInSidebar.icon).toBeDefined()
+    showInSidebar.onSelect()
     expect(h.onRevealInFiles).toHaveBeenCalledExactlyOnceWith(PAGE)
 
     // Group 2: Copy path has ⌘⇧C hint, icon, and resolves 1-based line (line 5)
@@ -184,7 +186,9 @@ describe('inlineRowMenu (YAZ-6469)', () => {
     expect(received).toEqual([{ path: PAGE, cardId: 'GEO-140', index: 1 }])
 
     // Show in sidebar
-    ;(findItem(sections, 'Show in sidebar') as MenuAction).onSelect()
+    const showInSidebar = findItem(sections, 'Show in sidebar') as MenuAction
+    expect(showInSidebar.icon).toBeDefined()
+    showInSidebar.onSelect()
     expect(h.onRevealInFiles).toHaveBeenCalledExactlyOnceWith(PAGE)
 
     // Copy path -> line 6
