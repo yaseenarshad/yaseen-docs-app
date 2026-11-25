@@ -101,7 +101,7 @@ export interface ExploreStackProps {
   opensOf?: (root: string) => Readonly<Record<string, OpenStat>>
   editsOf?: (root: string) => Readonly<Record<string, number>>
   /**
-   * Search size in percent (`settings.exploreSize`, YAZ-5881 D2, YAZ-5977): the search panel's width and all that is in it. ⌘+ / ⌘− /
+   * Search size in percent (`WindowEntry.exploreSize`, YAZ-5881 D2, YAZ-5977, YAZ-6490): the search panel's width and all that is in it. ⌘+ / ⌘− /
    * ⌘0 with the search panel in front step it along `APP_ZOOM_STEPS` through `onExploreSize` (D3; ⌘0: 125%).
    */
   exploreSize: number

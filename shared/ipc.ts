@@ -308,8 +308,6 @@ export const CONTRACT = {
      * Settings choices laid over it. Read when Settings › Hotkeys shows; off macOS, no rows.
      */
     systemHotkeys: invoke<[], SystemHotkey[]>('state:system-hotkeys', 0),
-    /** Clamped to [SIDEBAR_MIN_W, SIDEBAR_MAX_W] by the main process. */
-    setSidebarWidth: invoke<[width: number], void>('state:set-sidebar-width', 1),
     /** The tab board's canvas (YAZ-3343 D1): the switch, moved cards, forgotten cards (Tidy up). Sent on a drop or a click, never on each pointer move. */
     setTabCanvas: invoke<[patch: TabCanvasPatch], void>('state:set-tab-canvas', 1),
     /** The card course's place, finished chapters, offers, Mute and Speed (YAZ-5120): only the fields the patch names. Per machine. */
@@ -503,12 +501,6 @@ export const CONTRACT = {
      * vaults and lens, on the blank tab with the caret in the search, and the Files window closes.
      */
     filesToNormal: invoke<[], void>('window:files-to-normal', 0),
-    /**
-     * THIS Files window's own sidebar zoom in percent (YAZ-3389 D13): the zoom menu's − % + and an unclaimed ⌘+ / ⌘− / ⌘0 there.
-     * Main normalizes it (`normalizeFilesZoom`) and stores it as `WindowEntry.zoom`; `window.identity()` gives it back. A
-     * full window is refused: its sidebar zoom is the shared `settings.sidebarZoom`.
-     */
-    filesZoom: invoke<[percent: number], void>('window:files-zoom', 1),
     /**
      * THIS Files window's zoom menu opened (true) or closed (false) (YAZ-3444). While it is open, a new App size leaves
      * this window's size, so the menu stays under the pointer; the close gives it the width that keeps its page width.

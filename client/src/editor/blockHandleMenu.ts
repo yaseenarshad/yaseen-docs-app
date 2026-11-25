@@ -810,7 +810,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
           // Tab while the menu shows and the focus is still in the editor: the first value button (last
           // with Shift) takes it, before the outliner's Tab can indent (S84). Inside the menu Tab is the browser's.
           const onTab = (e: KeyboardEvent) => {
-            if (e.key !== 'Tab' || popup === null || popup.contains(document.activeElement)) return
+            if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey || popup === null || popup.contains(document.activeElement)) return
             const values = popup.querySelectorAll<HTMLButtonElement>('.block-menu-picker__value')
             const next = e.shiftKey ? values[values.length - 1] : values[0]
             if (next === undefined) return

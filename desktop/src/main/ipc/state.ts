@@ -155,10 +155,6 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
     if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
     noPageInFront.set(event.sender, on)
   })
-  handle(CONTRACT.state.setSidebarWidth, async (width: unknown) => {
-    if (typeof width !== 'number' || !Number.isFinite(width)) throw new BridgeFailure('BAD_REQUEST', "'width' must be a finite number")
-    store.setSidebarWidth(width)
-  })
   // The two orders across vaults take the same arguments by the same rule (YAZ-2631 D1; focus: YAZ-2702 Decision 3).
   for (const order of ['setFavoritesOrder', 'setFocusOrder'] as const) {
     handle(CONTRACT.state[order], async (roots: unknown, paths: unknown) => {

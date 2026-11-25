@@ -442,7 +442,7 @@ describe('StartPage', () => {
     const settled = runs.length
     expect(settled).toBeGreaterThan(0)
     // Each broadcast is a new COPY of all the app state: a change of a different key (the width of the sidebar) is no change of a record.
-    await emitState({ ...(JSON.parse(JSON.stringify(state)) as AppState), sidebarWidth: 300 })
+    await emitState({ ...(JSON.parse(JSON.stringify(state)) as AppState), settingsSavedAt: 1 })
     await emitState(JSON.parse(JSON.stringify(state)) as AppState)
     // App renders again — a resize of the window, a drag of the sidebar edge — and hands the page the props it had.
     for (let n = 0; n < 3; n++) await act(async () => root?.render(<StartPage {...props} />))

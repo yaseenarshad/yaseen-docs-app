@@ -984,7 +984,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     return () => document.removeEventListener('pointerdown', outside, true)
   }, [menuKey])
   const menuKeys = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Escape' || event.key === 'Tab') {
+    if (event.key === 'Escape' || (event.key === 'Tab' && !event.metaKey && !event.ctrlKey && !event.altKey)) {
       event.preventDefault()
       closeMenu(true)
       return
@@ -1235,7 +1235,7 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
           className="image-studio__menu"
           role="menu"
           onKeyDown={(event) => {
-            if (event.key !== 'Escape' && event.key !== 'Tab') return
+            if (event.key !== 'Escape' && (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey)) return
             event.preventDefault()
             setImportMenuOpen(false)
             importMenuRef.current?.querySelector<HTMLElement>('.image-studio__more-inline')?.focus()

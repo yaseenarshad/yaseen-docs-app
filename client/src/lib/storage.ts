@@ -1,8 +1,12 @@
 import {
+  APP_ZOOM_STEPS,
   DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_LENS,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
+  SIDEBAR_DEFAULT_W,
+  SIDEBAR_ZOOM_MAX,
+  SIDEBAR_ZOOM_MIN,
   addRecentRoot,
   applyTabCanvasPatch,
   sameTabCanvas,
@@ -15,8 +19,8 @@ import {
   keyedVaults,
   listVaults,
   mergeFavoritesOrder,
-  normalizeFilesZoom,
   normalizeRoots,
+  normalizeSidebarZoom,
   placeName,
   placeVault,
   placeVaults,
@@ -249,14 +253,30 @@ export const storage = {
   /** The card skill's copy (YAZ-5108), the app's own vault, as main named it in this window's identity; null with no copy. */
   getCardSkill: (): string | null => identity.cardSkill ?? null,
   /**
-   * A Files window's own sidebar zoom in percent (YAZ-3389 D13), from its identity; a full window has none and reads
-   * the shared `settings.sidebarZoom` instead. Only this window writes it (`setFilesZoom`), so the cache stays true.
+   * This window's own sidebar zoom in percent (50–200, YAZ-6490), from its identity (full and Files windows alike).
+   * Only this window writes it (`setSidebarZoom`), so the cache stays true and other windows never re-render.
    */
-  getFilesZoom: (): number => normalizeFilesZoom(identity.zoom),
-  /** Step this Files window's own sidebar zoom (D13): the cache at once, then main (`window:files-zoom`) stores it. */
-  setFilesZoom(percent: number): void {
-    identity = { ...identity, zoom: percent }
-    send('window.filesZoom', () => api.window.filesZoom(percent))
+  getSidebarZoom: (): number => normalizeSidebarZoom(identity.zoom, state.settings.newWindowSidebarZoom),
+  /** Update this window's own sidebar zoom: optimistic on local `identity`, then main (`window:set-identity`). */
+  setSidebarZoom(percent: number): void {
+    const zoom = normalizeSidebarZoom(percent, state.settings.newWindowSidebarZoom)
+    identity = { ...identity, zoom }
+    send('window.setIdentity', () => api.window.setIdentity({ zoom }))
+  },
+  /** This window's own Explore Search size in percent (`APP_ZOOM_STEPS`, YAZ-6490). */
+  getExploreSize: (): number => (APP_ZOOM_STEPS as readonly unknown[]).includes(identity.exploreSize) ? (identity.exploreSize as number) : state.settings.newWindowExploreSize,
+  /** Update this window's own Explore Search size: optimistic on local `identity`, then main (`window:set-identity`). */
+  setExploreSize(exploreSize: number): void {
+    identity = { ...identity, exploreSize }
+    send('window.setIdentity', () => api.window.setIdentity({ exploreSize }))
+  },
+  /** This window's own Table of Contents zoom in percent (50–200, YAZ-6490). */
+  getTocZoom: (): number => (typeof identity.tocZoom === 'number' && Number.isFinite(identity.tocZoom) ? Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, identity.tocZoom)) : state.settings.newWindowTocZoom),
+  /** Update this window's own Table of Contents zoom: optimistic on local `identity`, then main (`window:set-identity`). */
+  setTocZoom(percent: number): void {
+    const tocZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, Math.round(percent)))
+    identity = { ...identity, tocZoom }
+    send('window.setIdentity', () => api.window.setIdentity({ tocZoom }))
   },
   /** This Files window's zoom menu opened or closed (YAZ-3444): main holds this window's resize for a new App size until the close. */
   setFilesZoomMenu(open: boolean): void {
@@ -495,11 +515,11 @@ export const storage = {
     send('window.setIdentity', () => api.window.setIdentity({ sidebarCollapsed: collapsed }))
   },
 
-  /** Already clamped to [SIDEBAR_MIN_W, SIDEBAR_MAX_W] by the main process on load and on write. */
-  getSidebarWidth: (): number => state.sidebarWidth,
+  /** This window's own sidebar width in CSS px, clamped to [SIDEBAR_MIN_W, SIDEBAR_MAX_W] by main (YAZ-6490). */
+  getSidebarWidth: (): number => identity.sidebarWidth ?? SIDEBAR_DEFAULT_W,
   setSidebarWidth(width: number): void {
-    state = { ...state, sidebarWidth: width }
-    send('state.setSidebarWidth', () => api.state.setSidebarWidth(width))
+    identity = { ...identity, sidebarWidth: width }
+    send('window.setIdentity', () => api.window.setIdentity({ sidebarWidth: width }))
   },
 
   /**

@@ -1,11 +1,10 @@
 /**
  * THE ZOOM STEPPER, a quiet "− 100% +": the two rows of the footer's zoom menu (`ZoomMenu`, YAZ-3432) are one each.
- *  - `sidebar` (YAZ-3389): the sidebar's lists only (`settings.sidebarZoom`, one value for every full window; a Files
- *    window's own `WindowEntry.zoom`, D13) — never the frame, never a page, which has its own zoom
- *    (`editor/DocumentZoom.tsx`). ⌘+ / ⌘− / ⌘0 step it too when no page claims them.
- *  - `app` (YAZ-3432): the App size of every window (`settings.appZoom`). Mouse only.
- *  - `toc` (YAZ-3939 D7): the names of a page's table of contents (`settings.tocZoom`), on the sidebar's steps.
- *  - `explore` (YAZ-5881 D1): Explore size (`settings.exploreSize`), on the App sizes. ⌘+ / ⌘− / ⌘0 step it while the
+ *  - `sidebar` (YAZ-3389, YAZ-6490): this window's sidebar lists (`WindowEntry.zoom`) — never the frame, never a page,
+ *    which has its own zoom (`editor/DocumentZoom.tsx`). ⌘+ / ⌘− / ⌘0 step it too when no page claims them.
+ *  - `app` (YAZ-3432): the App size of every Yaseen Docs window on this Mac (`settings.appZoom`). Mouse only.
+ *  - `toc` (YAZ-3939 D7, YAZ-6490): this window's table of contents zoom (`WindowEntry.tocZoom`), on the sidebar's steps.
+ *  - `explore` (YAZ-5881 D1, YAZ-6490): this window's Search size (`WindowEntry.exploreSize`), on the App sizes. ⌘+ / ⌘− / ⌘0 step it while the
  *    search panel is in front (D3).
  * − and + walk the kind's steps (`stepZoom`) and stop at the walls; a click on the percent goes back to the kind's
  * default (`reset`: 100%, Explore size's 125%). A step
@@ -26,7 +25,7 @@ const KINDS = {
     into: 'Zoom the sidebar in',
     outTitle: withKeys('Zoom the sidebar out', '⌘−'),
     intoTitle: withKeys('Zoom the sidebar in', '⌘+'),
-    valueTitle: 'Sidebar zoom. Click for 100%',
+    valueTitle: 'Sidebar zoom (this window). Click for 100%',
   },
   app: {
     steps: APP_ZOOM_STEPS,
@@ -46,7 +45,7 @@ const KINDS = {
     into: 'Zoom the table of contents in',
     outTitle: withKeys('Zoom the table of contents out', '⌘−'),
     intoTitle: withKeys('Zoom the table of contents in', '⌘+'),
-    valueTitle: 'Table of contents zoom. Click for 100%',
+    valueTitle: 'Table of contents zoom (this window). Click for 100%',
   },
   explore: {
     steps: APP_ZOOM_STEPS,
@@ -57,7 +56,7 @@ const KINDS = {
     into: "Make Explore's search larger",
     outTitle: withKeys("Make Explore's search smaller", '⌘−'),
     intoTitle: withKeys("Make Explore's search larger", '⌘+'),
-    valueTitle: `Search size. Click for ${EXPLORE_SIZE_DEFAULT}%`,
+    valueTitle: `Search size (this window). Click for ${EXPLORE_SIZE_DEFAULT}%`,
   },
 } as const
 

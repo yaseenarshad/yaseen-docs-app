@@ -234,7 +234,7 @@ import {
   type TabCanvasPatch,
   type TabCanvasState,
   type TabRef,
-  normalizeFilesZoom,
+  normalizeSidebarZoom,
   DEFAULT_HEADER_ROW,
   DEFAULT_SUBHEADER_ROW,
   HEADER_ROW_PARTS,
@@ -299,7 +299,6 @@ export interface Store {
    * taken. A field that the file lacks, or that this build can't read and can't repair, keeps this Mac's value.
    */
   applyFolderSettings(incoming: Partial<Record<keyof SettingsState, unknown>>, savedAt: number): void
-  setSidebarWidth(width: number): void
   /** What a window hands in for the vaults `roots` (YAZ-2631 R5): after a drag on its Favorites tab, its favorites in the new order; after a remove, the stored order without the removed paths (R23). Merged into the one order across vaults (`mergeFavoritesOrder`). The same order is no commit. */
   setFavoritesOrder(roots: readonly string[], paths: readonly string[]): void
   /** The same for the Focus tab (YAZ-2702 Decision 3): what a window hands in for the vaults `roots` after a drag, a remove or a clear on its Focus tab, merged into `focusOrder` by the same function. The same order is no commit. */
@@ -421,7 +420,7 @@ export const WRITE_DEBOUNCE_MS = 150
 
 const isStringOrNull = (v: unknown): v is string | null => v === null || typeof v === 'string'
 const isHexColour = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)
-const clampSidebarWidth = (w: number): number => Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, w))
+export const clampSidebarWidth = (w: number): number => Math.min(SIDEBAR_MAX_W, Math.max(SIDEBAR_MIN_W, w))
 const clampRightPanelWidth = (w: number): number => Math.min(RIGHT_PANEL_MAX_W, Math.max(RIGHT_PANEL_MIN_W, w))
 
 export const isRecentRoots = (v: unknown): v is RecentRoots =>
@@ -856,14 +855,14 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   gestureSounds: (v): v is boolean => typeof v === 'boolean',
   hotkeys: isHotkeyOverrides,
   hotkeysAside: isHotkeyAside,
-  sidebarZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
+  newWindowSidebarZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
   // YAZ-5885 D1: a row height in CSS px, 20–40 (Compact 22 · Default 25.5 · Roomy 30 · any Custom px in the range).
   sidebarRowHeight: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ROW_HEIGHT_MIN && v <= SIDEBAR_ROW_HEIGHT_MAX,
-  tocZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
+  newWindowTocZoom: (v): v is number => isFiniteNumber(v) && v >= SIDEBAR_ZOOM_MIN && v <= SIDEBAR_ZOOM_MAX,
   // YAZ-3432: one of the App sizes only; a stored value off them loads as 100 (the default, `sanitizeSettings`).
   appZoom: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
-  // YAZ-5881: Explore size, on the App sizes too; a stored value off them loads as 125 (the default).
-  exploreSize: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
+  // YAZ-6490: default Explore Search size for brand-new windows, on the App sizes too; anything else loads as 125.
+  newWindowExploreSize: (v): v is number => (APP_ZOOM_STEPS as readonly unknown[]).includes(v),
   // YAZ-5976: Default (null) or a whole px in the Custom range; anything else loads as Default.
   exploreWidth: isExploreWidth,
   codeReadOnly: (v): v is boolean => typeof v === 'boolean',
@@ -914,11 +913,14 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   // YAZ-3440 D9: a rule that does not read costs itself alone.
   out.sidebarIconRules = cleanIconRules(src.sidebarIconRules)
   out.codeOutlineHidden = sanitizeOutlineHidden(src.codeOutlineHidden)
-  // YAZ-3389 D7: a number off the steps but inside 50–200 is kept; one outside is clamped, not reset; missing or not a number reads 100.
-  if (isFiniteNumber(src.sidebarZoom)) out.sidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
+  // YAZ-6490: clamp new-window defaults (50–200), and seed from retired global keys on upgrade when absent.
+  if (isFiniteNumber(src.newWindowSidebarZoom)) out.newWindowSidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.newWindowSidebarZoom))
+  else if (src.newWindowSidebarZoom === undefined && isFiniteNumber(src.sidebarZoom)) out.newWindowSidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
   // YAZ-5885 D3: the sidebar zoom's rule. A number outside 20–40 is clamped; missing or not a number reads Default (25.5).
   if (isFiniteNumber(src.sidebarRowHeight)) out.sidebarRowHeight = Math.min(SIDEBAR_ROW_HEIGHT_MAX, Math.max(SIDEBAR_ROW_HEIGHT_MIN, src.sidebarRowHeight))
-  if (isFiniteNumber(src.tocZoom)) out.tocZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.tocZoom))
+  if (isFiniteNumber(src.newWindowTocZoom)) out.newWindowTocZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.newWindowTocZoom))
+  else if (src.newWindowTocZoom === undefined && isFiniteNumber(src.tocZoom)) out.newWindowTocZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.tocZoom))
+  if (src.newWindowExploreSize === undefined && (APP_ZOOM_STEPS as readonly unknown[]).includes(src.exploreSize)) out.newWindowExploreSize = src.exploreSize as number
   // YAZ-3558 D2: a store from before the split said Off in `tableOfContents`. It reads as "Table of contents default" Off, and "Pin default" Off (`auto`).
   if (src.tableOfContents === 'off' && typeof src.tocOnByDefault !== 'boolean') out.tocOnByDefault = false
   return out
@@ -974,7 +976,7 @@ export const isWindowBounds = (v: unknown): v is WindowBounds =>
   isRecord(v) && isFiniteNumber(v.x) && isFiniteNumber(v.y) && isFiniteNumber(v.width) && isFiniteNumber(v.height)
 
 /** Core v1 shape; additive window-identity fields are repaired separately. */
-type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { roots?: unknown; tabs?: unknown; tabStrip?: unknown; name?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown; kind?: unknown; zoom?: unknown }
+type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { roots?: unknown; tabs?: unknown; tabStrip?: unknown; name?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown; kind?: unknown; zoom?: unknown; exploreSize?: unknown; tocZoom?: unknown; sidebarWidth?: unknown }
 const isStoredWindowEntry = (v: unknown): v is StoredWindowEntry =>
   isRecord(v) && typeof v.id === 'string' && isStringOrNull(v.root) && isStringOrNull(v.file) && isWindowBounds(v.bounds)
 
@@ -1051,7 +1053,16 @@ export function normalizeRightPanel(raw: unknown, tabs: readonly string[]): Righ
   }
 }
 
-function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySidebarLens: SidebarLens): WindowEntry[] {
+interface LegacyWindowDefaults {
+  sidebarCollapsed: boolean
+  sidebarLens: SidebarLens
+  zoom: number
+  exploreSize: number
+  tocZoom: number
+  sidebarWidth: number
+}
+
+function sanitizeWindows(raw: unknown, legacy: LegacyWindowDefaults): WindowEntry[] {
   if (!Array.isArray(raw)) return []
   const seen = new Set<string>()
   const out: WindowEntry[] = []
@@ -1065,8 +1076,8 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySi
     const rawStrip: unknown = w.tabStrip
     const tabStrip = normalizeTabStrip(Array.isArray(rawStrip) ? rawStrip.map(readStoredTab).filter((t): t is StoredTab => t !== null) : undefined, tabs, w.file)
     const rightPanel = normalizeRightPanel((w as { rightPanel?: unknown }).rightPanel, tabs)
-    const sidebarCollapsed = typeof w.sidebarCollapsed === 'boolean' ? w.sidebarCollapsed : legacySidebarCollapsed
-    const sidebarLens = isSidebarLens(w.sidebarLens) ? w.sidebarLens : legacySidebarLens
+    const sidebarCollapsed = typeof w.sidebarCollapsed === 'boolean' ? w.sidebarCollapsed : legacy.sidebarCollapsed
+    const sidebarLens = isSidebarLens(w.sidebarLens) ? w.sidebarLens : legacy.sidebarLens
     // The window's old `focusList` (YAZ-2619) is NOT read (YAZ-2702 Decision 4: no migration): focus is the
     // vault's now, in the vault. The entry is built from the fields below alone, so the next write drops the key.
     // The vault list (YAZ-2602 S74) reads with the `tabs` rule: a junk ELEMENT drops and the rest stay, and a missing list repairs from `root`.
@@ -1075,10 +1086,13 @@ function sanitizeWindows(raw: unknown, legacySidebarCollapsed: boolean, legacySi
     const name = cleanVaultName(w.name)
     // A Files window (YAZ-3357 D1) is `'files'` exactly; any other value is a full window, never a bad entry.
     const files = w.kind === 'files'
-    // A Files window's own sidebar zoom in percent (YAZ-3389 D13): always there on a Files window, never on a full one.
-    // An old Chromium level (YAZ-3357, −8 … 9) or junk is the default; a percent off the 50–200 range is clamped.
-    const zoom = files ? normalizeFilesZoom(w.zoom) : undefined
-    out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, ...(tabStrip === undefined ? {} : { tabStrip }), ...(name === null ? {} : { name }), rightPanel, sidebarCollapsed, sidebarLens, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height }, ...(files ? { kind: 'files' as const } : {}), ...(zoom === undefined ? {} : { zoom }) })
+    // Per-window zoom and sidebar width (YAZ-6490): kept on every window (full and Files alike).
+    // An old Chromium level (−8 … 9) or junk falls back to `legacy.zoom`; a percent off 50–200 is clamped.
+    const zoom = normalizeSidebarZoom(w.zoom, legacy.zoom)
+    const exploreSize = (APP_ZOOM_STEPS as readonly unknown[]).includes(w.exploreSize) ? (w.exploreSize as number) : legacy.exploreSize
+    const tocZoom = isFiniteNumber(w.tocZoom) ? Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, w.tocZoom)) : legacy.tocZoom
+    const sidebarWidth = isFiniteNumber(w.sidebarWidth) ? clampSidebarWidth(w.sidebarWidth) : legacy.sidebarWidth
+    out.push({ id: w.id, root: w.root, roots, file: w.file, tabs, ...(tabStrip === undefined ? {} : { tabStrip }), ...(name === null ? {} : { name }), rightPanel, sidebarCollapsed, sidebarLens, bounds: { x: w.bounds.x, y: w.bounds.y, width: w.bounds.width, height: w.bounds.height }, ...(files ? { kind: 'files' as const } : {}), zoom, exploreSize, tocZoom, sidebarWidth })
   }
   return out
 }
@@ -1325,11 +1339,31 @@ function sanitizeState(raw: unknown): AppState | null {
   // windows without a valid lens of their own; a pre-847 file has none at all, and missing or
   // junk both read as the default. The returned state omits the old key too.
   const legacySidebarLens: SidebarLens = isSidebarLens(raw.sidebarLens) ? raw.sidebarLens : DEFAULT_SIDEBAR_LENS
-  const windows = sanitizeWindows(raw.windows, legacySidebarCollapsed, legacySidebarLens)
+  const settings = sanitizeSettings(raw.settings)
+  // YAZ-6490 migration: retired global settings (`sidebarZoom`, `exploreSize`, `tocZoom`) and `AppState.sidebarWidth`
+  // seed windows missing their own values once on load, then drop on the next write.
+  const rawSettings = isRecord(raw.settings) ? movedSettings(raw.settings) : {}
+  const legacyZoom = isFiniteNumber(rawSettings.sidebarZoom)
+    ? Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, rawSettings.sidebarZoom))
+    : settings.newWindowSidebarZoom
+  const legacyExploreSize = (APP_ZOOM_STEPS as readonly unknown[]).includes(rawSettings.exploreSize)
+    ? (rawSettings.exploreSize as number)
+    : settings.newWindowExploreSize
+  const legacyTocZoom = isFiniteNumber(rawSettings.tocZoom)
+    ? Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, rawSettings.tocZoom))
+    : settings.newWindowTocZoom
+  const legacySidebarWidth = isFiniteNumber(raw.sidebarWidth) ? clampSidebarWidth(raw.sidebarWidth) : SIDEBAR_DEFAULT_W
+  const windows = sanitizeWindows(raw.windows, {
+    sidebarCollapsed: legacySidebarCollapsed,
+    sidebarLens: legacySidebarLens,
+    zoom: legacyZoom,
+    exploreSize: legacyExploreSize,
+    tocZoom: legacyTocZoom,
+    sidebarWidth: legacySidebarWidth,
+  })
   return {
     version: 1,
-    settings: sanitizeSettings(raw.settings),
-    sidebarWidth: isFiniteNumber(raw.sidebarWidth) ? clampSidebarWidth(raw.sidebarWidth) : SIDEBAR_DEFAULT_W,
+    settings,
     recents: isRecentRoots(raw.recents) ? raw.recents.slice(0, MAX_RECENT_ROOTS) : [],
     windows,
     folders: sanitizeFolders(raw.folders),
@@ -1551,10 +1585,6 @@ export function createStore(filePath: string): Store {
 
     applyFolderSettings(incoming, savedAt) {
       commit({ ...state, settings: mergeFolderSettings(state.settings, incoming), settingsSavedAt: savedAt })
-    },
-
-    setSidebarWidth(width) {
-      commit({ ...state, sidebarWidth: clampSidebarWidth(width) })
     },
 
     setFavoritesOrder(roots, paths) {

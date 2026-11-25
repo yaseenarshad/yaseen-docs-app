@@ -46,7 +46,7 @@ export function useModalKeys(dialog: RefObject<HTMLElement | null>, onEscape: ()
 
 export function cycleTab(e: ReactKeyboardEvent, dialog: HTMLElement | null): void {
   e.stopPropagation()
-  if (e.key !== 'Tab') return
+  if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey) return
   const focusable = [...(dialog?.querySelectorAll<HTMLElement>('button:not(:disabled), [tabindex="0"]') ?? [])]
   if (focusable.length === 0) return
   const i = focusable.indexOf(document.activeElement as HTMLElement)

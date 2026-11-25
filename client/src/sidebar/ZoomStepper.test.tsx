@@ -32,7 +32,7 @@ describe('ZoomStepper', () => {
     expect(el.querySelector('[role="group"][aria-label="Sidebar zoom"]')?.textContent).toBe('−100%+')
     expect([out(el).getAttribute('aria-label'), out(el).title]).toEqual(['Zoom the sidebar out', 'Zoom the sidebar out (Cmd+Minus)'])
     expect([into(el).getAttribute('aria-label'), into(el).title]).toEqual(['Zoom the sidebar in', 'Zoom the sidebar in (Cmd+Plus)'])
-    expect(percent(el).title).toBe('Sidebar zoom. Click for 100%')
+    expect(percent(el).title).toBe('Sidebar zoom (this window). Click for 100%')
 
     act(() => into(el).click())
     expect(onChange).toHaveBeenLastCalledWith(125)

@@ -32,7 +32,7 @@ afterEach(async () => {
 const seed = (v: unknown) => writeFile(file, typeof v === 'string' ? v : JSON.stringify(v))
 const onDisk = async (): Promise<AppState> => JSON.parse(await readFile(file, 'utf8')) as AppState
 const bounds = { x: 1, y: 2, width: 300, height: 200 }
-const win = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds, ...extra, roots: extra.roots ?? (extra.root == null ? [] : [extra.root]) })
+const win = (id: string, extra: Partial<WindowEntry> = {}): WindowEntry => ({ id, root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds, zoom: 100, exploreSize: 125, tocZoom: 100, sidebarWidth: SIDEBAR_DEFAULT_W, ...extra, roots: extra.roots ?? (extra.root == null ? [] : [extra.root]) })
 /** A seed with every field valid, to vary one field at a time. */
 const valid = (over: Record<string, unknown> = {}) => ({ ...defaultAppState(), ...over })
 /** Each vault's number (YAZ-2555), root → key. */
@@ -199,10 +199,9 @@ describe('createStore: loading', () => {
     const state: AppState = {
       version: 1,
       settings: { ...DEFAULT_SETTINGS, lineSpacing: 2, threadColor: '#00aaff' },
-      sidebarWidth: 320,
       approvedPictureFolders: [],
       recents: [{ path: '/v', lastOpened: 5 }],
-      windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: true, sidebarLens: 'favorites' })],
+      windows: [win('w1', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'], sidebarCollapsed: true, sidebarLens: 'favorites', zoom: 125, exploreSize: 150, tocZoom: 90, sidebarWidth: 320 })],
       folders: { '/v': { expanded: ['/v/sub'], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: { '/v/b.md::T': ['v:idea'] }, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } },
       vaultSets: [],
       favoritesOrder: ['/v/a.md', '/w/b.md'],
@@ -1014,26 +1013,33 @@ describe('createStore: loading', () => {
     for (const bad of [{ 'links.newTab': 'CmdOrCtrl+K' }, { 'page.bold': 'CmdOrCtrl+Click' }, { 'links.window': 'Click' }, { 'links.newTab': 3 }]) expect(isSettings({ ...DEFAULT_SETTINGS, hotkeys: bad }), JSON.stringify(bad)).toBe(false)
   })
 
-  it('sidebarZoom (YAZ-3389): an older file without the key loads at 100; junk loads at 100; an off-step number inside 50–200 is kept (D7), one outside is clamped; the channel takes 50–200 only', async () => {
-    expect(DEFAULT_SETTINGS.sidebarZoom).toBe(100)
-    const { sidebarZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+  it('newWindowSidebarZoom (YAZ-6490): defaults to 100, stays on this Mac, seeds from legacy settings.sidebarZoom when absent, clamps 50–200, channel takes 50–200 only', async () => {
+    expect(DEFAULT_SETTINGS.newWindowSidebarZoom).toBe(100)
+    expect(LOCAL_SETTINGS).toContain('newWindowSidebarZoom')
+    const { newWindowSidebarZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))
     expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
-    const loaded = async (sidebarZoom: unknown): Promise<number> => {
-      await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', sidebarZoom } }))
+    // Legacy seeding on upgrade when newWindowSidebarZoom is absent:
+    await seed(valid({ settings: { ...legacySettings, sidebarZoom: 150 } }))
+    expect(createStore(file).get().settings.newWindowSidebarZoom).toBe(150)
+    // Explicit newWindowSidebarZoom wins over legacy sidebarZoom:
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, newWindowSidebarZoom: 90, sidebarZoom: 150 } }))
+    expect(createStore(file).get().settings.newWindowSidebarZoom).toBe(90)
+    const loaded = async (newWindowSidebarZoom: unknown): Promise<number> => {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', newWindowSidebarZoom } }))
       const { settings } = createStore(file).get()
       expect(settings.theme).toBe('dark') // one bad field costs that field only
-      return settings.sidebarZoom
+      return settings.newWindowSidebarZoom
     }
     for (const zoom of [50, 90, 125, 200, 110]) expect(await loaded(zoom)).toBe(zoom)
     for (const zoom of ['125', null, true, {}]) expect(await loaded(zoom)).toBe(100)
     expect(await loaded(10)).toBe(50)
     expect(await loaded(-3)).toBe(50)
     expect(await loaded(500)).toBe(200)
-    for (const zoom of [NaN, Infinity]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, sidebarZoom: zoom }).sidebarZoom).toBe(100)
+    for (const zoom of [NaN, Infinity]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, newWindowSidebarZoom: zoom }).newWindowSidebarZoom).toBe(100)
 
-    for (const zoom of [50, 125, 200]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarZoom: zoom })).toBe(true)
-    for (const zoom of [49, 201, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, sidebarZoom: zoom })).toBe(false)
+    for (const zoom of [50, 125, 200]) expect(isSettings({ ...DEFAULT_SETTINGS, newWindowSidebarZoom: zoom })).toBe(true)
+    for (const zoom of [49, 201, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, newWindowSidebarZoom: zoom })).toBe(false)
   })
 
   it('sidebarRowHeight (YAZ-5885 D1, D3): an older file without the key loads Default (25.5); junk loads 25.5; a number inside 20–40 is kept, one outside is clamped; the channel takes 20–40 only; it stays on this Mac', async () => {
@@ -1059,29 +1065,33 @@ describe('createStore: loading', () => {
     expect(LOCAL_SETTINGS).toContain('sidebarRowHeight')
   })
 
-  it('tocZoom (YAZ-3939 D9): the sidebar zoom\'s rule: an older file without the key loads at 100; junk loads at 100; a number inside 50–200 is kept, one outside is clamped; the channel takes 50–200 only', async () => {
-    expect(DEFAULT_SETTINGS.tocZoom).toBe(100)
-    const { tocZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+  it('newWindowTocZoom (YAZ-6490): defaults to 100, stays on this Mac, seeds from legacy settings.tocZoom when absent, clamps 50–200, channel takes 50–200 only', async () => {
+    expect(DEFAULT_SETTINGS.newWindowTocZoom).toBe(100)
+    expect(LOCAL_SETTINGS).toContain('newWindowTocZoom')
+    const { newWindowTocZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))
     expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
-    const loaded = async (tocZoom: unknown): Promise<number> => {
-      await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', tocZoom } }))
+    await seed(valid({ settings: { ...legacySettings, tocZoom: 125 } }))
+    expect(createStore(file).get().settings.newWindowTocZoom).toBe(125)
+    const loaded = async (newWindowTocZoom: unknown): Promise<number> => {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', newWindowTocZoom } }))
       const { settings } = createStore(file).get()
       expect(settings.theme).toBe('dark') // one bad field costs that field only
-      return settings.tocZoom
+      return settings.newWindowTocZoom
     }
     for (const zoom of [50, 90, 150, 200, 110]) expect(await loaded(zoom)).toBe(zoom)
     for (const zoom of ['150', null, true, {}]) expect(await loaded(zoom)).toBe(100)
     expect(await loaded(10)).toBe(50)
     expect(await loaded(500)).toBe(200)
-    for (const zoom of [NaN, Infinity]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tocZoom: zoom }).tocZoom).toBe(100)
+    for (const zoom of [NaN, Infinity]) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, newWindowTocZoom: zoom }).newWindowTocZoom).toBe(100)
 
-    for (const zoom of [50, 125, 200]) expect(isSettings({ ...DEFAULT_SETTINGS, tocZoom: zoom })).toBe(true)
-    for (const zoom of [49, 201, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, tocZoom: zoom })).toBe(false)
+    for (const zoom of [50, 125, 200]) expect(isSettings({ ...DEFAULT_SETTINGS, newWindowTocZoom: zoom })).toBe(true)
+    for (const zoom of [49, 201, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, newWindowTocZoom: zoom })).toBe(false)
   })
 
-  it('appZoom (YAZ-3432): an older file without the key loads at 100; only 90 · 100 · 110 · 125 · 150 · 175 · 200 are kept (200 since YAZ-3487), anything else loads at 100; the channel takes those only', async () => {
+  it('appZoom (YAZ-3432, YAZ-6490): an older file without the key loads at 100; only 90 · 100 · 110 · 125 · 150 · 175 · 200 are kept, anything else loads at 100; stays on this Mac', async () => {
     expect(DEFAULT_SETTINGS.appZoom).toBe(100)
+    expect(LOCAL_SETTINGS).toContain('appZoom')
     expect([...APP_ZOOM_STEPS]).toEqual([90, 100, 110, 125, 150, 175, 200])
     const { appZoom: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))
@@ -1100,21 +1110,33 @@ describe('createStore: loading', () => {
     for (const zoom of [95, 160, NaN, '100', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, appZoom: zoom })).toBe(false)
   })
 
-  it('exploreSize (YAZ-5881 D1): an older file without the key loads at 125; only the App sizes are kept, anything else loads at 125; the channel takes those only', async () => {
-    expect(DEFAULT_SETTINGS.exploreSize).toBe(125)
-    const { exploreSize: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+  it('newWindowExploreSize (YAZ-6490): defaults to 125, stays on this Mac, seeds from legacy settings.exploreSize when absent, takes APP_ZOOM_STEPS only', async () => {
+    expect(DEFAULT_SETTINGS.newWindowExploreSize).toBe(125)
+    expect(LOCAL_SETTINGS).toContain('newWindowExploreSize')
+    const { newWindowExploreSize: _omitted, ...legacySettings } = DEFAULT_SETTINGS
     await seed(valid({ settings: legacySettings }))
     expect(createStore(file).get().settings).toEqual(DEFAULT_SETTINGS)
-    const loaded = async (exploreSize: unknown): Promise<number> => {
-      await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', exploreSize } }))
+    await seed(valid({ settings: { ...legacySettings, exploreSize: 150 } }))
+    expect(createStore(file).get().settings.newWindowExploreSize).toBe(150)
+    const loaded = async (newWindowExploreSize: unknown): Promise<number> => {
+      await seed(valid({ settings: { ...DEFAULT_SETTINGS, theme: 'dark', newWindowExploreSize } }))
       const { settings } = createStore(file).get()
       expect(settings.theme).toBe('dark')
-      return settings.exploreSize
+      return settings.newWindowExploreSize
     }
     for (const size of APP_ZOOM_STEPS) expect(await loaded(size)).toBe(size)
     for (const size of [105, 80, 250, 0, '150', null, true, NaN]) expect(await loaded(size)).toBe(125)
-    for (const size of APP_ZOOM_STEPS) expect(isSettings({ ...DEFAULT_SETTINGS, exploreSize: size })).toBe(true)
-    for (const size of [95, 160, NaN, '125', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, exploreSize: size })).toBe(false)
+    for (const size of APP_ZOOM_STEPS) expect(isSettings({ ...DEFAULT_SETTINGS, newWindowExploreSize: size })).toBe(true)
+    for (const size of [95, 160, NaN, '125', undefined]) expect(isSettings({ ...DEFAULT_SETTINGS, newWindowExploreSize: size })).toBe(false)
+    // Folder sync from an older Mac with retired keys leaves this Mac's local zoom defaults untouched:
+    const merged = mergeFolderSettings(
+      { ...DEFAULT_SETTINGS, appZoom: 110, newWindowSidebarZoom: 150, newWindowExploreSize: 150, newWindowTocZoom: 125 },
+      { appZoom: 125, sidebarZoom: 90, exploreSize: 90, tocZoom: 90, newWindowSidebarZoom: 90, newWindowExploreSize: 90, newWindowTocZoom: 90 } as never,
+    )
+    expect(merged).toMatchObject({ appZoom: 110, newWindowSidebarZoom: 150, newWindowExploreSize: 150, newWindowTocZoom: 125 })
+    expect(merged).not.toHaveProperty('sidebarZoom')
+    expect(merged).not.toHaveProperty('exploreSize')
+    expect(merged).not.toHaveProperty('tocZoom')
   })
 
   it('hoverPreviewIn (YAZ-3403 D7, S37): a file from before reads every place on; a missing or broken place reads on and the others keep their values; the channel takes one boolean per place only', async () => {
@@ -1415,7 +1437,7 @@ describe('createStore: loading', () => {
     expect(store.takeLegacyHeadingStyles()).toEqual(legacy)
     expect(store.takeLegacyHeadingStyles()).toEqual({})
     // The next write of the state file has no `headingStyles` key.
-    store.setSidebarWidth(300)
+    store.pushRecent('/v', 1)
     await store.flush()
     const disk = await onDisk()
     expect(Object.keys(disk.settings)).not.toContain('headingStyles')
@@ -1490,10 +1512,10 @@ describe('createStore: loading', () => {
 
   it('approvedPictureFolders (YAZ-3943 demo round 3): absent is none; absolute paths only, each once; the rest of the file loads as stored', async () => {
     const { approvedPictureFolders: _list, ...before } = defaultAppState()
-    await seed({ ...before, sidebarWidth: 300 })
-    expect(createStore(file).get()).toMatchObject({ approvedPictureFolders: [], sidebarWidth: 300 })
-    await seed(valid({ approvedPictureFolders: ['/Users/me/a', 'relative/b', '/Users/me/a', 7, null, '/Volumes/X/c'], sidebarWidth: 300 }))
-    expect(createStore(file).get()).toMatchObject({ approvedPictureFolders: ['/Users/me/a', '/Volumes/X/c'], sidebarWidth: 300 })
+    await seed({ ...before, recents: [{ path: '/v', lastOpened: 1 }] })
+    expect(createStore(file).get()).toMatchObject({ approvedPictureFolders: [], recents: [{ path: '/v', lastOpened: 1 }] })
+    await seed(valid({ approvedPictureFolders: ['/Users/me/a', 'relative/b', '/Users/me/a', 7, null, '/Volumes/X/c'], recents: [{ path: '/v', lastOpened: 1 }] }))
+    expect(createStore(file).get()).toMatchObject({ approvedPictureFolders: ['/Users/me/a', '/Volumes/X/c'], recents: [{ path: '/v', lastOpened: 1 }] })
     await seed(valid({ approvedPictureFolders: 'not a list' }))
     expect(createStore(file).get().approvedPictureFolders).toEqual([])
   })
@@ -1531,7 +1553,7 @@ describe('createStore: loading', () => {
 
     // The next write completes the additive-within-v1 migration rather than preserving a
     // shadow global value that could later become a second source of truth.
-    store.setSidebarWidth(321)
+    store.pushRecent('/v', 1)
     await store.flush()
     const persisted = JSON.parse(await readFile(file, 'utf8')) as { sidebarCollapsed?: unknown; windows: Array<{ sidebarCollapsed: boolean }> }
     expect(persisted).not.toHaveProperty('sidebarCollapsed')
@@ -1546,16 +1568,41 @@ describe('createStore: loading', () => {
     expect((createStore(file).get().windows[0] as unknown as { sidebarCollapsed: boolean }).sidebarCollapsed).toBe(false)
   })
 
-  it('sidebarWidth clamps a finite number and defaults when it is missing or junk', async () => {
-    await seed(valid({ sidebarWidth: 5 }))
-    expect(createStore(file).get().sidebarWidth).toBe(SIDEBAR_MIN_W)
-    await seed(valid({ sidebarWidth: 9999 }))
-    expect(createStore(file).get().sidebarWidth).toBe(SIDEBAR_MAX_W)
-    await seed(valid({ sidebarWidth: '300' }))
-    expect(createStore(file).get().sidebarWidth).toBe(SIDEBAR_DEFAULT_W)
-    const { sidebarWidth: _omitted, ...preResize } = valid()
-    await seed(preResize)
-    expect(createStore(file).get().sidebarWidth).toBe(SIDEBAR_DEFAULT_W)
+  it('YAZ-6490 migration: retired global sidebarZoom, exploreSize, tocZoom, and sidebarWidth seed existing windows and new-window defaults once, then drop on save', async () => {
+    const { newWindowSidebarZoom: _z, newWindowExploreSize: _e, newWindowTocZoom: _t, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(
+      valid({
+        settings: { ...legacySettings, sidebarZoom: 150, exploreSize: 175, tocZoom: 125 },
+        sidebarWidth: 320,
+        windows: [
+          { id: 'legacy', root: '/v', file: null, tabs: [], bounds },
+          { id: 'own', root: '/v', file: null, tabs: [], bounds, zoom: 90, exploreSize: 110, tocZoom: 75, sidebarWidth: 400 },
+          { id: 'clamped', root: '/v', file: null, tabs: [], bounds, zoom: 999, exploreSize: 999, tocZoom: 10, sidebarWidth: 9999 },
+          { id: 'narrow', root: '/v', file: null, tabs: [], bounds, sidebarWidth: 5 },
+        ],
+      }),
+    )
+    const store = createStore(file)
+    const loaded = store.get() as unknown as Record<string, unknown> & AppState
+    expect(loaded).not.toHaveProperty('sidebarWidth')
+    expect(loaded.settings).not.toHaveProperty('sidebarZoom')
+    expect(loaded.settings).not.toHaveProperty('exploreSize')
+    expect(loaded.settings).not.toHaveProperty('tocZoom')
+    expect(loaded.settings).toMatchObject({ newWindowSidebarZoom: 150, newWindowExploreSize: 175, newWindowTocZoom: 125 })
+    expect(loaded.windows.map((w) => ({ id: w.id, zoom: w.zoom, exploreSize: w.exploreSize, tocZoom: w.tocZoom, sidebarWidth: w.sidebarWidth }))).toEqual([
+      { id: 'legacy', zoom: 150, exploreSize: 175, tocZoom: 125, sidebarWidth: 320 },
+      { id: 'own', zoom: 90, exploreSize: 110, tocZoom: 75, sidebarWidth: 400 },
+      { id: 'clamped', zoom: 200, exploreSize: 175, tocZoom: 50, sidebarWidth: SIDEBAR_MAX_W },
+      { id: 'narrow', zoom: 150, exploreSize: 175, tocZoom: 125, sidebarWidth: SIDEBAR_MIN_W },
+    ])
+    store.pushRecent('/v', 1)
+    await store.flush()
+    const persisted = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown> & { settings: Record<string, unknown>; windows: WindowEntry[] }
+    expect(persisted).not.toHaveProperty('sidebarWidth')
+    expect(persisted.settings).not.toHaveProperty('sidebarZoom')
+    expect(persisted.settings).not.toHaveProperty('exploreSize')
+    expect(persisted.settings).not.toHaveProperty('tocZoom')
+    expect(persisted.windows[0]).toMatchObject({ zoom: 150, exploreSize: 175, tocZoom: 125, sidebarWidth: 320 })
   })
 
   it('sidebarLens migrates from the legacy global value into each window, while a per-window lens wins (YAZ-847 → YAZ-1628)', async () => {
@@ -1575,7 +1622,7 @@ describe('createStore: loading', () => {
     expect(loaded.windows.map((w) => w.sidebarLens)).toEqual(['files', 'favorites', 'files'])
 
     // The next write completes the migration (the YAZ-1280 shape): no shadow global lens survives on disk.
-    store.setSidebarWidth(321)
+    store.pushRecent('/v', 1)
     await store.flush()
     const persisted = JSON.parse(await readFile(file, 'utf8')) as { sidebarLens?: unknown; windows: Array<{ sidebarLens: string }> }
     expect(persisted).not.toHaveProperty('sidebarLens')
@@ -1597,7 +1644,7 @@ describe('createStore: loading', () => {
     expect(store.get().windows[0]).toMatchObject({ root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarLens: 'files' })
     expect((await readdir(dir)).filter((n) => n.includes('.corrupt-'))).toEqual([])
     // The next write stores the lens the window now shows.
-    store.setSidebarWidth(321)
+    store.pushRecent('/v', 1)
     await store.flush()
     expect((await onDisk()).windows[0].sidebarLens).toBe('files')
     await seed(valid({ sidebarLens: 'topics', windows: [{ id: 'w', root: null, file: null, tabs: [], bounds }] }))
@@ -1616,7 +1663,7 @@ describe('createStore: loading', () => {
     expect(store.get().windows[0]).toEqual(win('w', { root: '/v', file: '/v/a.md', tabs: ['/v/a.md'], sidebarLens: 'favorites' }))
     expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: '/v/a.md', folds: { '/v/a.md': ['k1'] }, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: {}, tocSwitches: {}, name: 'Wiki', key: null })
     // The next write drops both keys from disk.
-    store.setSidebarWidth(321)
+    store.pushRecent('/v', 1)
     await store.flush()
     const persisted = JSON.parse(await readFile(file, 'utf8')) as { windows: Array<Record<string, unknown>>; folders: Record<string, Record<string, unknown>> }
     expect(persisted.windows[0]).not.toHaveProperty('focusTopics')
@@ -1758,7 +1805,7 @@ describe('createStore: loading', () => {
     const store = createStore(file)
     expect((await readdir(dir)).filter((n) => n.includes('.corrupt-'))).toEqual([])
     expect(store.get().windows[0]).toEqual(win('w', { root: '/v' }))
-    store.setSidebarWidth(321)
+    store.pushRecent('/v', 1)
     await store.flush()
     const persisted = JSON.parse(await readFile(file, 'utf8')) as { windows: Array<Record<string, unknown>> }
     expect(persisted.windows[0]).not.toHaveProperty('focusList')
@@ -1815,7 +1862,7 @@ describe('createStore: loading', () => {
     // No migration: the vault bucket could not say WHICH window was focused, so every window starts unfocused.
     expect(store.get().folders['/v']).toEqual({ expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null })
     expect(store.get().windows[0]).toEqual(win('w1', { root: '/v' }))
-    store.setSidebarWidth(321)
+    store.pushRecent('/v', 1)
     await store.flush()
     const persisted = JSON.parse(await readFile(file, 'utf8')) as { folders: Record<string, Record<string, unknown>> }
     expect(persisted.folders['/v']).not.toHaveProperty('focusDirs')
@@ -2678,7 +2725,7 @@ describe('createStore: persistence', () => {
   it('coalesces a burst of changes into one debounced atomic write that matches get()', async () => {
     vi.useFakeTimers()
     const store = createStore(file)
-    store.setSidebarWidth(321)
+    store.setSettings({ ...DEFAULT_SETTINGS, theme: 'dark' })
     store.pushRecent('/v', 1)
     store.setFolds('/v', '/v/a.md', ['k1'])
     await vi.advanceTimersByTimeAsync(100)
@@ -2712,10 +2759,10 @@ describe('createStore: persistence', () => {
     store.setFolder('/v', { expanded: ['/v/other'] })
     await store.flush()
     expect(renames()).toHaveLength(2)
-    store.setSidebarWidth(333)
+    store.pushRecent('/v', 1)
     await store.flush()
     expect(renames()).toHaveLength(3)
-    expect((await onDisk()).sidebarWidth).toBe(333)
+    expect((await onDisk()).recents).toEqual([{ path: '/v', lastOpened: 1 }])
   })
 
   it('approvePictureFolder / removePictureFolder (YAZ-3943 demo round 3): an absolute folder joins the list once and survives a relaunch; Remove takes it off; a no-op writes nothing', async () => {
@@ -3537,13 +3584,12 @@ describe('Files windows (YAZ-3357 D1)', () => {
     expect(createStore(file).get().windows[0].kind).toBe('files')
   })
 
-  it('zoom (YAZ-3389 D13) is a sidebar zoom percent on every Files window: an old Chromium level or junk is the default, off-range clamps, a full window has none', async () => {
-    const old = [{ ...win('w1'), kind: 'files', zoom: 1.5 }, { ...win('w2'), kind: 'files', zoom: -8 }, { ...win('w3'), kind: 'files', zoom: 'big' }, { ...win('w4'), kind: 'files' }]
+  it('zoom (YAZ-6490) is a sidebar zoom percent on every window (full and Files alike): an old Chromium level or junk falls back to default, off-range clamps', async () => {
+    const old = [{ ...win('w1'), kind: 'files', zoom: 1.5 }, { ...win('w2'), kind: 'files', zoom: -8 }, { ...win('w3'), kind: 'files', zoom: 'big' }, { ...win('w4'), kind: 'files', zoom: undefined }]
     const percents = [{ ...win('w5'), kind: 'files', zoom: 150 }, { ...win('w6'), kind: 'files', zoom: 40 }, { ...win('w7'), kind: 'files', zoom: 900 }, { ...win('w8'), zoom: 150 }]
     await seed(valid({ windows: [...old, ...percents] }))
     const store = createStore(file)
-    expect(store.get().windows.map((w) => w.zoom)).toEqual([125, 125, 125, 125, 150, 50, 200, undefined])
-    expect(store.get().windows[7]).not.toHaveProperty('zoom')
+    expect(store.get().windows.map((w) => w.zoom)).toEqual([100, 100, 100, 100, 150, 50, 200, 150])
   })
 })
 
