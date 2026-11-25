@@ -7,6 +7,8 @@
  *   ───────────
  *   Open                       as a click does
  *   Open in new tab            as a ⌘-click does: a background tab
+ *   Open in new window         a fresh window on the target (file or folder), matching Sidebar and Folder views (YAZ-6513)
+ *   Open in Explore            a reading layer of the explore stack (pages)
  *   Show in sidebar            its row in Files (D5): a page, file or folder that is there
  *   ───────────
  *   Copy name and ID           an ID link: "AR v2 plan (YAS-466)"; other links "Copy name". No hint: the
@@ -16,7 +18,7 @@
  *   ───────────
  *   Add to favorites           "Remove from favorites" when it is one; as the tab menu (S5), with its heart (M2)
  *   Add to focus               "Remove from focus" likewise, with its eye (M2)
- *   Open in ▸                  New window (files) · VS Code · Default app ─ Reveal in Finder (S3, S4)
+ *   Open in ▸                  VS Code · Default app ─ Reveal in Finder (S3, S4)
  *   ───────────
  *   Show as embed              a link to a drawing or a diagram: a window into it (YAZ-4829 D8); not read-only
  *   Edit link                  not in a read-only page
@@ -27,7 +29,6 @@
  * (YAZ-3905). No "Copy link": a selected pill and ⌘C copy a working link. The popup is
  * `blockHandleMenu.ts`'s (`renderMenu`), with its flyout for "Open in ▸" (YAZ-3901).
  */
-import { fileKind } from '@shared/fileKind'
 import { closeSubmenu, renderMenu, type MenuRow } from './blockHandleMenu'
 import type { ListState } from '../lists/useVaultListsHere'
 import { copyText } from '../lib/copyText'
@@ -86,6 +87,8 @@ export interface LinkMenu {
   labels: string[]
   open?: () => void
   openNew?: () => void
+  /** "Open in new window" (YAZ-6513): promoted out of "Open in ▸" to the top open group, for files and folders. */
+  openNewWindow?: () => void
   /** "Open in Explore" (YAZ-4936): a page, as a reading layer of the explore stack. */
   openExplore?: () => void
   showInSidebar?: () => void
@@ -99,7 +102,7 @@ export interface LinkMenu {
   favorite?: ListRow
   focus?: ListRow
   /** "Open in ▸": no child, no row. */
-  openIn?: { newWindow?: () => void; vsCode?: () => void; defaultApp?: () => void; reveal?: () => void }
+  openIn?: { vsCode?: () => void; defaultApp?: () => void; reveal?: () => void }
   /** A drawing's or a diagram's link becomes its embed (YAZ-4829 D8). Left out in a read-only page. */
   showAsEmbed?: () => void
   /** "Pill style ›" (YAZ-4924 round 5, `pillStyle.ts`): a pill in a page; disabled in a read-only page. */
@@ -120,10 +123,10 @@ export function linkMenuRows(menu: LinkMenu): MenuRow[] {
   const row = (label: string, run: (() => void) | undefined, danger?: true, icon?: () => SVGElement): MenuRow | null => (run === undefined ? null : { label, run, danger, icon })
   // The flyout's groups, an empty one kept: `renderMenu` leaves it out.
   const children = [
-    [row('New window', menu.openIn?.newWindow), row('VS Code', menu.openIn?.vsCode), row('Default app', menu.openIn?.defaultApp)],
+    [row('VS Code', menu.openIn?.vsCode), row('Default app', menu.openIn?.defaultApp)],
     [row('Reveal in Finder', menu.openIn?.reveal)],
   ].map((list) => list.filter((child): child is MenuRow => child !== null))
-  group([row('Open', menu.open), row('Open in new tab', menu.openNew), row('Open in Explore', menu.openExplore), row('Show in sidebar', menu.showInSidebar)])
+  group([row('Open', menu.open), row('Open in new tab', menu.openNew), row('Open in new window', menu.openNewWindow), row('Open in Explore', menu.openExplore), row('Show in sidebar', menu.showInSidebar)])
   group([row('Copy name and ID', menu.copyNameAndId), row('Copy name', menu.copyName), row('Copy ID', menu.copyId), row('Copy path', menu.copyPath, undefined, copyGlyph), row('Copy address', menu.copyAddress)])
   group([
     menu.favorite === undefined ? null : { label: menu.favorite.on ? 'Remove from favorites' : 'Add to favorites', run: menu.favorite.run, icon: heartGlyph },
@@ -141,20 +144,20 @@ export function linkMenuRows(menu: LinkMenu): MenuRow[] {
 }
 
 /**
- * The place rows of a link whose target is there (YAZ-3740): `path` and the App doors it has. A folder (no file kind)
- * has no "New window", as in the sidebar. Every one absent leaves its row out.
+ * The place rows of a link whose target is there (YAZ-3740): `path` and the App doors it has. Both files and folders
+ * get "Open in new window" (YAZ-6513, matching Sidebar YAZ-4778). Every one absent leaves its row out.
  */
-export function placeRows(path: string, actions: LinkActions | undefined, onNotice: (message: string) => void, copy?: (text: string) => Promise<void> | void): Pick<LinkMenu, 'showInSidebar' | 'copyPath' | 'favorite' | 'focus' | 'openIn'> {
+export function placeRows(path: string, actions: LinkActions | undefined, onNotice: (message: string) => void, copy?: (text: string) => Promise<void> | void): Pick<LinkMenu, 'openNewWindow' | 'showInSidebar' | 'copyPath' | 'favorite' | 'focus' | 'openIn'> {
   const a = actions ?? {}
-  const file = fileKind(path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)) !== null
   const lists = a.listState?.(path) ?? null
   const bind = (run: ((path: string) => void) | undefined) => (run === undefined ? undefined : () => run(path))
   return {
+    openNewWindow: bind(a.openNewWindow),
     showInSidebar: bind(a.showInSidebar),
     copyPath: () => copyText(path, 'path', onNotice, copy),
     favorite: lists === null || a.toggleFavorite === undefined ? undefined : { on: lists.favorite, run: () => a.toggleFavorite?.([path], lists.favorite) },
     focus: lists === null || a.toggleFocus === undefined ? undefined : { on: lists.focus, run: () => a.toggleFocus?.([path], lists.focus) },
-    openIn: { newWindow: file ? bind(a.openNewWindow) : undefined, vsCode: bind(a.openVsCode), defaultApp: bind(a.openDefault), reveal: bind(a.reveal) },
+    openIn: { vsCode: bind(a.openVsCode), defaultApp: bind(a.openDefault), reveal: bind(a.reveal) },
   }
 }
 

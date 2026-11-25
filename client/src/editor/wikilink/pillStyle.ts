@@ -18,7 +18,6 @@ import type { MenuRow } from '../blockHandleMenu'
 import { HIGHLIGHT_COLORS, type HighlightColor } from '../marks/highlightColours'
 import { capital } from '../table/colours'
 import { swatchIcon } from '../table/tableRows'
-import { readOnlyTip } from '../../views/readOnlyRows'
 
 /** The letter styles of the Text group, by mark name, as the toolbar names them. */
 const TEXT_MARKS = [
@@ -51,7 +50,7 @@ const styled = (doc: ProseNode, from: number, to: number, types: MarkType[]) => 
  * `allowHighlight` false (a card editor, D3): hides the Highlight group and leaves highlights out of "Back to the vault's look".
  */
 export function pillStyleRow(view: EditorView, from: number, to: number, keep: (run: () => void) => () => void = (run) => run, allowHighlight = true): MenuRow {
-  if (!view.editable) return { label: 'Pill style', disabled: true, hint: readOnlyTip(), run: () => {} }
+  if (!view.editable) return { label: 'Pill style', disabled: true, hint: 'Read only', run: () => {} }
   const { doc, schema } = view.state
   const apply = (change: (tr: Transaction) => void) =>
     keep(() => {

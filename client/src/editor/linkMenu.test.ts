@@ -131,7 +131,7 @@ function flyoutOf(menu: HTMLElement): HTMLElement {
   return menu.querySelector<HTMLElement>('.ctx-menu__sub')!
 }
 
-const OPEN_IN = ['New window', 'VS Code', 'Default app', '──', 'Reveal in Finder']
+const OPEN_IN = ['VS Code', 'Default app', '──', 'Reveal in Finder']
 
 describe('the one link menu, for each kind of link (YAZ-3740)', () => {
   it('an ID link: its title and ID, the Open rows, the copy rows with what each copies, the lists and Open in ▸, then Edit and Remove', async () => {
@@ -139,7 +139,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     const menu = menuOf(root, view, 'AR v2 plan')
     expect(shape(menu)).toEqual([
       '(ID: YAS-466)', '──', // only what the pill hides (YAZ-3747 demo)
-      'Open', 'Open in new tab', 'Show in sidebar', '──',
+      'Open', 'Open in new tab', 'Open in new window', 'Show in sidebar', '──',
       'Copy name and ID', 'Copy ID', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
       'Pill style ▸', 'Add alias', 'Edit link', 'Remove link',
@@ -151,7 +151,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     const { root, view } = await mount('pad [[Plans/Road Map]] tail\n')
     const menu = menuOf(root, view, 'Road Map')
     expect(shape(menu)).toEqual([
-      'Open', 'Open in new tab', 'Show in sidebar', '──',
+      'Open', 'Open in new tab', 'Open in new window', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
       'Pill style ▸', 'Add alias', 'Edit link', 'Remove link',
@@ -173,22 +173,24 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     expect(shape(menuOf(folder.root, folder.view, 'Projects'))).not.toContain('Open in Explore')
   })
 
-  it('a folder link: no top line, and Open in ▸ has no New window, as in the sidebar', async () => {
-    const { root, view } = await mount('pad [[Projects]] tail\n')
+  it('a folder link: no top line, top-level "Open in new window" (YAZ-6513, matching sidebar YAZ-4778), and Open in ▸ holds OS targets', async () => {
+    const { root, view, acts } = await mount('pad [[Projects]] tail\n')
     const menu = menuOf(root, view, 'Projects')
     expect(shape(menu)).toEqual([
-      'Open', 'Open in new tab', 'Show in sidebar', '──',
+      'Open', 'Open in new tab', 'Open in new window', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
       'Pill style ▸', 'Add alias', 'Edit link', 'Remove link',
     ])
-    expect(shape(flyoutOf(menu))).toEqual(['VS Code', 'Default app', '──', 'Reveal in Finder'])
+    expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
+    rowOf(menu, 'Open in new window').click()
+    expect(acts.openNewWindow).toHaveBeenCalledExactlyOnceWith(DIR)
   })
 
   it('YAZ-4936: a Markdown pill to a page has "Open in Explore" too, and it opens the page through `openPath` with "explore"', async () => {
     const { root, view, nav } = await mountMarkdown('[the plan](../Other/Plan.md)\n', { exploreClick: () => false })
     const menu = menuOf(root, view, 'the plan')
-    expect(shape(menu).slice(0, 3)).toEqual(['Open', 'Open in new tab', 'Open in Explore'])
+    expect(shape(menu).slice(0, 4)).toEqual(['Open', 'Open in new tab', 'Open in new window', 'Open in Explore'])
     rowOf(menu, 'Open in Explore').click()
     expect(nav.openPath).toHaveBeenCalledWith('/Other/Plan.md', 'explore')
   })
@@ -198,7 +200,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     rightClick(root.querySelector('a')!)
     const menu = popupOf(view)
     expect(shape(menu)).toEqual([
-      'Open', 'Open in new tab', 'Show in sidebar', '──',
+      'Open', 'Open in new tab', 'Open in new window', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
       'Pill style ▸', 'Edit alias', 'Edit link', 'Remove link',
@@ -226,10 +228,11 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
 describe('each new row calls its door with the link\'s target (YAZ-3740)', () => {
   it('a [[link]]: Show in sidebar, the lists and every Open in ▸ row get the page\'s path', async () => {
     const { root, view, acts } = await mount('pad [[YAS-466]] tail\n')
+    rowOf(menuOf(root, view, 'AR v2 plan'), 'Open in new window').click()
     rowOf(menuOf(root, view, 'AR v2 plan'), 'Show in sidebar').click()
     rowOf(menuOf(root, view, 'AR v2 plan'), 'Remove from favorites').click()
     rowOf(menuOf(root, view, 'AR v2 plan'), 'Add to focus').click()
-    for (const child of ['New window', 'VS Code', 'Default app', 'Reveal in Finder']) rowOf(flyoutOf(menuOf(root, view, 'AR v2 plan')), child).click()
+    for (const child of ['VS Code', 'Default app', 'Reveal in Finder']) rowOf(flyoutOf(menuOf(root, view, 'AR v2 plan')), child).click()
     expect(acts.showInSidebar).toHaveBeenCalledExactlyOnceWith(PAGE)
     // The state the menu read goes with the toggle, as the tab menu's.
     expect(acts.toggleFavorite).toHaveBeenCalledExactlyOnceWith([PAGE], true)

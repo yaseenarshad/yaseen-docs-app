@@ -2653,7 +2653,7 @@ export function Sidebar({
         <ContextMenu
           x={inlineRowMenu.x}
           y={inlineRowMenu.y}
-          sections={inlineRowMenuSections(inlineRowMenu.card, { openSearchCard, onOpenFile, onOpenFileBackground, onRevealInFiles, onOpenInlineDrawingExplore, onOpenVsCode: openVsCode, onOpenDefault: openDefault, onReveal: reveal, onNotice, hotkeys: settings.hotkeys, unit })}
+          sections={inlineRowMenuSections(inlineRowMenu.card, { openSearchCard, onOpenFile, onOpenFileBackground, onOpenNewWindow: openFileNewWindow, onRevealInFiles, onOpenInlineDrawingExplore, onOpenVsCode: openVsCode, onOpenDefault: openDefault, onReveal: reveal, onNotice, hotkeys: settings.hotkeys, unit })}
           onClose={() => setInlineRowMenu(null)}
         />
       )}

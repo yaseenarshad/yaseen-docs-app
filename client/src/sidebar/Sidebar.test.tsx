@@ -12785,7 +12785,7 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     // Right-clicking the inline drawing highlights it and opens its full parity context menu; "Show in page" opens the page and schedules landing.
     act(() => inlineRow!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 })))
     expect(inlineRow!.classList.contains('tree__row--selected')).toBe(true)
-    expect(items(m.el)).toEqual(['Show in page', 'Open in new tab', 'Show in sidebar', 'Copy path⌘⇧C', 'Open in'])
+    expect(items(m.el)).toEqual(['Show in page', 'Open in new tab', 'Open in new window', 'Show in sidebar', 'Copy path⌘⇧C', 'Open in'])
     act(() => itemByLabel(m.el, 'Show in page')?.click())
     expect(m.props.onOpenFile).toHaveBeenCalledWith('/v/Plan.md')
     expect(takeInlineDrawingLanding('/v/Plan.md', 0)).toBe(true)
@@ -12848,7 +12848,7 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
       // Right-click opens full card parity menu and highlights the row
       act(() => cardBtn!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 })))
       expect(cardBtn!.classList.contains('tree__row--selected')).toBe(true)
-      expect(items(m.el)).toEqual(['Show in page', 'Open in new tab', 'Open in Explore', 'Show in sidebar', 'Copy path⌘⇧C', 'Copy card IDGEO-140', 'Copy card link', 'Open in'])
+      expect(items(m.el)).toEqual(['Show in page', 'Open in new tab', 'Open in new window', 'Open in Explore', 'Show in sidebar', 'Copy path⌘⇧C', 'Copy card IDGEO-140', 'Copy card link', 'Open in'])
 
       // Close menu and press ⌘⇧C in search input to copy canonical <page>:<line>
       act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))

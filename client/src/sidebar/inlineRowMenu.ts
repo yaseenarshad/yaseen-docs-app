@@ -15,6 +15,7 @@ export interface InlineRowMenuHandlers {
   openSearchCard: (row: SearchCandidate, background: boolean) => void
   onOpenFile: (path: string) => void
   onOpenFileBackground: (path: string) => void
+  onOpenNewWindow?: (path: string) => void
   onRevealInFiles: (path: string, focus?: boolean) => void
   onOpenInlineDrawingExplore?: (path: string, index: number) => void
   onOpenCardExplore?: (path: string, id: string, index: number) => void
@@ -58,6 +59,7 @@ export function inlineRowMenuSections(
     openSearchCard,
     onOpenFile,
     onOpenFileBackground,
+    onOpenNewWindow,
     onRevealInFiles,
     onOpenInlineDrawingExplore,
     onOpenCardExplore,
@@ -108,6 +110,7 @@ export function inlineRowMenuSections(
         },
       },
       { id: 'open-drawing-tab', label: 'Open in new tab', onSelect: () => openSearchCard(card, true) },
+      ...(onOpenNewWindow !== undefined ? [{ id: 'open-window', label: 'Open in new window', onSelect: () => onOpenNewWindow(page) }] : []),
       ...(onOpenInlineDrawingExplore !== undefined && card.index !== undefined
         ? [{ id: 'open-in-explore', label: 'Open in Explore', onSelect: () => onOpenInlineDrawingExplore(page, card.index!) }]
         : []),
@@ -133,6 +136,7 @@ export function inlineRowMenuSections(
         onOpenFileBackground(page)
       },
     },
+    ...(onOpenNewWindow !== undefined ? [{ id: 'open-window', label: 'Open in new window', onSelect: () => onOpenNewWindow(page) }] : []),
     ...(card.id !== undefined
       ? [
           {

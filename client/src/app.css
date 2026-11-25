@@ -3224,6 +3224,9 @@ body.drag-held iframe {
 .ctx-menu {
   position: fixed;
   z-index: 40;
+  /* Isolate from ancestor prose typography (e.g. `.milkdown` line-height: 1.5 / font-size: 16px) so editor/pill menus match tab and sidebar menus (YAZ-6513). */
+  font-size: 14px;
+  line-height: normal;
   /* As wide as its longest item wherever it opens (YAZ-3746 13AW): near the window's right edge a fixed box shrank to
      the room left of the click, its labels wrapped, and the menu ran off the bottom. */
   width: max-content;
@@ -3286,6 +3289,7 @@ body.drag-held iframe {
   padding: var(--menu-row-padding);
   border-radius: 5px;
   font-size: 13px;
+  line-height: normal;
   text-align: left;
 }
 
