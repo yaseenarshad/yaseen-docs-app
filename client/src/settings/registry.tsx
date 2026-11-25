@@ -2593,6 +2593,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               ),
           },
           {
+            id: 'showIds.recents',
+            label: 'Show IDs in recents',
+            hint: (ctx) => unit(ctx, 'The ID at the right end of each page\'s row in the sidebar\'s Recents tab, independent of Search. Number shows "#12"; Full ID shows "EMB-12".'),
+            keywords: ['id', 'ids', 'recents', 'recent', 'sidebar', 'list', 'row', 'show', 'number', 'full'],
+            available: (ctx) => ctx.ids?.enabled === true && ctx.showIds !== undefined,
+            render: ({ showIds }) =>
+              showIds && (
+                <Segmented
+                  options={[
+                    { label: 'Off', value: 'off' as const },
+                    { label: 'Number (#12)', value: 'number' as const },
+                    { label: 'Full ID (EMB-12)', value: 'full' as const },
+                  ]}
+                  value={showIds.settings.recents}
+                  onChange={(recents) => showIds.save({ ...showIds.settings, recents })}
+                  ariaLabel="Show IDs in recents"
+                />
+              ),
+          },
+          {
             id: 'showIds.tabs',
             label: 'Show IDs in tabs',
             hint: (ctx) => unit(ctx, 'The ID on open tabs in the tab bar, for pages, card files and folder pages. Number shows "#12"; Full ID shows "EMB-12". Drawings do not show an ID.'),

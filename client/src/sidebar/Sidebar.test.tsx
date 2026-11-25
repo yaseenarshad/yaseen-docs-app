@@ -252,8 +252,8 @@ const inboxOf = ({ review, dueCount, reviewing }: Inbox): Partial<Vault> => ({ .
  * says otherwise. Card review (YAZ-4967) is off, with nothing due and no review open.
  */
 const oneVault = ({ root = '/v', watch = { subscribe: () => () => undefined }, indexSource = indexFor(true), ...over }: Partial<SidebarProps>): Vault[] => [
-  // `idsInSearch`, `setIdsInSearch`, and `idsInFiles` (YAZ-4940, YAZ-6502) ride on the vault: a test hands them as if they were props.
-  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, review: false, dueCount: 0, reviewing: false, ...inboxOf(over), ...('idsInSearch' in over ? { idsInSearch: (over as { idsInSearch?: Vault['idsInSearch'] }).idsInSearch } : {}), ...('setIdsInSearch' in over ? { setIdsInSearch: (over as { setIdsInSearch?: Vault['setIdsInSearch'] }).setIdsInSearch } : {}), ...('idsInFiles' in over ? { idsInFiles: (over as { idsInFiles?: Vault['idsInFiles'] }).idsInFiles } : {}) },
+  // `idsInSearch`, `setIdsInSearch`, `idsInFiles`, `idsInRecents`, `setIdsInRecents` (YAZ-4940, YAZ-6502, YAZ-6537) ride on the vault: a test hands them as if they were props.
+  { root, name: root.slice(root.lastIndexOf('/') + 1), watch, index: indexSource, review: false, dueCount: 0, reviewing: false, ...inboxOf(over), ...('idsInSearch' in over ? { idsInSearch: (over as { idsInSearch?: Vault['idsInSearch'] }).idsInSearch } : {}), ...('setIdsInSearch' in over ? { setIdsInSearch: (over as { setIdsInSearch?: Vault['setIdsInSearch'] }).setIdsInSearch } : {}), ...('idsInFiles' in over ? { idsInFiles: (over as { idsInFiles?: Vault['idsInFiles'] }).idsInFiles } : {}), ...('idsInRecents' in over ? { idsInRecents: (over as { idsInRecents?: Vault['idsInRecents'] }).idsInRecents } : {}), ...('setIdsInRecents' in over ? { setIdsInRecents: (over as { setIdsInRecents?: Vault['setIdsInRecents'] }).setIdsInRecents } : {}) },
 ]
 
 async function mount(over: Partial<SidebarProps> = {}, tweakBridge?: (bridge: ReturnType<typeof installBridge>) => unknown) {
@@ -12367,17 +12367,17 @@ describe('several vaults in one window (YAZ-2602)', () => {
       // YAZ-4450 demo: Recents got a Type filter, as in Search, so the button is "Filter", not "Filter by vault".
       expect(sortButton(el)?.title).toBe('Filter')
       act(() => sortButton(el)?.click())
-      expect(menuRows(el)).toEqual(['All vaults✓', 'Pages', 'Work', 'TypeAll types', 'Group by vault✓']) // the Type row (YAZ-4450 demo) before the group row
+      expect(menuRows(el)).toEqual(['All vaults✓', 'Pages', 'Work', 'Show last updated✓', 'Show IDsOff', 'TypeAll types', 'Group by vault✓'])
       await act(async () => itemByLabel(el, 'Work')?.click())
       expect(onRecentVault).toHaveBeenLastCalledWith(b)
       act(() => sortButton(el)?.click())
       await act(async () => itemByLabel(el, 'Group by vault')?.click())
       expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...TEST_SETTINGS, recentsByVault: false })
-      // One vault: the button stays for the Type filter, and its menu has no vault rows and no group row.
+      // One vault: the button stays for display toggles and the Type filter, with no vault rows and no group row.
       const one = await mountVaults([vault(pair().a, 'Solo')], { lens: 'recents' })
       expect(sortButton(one.el)?.title).toBe('Filter')
       act(() => sortButton(one.el)?.click())
-      expect(menuRows(one.el)).toEqual(['TypeAll types'])
+      expect(menuRows(one.el)).toEqual(['Show last updated✓', 'Show IDsOff', 'TypeAll types'])
     })
 
     it('D5, D7: with a vault picked, the button is lit, a chip names the vault and its ✕ hands back All vaults; the menu ticks the vault and has no group row', async () => {
@@ -12391,7 +12391,60 @@ describe('several vaults in one window (YAZ-2602)', () => {
       act(() => chip?.click())
       expect(onRecentVault).toHaveBeenLastCalledWith(null)
       act(() => sortButton(el)?.click())
-      expect(menuRows(el)).toEqual(['All vaults', 'Pages', 'Work✓', 'TypeAll types']) // the Type row stays (YAZ-4450 demo); no group row
+      expect(menuRows(el)).toEqual(['All vaults', 'Pages', 'Work✓', 'Show last updated✓', 'Show IDsOff', 'TypeAll types'])
+    })
+
+    it('YAZ-6537: empty Search respects Show IDs and Show last updated; Recents has its own Show last updated and Show IDs toggles', async () => {
+      const indexSource = createWikilinkResolveSource()
+      indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), id: 'WIKI-46' }], [], true)
+      const now = Date.now() - 1000
+      const savedState = (rowDates?: AppState['folders'][string]['rowDates']): AppState => ({
+        ...defaultAppState(),
+        folders: { '/v': { ...defaultFolderState(), edits: { '/v/a.md': now }, ...(rowDates ? { rowDates } : {}) } },
+      })
+      // Empty Search shows Search's Show IDs (#46) and respects Show last updated off/on.
+      const searchMounted = await mount(
+        { lens: 'search', indexSource, idsInSearch: () => 'number', idsInRecents: 'off' } as Partial<SidebarProps>,
+        async (bridge) => {
+          bridge.state.get.mockResolvedValue(savedState())
+          await storage.init()
+        },
+      )
+      const searchRow = () => searchMounted.el.querySelector<HTMLElement>('.sidebar__search-recents [data-path="/v/a.md"]')
+      expect(searchRow()?.querySelector('.tree__id')?.textContent).toBe('#46')
+      expect(searchRow()?.querySelector('.tree__count')).not.toBeNull()
+      // Toggle Show last updated off in Search: empty Search hides its time while keeping #46.
+      act(() => searchMounted.el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__sort')?.click())
+      await act(async () => itemByLabel(searchMounted.el, 'Show last updated')?.click())
+      expect(searchRow()?.querySelector('.tree__id')?.textContent).toBe('#46')
+      expect(searchRow()?.querySelector('.tree__count')).toBeNull()
+      act(() => root?.unmount())
+
+      // Recents uses its own independent Show IDs (full) and Show last updated toggle.
+      const setIdsInRecents = vi.fn()
+      const recentsMounted = await mount(
+        { lens: 'recents', indexSource, idsInSearch: () => 'off', idsInRecents: 'full', setIdsInRecents } as Partial<SidebarProps>,
+        async (bridge) => {
+          bridge.state.get.mockResolvedValue(savedState())
+          await storage.init()
+        },
+      )
+      const recentRow = () => recentsMounted.el.querySelector<HTMLElement>('[aria-label="Recents"] [data-path="/v/a.md"]')
+      expect(recentRow()?.querySelector('.tree__id')?.textContent).toBe('WIKI-46')
+      expect(recentRow()?.querySelector('.tree__count')).not.toBeNull()
+      // Toggle Show last updated off in Recents: hides time while keeping ID, persisted per-vault.
+      act(() => recentsMounted.el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__sort')?.click())
+      await act(async () => itemByLabel(recentsMounted.el, 'Show last updated')?.click())
+      expect(recentRow()?.querySelector('.tree__id')?.textContent).toBe('WIKI-46')
+      expect(recentRow()?.querySelector('.tree__count')).toBeNull()
+      // Open Recents menu and pick Number (#12) under Show IDs: forwards to vault's setIdsInRecents.
+      act(() => recentsMounted.el.querySelector<HTMLButtonElement>('.sidebar__lenses .sidebar__sort')?.click())
+      await act(async () => {
+        itemByLabel(recentsMounted.el, 'Show IDs')?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+        itemByLabel(recentsMounted.el, 'Show IDs')?.click()
+      })
+      await act(async () => itemByLabel(recentsMounted.el, 'Number (#12)')?.click())
+      expect(setIdsInRecents).toHaveBeenCalledExactlyOnceWith('number')
     })
 
     it('D5, D7: all vaults show each day split into vault groups; a picked vault shows its files alone, with no group heading', async () => {

@@ -739,7 +739,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   profile: (v): v is CommentProfile | null => v === null || isCommentProfile(v),
   sidebarSort: isSidebarSort,
   searchSort: (v): v is TabSort => isTabSort(v, false, true),
-  rowDates: (v): v is RowDates => isRecord(v) && SORT_MENU_TABS.every((tab) => typeof v[tab] === 'boolean'),
+  rowDates: (v): v is RowDates => cleanRowDates(v) !== null,
   workspaceLists: (v): v is WorkspaceLists => isRecord(v) && typeof v.focus === 'boolean' && typeof v.favorites === 'boolean',
   recentsByVault: (v): v is boolean => typeof v === 'boolean',
   sidebarTabs: isSidebarTabs,

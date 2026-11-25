@@ -3,7 +3,7 @@ import type { NavigationTarget } from '@shared/automationNavigation'
 import { AutomationFailure } from '@shared/automation'
 import { useAutomationSurface, waitForSurface } from '../automation/surfaces'
 import { Fragment, lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
-import { useAllPathIds, type IdsInFiles, type IdsInSearch, type PathIdsSource } from '../search/showIds'
+import { useSidebarPathIds, type IdsInFiles, type IdsInSearch } from '../search/showIds'
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
 import { isReadOnlyProperties } from '@shared/readOnly'
@@ -63,7 +63,7 @@ import { foldersChangedHere, lastPlace, markFoldersChanged, readPlace } from './
 import { useTabPlace } from './hooks/useTabPlace'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { resolveItem, vaultOfFolder } from '../lists/focusFolders'
-import { recentSections } from './recents'
+import { recentSections, recentsIdsOption } from './recents'
 import { RowDateTip } from './RowDateTip'
 import { FilterChips, SearchFilterBar } from './SearchFilterBar'
 import { SessionList } from './SessionList'
@@ -112,6 +112,9 @@ export interface SidebarVault {
   setIdsInSearch?: (next: IdsInSearch) => void
   /** This vault's "Show IDs in the files list" (YAZ-4940): each page row of Files, Focus and Favorites ends with its ID's number ("#12") or the full ID. Absent → off. */
   idsInFiles?: IdsInFiles
+  /** This vault's "Show IDs in recents" (YAZ-6537) and its setter, used by the Recents ↑↓ menu. Absent → off. */
+  idsInRecents?: IdsInFiles
+  setIdsInRecents?: (next: IdsInFiles) => void
   /**
    * Whether this vault has card review on (Settings › Review, YAZ-4967). Off — or a vault that gives no IDs, so
    * has no cards (D8) — it has no Inbox row, and no "Review this folder" or "Review this page".
@@ -835,7 +838,7 @@ export function Sidebar({
   // The file times stay live (D2) while something reads them: the tab's Last updated sort, any tab's dates (D10), or a
   // time filter (D14). Any tab's, not the shown one's: a tab change then reads no vault again (6 µs a save, not 42 ms a switch).
   const [rowDates, setTabDate] = useVaultRowDates(vaults, settings.rowDates)
-  const liveTimes = sort?.by === 'updated' || Object.values(rowDates).some(Boolean) || searchFilter.time !== 'any'
+  const liveTimes = sort?.by === 'updated' || rowDates.files || rowDates.focus || rowDates.favorites || rowDates.search || searchFilter.time !== 'any'
   // A place for each page tab (YAZ-5701): the window keeps its open folders to itself, and starts from the place of
   // the tab on show (a New tab's own, YAZ-5757); with none, from the open folders the sidebar last showed. Only the
   // folders in this window's vaults: a vault switch keeps the place of the tab on show.
@@ -1100,12 +1103,8 @@ export function Sidebar({
   }, [roots, indexes, pagesOnKey])
   // The rows' labels (YAZ-2420 🔒 D15), by the same rule: a snapshot that changed no title keeps its Map.
   const titles = useAllPathTitles(indexes)
-  // The rows' IDs (YAZ-4940 "In the files list"), off the indexes of the vaults that chose it alone: none chose it, no map and no read.
-  const idSources = useMemo(
-    () => vaults.flatMap((vault): PathIdsSource[] => (vault.idsInFiles === 'number' || vault.idsInFiles === 'full' ? [{ index: vault.index, form: vault.idsInFiles }] : [])),
-    [vaults],
-  )
-  const ids = useAllPathIds(idSources)
+  // The rows' IDs for Files, empty Search, and Recents (YAZ-4940, YAZ-6537).
+  const { files: ids, search: searchRecentIds, recents: recentIds } = useSidebarPathIds(vaults)
   /** A path as the notices name it: its title (YAZ-2420 🔒 D14). */
   const nameOf = useCallback((path: string) => pageName(rootOf(path), path, titles), [rootOf, titles])
 
@@ -2403,7 +2402,7 @@ export function Sidebar({
           <>
             <div className="sidebar__search-recents" onKeyDown={recentUp}>
               <Suspense fallback={null}>
-                <RecentList recentOnly={searchHint} trees={shown} roots={ownRoots} groups={searchRecentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+                <RecentList recentOnly={searchHint} trees={shown} roots={ownRoots} groups={searchRecentGroups} titles={titles} activeFile={activeFile} showDate={rowDates.search} ids={searchRecentIds} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
               </Suspense>
             </div>
           </>
@@ -2440,7 +2439,7 @@ export function Sidebar({
         ) : lens === 'recents' ? (
           // The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window, by day.
           <Suspense fallback={null}>
-            <RecentList onFold={setListFold} trees={shown} roots={ownRoots} only={recentVault} type={recentType} groups={recentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+            <RecentList onFold={setListFold} trees={shown} roots={ownRoots} only={recentVault} type={recentType} groups={recentGroups} titles={titles} activeFile={activeFile} showDate={rowDates.recents !== false} ids={recentIds} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
           </Suspense>
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
@@ -2689,7 +2688,7 @@ export function Sidebar({
         <ContextMenu
           x={sortMenu.x}
           y={sortMenu.y}
-          sections={recentSections(vaults, recentVault, (pick) => onRecentVault?.(pick), { on: settings.recentsByVault, set: (on) => onChangeSettings({ ...settings, recentsByVault: on }) }, typeFlyout(recentType, (next) => onRecentType?.(next), ['folders']))}
+          sections={recentSections(vaults, recentVault, (pick) => onRecentVault?.(pick), { on: settings.recentsByVault, set: (on) => onChangeSettings({ ...settings, recentsByVault: on }) }, typeFlyout(recentType, (next) => onRecentType?.(next), ['folders']), { dates: { on: rowDates.recents !== false, set: (on) => setTabDate('recents', on) }, ids: recentsIdsOption(vaults) })}
           onClose={() => setSortMenu(null)}
         />
       )}

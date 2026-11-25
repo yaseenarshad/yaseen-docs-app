@@ -8,6 +8,7 @@ import { newWindowClick } from '../lib/newWindowClick'
 import { FileIcon, NameEnding } from './FileIcon'
 import { rowArrows } from './Tree'
 import { typeOf, type SearchType } from '../search/searchFilter'
+import type { PathIds } from '../search/showIds'
 import { byVault, MAX_RECENTS, recentDays, recentFiles, timeOf, type RecentFile, type RecentGroup } from './recents'
 import { useLocalDay } from '../review/localDay'
 
@@ -67,6 +68,10 @@ interface RecentListProps {
   onMenu: (path: string, e: MouseEvent) => void
   /** The sidebar's hover preview (YAZ-3403): a page or board row previews beside the sidebar, as a Files row does. */
   onHoverFile?: (node: { path: string } | null) => void
+  /** Whether to show each row's last-updated time at the right edge (YAZ-6537; defaults to true). */
+  showDate?: boolean
+  /** Page IDs by path to show at the right edge of each row (YAZ-6537); absent hides IDs. */
+  ids?: PathIds
   /**
    * The empty Search tab (YAZ-5774): only the latest 2 days that have saves (Monday: Today, then Friday), and no limit line. With none, or with the trees
    * on their way, it draws `none` (the Search tab's own line): with recents that line goes, and "Today" is the top row.
@@ -83,7 +88,7 @@ const SEARCH_DAYS = 2
  * the tab shows. Memo: App draws again on each app-state broadcast; the list draws only when its own
  * props, a save log or the day change.
  */
-export const RecentList = memo(function RecentList({ trees, roots, only = null, type = 'all', groups, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold, recentOnly }: RecentListProps) {
+export const RecentList = memo(function RecentList({ trees, roots, only = null, type = 'all', groups, titles, activeFile, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile, onFold, showDate = true, ids, recentOnly }: RecentListProps) {
   const edits = useEdits(roots)
   // Rule 17 (Review rules v1, YAZ-5655): the ONE day timer (`useLocalDay`): midnight, focus and `visibilitychange`.
   const today = useLocalDay()
@@ -152,7 +157,7 @@ export const RecentList = memo(function RecentList({ trees, roots, only = null, 
                             {groupOpen && (
                               <ul className="tree" role="group" style={{ '--tree-depth': 2 } as CSSProperties}>
                                 {group.files.map((file) => (
-                                  <RecentRow key={file.path} indent={50} file={file} active={file.path === activeFile} titles={titles} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={onMenu} onHoverFile={onHoverFile} />
+                                  <RecentRow key={file.path} indent={50} file={file} active={file.path === activeFile} titles={titles} id={ids?.get(file.path)} showDate={showDate} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={onMenu} onHoverFile={onHoverFile} />
                                 ))}
                               </ul>
                             )}
@@ -160,7 +165,7 @@ export const RecentList = memo(function RecentList({ trees, roots, only = null, 
                         )
                       })
                     : day.files.map((file) => (
-                        <RecentRow key={file.path} indent={36} file={file} active={file.path === activeFile} titles={titles} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={onMenu} onHoverFile={onHoverFile} />
+                        <RecentRow key={file.path} indent={36} file={file} active={file.path === activeFile} titles={titles} id={ids?.get(file.path)} showDate={showDate} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={onMenu} onHoverFile={onHoverFile} />
                       ))}
                 </ul>
               )}
@@ -179,10 +184,12 @@ interface RecentRowProps extends Pick<RecentListProps, 'titles' | 'onOpenFile' |
   active: boolean
   /** The row's left padding: under a day, or one step deeper under a vault group (YAZ-4450 D7). */
   indent: number
+  id?: string
+  showDate: boolean
 }
 
-/** One file (D6, S18): its page name, and the time of its save on the right; the path is the tooltip. */
-function RecentRow({ file, active, indent, titles, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile }: RecentRowProps) {
+/** One file (D6, S18; YAZ-6537): its page name, optional ID, and optional save time on the right; the path is the tooltip. */
+function RecentRow({ file, active, indent, titles, id, showDate, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile }: RecentRowProps) {
   const { path, edited } = file
   // A board or page row's hover handlers, as a Files row's (YAZ-3403): pointer and focus alike. The item's `data-path`
   // puts a Files window's floating panel level with the row (`previewRowRect`); the button has none, for the keys: it walks by `data-walk`.
@@ -210,7 +217,8 @@ function RecentRow({ file, active, indent, titles, onOpenFile, onKeepFile, onOpe
           {pageLabel(path, false, titles)}
           <NameEnding path={path} />
         </span>
-        <span className="tree__count">{timeOf(edited)}</span>
+        {id !== undefined && <span className="tree__id">{id}</span>}
+        {showDate && <span className="tree__count">{timeOf(edited)}</span>}
       </button>
     </li>
   )

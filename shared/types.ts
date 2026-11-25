@@ -1389,8 +1389,9 @@ export const SORT_MENU_TABS: readonly SortMenuTab[] = ['files', 'focus', 'favori
 export const DEFAULT_SIDEBAR_SORT: SidebarSort = { files: { by: 'name', reverse: false }, focus: { by: 'manual', reverse: false }, favorites: { by: 'manual', reverse: false } }
 /** The Search tab's sort (YAZ-3511 D12): Best match. Never Manual: a search has no drag order. */
 export const DEFAULT_SEARCH_SORT: TabSort = { by: 'best', reverse: false }
-/** Which tabs show the last updated date at the right end of each row (YAZ-3511 D10): one switch for each tab, on for Search only. */
-export type RowDates = Record<SortMenuTab, boolean>
+/** Which tabs show the last updated date at the right end of each row (YAZ-3511 D10, YAZ-6537): one switch per tab; `recents` defaults to on when omitted. */
+export type RowDateTab = SortMenuTab | 'recents'
+export type RowDates = Record<SortMenuTab, boolean> & { recents?: boolean }
 export const DEFAULT_ROW_DATES: RowDates = { files: false, focus: false, favorites: false, search: true }
 /** Which list of a vault the window shows (YAZ-4450 D1): its own, or its list for a window with two or more vaults. */
 export type ListScope = 'vault' | 'workspace'
@@ -3875,12 +3876,13 @@ export function cleanCardsAdded(raw: unknown): CardsAdded | null {
   return { day, newCards, upNext }
 }
 
-/** Pure (the store and the bridge): a valid `RowDates`, or null — one boolean for every `SORT_MENU_TABS` tab (YAZ-6529). */
+/** Pure (the store and the bridge): a valid `RowDates`, or null — one boolean for every `SORT_MENU_TABS` tab, plus optional boolean `recents` (YAZ-6529, YAZ-6537). */
 export function cleanRowDates(raw: unknown): RowDates | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   const r = raw as Record<string, unknown>
   if (!SORT_MENU_TABS.every((tab) => typeof r[tab] === 'boolean')) return null
-  return { files: r.files as boolean, focus: r.focus as boolean, favorites: r.favorites as boolean, search: r.search as boolean }
+  if (r.recents !== undefined && typeof r.recents !== 'boolean') return null
+  return { files: r.files as boolean, focus: r.focus as boolean, favorites: r.favorites as boolean, search: r.search as boolean, ...(r.recents !== undefined && { recents: r.recents }) }
 }
 
 /** What `state.setFolder` may merge into a bucket — every other field has its own targeted mutator. */
