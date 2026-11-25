@@ -567,4 +567,15 @@ describe('handleColdStartDiff (YAZ-6501)', () => {
     expect(store.get().folders[parent]?.edits[parentNote]).toBe(now)
     expect(store.get().folders[parent]?.edits[nestedNote]).toBeUndefined()
   })
+
+  it('YAZ-6517: landAssets suppresses written image files so picture landing never logs into Recents', async () => {
+    const vault = await mkdtemp(path.join(tmpdir(), 'ext-edits-land-'))
+    dirsToClean.push(vault)
+    const { landAssets } = await import('./pictureStore')
+    const bytes = Buffer.from('fake-png-bytes')
+    const persisted = await landAssets(vault, [{ fileId: 'img1', name: 'img1.png', bytes }])
+    expect(persisted).toEqual(['img1'])
+    const landed = path.join(vault, 'assets', 'img1.png')
+    expect(isSuppressedExternalEdit(vault, landed)).toBe(true)
+  })
 })

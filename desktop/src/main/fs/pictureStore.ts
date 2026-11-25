@@ -9,6 +9,7 @@ import path from 'node:path'
 import type { DrawingFileEntry } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { ASSETS_DIR, assetFileName, createdOf, fileIdOfAssetName, isValidFileId, mimeForAssetExt, parseDataUrl, referencedFileIds, stripEmbeddedScene, type EmbeddedFile } from '@shared/drawingAssets'
+import { withSuppressedEdit } from './externalEditSuppress'
 import { BridgeFailure, fsCall, tmpSibling, writeDurable } from './fsUtils'
 
 /**
@@ -95,16 +96,18 @@ export async function landAssets(dir: string, pending: readonly PendingAsset[], 
   for (const asset of pending) {
     const to = path.join(store, asset.name)
     const tmp = tmpSibling(to)
-    await fsCall(to, async () => {
-      try {
-        await writeDurable(tmp, asset.bytes, 'wx')
-        await link(tmp, to).catch((err: NodeJS.ErrnoException) => {
-          if (err.code !== 'EEXIST') return rename(tmp, to)
-        })
-      } finally {
-        await unlink(tmp).catch(() => undefined)
-      }
-    })
+    await withSuppressedEdit(to, () =>
+      fsCall(to, async () => {
+        try {
+          await writeDurable(tmp, asset.bytes, 'wx')
+          await link(tmp, to).catch((err: NodeJS.ErrnoException) => {
+            if (err.code !== 'EEXIST') return rename(tmp, to)
+          })
+        } finally {
+          await unlink(tmp).catch(() => undefined)
+        }
+      }),
+    )
     persisted.push(asset.fileId)
   }
   return persisted
