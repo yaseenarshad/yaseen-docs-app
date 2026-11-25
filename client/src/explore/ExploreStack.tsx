@@ -275,7 +275,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   const roots = useMemo(() => vaults.map((v) => v.root), [vaults])
   /** The vault's "Show IDs in search" for a row (YAZ-4940); a path in no vault reads Always. */
   const idsInTitle = useCallback((path: string) => vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.idsInTitle?.() ?? true, [vaults, roots])
-  const idsInSearch = useCallback((path: string) => vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.idsInSearch?.() ?? 'number', [vaults, roots])
+  const idsInSearch = useCallback((path: string) => vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.idsInSearch?.() ?? 'always', [vaults, roots])
   // The empty box (YAZ-4945): Opened and Edited, of this window's vaults (a folder of a vault: under it, `inPlace`).
   // Read again at each open or step (a new list) and each ⌘⇧F (`request`), never per keystroke.
   const recentAll = exploreRecents()
