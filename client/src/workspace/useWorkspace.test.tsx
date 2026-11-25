@@ -1879,3 +1879,95 @@ describe('YAZ-6468: inline drawing tab duplication and synthetic path opens', ()
     expect(restored.active).toBe(restored.tabs[1].id)
   })
 })
+
+describe('YAZ-6539: open-batch and tabMode lazy-mount semantics', () => {
+  it('opens 1..N paths in order in ONE state update with ONLY activePath added to mounted', () => {
+    const start: IdTabsState = {
+      tabs: [],
+      active: null,
+      mounted: [],
+      history: NO_STEPS,
+      preview: null,
+      blank: false,
+    }
+    const next = reduceTabs(start, {
+      type: 'open-batch',
+      paths: ['/v/a.md', '/v/b.md', '/v/c.md'],
+      activePath: '/v/b.md',
+      tabMode: 'activate-or-new',
+    })
+    expect(next.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md', '/v/c.md'])
+    expect(next.active).toBe(next.tabs[1].id)
+    expect(next.mounted).toEqual([next.tabs[1].id])
+    expect(next.preview).toBeNull()
+    expect(next.blank).toBe(false)
+
+    // Default activePath is the first path.
+    const defaultActive = reduceTabs(start, {
+      type: 'open-batch',
+      paths: ['/v/x.md', '/v/y.md'],
+    })
+    expect(defaultActive.active).toBe(defaultActive.tabs[0].id)
+    expect(defaultActive.mounted).toEqual([defaultActive.tabs[0].id])
+  })
+
+  it('handles single-path tabModes: reuse, new, and activate-or-new', () => {
+    const base: IdTabsState = {
+      tabs: [
+        { id: 't1', path: '/v/a.md' },
+        { id: 't2', path: '/v/p.md' },
+      ],
+      active: 't2',
+      mounted: ['t1', 't2'],
+      history: NO_STEPS,
+      preview: 't2',
+      blank: false,
+    }
+
+    // reuse replaces the preview tab (existing open-current behavior).
+    const reused = reduceTabs(base, { type: 'open-batch', paths: ['/v/c.md'], activePath: '/v/c.md', tabMode: 'reuse' })
+    expect(reused.tabs.map((t) => [t.id, t.path])).toEqual([['t1', '/v/a.md'], ['t2', '/v/c.md']])
+    expect(reused.active).toBe('t2')
+    expect(reused.preview).toBe('t2')
+
+    // new ALWAYS appends a new kept tab even if the path is already open.
+    const copied = reduceTabs(base, { type: 'open-batch', paths: ['/v/a.md'], activePath: '/v/a.md', tabMode: 'new' })
+    expect(copied.tabs).toHaveLength(3)
+    expect(copied.tabs[2].path).toBe('/v/a.md')
+    expect(copied.active).toBe(copied.tabs[2].id)
+    expect(copied.mounted).toEqual(['t1', 't2', copied.tabs[2].id])
+
+    // activate-or-new activates an existing tab without duplicating, or opens a new kept tab when absent.
+    const activated = reduceTabs(base, { type: 'open-batch', paths: ['/v/a.md'], activePath: '/v/a.md', tabMode: 'activate-or-new' })
+    expect(activated.tabs).toBe(base.tabs)
+    expect(activated.active).toBe('t1')
+
+    const openedNew = reduceTabs(base, { type: 'open-batch', paths: ['/v/d.md'], activePath: '/v/d.md', tabMode: 'activate-or-new' })
+    expect(openedNew.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/p.md', '/v/d.md'])
+    expect(openedNew.active).toBe(openedNew.tabs[2].id)
+    expect(openedNew.preview).toBe('t2')
+  })
+
+  it('closes overlapping right-panel items when opened in main via open-batch (one owner per file)', () => {
+    const start: IdWorkspaceState = {
+      tabs: [{ id: 't1', path: '/v/a.md' }],
+      active: 't1',
+      mounted: ['t1'],
+      history: NO_STEPS,
+      preview: null,
+      blank: false,
+      rightPanel: { ...defaultRightPanelIdentity(), open: true, items: ['/v/b.md', '/v/r.md'], expanded: '/v/b.md' },
+      rightMounted: ['/v/b.md'],
+      rightHistory: {},
+    }
+    const next = reduceWorkspace(start, {
+      type: 'open-batch',
+      paths: ['/v/b.md', '/v/c.md'],
+      activePath: '/v/c.md',
+      tabMode: 'activate-or-new',
+    })
+    expect(next.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md', '/v/c.md'])
+    expect(next.rightPanel.items).toEqual(['/v/r.md'])
+    expect(next.mounted).toEqual(['t1', next.tabs[2].id])
+  })
+})

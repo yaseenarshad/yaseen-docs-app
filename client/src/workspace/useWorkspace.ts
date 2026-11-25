@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { inAppVault } from '@shared/appVaults'
+import type { TabMode } from '@shared/automationNavigation'
 import { parseInlineRef } from '@shared/inlineRef'
 import { cleanVaultName, defaultRightPanelIdentity, type RightPanelIdentity, type StoredTab } from '@shared/types'
 import { storage } from '../lib/storage'
@@ -230,6 +231,7 @@ export type TabsAction =
   | { type: 'go'; id: number } // a row of the menu of ‹ or › (YAZ-3647 E3): straight to the step with that id, as that many Backs or Forwards would; a step that is gone: nothing (YAZ-3678 F4)
   | { type: 'open-step'; id: number; front?: true; next?: boolean } // ⌘-, ⇧- or middle click on ‹ › or a row of their menu (YAZ-4156): a NEW tab of that step's page at its level, behind or in front, at the end or next to the current tab (`next`); a step that is gone: nothing
   | { type: 'open-stored'; tabs: readonly StoredTab[] } // "Restore session" (YAZ-3147 D3): the pages that are not open join the END, in ONE change; an open page opens no copy
+  | { type: 'open-batch'; paths: readonly string[]; activePath?: string | null; tabMode?: TabMode } // CLI batch/mode open (YAZ-6539): 1..N paths in ONE state update, lazy-mounting ONLY activePath (default first)
   | { type: 'reset'; tabs: readonly StoredTab[]; active: string | null } // boot + root switch: the STORED tabs and file; replace wholesale with new ids
   | { type: 'rename'; oldPath: string; newPath: string } // in-app rename (Links E1, GRO-2194): every tab of the file follows it in place (S17)
   | { type: 'rename-dir'; oldPath: string; newPath: string } // in-app FOLDER rename (Links E1b, GRO-2241): the folder's own tab and every tab under it follow in place
@@ -623,6 +625,51 @@ function tabsStep(s: TabsState, a: TabsAction): TabsState {
       const grown: TabsState = { ...s, tabs: [...s.tabs, ...added], preview: kept }
       return active === null ? grown : withActive(grown, active)
     }
+    case 'open-batch': {
+      if (a.paths.length === 0) return s
+      const mode: TabMode = a.tabMode ?? 'activate-or-new'
+      if (a.paths.length === 1 && mode === 'reuse') return tabsStep(s, { type: 'open-current', path: a.paths[0] })
+      const wanted = a.activePath ?? a.paths[0]
+      let tabs = s.tabs
+      let preview = s.preview
+      let mounted = s.mounted
+      let usedPreviewSlot = false
+      const resolved = new Map<string, Tab>()
+
+      for (const path of a.paths) {
+        if (mode === 'new') {
+          const tab = newTab(path)
+          tabs = [...tabs, tab]
+          if (!resolved.has(path)) resolved.set(path, tab)
+          continue
+        }
+        const existing = tabOf({ tabs, active: s.active }, path)
+        if (existing !== null) {
+          if (preview === existing.id) preview = null
+          if (!resolved.has(path)) resolved.set(path, existing)
+          continue
+        }
+        if (mode === 'reuse' && !usedPreviewSlot && preview !== null && !a.paths.includes(tabById({ tabs }, preview)?.path ?? '')) {
+          const slot = preview
+          const replaced: Tab = { id: slot, path }
+          tabs = tabs.map((t) => (t.id === slot ? replaced : t))
+          mounted = mounted.filter((id) => id !== slot)
+          preview = null
+          usedPreviewSlot = true
+          if (!resolved.has(path)) resolved.set(path, replaced)
+          continue
+        }
+        const tab = newTab(path)
+        tabs = [...tabs, tab]
+        if (!resolved.has(path)) resolved.set(path, tab)
+      }
+
+      const target = resolved.get(wanted) ?? tabOf({ tabs, active: s.active }, wanted) ?? resolved.get(a.paths[0]) ?? tabs[0]
+      if (target === undefined) return s
+      const nextMounted = mounted.includes(target.id) ? mounted : [...mounted, target.id]
+      if (tabs === s.tabs && target.id === s.active && nextMounted === s.mounted && preview === s.preview && !s.blank) return s
+      return { tabs, active: target.id, mounted: nextMounted, history: s.history, preview, blank: false }
+    }
     case 'reset': {
       if (a.active === null) return s.tabs.length === 0 && s.active === null && s.mounted.length === 0 && !s.blank ? s : EMPTY
       // An active file missing from the list is PREPENDED — main's own normalization order. Every tab gets a new id.
@@ -922,6 +969,14 @@ function reduceWorkspace(s: WorkspaceState, a: WorkspaceAction): WorkspaceState 
       const main = tabsReducer(s, tabs.length === a.tabs.length ? a : { type: 'open-stored', tabs })
       return main === s ? s : withMain(s, main)
     }
+    case 'open-batch': {
+      let base = s
+      for (const path of a.paths) {
+        if (base.rightPanel.items.includes(path)) base = closeRight(base, path)
+      }
+      const main = tabsReducer(base, a)
+      return main === base ? base : withMain(base, main)
+    }
     case 'open-current':
     case 'navigate':
     case 'open-new':
@@ -1042,6 +1097,8 @@ export interface UseWorkspace extends WorkspaceState {
   closeMany: (ids: readonly string[], moved?: boolean) => void
   /** "Restore session" (YAZ-3147 D3): the stored tabs whose page is not open join the end, ONE change and ONE identity write (S27). */
   openStored: (tabs: readonly StoredTab[]) => void
+  /** CLI batch/mode open (YAZ-6539): opens 1..N paths in order in ONE state update, lazy-mounting ONLY `activePath` (default first). */
+  openBatch: (paths: readonly string[], activePath?: string | null, tabMode?: TabMode) => Tab[]
   /** Drag-to-reorder (I3): the tab at `from` lands at final index `to`; activation untouched. */
   move: (from: number, to: number) => void
   /** ⌘W: closes the active tab — the blank tab alone, while it shows (YAZ-2655 S75); false when there is none (App escalates to `closeSelf`). */
@@ -1190,6 +1247,10 @@ export function useWorkspace(root: string | null): UseWorkspace {
     dispatch({ type: 'close-many', ids })
   }, [dispatch, pageClosed])
   const openStored = useCallback((tabs: readonly StoredTab[]) => dispatch({ type: 'open-stored', tabs }), [dispatch])
+  const openBatch = useCallback((paths: readonly string[], active: string | null = null, tabMode: TabMode = 'activate-or-new'): Tab[] => {
+    dispatch({ type: 'open-batch', paths, activePath: active, tabMode })
+    return stateRef.current.tabs
+  }, [dispatch])
   const move = useCallback((from: number, to: number) => dispatch({ type: 'move', from, to }), [dispatch])
   // The blank tab is in no stored field (YAZ-2655 D10): showing it and closing it mirror nothing.
   const newTab = useCallback(() => dispatch({ type: 'new-tab' }, { mirror: false }), [dispatch])
@@ -1247,7 +1308,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   return {
     ...state,
     file: activePath(state),
-    openCurrent, navigate, openKept, duplicate, openZoom, openInlineDrawing, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, openBackgroundAt, activate, sleep, wake, close, closeMany, openStored, move, closeActive, back, forward, go, openStep, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
+    openCurrent, navigate, openKept, duplicate, openZoom, openInlineDrawing, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, openBackgroundAt, activate, sleep, wake, close, closeMany, openStored, openBatch, move, closeActive, back, forward, go, openStep, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
     openRight: openRightCallback,
     openRightBackground,
     navigateRight: navigateRightCallback,
