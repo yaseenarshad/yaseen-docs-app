@@ -170,3 +170,17 @@ export function sortSections(
   const separate = workspace === undefined ? [] : [[{ id: 'sort-workspace', label: 'Separate list for workspaces', hint: workspace.on ? '✓' : undefined, onSelect: () => workspace.set(!workspace.on) }]]
   return [by, ...(ways.length > 0 ? [ways] : []), shown, ...(filters === undefined ? [] : [filters]), ...separate]
 }
+
+/** Builds the Search menu's "Show IDs" option when at least one non-app vault in the window has IDs enabled (YAZ-6502). */
+export function searchIdsOption(
+  vaults: readonly { app?: boolean; index: { ids: boolean }; idsInSearch?: () => IdsInSearch; setIdsInSearch?: (next: IdsInSearch) => void }[],
+): { value: IdsInSearch; set: (next: IdsInSearch) => void } | undefined {
+  const idVaults = vaults.filter((v) => v.app !== true && v.index.ids)
+  if (idVaults.length === 0) return undefined
+  return {
+    value: idVaults[0].idsInSearch?.() ?? 'number',
+    set: (next: IdsInSearch) => {
+      for (const vault of idVaults) vault.setIdsInSearch?.(next)
+    },
+  }
+}

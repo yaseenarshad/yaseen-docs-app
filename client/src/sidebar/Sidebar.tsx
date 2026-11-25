@@ -41,7 +41,7 @@ import { isIconRules, MAX_ICON_MATCH, MAX_ICON_RULES, type IconRule } from '@sha
 import { oneRule, rowIcon, ruleFor, withRule } from './rowIcons'
 import { IconsContext } from './FileIcon'
 import { PICKER_W, suggestIcons } from './iconSuggestions'
-import { appRowsLast, keepsOrder, shownLabel, sortLevel, sortSections } from './treeSort'
+import { appRowsLast, keepsOrder, searchIdsOption, shownLabel, sortLevel, sortSections } from './treeSort'
 import { cardSkillFolder } from '@shared/cardSkillFolder'
 import { cardSkillPrompt } from '../vault/cardSkill'
 import { ACTIVE_TAB_SELECTOR, SidebarTabs } from './SidebarTabs'
@@ -2683,18 +2683,7 @@ export function Sidebar({
             sortTab === 'search' ? filterSection(searchFilter.includeInline !== undefined || settings.searchIncludeInline ? searchFilter : { ...searchFilter, includeInline: false }, setSearchFilter, reviewRoots.size > 0, unit) : undefined,
             // YAZ-4450 D4: each list's own switch, in a window with two or more vaults only.
             multi && (sortTab === 'focus' || sortTab === 'favorites') ? workspaceRow(sortTab) : undefined,
-            // YAZ-6502: Show IDs submenu on Search only when at least one vault in the window has IDs enabled.
-            (() => {
-              if (sortTab !== 'search') return undefined
-              const idVaults = vaults.filter((v) => v.app !== true && v.index.ids)
-              if (idVaults.length === 0) return undefined
-              return {
-                value: idVaults[0].idsInSearch?.() ?? 'number',
-                set: (next: IdsInSearch) => {
-                  for (const vault of idVaults) vault.setIdsInSearch?.(next)
-                },
-              }
-            })(),
+            sortTab === 'search' ? searchIdsOption(vaults) : undefined,
           )}
           onClose={() => setSortMenu(null)}
         />
