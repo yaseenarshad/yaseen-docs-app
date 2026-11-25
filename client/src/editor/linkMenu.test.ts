@@ -241,11 +241,11 @@ describe('each new row calls its door with the link\'s target (YAZ-3740)', () =>
     expect(acts.listState).toHaveBeenCalledWith(PAGE)
   })
 
-  it('demo M2: only Copy path, Add to focus and Add to favorites carry an icon, as in the tab menu; no row has a hint', async () => {
+  it('demo M2: only Show in sidebar (YAZ-6535), Copy path, Add to focus and Add to favorites carry an icon, as in the tab menu; no row has a hint', async () => {
     const { root, view } = await mount('pad [[YAS-466]] tail\n')
     const menu = menuOf(root, view, 'AR v2 plan')
     const rows = Array.from(menu.querySelectorAll<HTMLElement>(':scope > .ctx-menu__item, :scope > .ctx-menu__parent > .ctx-menu__item'))
-    expect(rows.filter((row) => row.querySelector('svg') !== null).map((row) => row.textContent)).toEqual(['Copy path', 'Remove from favorites', 'Add to focus'])
+    expect(rows.filter((row) => row.querySelector('svg') !== null).map((row) => row.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Remove from favorites', 'Add to focus'])
     expect(rows.filter((row) => row.dataset.hint !== undefined && row.dataset.hint !== '')).toEqual([])
   })
 

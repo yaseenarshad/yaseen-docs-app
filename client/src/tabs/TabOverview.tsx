@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { BOARD_TYPE_NAME } from '@shared/fileKind'
 import { inlineDrawingRowPath } from '@shared/inlineRef'
 import { MAX_WINDOW_ROOTS, placeVault, rootOfPath, type CanvasCard, type TabAction, type CanvasLayout, type TabCanvasPatch, type DiagramDarkColors, type StoredTab, type TabRef, type WindowEntry } from '@shared/types'
@@ -21,7 +21,7 @@ import { CardPreviewHost, useCardPreview, type PreviewScope } from './cardPrevie
 import { useHiddenWindows, useMinimizedWindows } from './hiddenWindows'
 import { TabSearchPanel, type SearchPlace } from './TabSearchPanel'
 import { autoWindowLabel, windowLabel } from './windowLabel'
-import { AsleepIcon } from '../views/view/icons'
+import { AsleepIcon, ShowInSidebarIcon } from '../views/view/icons'
 import './tabs.css'
 import { useUnit } from '../vault/unitWord'
 import { FileIcon } from '../sidebar/FileIcon'
@@ -1792,37 +1792,40 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       )}
       {/* An island is a folder: its row in the sidebar (this window's only), its path, and its tabs as one. */}
       {islandMenu !== null && menuGroup !== undefined && (
-        <ContextMenuSurface x={islandMenu.x} y={islandMenu.y} onClose={() => setIslandMenu(null)}>
-          {onShowInSidebar !== undefined && menuRow !== null && (
+        <ContextMenuSurface x={islandMenu.x} y={islandMenu.y} className={onShowInSidebar !== undefined && menuRow !== null ? 'ctx-menu--glyphs' : undefined} onClose={() => setIslandMenu(null)}>
+          <div className="ctx-menu__group" role="group">
+            {onShowInSidebar !== undefined && menuRow !== null && (
+              <MenuItem
+                label="Show in sidebar"
+                icon={<ShowInSidebarIcon />}
+                onSelect={() => {
+                  onShowInSidebar(menuRow)
+                  setIslandMenu(null)
+                }}
+              />
+            )}
             <MenuItem
-              label="Show in sidebar"
+              label="Copy path"
               onSelect={() => {
-                onShowInSidebar(menuRow)
+                void navigator.clipboard.writeText(menuGroup.island.dir)
                 setIslandMenu(null)
               }}
             />
-          )}
-          <MenuItem
-            label="Copy path"
-            onSelect={() => {
-              void navigator.clipboard.writeText(menuGroup.island.dir)
-              setIslandMenu(null)
-            }}
-          />
-          <MenuItem
-            label="Tidy up this group"
-            onSelect={() => {
-              tidy(tidyGroup(plan, menuGroup.key, wrapW))
-              setIslandMenu(null)
-            }}
-          />
-          <MenuItem
-            label={`Close ${tabCount(menuGroup.island.pages.length)}`}
-            onSelect={() => {
-              closeCards(menuGroup.island.pages.map((page) => page.id))
-              setIslandMenu(null)
-            }}
-          />
+            <MenuItem
+              label="Tidy up this group"
+              onSelect={() => {
+                tidy(tidyGroup(plan, menuGroup.key, wrapW))
+                setIslandMenu(null)
+              }}
+            />
+            <MenuItem
+              label={`Close ${tabCount(menuGroup.island.pages.length)}`}
+              onSelect={() => {
+                closeCards(menuGroup.island.pages.map((page) => page.id))
+                setIslandMenu(null)
+              }}
+            />
+          </div>
         </ContextMenuSurface>
       )}
       {/* A window's frame (D14): its name, and the way back to its automatic label. */}
@@ -1971,10 +1974,17 @@ function PickClose({ arm, armed, setArmed, label, armedLabel, onClose }: { arm: 
   )
 }
 
-function MenuItem({ label, onSelect, danger = false, onHover }: { label: string; onSelect: () => void; danger?: boolean; onHover?: () => void }) {
+function MenuItem({ label, icon, onSelect, danger = false, onHover }: { label: string; icon?: ReactNode; onSelect: () => void; danger?: boolean; onHover?: () => void }) {
   return (
     <button type="button" className={`ctx-menu__item${danger ? ' taboverview__armed' : ''}`} role="menuitem" onClick={onSelect} onMouseEnter={onHover}>
-      {label}
+      {icon === undefined ? (
+        label
+      ) : (
+        <span className="ctx-menu__label">
+          {icon}
+          {label}
+        </span>
+      )}
     </button>
   )
 }

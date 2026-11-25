@@ -8,7 +8,7 @@ import { copyText } from '../lib/copyText'
 import { resolveInlineCopyPath } from '../lib/inlinePath'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import type { SearchCandidate } from '../search/searchCandidates'
-import { CopyIcon } from '../views/view/icons'
+import { CopyIcon, ShowInSidebarIcon } from '../views/view/icons'
 import { errorText, type MenuAction, type MenuSection } from './menuSections'
 
 export interface InlineRowMenuHandlers {
@@ -114,7 +114,7 @@ export function inlineRowMenuSections(
       ...(onOpenInlineDrawingExplore !== undefined && card.index !== undefined
         ? [{ id: 'open-in-explore', label: 'Open in Explore', onSelect: () => onOpenInlineDrawingExplore(page, card.index!) }]
         : []),
-      { id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: () => onRevealInFiles(page) },
+      { id: 'show-in-sidebar', label: 'Show in sidebar', icon: createElement(ShowInSidebarIcon), onSelect: () => onRevealInFiles(page) },
     ]
     return [openGroup, [copyPathItem], openInGroup]
   }
@@ -149,7 +149,7 @@ export function inlineRowMenuSections(
           },
         ]
       : []),
-    { id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: () => onRevealInFiles(page) },
+    { id: 'show-in-sidebar', label: 'Show in sidebar', icon: createElement(ShowInSidebarIcon), onSelect: () => onRevealInFiles(page) },
   ]
   const copyGroup: MenuSection = [
     copyPathItem,
