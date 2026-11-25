@@ -17,7 +17,7 @@ import { landOnCard, type CardPlace } from '../editor/card/cardOpen'
 import { landOnInlineDrawing } from '../editor/drawing/inlineDrawingLand'
 import { resolveInlineCopyPath } from '../lib/inlinePath'
 import { focusPlaces, scopeGroup, type MenuAction, type MenuItem, type MenuSection } from '../sidebar/menuSections'
-import { CopyIcon, EyeIcon, HeartIcon, PencilIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, HeartIcon, PencilIcon, ShowInSidebarIcon } from '../views/view/icons'
 import { requestPageWindow } from '../views/pageWindowRequest'
 
 export interface ExploreMenuDoors {
@@ -112,7 +112,7 @@ export function explorePageSections(path: string, doors: ExploreMenuDoors): Menu
         },
       },
     ],
-    [...(a.showInSidebar === undefined ? [] : [{ id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: then(() => a.showInSidebar?.(path)) }]), ...focus, { id: 'copy-path', label: 'Copy path', icon: <CopyIcon />, onSelect: () => void copyText(path, 'path', doors.onNotice) }],
+    [...(a.showInSidebar === undefined ? [] : [{ id: 'show-in-sidebar', label: 'Show in sidebar', icon: <ShowInSidebarIcon />, onSelect: then(() => a.showInSidebar?.(path)) }]), ...focus, { id: 'copy-path', label: 'Copy path', icon: <CopyIcon />, onSelect: () => void copyText(path, 'path', doors.onNotice) }],
     doors.onRenameFile === undefined ? [] : [{ id: 'rename-file', label: 'Rename file', icon: <PencilIcon />, onSelect: then(() => doors.onRenameFile?.(path)) }],
     [
       ...favorite,

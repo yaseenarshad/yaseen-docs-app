@@ -1255,6 +1255,8 @@ describe('TabOverview', () => {
 
     rightClick(island(el, 'Projects').querySelector('.taboverview__island-head'))
     expect(menuItems(el)).toEqual(['Show in sidebar', 'Copy path', 'Tidy up this group', 'Close 3 tabs'])
+    expect(el.querySelector('.ctx-menu')?.classList.contains('ctx-menu--glyphs')).toBe(true)
+    expect(menuItem(el, 'Show in sidebar')?.querySelector('svg')).not.toBeNull()
     act(() => menuItem(el, 'Show in sidebar')?.click())
     expect(props.onShowInSidebar).toHaveBeenLastCalledWith('/v/Projects')
     rightClick(island(el, 'Projects').querySelector('.taboverview__island-head'))
@@ -1271,6 +1273,7 @@ describe('TabOverview', () => {
     const one = await mount({ roots: ['/v'], vaultNames: ['Pages'], tabs: ['/v/a.md'] })
     rightClick(island(one.el, 'Pages').querySelector('.taboverview__island-head'))
     expect(menuItems(one.el)).toEqual(['Copy path', 'Tidy up this group', 'Close 1 tab'])
+    expect(one.el.querySelector('.ctx-menu')?.classList.contains('ctx-menu--glyphs')).toBe(false)
   })
 
   it('YAZ-2940 D5, S5: a page\'s menu has "Duplicate tab" right after "Move to new window"; a click copies that tab by id and leaves the board open', async () => {

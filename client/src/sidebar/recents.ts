@@ -1,4 +1,5 @@
 import { rootOfPath, type TreeNode, type TreeResponse } from '@shared/types'
+import type { IdsInFiles } from '@shared/showIds'
 import type { MenuSection } from './menuSections'
 
 /** The Recents tab shows this many files at most (YAZ-3235 D3): a fixed draw cost at any vault size. */
@@ -33,16 +34,72 @@ export function byVault(files: readonly RecentFile[], roots: readonly string[]):
   return groups.filter((group) => group.files.length > 0)
 }
 
+const RECENTS_ID_CHOICES: readonly [IdsInFiles, string][] = [
+  ['off', 'Off'],
+  ['number', 'Number (#12)'],
+  ['full', 'Full ID'],
+]
+
+/** Builds the Recents menu's "Show IDs" option when at least one non-app vault in the window has IDs enabled (YAZ-6537). */
+export function recentsIdsOption(
+  vaults: readonly { app?: boolean; index: { ids: boolean }; idsInRecents?: IdsInFiles; setIdsInRecents?: (next: IdsInFiles) => void }[],
+): { value: IdsInFiles; set: (next: IdsInFiles) => void } | undefined {
+  const idVaults = vaults.filter((v) => v.app !== true && v.index.ids)
+  if (idVaults.length === 0) return undefined
+  return {
+    value: idVaults[0].idsInRecents ?? 'off',
+    set: (next: IdsInFiles) => {
+      for (const vault of idVaults) vault.setIdsInRecents?.(next)
+    },
+  }
+}
+
 /**
- * The Recents menu (YAZ-4450 D5, D7): "All vaults" apart, then each vault of the window by its name, ✓ on the pick; then
- * "Group by vault", only while all vaults show — one vault has nothing to split.
+ * The Recents menu (YAZ-4450 D5, D7; YAZ-6537): "All vaults" apart, then each vault of the window by its name, ✓ on the pick;
+ * display switches ("Show last updated", "Show IDs"), the Type flyout, then "Group by vault" while all vaults show.
  */
-export function recentSections(vaults: readonly { root: string; name: string }[], pick: string | null, onPick: (root: string | null) => void, grouped: { on: boolean; set: (on: boolean) => void }, type?: MenuSection[number]): MenuSection[] {
-  // The vault rows and the grouping are a workspace's (two or more vaults); the Type flyout (YAZ-4450 demo) is every window's.
+export function recentSections(
+  vaults: readonly { root: string; name: string }[],
+  pick: string | null,
+  onPick: (root: string | null) => void,
+  grouped: { on: boolean; set: (on: boolean) => void },
+  type?: MenuSection[number],
+  options?: { dates?: { on: boolean; set: (on: boolean) => void }; ids?: { value: IdsInFiles; set: (next: IdsInFiles) => void } },
+): MenuSection[] {
+  // The vault rows and the grouping are a workspace's (two or more vaults); display toggles and Type are every window's.
   const workspace = vaults.length > 1
   const row = (root: string | null, label: string) => ({ id: `recents-vault-${root ?? 'all'}`, label, hint: pick === root ? '✓' : undefined, onSelect: () => onPick(root) })
+  const dates = options?.dates
+  const ids = options?.ids
+  const shown: MenuSection = [
+    ...(dates === undefined ? [] : [{ id: 'recents-dates', label: 'Show last updated', hint: dates.on ? '✓' : undefined, onSelect: () => dates.set(!dates.on) }]),
+    ...(ids === undefined
+      ? []
+      : [
+          {
+            id: 'recents-ids',
+            label: 'Show IDs',
+            hint: RECENTS_ID_CHOICES.find(([value]) => value === ids.value)?.[1],
+            children: [
+              RECENTS_ID_CHOICES.map(([value, label]) => ({
+                id: `recents-ids-${value}`,
+                label,
+                hint: ids.value === value ? '✓' : undefined,
+                onSelect: () => {
+                  if (ids.value !== value) ids.set(value)
+                },
+              })),
+            ],
+          },
+        ]),
+  ]
   const group = workspace && pick === null ? [[{ id: 'recents-group', label: 'Group by vault', hint: grouped.on ? '✓' : undefined, onSelect: () => grouped.set(!grouped.on) }]] : []
-  return [...(workspace ? [[row(null, 'All vaults')], vaults.map((vault) => row(vault.root, vault.name))] : []), ...(type === undefined ? [] : [[type]]), ...group]
+  return [
+    ...(workspace ? [[row(null, 'All vaults')], vaults.map((vault) => row(vault.root, vault.name))] : []),
+    ...(shown.length > 0 ? [shown] : []),
+    ...(type === undefined ? [] : [[type]]),
+    ...group,
+  ]
 }
 
 // The files of each tree that the app opens (`kind !== null`), read once per tree: a new tree is a new object.

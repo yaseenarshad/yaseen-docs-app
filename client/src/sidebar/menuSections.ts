@@ -3,7 +3,7 @@ import { SAME_WORD, type UnitText } from '../vault/unitWord'
 import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { FileClipState } from '@shared/types'
 import { countItems, countKinds, type NoticeKind, type NoticeType } from '../lib/notice'
-import { CopyIcon, EyeIcon, FolderIcon, HeartIcon, PencilIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, FolderIcon, HeartIcon, PencilIcon, ShowInSidebarIcon } from '../views/view/icons'
 import type { CreateKind } from './createEntry'
 import { NewKindIcon } from './FileIcon'
 import type { MenuTargets } from './Sidebar'
@@ -285,7 +285,7 @@ const openInNewTabs: Leaf = (t, h) => {
 const showInSidebar: Leaf = (t, h) => {
   const path = t.showPath
   if (path === null) return null
-  return { id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: () => h.onShowInSidebar(path) }
+  return { id: 'show-in-sidebar', label: 'Show in sidebar', icon: createElement(ShowInSidebarIcon), onSelect: () => h.onShowInSidebar(path) }
 }
 
 /**

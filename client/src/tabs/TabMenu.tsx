@@ -4,7 +4,7 @@ import { copyText } from '../lib/copyText'
 import { resolveInlineCopyPath } from '../lib/inlinePath'
 import { osVerbs } from '../lib/osVerbs'
 import { ContextMenu } from '../sidebar/ContextMenu'
-import { CopyIcon, EyeIcon, HeartIcon, PencilIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, HeartIcon, PencilIcon, ShowInSidebarIcon } from '../views/view/icons'
 import { focusPlaces, scopeGroup, type MenuAction, type MenuSection } from '../sidebar/menuSections'
 import type { ListState } from '../lists/useVaultListsHere'
 import { useUnit } from '../vault/unitWord'
@@ -123,7 +123,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
               },
             },
           ]),
-      { id: 'show-in-sidebar', label: 'Show in sidebar', onSelect: () => onShowInSidebar?.(menu.path) },
+      { id: 'show-in-sidebar', label: 'Show in sidebar', icon: <ShowInSidebarIcon />, onSelect: () => onShowInSidebar?.(menu.path) },
       ...(lists === null || onToggleFocus === undefined
         ? []
         : [

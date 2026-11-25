@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { TreeNode, TreeResponse } from '@shared/types'
-import { byVault, MAX_RECENTS, recentDays, recentFiles, recentSections, timeOf, type RecentFile } from './recents'
+import { byVault, MAX_RECENTS, recentDays, recentFiles, recentSections, recentsIdsOption, timeOf, type RecentFile } from './recents'
 
 const page = (path: string, kind: 'markdown' | null = 'markdown'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind })
 const dir = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
@@ -124,5 +124,32 @@ describe('byVault and the Recents menu (YAZ-4450 D5, D7, D8)', () => {
     expect(picks).toEqual(['/w', 'off'])
     const one = recentSections(vaults, '/w', () => undefined, grouped)
     expect(one.map((g) => g.map((item) => `${item.label}${'hint' in item && item.hint !== undefined ? item.hint : ''}`))).toEqual([['All vaults'], ['Pages', 'Work✓']])
+  })
+
+  it('YAZ-6537: Show last updated and Show IDs options appear in Recents menu and hide Show IDs when no vault has IDs', () => {
+    const picked: string[] = []
+    const sections = recentSections(
+      [{ root: '/v', name: 'Pages' }],
+      null,
+      () => undefined,
+      { on: true, set: () => undefined },
+      undefined,
+      { dates: { on: true, set: (on) => picked.push(`dates:${on}`) }, ids: { value: 'number', set: (next) => picked.push(`ids:${next}`) } },
+    )
+    expect(sections.map((g) => g.map((i) => `${i.label}${'hint' in i && i.hint !== undefined ? i.hint : ''}`))).toEqual([['Show last updated✓', 'Show IDsNumber (#12)']])
+    const [dateItem, idItem] = sections[0]
+    if ('onSelect' in dateItem) dateItem.onSelect?.()
+    if ('children' in idItem && idItem.children !== undefined) {
+      expect(idItem.children[0].map((c) => `${c.label}${c.hint ?? ''}`)).toEqual(['Off', 'Number (#12)✓', 'Full ID'])
+      idItem.children[0][2].onSelect()
+    }
+    expect(picked).toEqual(['dates:false', 'ids:full'])
+    // Hidden when no non-app vault has IDs
+    expect(recentsIdsOption([{ index: { ids: false } }, { app: true, index: { ids: true } }])).toBeUndefined()
+    const set = vi.fn()
+    const opt = recentsIdsOption([{ index: { ids: true }, idsInRecents: 'off', setIdsInRecents: set }])
+    expect(opt?.value).toBe('off')
+    opt?.set('full')
+    expect(set).toHaveBeenCalledExactlyOnceWith('full')
   })
 })

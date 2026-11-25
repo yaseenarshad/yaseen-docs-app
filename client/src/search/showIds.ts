@@ -11,7 +11,7 @@
  * alone reads as title On, files list Off; round 2's `files: true` reads as Number. Reading a choice costs a search nothing: each row already carries its
  * `id`; a title or a files-list row reads the index's cached path map, never the file.
  */
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { DEFAULT_SHOW_IDS, SHOW_IDS_FILE, SHOW_IDS_KEYS, idInFiles, sanitizeShowIds, type IdsInFiles, type IdsInSearch, type ShowIdsSettings } from '@shared/showIds'
 import { api } from '../api'
 import { pathInfo } from '../editor/wikilink/linkPillLook'
@@ -168,4 +168,39 @@ export function useAllPathIds(sources: readonly PathIdsSource[]): PathIds | unde
     return held.current.ids
   })
   return sources.length === 0 ? undefined : ids
+}
+
+/** Per-surface `PathIds` maps for the sidebar's Files, empty Search, and Recents lists (YAZ-4940, YAZ-6537). */
+export function useSidebarPathIds(
+  vaults: readonly { root?: string; index: WikilinkResolveSource; idsInFiles?: IdsInFiles; idsInSearch?: () => IdsInSearch; idsInRecents?: IdsInFiles }[],
+): { files: PathIds | undefined; search: PathIds | undefined; recents: PathIds | undefined } {
+  const live = useRef(vaults)
+  live.current = vaults
+  const fileKey = vaults.map((v) => `${v.root ?? ''}:${v.idsInFiles ?? 'off'}`).join('\0')
+  const searchKey = vaults.map((v) => `${v.root ?? ''}:${v.idsInSearch?.() ?? 'off'}`).join('\0')
+  const recentKey = vaults.map((v) => `${v.root ?? ''}:${v.idsInRecents ?? 'off'}`).join('\0')
+  const fileSources = useMemo(
+    () => live.current.flatMap((v): PathIdsSource[] => (v.idsInFiles === 'number' || v.idsInFiles === 'full' ? [{ index: v.index, form: v.idsInFiles }] : [])),
+    // `fileKey` tracks vault order and per-vault `idsInFiles`; avoids resubscribing on every App render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fileKey],
+  )
+  const searchSources = useMemo(
+    () =>
+      live.current.flatMap((v): PathIdsSource[] => {
+        const mode = v.idsInSearch?.()
+        return mode === 'number' || mode === 'full' ? [{ index: v.index, form: mode }] : []
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [searchKey],
+  )
+  const recentSources = useMemo(
+    () => live.current.flatMap((v): PathIdsSource[] => (v.idsInRecents === 'number' || v.idsInRecents === 'full' ? [{ index: v.index, form: v.idsInRecents }] : [])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [recentKey],
+  )
+  const files = useAllPathIds(fileSources)
+  const search = useAllPathIds(searchSources)
+  const recents = useAllPathIds(recentSources)
+  return { files, search, recents }
 }
