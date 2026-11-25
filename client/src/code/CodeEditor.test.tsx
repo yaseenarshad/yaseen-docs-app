@@ -1064,3 +1064,26 @@ describe('Appearance (YAZ-3447 S2)', () => {
     expect(created.editors).toHaveLength(1)
   })
 })
+
+describe('Idle Escape under Monaco TextAreaEditContext (YAZ-6511)', () => {
+  it('marks idle Escape from .monaco-editor .inputarea as idle so useEscapeLast closes the sidebar even if Monaco prevents default', async () => {
+    await opened('const x = 1\n')
+    editor().focus()
+    const { isIdleEscape } = await import('../lib/escapeOrder')
+    const input = editor().input
+    input.classList.add('inputarea')
+    input.parentElement?.classList.add('monaco-editor')
+    let idleAtWindow = false
+    const onWindow = (e: KeyboardEvent) => {
+      idleAtWindow = isIdleEscape(e.target)
+    }
+    window.addEventListener('keydown', onWindow)
+    try {
+      const ev = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true })
+      input.dispatchEvent(ev)
+      expect(idleAtWindow).toBe(true)
+    } finally {
+      window.removeEventListener('keydown', onWindow)
+    }
+  })
+})

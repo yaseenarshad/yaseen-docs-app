@@ -58,6 +58,7 @@ import { stepZoomByKey } from '../editor/DocumentZoom'
 import type { FoldNext } from '../editor/FoldAllButton'
 import { usePageSwitch } from '../editor/usePageSwitch'
 import { ZOOM_EVENT } from '../editor/zoomRequest'
+import { allowIdleEscape } from '../lib/escapeOrder'
 import { hintOf } from '../lib/keyHint'
 import type { NoticeKind } from '../lib/notice'
 import { registerPageView } from '../lib/pageView'
@@ -487,6 +488,22 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
         return
       }
       const editor = editorRef.current
+      // YAZ-6511: under TextAreaEditContext, Monaco calls preventDefault() on idle Escape; allow idle Esc to close
+      // the left sidebar when no Monaco widget or multi-cursor is active so it matches NativeEditContext.
+      if (
+        event.key === 'Escape' &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        !event.isComposing &&
+        event.target instanceof HTMLElement &&
+        event.target.matches('.monaco-editor .inputarea') &&
+        (editor?.getSelections?.()?.length ?? 1) <= 1 &&
+        host.querySelector('.find-widget.visible, .suggest-widget.visible, .parameter-hints-widget.visible, .rename-box.visible, .monaco-hover, .context-view .monaco-menu, .zone-widget') === null
+      ) {
+        allowIdleEscape(event.target)
+      }
       // ⌘↑ / ⌘↓ fold now, so ⌘Home / ⌘End go to the top / bottom on a Mac (standalone Monaco binds them only off a Mac).
       if (mac && editor?.hasTextFocus() === true && event.metaKey && !event.ctrlKey && !event.altKey && (event.key === 'Home' || event.key === 'End')) {
         event.preventDefault()
