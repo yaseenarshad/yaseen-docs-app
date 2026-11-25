@@ -50,6 +50,7 @@ import { registerVaultConfigIpc } from './vaultConfig'
 import { cleanupWorkspaceLauncher, createUnsupportedVaultLauncherBackend, registerVaultLauncherIpc, type VaultLauncherBackend } from './vaultLauncher'
 import { registerWatchIpc } from './watch'
 import { registerWindowIpc } from './window'
+import { registerExternalEdits } from '../fs/externalEdits'
 
 /**
  * Every `ipcMain` handler the preload's bridge invokes; call once before the first window loads.
@@ -92,6 +93,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerBoardIpc(store, windows, userData, pickedPictureFolders)
   registerDialogIpc(undefined, (folder) => store.approvePictureFolder(folder), (folder) => rememberPick(pickedPictureFolders, folder))
   registerWatchIpc()
+  registerExternalEdits(store)
   registerStateIpc(store, settingsFolder)
   registerVaultConfigIpc(store)
   registerFavoritesIpc(store)

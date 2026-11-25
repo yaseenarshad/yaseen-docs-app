@@ -516,4 +516,55 @@ describe('handleColdStartDiff (YAZ-6501)', () => {
     expect(store.get().folders[repoA].edits[path.join(repoA, 'AiWhileClosed.md')]).toBeDefined()
     expect(store.get().folders[repoA].edits[path.join(repoA, 'PulledWhileClosed.md')]).toBeUndefined()
   })
+
+  it('YAZ-6510: skips cold-start diffs for non-open vaults (e.g. internal cardSkillVault) and avoids nested-vault duplication', async () => {
+    const parent = await makeTempDir('yd-cold-parent-')
+    const nested = path.join(parent, 'nested')
+    const internal = await makeTempDir('yd-cold-internal-')
+    await mkdir(nested, { recursive: true })
+    const parentNote = path.join(parent, 'Parent.md')
+    const nestedNote = path.join(nested, 'Nested.md')
+    const internalNote = path.join(internal, 'Skill.md')
+    await writeFile(parentNote, 'p\n')
+    await writeFile(nestedNote, 'n\n')
+    await writeFile(internalNote, 'i\n')
+    const { store } = await makeTestStore(parent)
+    const now = Date.now()
+    // Open both parent and nested vaults in the window; internal is NOT an open vault.
+    store.upsertWindow({
+      id: 'w1',
+      root: parent,
+      roots: [parent, nested],
+      file: null,
+      tabs: [],
+      sidebarCollapsed: false,
+      sidebarLens: 'files',
+      bounds: { x: 0, y: 0, width: 1000, height: 700 },
+    })
+
+    // Non-open internal vault diff is ignored completely.
+    expect(await handleColdStartDiff(store, { root: internal, scannedAt: now, cacheStatus: 'hit', added: [{ path: internalNote, size: 2, mtime: now }], removed: [], changed: [] }, { now })).toBe(0)
+    expect(store.get().folders[internal]).toBeUndefined()
+
+    // Parent vault diff ignores files owned by the more specific open nested vault.
+    expect(
+      await handleColdStartDiff(
+        store,
+        {
+          root: parent,
+          scannedAt: now,
+          cacheStatus: 'hit',
+          added: [
+            { path: parentNote, size: 2, mtime: now },
+            { path: nestedNote, size: 2, mtime: now },
+          ],
+          removed: [],
+          changed: [],
+        },
+        { now },
+      ),
+    ).toBe(1)
+    expect(store.get().folders[parent]?.edits[parentNote]).toBe(now)
+    expect(store.get().folders[parent]?.edits[nestedNote]).toBeUndefined()
+  })
 })

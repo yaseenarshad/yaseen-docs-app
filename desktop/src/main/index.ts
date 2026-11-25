@@ -35,7 +35,6 @@ import { createMemoryMeter, createReloadWatch, helperRss, type MemoryMeter, type
 import { claimDeepLinkScheme } from './deepLinkScheme'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
-import { registerExternalEdits } from './fs/externalEdits'
 import { cleanupTreeWatcherProbes } from './fs/treeWatcher'
 import { watchDailyPages } from './dailyPagesVaultFile'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOnBoardKind, menuKeyedVaults, menuKindsInFront, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
@@ -585,7 +584,6 @@ app.whenReady().then(() => {
       : undefined,
   }, settingsFolder)
   githubAuth = auth
-  registerExternalEdits(store)
   // Friends backend (YAZ-6219): D1 API service + background stats sender, reusing GitHub App auth (`githubAuth.getValidAuth()`).
   // YAZ-5652: only with Friends on (`shared/features.ts`). Off, nothing starts and the build drops the `./friends` chunk.
   if (FRIENDS_ENABLED) {

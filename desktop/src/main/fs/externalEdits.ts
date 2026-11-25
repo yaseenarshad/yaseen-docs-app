@@ -187,11 +187,11 @@ function mutatingSpansOf(entries: readonly ReflogEntry[]): MutatingSpan[] {
     if (!isWorkingTreeMutatingReflog(entry.action)) continue
     let oldSha = entry.oldSha
     let start = entry.at
-    if (oldSha === entry.newSha && /^rebase\s*\(finish\)/i.test(entry.action)) {
+    if (oldSha === entry.newSha && /^(?:pull\s+--rebase|rebase)\s*\(finish\)/i.test(entry.action)) {
       for (let j = i - 1; j >= 0; j--) {
         const prev = entries[j]!
         if (entry.at - prev.at > REBASE_PAIR_WINDOW_MS) break
-        if (/^rebase\s*\(start\)/i.test(prev.action)) {
+        if (/^(?:pull\s+--rebase|rebase)\s*\(start\)/i.test(prev.action)) {
           oldSha = prev.oldSha
           start = prev.at
           break
@@ -306,6 +306,10 @@ export async function handleColdStartDiff(
   opts?: { now?: number; gitCandidates?: readonly string[] },
 ): Promise<number> {
   if (diff.cacheStatus !== 'hit') return 0
+  const openRoots = rootsOf(store.get())
+  // Only record cold-start edits for vaults currently open in a window (skips internal vaults like cardSkillVault).
+  if (openRoots.length > 0 && !openRoots.includes(diff.root)) return 0
+  const ownsFile = (file: string): boolean => openRoots.length === 0 || rootOfPath(openRoots, file) === diff.root
   const now = opts?.now ?? Date.now()
 
   // 1. Exclude cold-start renames (1:1 join on (size, mtime) between removed and added).
@@ -322,11 +326,11 @@ export async function handleColdStartDiff(
       removedCounts.set(key, left - 1)
       continue
     }
-    if (!isTrackableVaultFile(diff.root, a.path)) continue
+    if (!isTrackableVaultFile(diff.root, a.path) || !ownsFile(a.path)) continue
     trackableAdded.push({ file: a.path, at: Math.min(a.mtime, now) })
   }
 
-  const trackableChangedPaths = diff.changed.filter((p) => isTrackableVaultFile(diff.root, p))
+  const trackableChangedPaths = diff.changed.filter((p) => isTrackableVaultFile(diff.root, p) && ownsFile(p))
   const totalRaw = trackableAdded.length + trackableChangedPaths.length
   if (totalRaw === 0) return 0
 

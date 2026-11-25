@@ -9,6 +9,7 @@ import type { BoardMetaBlock } from '@shared/drawingAssets'
 import { isDiagram, isDrawing } from '@shared/fileKind'
 import { readBoardHead, type BoardHead } from './boardHead'
 import { readBoundedRegularFile } from './boundedRead'
+import { withSuppressedEdit } from './externalEditSuppress'
 import { atomicWrite, BridgeFailure, fsCall, requireAbsPath, requireDir, resolveUnderRoot } from './fsUtils'
 import { requireRequest } from './validate'
 
@@ -75,6 +76,6 @@ export async function mutateBoardFile(
   const next = transform(text, snap.mtime)
   if (next === text) return { path: file, mtime: snap.mtime, size: snap.size }
   if (Buffer.byteLength(next, 'utf8') > BOARDS[kind].max) throw new BridgeFailure('TOO_LARGE', BOARDS[kind].tooLarge, { path: file })
-  const { mtime, size } = await fsCall(file, () => atomicWrite(file, next))
+  const { mtime, size } = await withSuppressedEdit(file, () => fsCall(file, () => atomicWrite(file, next)))
   return { path: file, mtime, size }
 }
