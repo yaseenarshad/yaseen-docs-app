@@ -60,7 +60,7 @@
  * itself (D5). The folded rows are saved for each page (`folders[root].tocFolds`, D1) by their fold
  * key (`tocFoldKeys`): a fold stays on its row through edits elsewhere, and a renamed row opens again.
  *
- * ZOOM (YAZ-3939 D7–D10): the names have their own zoom, `settings.tocZoom`, one for every page. The
+ * ZOOM (YAZ-3939 D7–D10, YAZ-6490): the names have this window's own zoom (`WindowEntry.tocZoom`). The
  * sidebar's "− 100% +" (`ZoomStepper`) sets it from the header, beside the fold-all button; where the
  * header has no room for it (the card, a narrow column) a zoom icon opens it in a small box.
  * ⌘+ / ⌘− / ⌘0 with the mouse over the table of contents, or the focus in it, zoom the names and never

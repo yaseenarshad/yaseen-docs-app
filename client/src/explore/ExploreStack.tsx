@@ -101,7 +101,7 @@ export interface ExploreStackProps {
   opensOf?: (root: string) => Readonly<Record<string, OpenStat>>
   editsOf?: (root: string) => Readonly<Record<string, number>>
   /**
-   * Search size in percent (`settings.exploreSize`, YAZ-5881 D2, YAZ-5977): the search panel's width and all that is in it. ⌘+ / ⌘− /
+   * Search size in percent (`WindowEntry.exploreSize`, YAZ-5881 D2, YAZ-5977, YAZ-6490): the search panel's width and all that is in it. ⌘+ / ⌘− /
    * ⌘0 with the search panel in front step it along `APP_ZOOM_STEPS` through `onExploreSize` (D3; ⌘0: 125%).
    */
   exploreSize: number
@@ -275,7 +275,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   const roots = useMemo(() => vaults.map((v) => v.root), [vaults])
   /** The vault's "Show IDs in search" for a row (YAZ-4940); a path in no vault reads Always. */
   const idsInTitle = useCallback((path: string) => vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.idsInTitle?.() ?? true, [vaults, roots])
-  const idsInSearch = useCallback((path: string) => vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.idsInSearch?.() ?? 'always', [vaults, roots])
+  const idsInSearch = useCallback((path: string) => vaults[roots.indexOf(rootOfPath(roots, path) ?? '')]?.idsInSearch?.() ?? 'number', [vaults, roots])
   // The empty box (YAZ-4945): Opened and Edited, of this window's vaults (a folder of a vault: under it, `inPlace`).
   // Read again at each open or step (a new list) and each ⌘⇧F (`request`), never per keystroke.
   const recentAll = exploreRecents()

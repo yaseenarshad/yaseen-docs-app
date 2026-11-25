@@ -912,33 +912,15 @@ export function App() {
   // The highlight panel's most used custom colours (YAZ-4348 demo round 2): read by every page's panel, absent from an older main process.
   useEffect(() => setUsedHighlightColors(settings.highlightCustomColors ?? []), [settings.highlightCustomColors])
 
-  // Per-window sidebar zoom, Explore Search size, and TOC zoom (YAZ-6490): only this window writes them, so local copies stay true.
+  // Per-window sidebar zoom, Explore Search size, and TOC zoom (YAZ-6490): local copies stay true; same value writes nothing (YAZ-3389 D6).
   const [sidebarZoom, setSidebarZoomState] = useState(storage.getSidebarZoom)
-  // The same value writes nothing (YAZ-3389 D6).
-  const changeSidebarZoom = useCallback((percent: number) => {
-    if (percent === storage.getSidebarZoom()) return
-    storage.setSidebarZoom(percent)
-    setSidebarZoomState(percent)
-  }, [])
+  const changeSidebarZoom = useCallback((percent: number) => { if (percent !== storage.getSidebarZoom()) { storage.setSidebarZoom(percent); setSidebarZoomState(percent) } }, [])
   const [exploreSize, setExploreSizeState] = useState(storage.getExploreSize)
-  const changeExploreSize = useCallback((size: number) => {
-    if (size === storage.getExploreSize()) return
-    storage.setExploreSize(size)
-    setExploreSizeState(size)
-  }, [])
+  const changeExploreSize = useCallback((size: number) => { if (size !== storage.getExploreSize()) { storage.setExploreSize(size); setExploreSizeState(size) } }, [])
   const [tocZoom, setTocZoomState] = useState(storage.getTocZoom)
-  const changeTocZoom = useCallback((percent: number) => {
-    if (percent === storage.getTocZoom()) return
-    storage.setTocZoom(percent)
-    setTocZoomState(percent)
-  }, [])
+  const changeTocZoom = useCallback((percent: number) => { if (percent !== storage.getTocZoom()) { storage.setTocZoom(percent); setTocZoomState(percent) } }, [])
   // ⌘+ / ⌘− / ⌘0 that no page claimed step THIS window's sidebar zoom (both full and Files windows, YAZ-6490).
-  const zoomSidebar = useCallback(
-    (step: ZoomStep) => {
-      changeSidebarZoom(step === 0 ? 100 : stepSidebarZoom(storage.getSidebarZoom(), step))
-    },
-    [changeSidebarZoom],
-  )
+  const zoomSidebar = useCallback((step: ZoomStep) => changeSidebarZoom(step === 0 ? 100 : stepSidebarZoom(storage.getSidebarZoom(), step)), [changeSidebarZoom])
   const zoom = useCallback((step: ZoomStep) => requestZoom(step, zoomSidebar), [zoomSidebar])
 
   /** A lens tab click (YAZ-847): write through to this window's identity, then mirror it locally. */

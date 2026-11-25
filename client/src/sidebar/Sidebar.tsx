@@ -284,18 +284,13 @@ interface SidebarProps {
    * makes it a full window where it stands. Absent = a full window, with no chip.
    */
   onToNormalWindow?: () => void
-  /**
-   * This window's own sidebar zoom in percent (YAZ-6490, both full and Files windows) and its writer.
-   */
+  /** Per-window Sidebar zoom, Search size, and Mac-local new-window defaults (YAZ-6490). */
   sidebarZoom?: number
   onSidebarZoom?: (percent: number) => void
-  /** This window's own Search size in percent (YAZ-6490) and its writer. */
   exploreSize?: number
   onExploreSize?: (size: number) => void
-  /** Mac-local defaults for brand-new windows (`settings.newWindowSidebarZoom` / `newWindowExploreSize`, YAZ-6490). */
   defaultSidebarZoom?: number
   defaultExploreSize?: number
-  /** Save this window's Sidebar zoom and Search size as the Mac-local defaults for brand-new windows (YAZ-6490). */
   onSetDefaultZooms?: (sidebarZoom: number, exploreSize: number) => void
   /** A Files window (YAZ-3444): its zoom menu opened or closed, for main, which holds this window's resize until the close. */
   onZoomMenu?: (open: boolean) => void
@@ -780,14 +775,7 @@ export function Sidebar({
   onShowAllTabs,
   onOpenSetHere,
   onToNormalWindow,
-  sidebarZoom,
-  onSidebarZoom,
-  exploreSize,
-  onExploreSize,
-  defaultSidebarZoom,
-  defaultExploreSize,
-  onSetDefaultZooms,
-  onZoomMenu,
+  sidebarZoom, onSidebarZoom, exploreSize, onExploreSize, defaultSidebarZoom, defaultExploreSize, onSetDefaultZooms, onZoomMenu,
   previewFloat,
   sessionNameRequest,
   recentVault = null,
@@ -1460,31 +1448,15 @@ export function Sidebar({
     const { settings: now, onChangeSettings: write } = settingsRef.current
     if (appZoom !== now.appZoom) write({ ...now, appZoom })
   }, [])
-  // Per-window Sidebar zoom and Search size (YAZ-6490); fallback to settings defaults for standalone tests.
   const zoomValue = sidebarZoom ?? settings.newWindowSidebarZoom
-  const onZoom = useCallback(
-    (percent: number) => {
-      if (onSidebarZoom !== undefined) onSidebarZoom(percent)
-    },
-    [onSidebarZoom],
-  )
   const exploreValue = exploreSize ?? settings.newWindowExploreSize
-  const onExplore = useCallback(
-    (size: number) => {
-      if (onExploreSize !== undefined) onExploreSize(size)
-    },
-    [onExploreSize],
-  )
-  const setDefaultZooms = useCallback(
-    (nextSidebar: number, nextExplore: number) => {
-      if (onSetDefaultZooms !== undefined) return onSetDefaultZooms(nextSidebar, nextExplore)
-      const { settings: now, onChangeSettings: write } = settingsRef.current
-      if (nextSidebar !== now.newWindowSidebarZoom || nextExplore !== now.newWindowExploreSize) {
-        write({ ...now, newWindowSidebarZoom: nextSidebar, newWindowExploreSize: nextExplore })
-      }
-    },
-    [onSetDefaultZooms],
-  )
+  const onZoom = useCallback((percent: number) => onSidebarZoom?.(percent), [onSidebarZoom])
+  const onExplore = useCallback((size: number) => onExploreSize?.(size), [onExploreSize])
+  const setDefaultZooms = useCallback((s: number, e: number) => {
+    if (onSetDefaultZooms !== undefined) return onSetDefaultZooms(s, e)
+    const { settings: now, onChangeSettings: write } = settingsRef.current
+    if (s !== now.newWindowSidebarZoom || e !== now.newWindowExploreSize) write({ ...now, newWindowSidebarZoom: s, newWindowExploreSize: e })
+  }, [onSetDefaultZooms])
   // Sticky folders (YAZ-3440 D2): how many levels stick, cut to 40% of the list, as one attribute on the list written
   // on the node and not through state, so a resize renders no level of the tree. A zoom change resizes the rows alone.
   const stickyLevels = settings.sidebarStickyLevels
@@ -2624,20 +2596,8 @@ export function Sidebar({
       </div>
       <div className="sidebar__footer">
         <SettingsButton onClick={onOpenSettings} hotkeys={settings.hotkeys} />
-        {/* The zoom chip (YAZ-3432, YAZ-6490): its menu zooms this window's Sidebar and Search size,
-            and sets the App size of every window on this Mac. */}
-        <ZoomMenu
-          sidebar={zoomValue}
-          onSidebar={onZoom}
-          app={settings.appZoom}
-          onApp={changeAppZoom}
-          explore={exploreValue}
-          onExplore={onExplore}
-          defaultSidebar={defaultSidebarZoom ?? settings.newWindowSidebarZoom}
-          defaultExplore={defaultExploreSize ?? settings.newWindowExploreSize}
-          onSetDefaults={setDefaultZooms}
-          onOpenChange={onZoomMenu}
-        />
+        {/* The zoom chip (YAZ-3432, YAZ-6490): this window's Sidebar & Search size + Mac-wide App size. */}
+        <ZoomMenu sidebar={zoomValue} onSidebar={onZoom} app={settings.appZoom} onApp={changeAppZoom} explore={exploreValue} onExplore={onExplore} defaultSidebar={defaultSidebarZoom ?? settings.newWindowSidebarZoom} defaultExplore={defaultExploreSize ?? settings.newWindowExploreSize} onSetDefaults={setDefaultZooms} onOpenChange={onZoomMenu} />
         {onOpenDailyPage !== undefined && (
           // YAZ-3607 D7: today's daily page in one click, the same as ⌘D on "Today's daily page".
           <button type="button" className="sidebar__daily" title="Open today's daily page (⌘-click: background tab)" aria-label="Open today's daily page" onClick={(e) => onOpenDailyPage(e.metaKey)}>
