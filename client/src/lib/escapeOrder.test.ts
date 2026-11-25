@@ -321,4 +321,15 @@ describe('useEscapeLast & readEscapeFacts: reads what was open BEFORE surfaces r
     expect(facts.rightOverlayOpen).toBe(true)
     expect(escapeStep(facts)).toBe('closeRightOverlay')
   })
+
+  it('YAZ-6492: allowIdleEscape survives a microtask checkpoint (trusted browser event propagation) and clears after the macrotask', async () => {
+    const { allowIdleEscape, isIdleEscape } = await import('./escapeOrder')
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    allowIdleEscape(host)
+    await Promise.resolve()
+    expect(isIdleEscape(host)).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(isIdleEscape(host)).toBe(false)
+  })
 })

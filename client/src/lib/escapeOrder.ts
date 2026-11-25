@@ -112,13 +112,17 @@ export function readEscapeFacts(event: KeyboardEvent, sidebar: SidebarFacts): Es
 let idleEscapeHost: HTMLElement | null = null
 let idleEscapeToken = 0
 
-/** Marks `host` (`.ProseMirror`) as having declined the in-flight Escape event at lowest editor priority. */
+/**
+ * Marks `host` (`.ProseMirror` or Monaco `.inputarea`) as having declined the in-flight Escape event at lowest editor priority.
+ * Uses a macrotask (`setTimeout(..., 0)`) rather than `queueMicrotask()` because trusted browser events run a microtask
+ * checkpoint between DOM listeners, which would wipe `idleEscapeHost` before bubbling reaches `PageWindow` / `useEscapeLast`.
+ */
 export function allowIdleEscape(host: HTMLElement): void {
   idleEscapeHost = host
   const token = ++idleEscapeToken
-  queueMicrotask(() => {
+  setTimeout(() => {
     if (idleEscapeToken === token) idleEscapeHost = null
-  })
+  }, 0)
 }
 
 /** True while the current Escape event was only prevented by ProseMirror's `captureKeyDown` fallback for `target`. */
