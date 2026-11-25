@@ -3,7 +3,7 @@ import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect
 import { createPortal } from 'react-dom'
 import { FRIENDS_ENABLED } from '@shared/features'
 import { DEFAULT_SETTINGS, folderSettingsPath, rootOfPath, TOC_DEFAULT_W, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DiagramDarkColors, type ContentPosition, type ContentWidth, type FileResponse, type GithubSyncStatus, type OutsideChangeGlow, type FindFolds, type PageView, type PropertiesResponse, type SettingsState, type TableOfContents as TableOfContentsMode, type TocSource } from '@shared/types'
-import { fileKind } from '@shared/fileKind'; import { diskPathOf } from '@shared/inlineRef'
+import { fileKind } from '@shared/fileKind'; import { diskPathOf, inlineDrawingRowPath } from '@shared/inlineRef'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, HotkeyAside } from '@shared/keys'
 import { api } from '../api'
@@ -880,7 +880,7 @@ function CrepeHost({
     }
     return base
   }, [convert, file.path, inFolderPage, unit])
-  const inlineDrawing = useInlineDrawing({ root, path: file.path, title: () => titleRef.current, disk: () => diskRef.current, getView: () => (crepeRef.current === null ? null : editorViewOf(crepeRef.current)), flushPage: () => autosave.flushNow(), wikilinks, viewOnlyLinks, allowFileAction: vaultScope.allowFileAction, onNotice, onOpenInTab: tabId === undefined || onOpenInlineDrawing === undefined ? undefined : (index, background) => onOpenInlineDrawing(tabId, index, background) })
+  const inlineDrawing = useInlineDrawing({ root, path: file.path, title: () => titleRef.current, disk: () => diskRef.current, getView: () => (crepeRef.current === null ? null : editorViewOf(crepeRef.current)), flushPage: () => flushRenamedPath(file.path), wikilinks, viewOnlyLinks, allowFileAction: vaultScope.allowFileAction, onNotice, onOpenInTab: tabId === undefined || onOpenInlineDrawing === undefined ? undefined : (index, background) => onOpenInlineDrawing(tabId, index, background), onOpenExplore: onOpenExplore === undefined ? undefined : (index) => onOpenExplore(inlineDrawingRowPath(file.path, index)) })
   /** The timed "Allow edits" of THIS tab (YAZ-4939): at zero the page saves (including any open card editor, YAZ-6052), then locks again. */
   const unlock = useTimedUnlock(() => {
     const openCards = hostRef.current?.querySelectorAll('.card.card--editing') ?? []
@@ -1230,15 +1230,13 @@ function CrepeHost({
                 // A11: the drawing popup at the board's own vault, as a vault-relative target.
                 onEditInPopup: (boardRoot, target) => setOpenDrawing({ root: boardRoot, target: target.startsWith(`${boardRoot}/`) ? target.slice(boardRoot.length + 1) : target }),
                 open: (target, how) => (how === 'backgroundTab' ? (onOpenLinkBackground ?? onOpenLink)(target) : onOpenLink(target, how)),
-                linkMenu: (target) => {
-                  const notice = onNotice ?? (() => undefined)
-                  return {
-                    labels: [],
-                    open: () => onOpenLink(target, 'thisTab'),
-                    openNew: () => (onOpenLinkBackground ?? onOpenLink)(target),
-                    ...placeRows(target, linkActions, notice),
-                  }
-                },
+                linkMenu: (target) => ({
+                  labels: [],
+                  open: () => onOpenLink(target, 'thisTab'),
+                  openNew: () => (onOpenLinkBackground ?? onOpenLink)(target),
+                  openExplore: onOpenExplore === undefined ? undefined : () => onOpenExplore(target),
+                  ...placeRows(target, linkActions, onNotice ?? (() => undefined)),
+                }),
               },
       },
       find: findChannel,

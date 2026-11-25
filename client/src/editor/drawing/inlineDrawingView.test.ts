@@ -202,13 +202,14 @@ describe('InlineDrawingView + inlineDrawingPlugins', () => {
     expect(view.state.selection).not.toBeInstanceOf(NodeSelection)
   })
 
-  it('opens context menu with Edit, Rename, Open in new tab, Move (with ask), Copy path, window rows, and Delete (via onDelete)', async () => {
+  it('opens context menu with Edit, Rename, Open in new tab, Open in Explore, Move (with ask), Copy path, window rows, and Delete (via onDelete)', async () => {
     const onEdit = vi.fn()
     const onMoveToFile = vi.fn()
     const onDelete = vi.fn()
     const onOpenInTab = vi.fn()
+    const onOpenExplore = vi.fn()
     const onCopyPath = vi.fn()
-    const { view, root } = await mount(SAMPLE_MD, { inlineDrawing: { root: '/vault', onEdit, onMoveToFile, onDelete, onOpenInTab, onCopyPath } })
+    const { view, root } = await mount(SAMPLE_MD, { inlineDrawing: { root: '/vault', onEdit, onMoveToFile, onDelete, onOpenInTab, onOpenExplore, onCopyPath } })
     await flushMicrotasks()
     const fake = fakes.list[0]!
 
@@ -226,17 +227,23 @@ describe('InlineDrawingView + inlineDrawingPlugins', () => {
     // Header "⋯" button opens the menu.
     root.querySelector<HTMLButtonElement>('.inline-drawing__more')?.click()
     const labels = [...document.querySelectorAll('.ctx-menu__item')].map((el) => el.textContent?.trim())
-    expect(labels).toEqual(['Edit drawing', 'Rename', 'Open in new tab', 'Move to its own file', 'Copy path', 'Fit whole drawing', 'Position', 'Delete drawing'])
+    expect(labels).toEqual(['Edit drawing', 'Rename', 'Open in new tab', 'Open in Explore', 'Move to its own file', 'Copy path', 'Fit whole drawing', 'Position', 'Delete drawing'])
 
     // Right-clicking the header bar opens the drawing menu (and does not bubble to PageMenu).
     const parentCtx = vi.fn()
     root.addEventListener('contextmenu', parentCtx)
     root.querySelector<HTMLElement>('.inline-drawing__head')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 40 }))
     expect(parentCtx).not.toHaveBeenCalled()
-    expect(document.querySelectorAll('.ctx-menu__item').length).toBe(8)
+    expect(document.querySelectorAll('.ctx-menu__item').length).toBe(9)
     root.removeEventListener('contextmenu', parentCtx)
 
-    // Click "Rename" -> focuses the title input.
+    // Click "Open in Explore" -> calls onOpenExplore(0, undefined).
+    const exploreBtn = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((el) => el.textContent?.includes('Open in Explore'))
+    exploreBtn?.click()
+    expect(onOpenExplore).toHaveBeenCalledExactlyOnceWith(0, undefined)
+
+    // Reopen menu and click "Rename" -> focuses the title input.
+    fake.host.onContextMenu?.(new MouseEvent('contextmenu', { clientX: 50, clientY: 50, cancelable: true }))
     const renameBtn = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((el) => el.textContent?.includes('Rename'))
     renameBtn?.click()
     expect(document.activeElement).toBe(root.querySelector('.inline-drawing__title'))
@@ -330,6 +337,23 @@ describe('InlineDrawingView + inlineDrawingPlugins', () => {
     root.querySelector<HTMLInputElement>('.inline-drawing__title')!.click()
     expect(captured).not.toBeNull()
     expect(captured!.detail).toBe('drawing')
+
+    // YAZ-6548: Right-click menu on a read-only page keeps Edit drawing and routes it through tellReadOnlyEdit.
+    captured = null
+    onEdit.mockClear()
+    fake.host.onContextMenu?.(new MouseEvent('contextmenu', { clientX: 50, clientY: 50, cancelable: true }))
+    const roLabels = [...document.querySelectorAll('.ctx-menu__item')].map((el) => el.textContent?.trim())
+    expect(roLabels).toContain('Edit drawing')
+    expect(roLabels).not.toContain('Rename')
+    expect(roLabels).not.toContain('Delete drawing')
+    const menuEditBtn = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((el) => el.textContent?.trim() === 'Edit drawing')!
+    menuEditBtn.click()
+    expect(onEdit).not.toHaveBeenCalled()
+    expect(captured).not.toBeNull()
+    expect(captured!.detail).toBe('drawing')
+    crepe.setReadonly(false)
+    captured!.resume?.()
+    expect(onEdit).toHaveBeenCalledTimes(1)
   })
 
   it('updates BoardWindow when inline JSON changes and destroys on unmount', async () => {

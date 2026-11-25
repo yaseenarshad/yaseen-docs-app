@@ -23,6 +23,7 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { $prose } from '@milkdown/kit/utils'
 import { newEmbedAlt } from '@shared/embedOptions'
 import { fileKind } from '@shared/fileKind'
+import { layerKindOf } from '../explore/layers'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction } from '@shared/keys'
 import { isBoardSrc } from './drawing/boardEmbedText'
@@ -228,8 +229,8 @@ export function markdownLinkMenuOf(href: string, nav: MarkdownLinkNav, follow: (
     labels: [],
     open: local ? undefined : () => follow(href, 'thisTab'),
     openNew: path === null ? undefined : () => follow(href, 'backgroundTab'),
-    // "Open in Explore" (YAZ-4936): a page that is there, as on a [[link]]; the host's `openPath` takes 'explore'.
-    openExplore: found !== null && fileKind(found) === 'markdown' && nav.openPath !== undefined && nav.exploreClick !== undefined ? () => follow(href, 'explore') : undefined,
+    // "Open in Explore" (YAZ-4936, YAZ-6548): a page or board that is there, as on a [[link]]; the host's `openPath` takes 'explore'.
+    openExplore: found !== null && layerKindOf(found) !== null && nav.openPath !== undefined && nav.exploreClick !== undefined ? () => follow(href, 'explore') : undefined,
     copyName: name === null || name === '' ? undefined : () => copyText(name, 'name', nav.onNotice, nav.copy, true),
     copyAddress: path === null ? () => copyText(href, 'address', nav.onNotice, nav.copy) : undefined,
     ...(found === null ? {} : placeRows(found, nav, nav.onNotice, nav.copy)),

@@ -85,6 +85,7 @@ import { linkMenuRows, openMenuAt } from '../linkMenu'
 import { innermostItemPos } from '../outline/listNodes'
 import { toggleOutlineFold } from '../outline/outlineFolding'
 import { inCellOrPage } from '../table/cellBlocks'
+import { tellReadOnlyEdit } from '../readOnlyEdit'
 import type { GalleryImage, ImageOptions } from './imageOptions'
 import { formatAlt, imageSrc, pageDirRel, parseAlt } from './imageSrc'
 import './imageView.css'
@@ -402,8 +403,14 @@ class ImageNodeView implements NodeView {
         columnWidth,
         onOptions: (next) => this.writeBoardOptions(next),
         onOpen: (how) => {
-          const path = this.boardRef().path
-          if (path !== null) this.opts.boards?.open?.(path, how)
+          const ref = this.boardRef()
+          const edit = this.opts.boards?.onEditInPopup
+          if (how === 'thisTab' && ref.kind === 'drawing' && ref.root !== null && ref.path !== null && edit !== undefined) {
+            if (!this.view.editable) tellReadOnlyEdit(this.dom, 'drawing', () => edit(ref.root!, ref.path!))
+            else edit(ref.root, ref.path)
+            return
+          }
+          if (ref.path !== null) this.opts.boards?.open?.(ref.path, how)
         },
         onContextMenu: (event) => this.openBoardMenu(event),
         onSelect: () => {
@@ -477,31 +484,45 @@ class ImageNodeView implements NodeView {
       if (list.length > 0) rows.push({ ...list[0]!, divider: true }, ...list.slice(1))
     }
     group(this.board?.menuRows().map(menuRowOf) ?? [])
-    if (this.view.editable) {
-      const edit = this.opts.boards?.onEditInPopup
-      group([
-        // D12, A11: a drawing in another vault opens in the drawing popup at its own root and path.
-        ...(ref.kind === 'drawing' && ref.root !== null && ref.path !== null && edit !== undefined ? [{ label: 'Edit in a popup', run: () => edit(ref.root!, ref.path!) }] : []),
-        {
-          label: 'Show as link',
-          run: () => {
-            const live = this.liveNode()
-            const mark = this.view.state.schema.marks.link
-            if (live === null || mark === undefined) return
-            const text = this.view.state.schema.text(ref.name, [mark.create({ href: live.node.attrs.src })])
-            this.view.dispatch(this.view.state.tr.replaceWith(live.pos, live.pos + live.node.nodeSize, text))
-          },
-        },
-        {
-          label: 'Remove embed',
-          danger: true,
-          run: () => {
-            const live = this.liveNode()
-            if (live !== null) this.view.dispatch(this.view.state.tr.delete(live.pos, live.pos + live.node.nodeSize))
-          },
-        },
-      ])
-    }
+    const edit = this.opts.boards?.onEditInPopup
+    const editRow: MenuRow[] =
+      ref.kind === 'drawing' && ref.root !== null && ref.path !== null && edit !== undefined
+        ? [
+            {
+              label: 'Edit in a popup',
+              run: () => {
+                if (!this.view.editable) tellReadOnlyEdit(this.dom, 'drawing', () => edit(ref.root!, ref.path!))
+                else edit(ref.root!, ref.path!)
+              },
+            },
+          ]
+        : []
+    group([
+      // D12, A11, YAZ-6548: a drawing in another vault opens in the drawing popup at its own root and path (read-only asks to unlock first).
+      ...editRow,
+      ...(this.view.editable
+        ? [
+            {
+              label: 'Show as link',
+              run: () => {
+                const live = this.liveNode()
+                const mark = this.view.state.schema.marks.link
+                if (live === null || mark === undefined) return
+                const text = this.view.state.schema.text(ref.name, [mark.create({ href: live.node.attrs.src })])
+                this.view.dispatch(this.view.state.tr.replaceWith(live.pos, live.pos + live.node.nodeSize, text))
+              },
+            },
+            {
+              label: 'Remove embed',
+              danger: true as const,
+              run: () => {
+                const live = this.liveNode()
+                if (live !== null) this.view.dispatch(this.view.state.tr.delete(live.pos, live.pos + live.node.nodeSize))
+              },
+            },
+          ]
+        : []),
+    ])
     this.closeMenu = openMenuAt(parent, event.clientX, event.clientY, rows)
   }
 

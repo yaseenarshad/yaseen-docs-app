@@ -28,6 +28,7 @@ interface Harness {
   view: EditorView
   createInline: () => void
   modalProps: () => InlineDrawingModalState | null
+  inlineProps: () => ReturnType<typeof useInlineDrawing>['inlineProps']
   cleanup: () => void
 }
 
@@ -37,7 +38,7 @@ afterEach(() => {
   for (const fn of cleanups.splice(0)) fn()
 })
 
-function mountHarness(pageTitle: string): Harness {
+function mountHarness(pageTitle: string, extraHost: Partial<InlineDrawingHost> = {}): Harness {
   const editorDom = document.createElement('div')
   const reactDom = document.createElement('div')
   document.body.appendChild(editorDom)
@@ -51,6 +52,7 @@ function mountHarness(pageTitle: string): Harness {
 
   let latestCreate: ((v: EditorView) => void) | null = null
   let latestModal: InlineDrawingModalState | null = null
+  let latestInlineProps!: ReturnType<typeof useInlineDrawing>['inlineProps']
 
   const host: InlineDrawingHost = {
     root: '/v',
@@ -60,12 +62,14 @@ function mountHarness(pageTitle: string): Harness {
     getView: () => view,
     flushPage: () => undefined,
     allowFileAction: vi.fn(async () => true),
+    ...extraHost,
   }
 
   function Probe() {
     const result = useInlineDrawing(host)
     latestCreate = result.createInline
     latestModal = result.modalProps
+    latestInlineProps = result.inlineProps
     return null
   }
 
@@ -90,6 +94,7 @@ function mountHarness(pageTitle: string): Harness {
       })
     },
     modalProps: () => latestModal,
+    inlineProps: () => latestInlineProps,
     cleanup,
   }
 }
@@ -149,5 +154,23 @@ describe('useInlineDrawing createInline (YAZ-6351)', () => {
     expect(h.view.state.doc.child(0).attrs.drawingLine).toBe('<!-- drawing: title "Auth Flow", locked -->')
     expect(h.view.state.doc.child(1).attrs.drawingLine).toBe('<!-- drawing: title "Auth Flow", locked -->')
     expect(h.modalProps()?.inline.title).toBe('Auth Flow')
+  })
+
+  it('YAZ-6548: inlineProps.onOpenExplore flushes the page before invoking host.onOpenExplore', async () => {
+    const order: string[] = []
+    const flushPage = vi.fn(async () => {
+      order.push('flush')
+    })
+    const onOpenExplore = vi.fn((index: number, title?: string) => {
+      order.push(`explore:${index}:${title ?? ''}`)
+    })
+    const h = mountHarness('Auth Flow', { flushPage, onOpenExplore })
+    expect(h.inlineProps().onOpenExplore).toBeDefined()
+    h.inlineProps().onOpenExplore!(1, 'Sequence')
+    await vi.waitFor(() => expect(onOpenExplore).toHaveBeenCalledWith(1, 'Sequence'))
+    expect(order).toEqual(['flush', 'explore:1:Sequence'])
+
+    const withoutExplore = mountHarness('Auth Flow')
+    expect(withoutExplore.inlineProps().onOpenExplore).toBeUndefined()
   })
 })

@@ -14,6 +14,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { EmbedOptions } from '@shared/embedOptions'
 import type { BoardWindowHandle, BoardWindowHost } from '../embed/types'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
+import { READ_ONLY_EDIT, type ReadOnlyEditEvent } from '../readOnlyEdit'
 import type { ImageOptions } from './imageOptions'
 
 interface Fake {
@@ -206,6 +207,71 @@ describe('a board src (2B)', () => {
     drawing.find((b) => b.textContent === 'Edit in a popup')!.click()
     expect(onEditInPopup).toHaveBeenCalledWith('/w', '/w/Sketch.excalidraw')
     expect(labels(1).map((b) => b.textContent)).not.toContain('Edit in a popup')
+  })
+
+  it('YAZ-6548: double-click on markdown-syntax .excalidraw opens popup (with tellReadOnlyEdit when read-only); ⌘-click and .drawio still open', async () => {
+    const onEditInPopup = vi.fn()
+    const image = imageOptions()
+    image.boards!.onEditInPopup = onEditInPopup
+    const { root, view } = await mount('![Sketch](../w/Sketch.excalidraw) ![Cloud](../w/Cloud.drawio)\n', image)
+    await windows(2)
+
+    // Plain double-click on drawing opens popup.
+    fakes.list[0]!.host.onOpen!('thisTab')
+    expect(onEditInPopup).toHaveBeenCalledExactlyOnceWith('/w', '/w/Sketch.excalidraw')
+    expect(image.boards!.open).not.toHaveBeenCalled()
+
+    // Background tab click on drawing and plain double-click on diagram still call open.
+    fakes.list[0]!.host.onOpen!('backgroundTab')
+    fakes.list[1]!.host.onOpen!('thisTab')
+    expect(image.boards!.open).toHaveBeenNthCalledWith(1, '/w/Sketch.excalidraw', 'backgroundTab')
+    expect(image.boards!.open).toHaveBeenNthCalledWith(2, '/w/Cloud.drawio', 'thisTab')
+
+    // Read-only double-click and right-click Edit in a popup route through tellReadOnlyEdit.
+    view.setProps({ editable: () => false })
+    const captured: ReadOnlyEditEvent[] = []
+    root.addEventListener(READ_ONLY_EDIT, (e) => {
+      captured.push(e as ReadOnlyEditEvent)
+    })
+    onEditInPopup.mockClear()
+    fakes.list[0]!.host.onOpen!('thisTab')
+    expect(onEditInPopup).not.toHaveBeenCalled()
+    expect(captured).toHaveLength(1)
+    expect(captured[0]!.detail).toBe('drawing')
+    captured[0]!.resume?.()
+    expect(onEditInPopup).toHaveBeenCalledExactlyOnceWith('/w', '/w/Sketch.excalidraw')
+
+    captured.length = 0
+    onEditInPopup.mockClear()
+    fakes.list[0]!.host.onContextMenu!(new MouseEvent('contextmenu'))
+    const roItems = Array.from(document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item'))
+    expect(roItems.map((b) => b.textContent)).toEqual(['Open', 'Lock view', 'Edit in a popup'])
+    roItems.find((b) => b.textContent === 'Edit in a popup')!.click()
+    expect(onEditInPopup).not.toHaveBeenCalled()
+    expect(captured).toHaveLength(1)
+    expect(captured[0]!.detail).toBe('drawing')
+    captured[0]!.resume?.()
+    expect(onEditInPopup).toHaveBeenCalledExactlyOnceWith('/w', '/w/Sketch.excalidraw')
+  })
+
+  it('shows Open in Explore in the right-click menu of a markdown-syntax board embed when wired (YAZ-6548)', async () => {
+    const openExplore = vi.fn()
+    const base = imageOptions()
+    const image: ImageOptions = {
+      ...base,
+      boards: {
+        ...base.boards!,
+        linkMenu: (path) => ({ labels: [], open: () => void path, openExplore: () => openExplore(path) }),
+      },
+    }
+    await mount('![Sketch](../w/Sketch.excalidraw)\n', image)
+    await windows(1)
+    fakes.list[0]!.host.onContextMenu!(new MouseEvent('contextmenu'))
+    const items = Array.from(document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item'))
+    const explore = items.find((b) => b.textContent === 'Open in Explore')
+    expect(explore).toBeDefined()
+    explore!.click()
+    expect(openExplore).toHaveBeenCalledExactlyOnceWith('/w/Sketch.excalidraw')
   })
 
   it('an alias in the alt stays: `![CloudFront|My name](…)` writes `|My name|640x360 …`', async () => {

@@ -8,7 +8,7 @@
  *   Open                       as a click does
  *   Open in new tab            as a ⌘-click does: a background tab
  *   Open in new window         a fresh window on the target (file or folder), matching Sidebar and Folder views (YAZ-6513)
- *   Open in Explore            a reading layer of the explore stack (pages)
+ *   Open in Explore            a reading layer of the explore stack (pages and boards)
  *   Show in sidebar            its row in Files (D5): a page, file or folder that is there
  *   ───────────
  *   Copy name and ID           an ID link: "AR v2 plan (YAS-466)"; other links "Copy name". No hint: the
@@ -98,7 +98,7 @@ export interface LinkMenu {
   openNew?: () => void
   /** "Open in new window" (YAZ-6513): promoted out of "Open in ▸" to the top open group, for files and folders. */
   openNewWindow?: () => void
-  /** "Open in Explore" (YAZ-4936): a page, as a reading layer of the explore stack. */
+  /** "Open in Explore" (YAZ-4936, YAZ-6548): a page or board, as a reading layer of the explore stack. */
   openExplore?: () => void
   showInSidebar?: () => void
   /** "Copy name and ID" of an ID link that is found (S8's text); else "Copy name". Never both. */

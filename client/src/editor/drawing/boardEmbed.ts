@@ -376,7 +376,16 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       const drawing = fileKind((resolvedPath ?? targetPage).split('#')[0]!.trim()) === 'drawing'
       const lone = editable && drawing && opts.onPutDrawingBack !== undefined ? lonePlaceOf(view, m) : null
       group([
-        editable && drawing && opts.onEditInPopup !== undefined ? { label: 'Edit drawing', icon: editDrawingGlyph, run: () => opts.onEditInPopup?.(m.target) } : null,
+        drawing && opts.onEditInPopup !== undefined
+          ? {
+              label: 'Edit drawing',
+              icon: editDrawingGlyph,
+              run: () => {
+                if (!view.editable) tellReadOnlyEdit(mount.dom, 'drawing', () => opts.onEditInPopup?.(m.target))
+                else opts.onEditInPopup?.(m.target)
+              },
+            }
+          : null,
         lone !== null
           ? {
               label: vaultUnit(opts.root)('Put back into this page'),
@@ -490,7 +499,14 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
           editable: view.editable,
           columnWidth,
           onOptions: (next) => writeOptions(view, mount, next),
-          onOpen: (how) => opts.follow?.(mount.target, how),
+          onOpen: (how) => {
+            if (how === 'thisTab' && refOf(mount.target).kind === 'drawing' && opts.onEditInPopup !== undefined) {
+              if (!view.editable) tellReadOnlyEdit(dom, 'drawing', () => opts.onEditInPopup?.(mount.target))
+              else opts.onEditInPopup(mount.target)
+              return
+            }
+            opts.follow?.(mount.target, how)
+          },
           onContextMenu: (event) => openMenu(view, mount, event),
           onSelect: () => select(view, mount),
           onFold: () => fold(view, mount),

@@ -148,6 +148,8 @@ function menuForRow(row: SearchCandidate, x: number, y: number): ExploreMenuStat
 const requestedLayer = (ask: ExploreRequest, readOnly: boolean): ExploreLayer => {
   if (ask.kind === 'card') return { id: newLayerId(), kind: 'card', path: ask.path, cardId: ask.cardId, index: ask.index }
   if (ask.kind === 'board') return { id: newLayerId(), kind: 'board', path: ask.path, inlineDrawing: ask.inlineDrawing }
+  const inlineRef = parseInlineRef(ask.path)
+  if (inlineRef?.kind === 'drawing') return { id: newLayerId(), kind: 'board', path: inlineRef.page, inlineDrawing: { index: inlineRef.index } }
   const layer = fileLayer(ask.path)
   if (layer.kind !== 'page') return layer
   return {
@@ -351,12 +353,26 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     if (request === served.current) return
     served.current = request
     if (requestLayer === null) push({ id: newLayerId(), kind: 'search' })
-    else if (push(requestedLayer(requestLayer, vaultOf(requestLayer.path).readOnly === true)) && requestLayer.kind === 'page') rememberExploreRecent(requestLayer.path)
+    else {
+      const targetPath = diskPathOf(requestLayer.path)
+      if (push(requestedLayer(requestLayer, vaultOf(targetPath).readOnly === true)) && requestLayer.kind === 'page') rememberExploreRecent(targetPath)
+    }
   }, [request, requestLayer, push, vaultOf])
 
+  /** Opens an inline Excalidraw drawing inside Explore as a read-only `ExploreBoard` layer (YAZ-6470). */
+  const openInlineDrawing = useCallback(
+    (path: string, index: number, title?: string, from?: { search: number; at: number; rowPath?: string }) => {
+      if (push({ id: newLayerId(), kind: 'board', path, inlineDrawing: { index, ...(title !== undefined && { title }) }, ...(from !== undefined && { from }) })) {
+        rememberExploreRecent(path)
+      }
+    },
+    [push],
+  )
   /** A page or a board (YAZ-4943) goes on top for reading; a folder or another file opens in a tab and the stack closes. */
   const openPath = useCallback(
     (path: string) => {
+      const inlineRef = parseInlineRef(path)
+      if (inlineRef?.kind === 'drawing') return openInlineDrawing(inlineRef.page, inlineRef.index)
       if (layerKindOf(path) === null) {
         doors.current.openInTab(path)
         doors.current.onClose()
@@ -364,7 +380,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
       }
       if (push(fileLayer(path))) rememberExploreRecent(path)
     },
-    [push],
+    [push, openInlineDrawing],
   )
   /** A card window's page (YAZ-4962), or a card row's (YAZ-5164, YAZ-6470): on top, landed on the card. */
   const openPageAt = useCallback(
@@ -379,15 +395,6 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     (path: string, drawing: number) => {
       const layer = fileLayer(path)
       if (layer.kind === 'page' && push({ ...layer, drawing })) rememberExploreRecent(path)
-    },
-    [push],
-  )
-  /** Opens an inline Excalidraw drawing inside Explore as a read-only `ExploreBoard` layer (YAZ-6470). */
-  const openInlineDrawing = useCallback(
-    (path: string, index: number, title?: string, from?: { search: number; at: number; rowPath?: string }) => {
-      if (push({ id: newLayerId(), kind: 'board', path, inlineDrawing: { index, ...(title !== undefined && { title }) }, ...(from !== undefined && { from }) })) {
-        rememberExploreRecent(path)
-      }
     },
     [push],
   )
