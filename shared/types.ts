@@ -4925,6 +4925,10 @@ export interface OpenWindowOptions {
   roots?: string[]
   /** Transient read-only mode (YAZ-4502): never persisted to `WindowEntry` or `.yaseendocs/`. */
   readOnly?: boolean
+  /** Explicit initial bounds (YAZ-6539, e.g. `--tile` on `navigation.open`). */
+  bounds?: WindowBounds
+  /** Open without stealing OS focus (YAZ-6539, `--no-focus`: `show: false` then `showInactive()`). */
+  inactive?: boolean
 }
 
 /** Clipboard text captured when the user chooses an explicit paste mode. */
