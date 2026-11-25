@@ -340,6 +340,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const linkTabAction = new Set<(req: { ref: TabRef; action: TabAction }) => void>()
   const linkFromFiles = new Set<(action: FilesAction) => void>()
   const linkTakeInbox = new Set<(carry: InboxCarry) => void>()
+  const linkOpenTarget = new Set<(req: { root: string; target: 'inbox' | 'today' }) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
   const fileDeleted = new Set<(ev: { path: string; kind: 'file' | 'dir' }) => void>()
   const dragLanded = new Set<(ev: { paths: string[] }) => void>()
@@ -566,6 +567,11 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         linkTakeInbox.add(l)
         return () => linkTakeInbox.delete(l)
       }),
+      // A Vault App launcher target (`?open=inbox` or `?open=today`, YAZ-5967 / YAZ-6503).
+      onOpenTarget: vi.fn((l: (req: { root: string; target: 'inbox' | 'today' }) => void) => {
+        linkOpenTarget.add(l)
+        return () => linkOpenTarget.delete(l)
+      }),
       ready: vi.fn(async () => undefined),
     },
     // In-app rename (Links E1, GRO-2194) + external repair (E1c, GRO-2242): App subscribes to
@@ -707,6 +713,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitTabAction: (req: { ref: TabRef; action: TabAction }) => linkTabAction.forEach((l) => l(req)),
     emitFromFiles: (action: FilesAction) => linkFromFiles.forEach((l) => l(action)),
     emitTakeInbox: (carry: InboxCarry) => linkTakeInbox.forEach((l) => l(carry)),
+    emitOpenTarget: (req: { root: string; target: 'inbox' | 'today' }) => linkOpenTarget.forEach((l) => l(req)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
     emitDragLanded: (paths: string[]) => dragLanded.forEach((l) => l({ paths })),
     emitFileDeleted: (path: string, kind: 'file' | 'dir' = 'file') => fileDeleted.forEach((l) => l({ path, kind })),
@@ -2922,6 +2929,68 @@ describe('App ⌘-click on the daily page button (YAZ-3776)', () => {
     expect(tabs(el)).toEqual(['plan', `${today()}*`, 'garden'])
     expect(captured.sidebar?.lens).toBe('files')
     expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: `${v}/Daily/${today()}.md`, focus: false })
+  })
+
+  it('YAZ-6503: a ?open=today launcher opens today\'s daily page without expanding a collapsed sidebar or revealing in Files', async () => {
+    const v = `/daily-${++n}`
+    const dailyPath = `${v}/Daily/${today()}.md`
+    const files: Record<string, { content: string; mtime: number }> = { [dailyPath]: { content: '# Today\n', mtime: 1 } }
+    const { el, bridge, emitOpenTarget } = await mount(
+      { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, dailyPages: true, dailyPageFolder: 'Daily' } },
+      { id: 'w1', root: v, file: `${v}/Projects/plan.md`, tabs: [`${v}/Projects/plan.md`], sidebarCollapsed: true, sidebarLens: 'recents' },
+      files,
+      (b) => {
+        b.bridge.index.mockImplementation(async (root: string) => ({ root, records: [], folders: [], generatedAt: 1, ids: false }))
+        b.bridge.tree.mockImplementation(async (root: string) => ({
+          root,
+          tree: [
+            { type: 'dir', name: 'Daily', path: `${v}/Daily`, children: [page(dailyPath)] },
+            { type: 'dir', name: 'Projects', path: `${v}/Projects`, children: [page(`${v}/Projects/plan.md`)] },
+          ],
+          generatedAt: 1,
+        }))
+      },
+    )
+    expect(visibleSidebar(el)).toBeNull()
+    act(() => emitOpenTarget({ root: v, target: 'today' }))
+    await act(async () => {})
+    await act(async () => {})
+    expect(tabs(el)).toEqual(['plan', `${today()}*`])
+    // Sidebar stays collapsed and never switches to Files or requests a reveal.
+    expect(visibleSidebar(el)).toBeNull()
+    expect(bridge.window.setIdentity).not.toHaveBeenCalledWith(expect.objectContaining({ sidebarCollapsed: false }))
+    expect(captured.sidebar?.lens).toBe('recents')
+    expect(captured.sidebar?.revealRequest ?? null).toBeNull()
+  })
+
+  it('YAZ-6503: a ?open=today launcher when today\'s daily note is already active keeps an open sidebar on its current tab with no reveal jump', async () => {
+    const v = `/daily-${++n}`
+    const dailyPath = `${v}/Daily/${today()}.md`
+    const files: Record<string, { content: string; mtime: number }> = { [dailyPath]: { content: '# Today\n', mtime: 1 } }
+    const { el, emitOpenTarget } = await mount(
+      { ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, dailyPages: true, dailyPageFolder: 'Daily' } },
+      { id: 'w1', root: v, file: dailyPath, tabs: [dailyPath, `${v}/Projects/plan.md`], sidebarCollapsed: false, sidebarLens: 'recents' },
+      files,
+      (b) => {
+        b.bridge.index.mockImplementation(async (root: string) => ({ root, records: [], folders: [], generatedAt: 1, ids: false }))
+        b.bridge.tree.mockImplementation(async (root: string) => ({
+          root,
+          tree: [
+            { type: 'dir', name: 'Daily', path: `${v}/Daily`, children: [page(dailyPath)] },
+            { type: 'dir', name: 'Projects', path: `${v}/Projects`, children: [page(`${v}/Projects/plan.md`)] },
+          ],
+          generatedAt: 1,
+        }))
+      },
+    )
+    expect(tabs(el)).toEqual([`${today()}*`, 'plan'])
+    expect(captured.sidebar?.lens).toBe('recents')
+    act(() => emitOpenTarget({ root: v, target: 'today' }))
+    await act(async () => {})
+    await act(async () => {})
+    expect(tabs(el)).toEqual([`${today()}*`, 'plan'])
+    expect(captured.sidebar?.lens).toBe('recents')
+    expect(captured.sidebar?.revealRequest ?? null).toBeNull()
   })
 
   it('YAZ-4985: in a read-only vault today\'s page is a New page, so it asks first; Cancel makes nothing, "Unlock for 10 minutes" makes it', async () => {
