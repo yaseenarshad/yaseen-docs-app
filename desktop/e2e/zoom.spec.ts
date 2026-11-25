@@ -63,7 +63,7 @@ const zoomPaths = (state: unknown, vault: string): string[] => {
     for (const [k, child] of Object.entries(v)) {
       const here = at === '' ? k : `${at}.${k}`
       if (here.startsWith('settings.') && isDeepStrictEqual(child, atPath(DEFAULT_STATE, here))) continue
-      const notPage = /^windows\.\d+\.zoom$/.test(here) && (v as { kind?: unknown }).kind === 'files'
+      const notPage = /^windows\.\d+\.(zoom|tocZoom)$/.test(here) && child === 100
       if (/zoom/i.test(k.replaceAll(vault, '')) && !notPage) out.push(here)
       walk(child, here)
     }
@@ -206,7 +206,7 @@ test('step 4 — magnification is temporary: nothing persists, and reopening the
   // a bullet stores its `zoom` key (YAZ-3646 D14, step 2b); this tab ended step 2b at the whole page, so it stores none.
   const state = await readState(userData)
   expect(zoomPaths(state, vault)).toEqual([])
-  expect(state.settings.sidebarZoom).toBe(100)
+  expect(state.windows.find((w) => w.id === 'w1')?.zoom ?? 100).toBe(100)
   expect(state.settings.appZoom).toBe(100)
   expect(await readFile(pagePath, 'utf8')).toBe(BODY)
 

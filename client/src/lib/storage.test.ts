@@ -13,7 +13,6 @@ function installBridge(state: AppState, identity: IdentityFixture) {
     state: {
       get: vi.fn(async () => state),
       setSettings: vi.fn(async () => undefined),
-      setSidebarWidth: vi.fn(async () => undefined),
       setFavoritesOrder: vi.fn(async () => undefined),
       setFocusOrder: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
@@ -181,7 +180,7 @@ describe('the tab board: its canvas and window names (YAZ-3343 D1, D14)', () => 
     storage.setTabCanvas({ allWindows: true, set: [card] })
     expect([b.bridge.state.setTabCanvas.mock.calls.length, woke.mock.calls.length]).toEqual([1, 1])
     const snapshot = storage.getTabCanvas()
-    b.emit({ ...state, tabCanvas: { allWindows: true, snap: true, cards: [{ ...card }], frames: [] }, sidebarWidth: 300 })
+    b.emit({ ...state, tabCanvas: { allWindows: true, snap: true, cards: [{ ...card }], frames: [] }, settingsSavedAt: 1 })
     expect(storage.getTabCanvas()).toBe(snapshot)
     b.emit({ ...state, tabCanvas: { allWindows: false, snap: true, cards: [], frames: [] } })
     expect(storage.getTabCanvas()).toEqual({ allWindows: false, snap: true, cards: [], frames: [] })
@@ -223,7 +222,7 @@ describe('storage.getSessions (YAZ-3147 D2)', () => {
     storage.subscribe(woke)
     // A broadcast for anything else (a tab click writes the window) is a new copy of the same sessions:
     // the array keeps its identity, so the open Sessions tab does not draw again.
-    b.emit({ ...defaultAppState(), sessions: structuredClone([work, empty]), sidebarWidth: 300 })
+    b.emit({ ...defaultAppState(), sessions: structuredClone([work, empty]), settingsSavedAt: 1 })
     expect(storage.getSessions()).toBe(loaded)
     b.emit({ ...defaultAppState(), sessions: [empty] })
     expect(storage.getSessions()).toEqual([empty])
@@ -259,9 +258,8 @@ describe.each([
     expect(woke).toHaveBeenCalledTimes(1)
 
     // Main's echo is a new copy of the same paths: the list keeps its identity, so nothing that reads it draws again.
-    b.emit({ ...defaultAppState(), [key]: [b1, c1, a2, a1], sidebarWidth: 300 })
+    b.emit({ ...defaultAppState(), [key]: [b1, c1, a2, a1], settingsSavedAt: 1 })
     expect(storage[getter]()).toBe(dragged)
-    expect(storage.getSidebarWidth()).toBe(300)
     b.emit({ ...defaultAppState(), [key]: [a1, a2, b1] })
     expect(storage[getter]()).toEqual([a1, a2, b1])
 
@@ -665,9 +663,17 @@ describe('storage', () => {
     b = installBridge(defaultAppState(), { id: 'w1', root: '/r1', file: null, tabs: [], sidebarLens: 'files' })
     await storage.init()
     expect(storage.getSidebarLens()).toBe('files')
-    // Another window's write lands as a state broadcast; it cannot move THIS window's lens.
-    b.emit({ ...defaultAppState(), sidebarWidth: 333 })
-    expect(storage.getSidebarWidth()).toBe(333)
+    // Another window's write lands as a state broadcast; it cannot move THIS window's lens, width, or zooms (YAZ-6490).
+    storage.setSidebarWidth(333)
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ sidebarWidth: 333 })
+    storage.setSidebarZoom(150)
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ zoom: 150 })
+    storage.setExploreSize(175)
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ exploreSize: 175 })
+    storage.setTocZoom(90)
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ tocZoom: 90 })
+    b.emit({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, newWindowSidebarZoom: 90, newWindowExploreSize: 110, newWindowTocZoom: 75 } })
+    expect([storage.getSidebarWidth(), storage.getSidebarZoom(), storage.getExploreSize(), storage.getTocZoom()]).toEqual([333, 150, 175, 90])
     expect(storage.getSidebarLens()).toBe('files')
     // Re-setting the SAME root keeps it.
     storage.setSidebarLens('favorites')

@@ -814,20 +814,9 @@ export function App() {
     setPendingSearchClear(false)
   }, [])
 
-  // Settings and sidebar width are global. Visibility (YAZ-1280) and the lens (YAZ-1628) are
-  // window identity and never follow another renderer's `state:changed` broadcast.
-  useEffect(() => {
-    let lastGlobalW = storage.getSidebarWidth()
-    return storage.subscribe(() => {
-      const nextSettings = storage.getSettings()
-      setSettings(nextSettings)
-      const nextW = storage.getSidebarWidth()
-      if (nextW !== lastGlobalW) {
-        lastGlobalW = nextW
-        if (nextSettings.sidebarPlace !== 'tab' || nextSettings.sidebarPerTabWidth === false) setSidebarWidth(nextW)
-      }
-    })
-  }, [])
+  // Settings are global. Visibility (YAZ-1280), lens (YAZ-1628), sidebar width and zoom (YAZ-6490)
+  // are window identity and never follow another renderer's `state:changed` broadcast.
+  useEffect(() => storage.subscribe(() => setSettings(storage.getSettings())), [])
 
   useEffect(() => {
     const resize = () => setWindowWidth(window.innerWidth)
@@ -923,24 +912,32 @@ export function App() {
   // The highlight panel's most used custom colours (YAZ-4348 demo round 2): read by every page's panel, absent from an older main process.
   useEffect(() => setUsedHighlightColors(settings.highlightCustomColors ?? []), [settings.highlightCustomColors])
 
-  // A Files window's own sidebar zoom (YAZ-3389 D13): only this window writes it, so a local copy stays true.
-  const [filesZoom, setFilesZoomState] = useState(() => (filesWindow ? storage.getFilesZoom() : 100))
-  // The same value writes nothing (YAZ-3389 D6), as for the shared zoom.
-  const changeFilesZoom = useCallback((percent: number) => {
-    if (percent === storage.getFilesZoom()) return
-    storage.setFilesZoom(percent)
-    setFilesZoomState(percent)
+  // Per-window sidebar zoom, Explore Search size, and TOC zoom (YAZ-6490): only this window writes them, so local copies stay true.
+  const [sidebarZoom, setSidebarZoomState] = useState(storage.getSidebarZoom)
+  // The same value writes nothing (YAZ-3389 D6).
+  const changeSidebarZoom = useCallback((percent: number) => {
+    if (percent === storage.getSidebarZoom()) return
+    storage.setSidebarZoom(percent)
+    setSidebarZoomState(percent)
   }, [])
-  // ⌘+ / ⌘− / ⌘0 that no page claimed step the sidebar zoom (YAZ-3389), over the settings of the moment;
-  // in a Files window they step its own zoom and never the shared one (D13).
+  const [exploreSize, setExploreSizeState] = useState(storage.getExploreSize)
+  const changeExploreSize = useCallback((size: number) => {
+    if (size === storage.getExploreSize()) return
+    storage.setExploreSize(size)
+    setExploreSizeState(size)
+  }, [])
+  const [tocZoom, setTocZoomState] = useState(storage.getTocZoom)
+  const changeTocZoom = useCallback((percent: number) => {
+    if (percent === storage.getTocZoom()) return
+    storage.setTocZoom(percent)
+    setTocZoomState(percent)
+  }, [])
+  // ⌘+ / ⌘− / ⌘0 that no page claimed step THIS window's sidebar zoom (both full and Files windows, YAZ-6490).
   const zoomSidebar = useCallback(
     (step: ZoomStep) => {
-      if (filesWindow) return changeFilesZoom(step === 0 ? 100 : stepSidebarZoom(storage.getFilesZoom(), step))
-      const now = storage.getSettings()
-      const sidebarZoom = step === 0 ? 100 : stepSidebarZoom(now.sidebarZoom, step)
-      if (sidebarZoom !== now.sidebarZoom) changeSettings({ ...now, sidebarZoom })
+      changeSidebarZoom(step === 0 ? 100 : stepSidebarZoom(storage.getSidebarZoom(), step))
     },
-    [changeSettings, changeFilesZoom, filesWindow],
+    [changeSidebarZoom],
   )
   const zoom = useCallback((step: ZoomStep) => requestZoom(step, zoomSidebar), [zoomSidebar])
 
@@ -981,8 +978,15 @@ export function App() {
   // stable door: `RetainedEditor` is `memo(Editor)`, and a fresh arrow per render would re-render
   // every retained editor tree on any App state change.
   const changeCommentsOrder = useCallback((order: CommentsOrder) => changeSettings({ ...newPageFolderInputs.current.settings, commentsOrder: order }), [changeSettings])
-  // Explore size (YAZ-5881 D3): ⌘+ / ⌘− / ⌘0 on Explore's search panel; the same stable door.
-  const changeExploreSize = useCallback((exploreSize: number) => changeSettings({ ...newPageFolderInputs.current.settings, exploreSize }), [changeSettings])
+  // Save this window's Sidebar zoom and Search size as Mac-local defaults for brand-new windows (YAZ-6490).
+  const setDefaultZooms = useCallback(
+    (nextSidebarZoom: number, nextExploreSize: number) => {
+      const now = newPageFolderInputs.current.settings
+      if (nextSidebarZoom === now.newWindowSidebarZoom && nextExploreSize === now.newWindowExploreSize) return
+      changeSettings({ ...now, newWindowSidebarZoom: nextSidebarZoom, newWindowExploreSize: nextExploreSize })
+    },
+    [changeSettings],
+  )
   // The table of contents' "Pin" / "Unpin" (YAZ-2700): the same stable door.
   const changeTableOfContents = useCallback((mode: TableOfContents) => changeSettings({ ...newPageFolderInputs.current.settings, tableOfContents: mode }), [changeSettings])
   // A drag of the names column's edge (YAZ-2752), on its release: the same stable door.
@@ -991,14 +995,6 @@ export function App() {
   const changeTableOfContentsWidth = useCallback((width: number) => changeSettings({ ...newPageFolderInputs.current.settings, tableOfContentsWidth: width }), [changeSettings])
   // A custom pick in a page's highlight panel (YAZ-4348 demo round 2): the same stable door.
   useEffect(() => setUsedHighlightColorsSaver((next) => changeSettings({ ...newPageFolderInputs.current.settings, highlightCustomColors: next })), [changeSettings])
-  // The table of contents' zoom (YAZ-3939 D9): the same value writes nothing, as for the sidebar zoom.
-  const changeTocZoom = useCallback(
-    (tocZoom: number) => {
-      const now = newPageFolderInputs.current.settings
-      if (tocZoom !== now.tocZoom) changeSettings({ ...now, tocZoom })
-    },
-    [changeSettings],
-  )
   // A drawing's engine moved a canvas pref (YAZ-3028, Draw's 🔒 YAZ-1775 D9): the same stable door.
   const changeCanvasPrefs = useCallback((canvas: CanvasPrefs) => changeSettings({ ...newPageFolderInputs.current.settings, canvas }), [changeSettings])
   // A code tab's cog row (YAZ-3449): Settings › Code, for every code file, through the same stable door.
@@ -4022,8 +4018,8 @@ export function App() {
       // YAZ-2752: the width of its names column is a SETTING as well.
       tableOfContentsWidth: settings.tableOfContentsWidth,
       onChangeTableOfContentsWidth: changeTableOfContentsWidth,
-      // YAZ-3939 D9: and its zoom, one for every page.
-      tocZoom: settings.tocZoom,
+      // YAZ-3939 D9, YAZ-6490: per-window table of contents zoom.
+      tocZoom,
       onChangeTocZoom: changeTocZoom,
       // YAZ-3028: every drawing tab shares the canvas prefs, a SETTING too.
       canvasPrefs: settings.canvas,
@@ -4315,7 +4311,7 @@ export function App() {
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} cardVarsFor={cardVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} onOpenInlineDrawingTab={openInlineDrawingByPath} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} exploreSize={settings.exploreSize} exploreWidth={settings.exploreWidth} onExploreSize={changeExploreSize} linkPreview={exploreLinkPreview} hotkeys={settings.hotkeys} />
+          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} cardVarsFor={cardVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} onOpenInlineDrawingTab={openInlineDrawingByPath} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} exploreSize={exploreSize} exploreWidth={settings.exploreWidth} onExploreSize={changeExploreSize} linkPreview={exploreLinkPreview} hotkeys={settings.hotkeys} />
         </Suspense>
       )}
       {whatsNewOpen && (
@@ -4481,8 +4477,13 @@ export function App() {
           // The vault menu's "Open in this window" (YAZ-1798 D8/D11): the one deliberate in-place switch.
           onOpenVaultHere={openRoot}
           onOpenSetHere={filesWindow ? openSetHere : undefined}
-          filesZoom={filesWindow ? filesZoom : undefined}
-          onFilesZoom={filesWindow ? changeFilesZoom : undefined}
+          sidebarZoom={sidebarZoom}
+          onSidebarZoom={changeSidebarZoom}
+          exploreSize={exploreSize}
+          onExploreSize={changeExploreSize}
+          defaultSidebarZoom={settings.newWindowSidebarZoom}
+          defaultExploreSize={settings.newWindowExploreSize}
+          onSetDefaultZooms={setDefaultZooms}
           onZoomMenu={filesWindow ? storage.setFilesZoomMenu : undefined}
           onToNormalWindow={filesWindow ? () => void api.window.filesToNormal().catch((err: unknown) => notify(`Can't make this a full window: ${err instanceof Error ? err.message : String(err)}`)) : undefined}
           // On the sidebar itself (YAZ-2194): stamped on .app as an inherited variable, every resize

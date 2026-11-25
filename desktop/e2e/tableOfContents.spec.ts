@@ -266,7 +266,7 @@ test.afterAll(async () => {
 
 test('step 1 — a wide window shows the names of the headings beside the text', async () => {
   const state = seededState(vault, chaptersPath)
-  state.sidebarWidth = SIDEBAR_MIN_W
+  state.windows[0].sidebarWidth = SIDEBAR_MIN_W
   state.windows[0].bounds.width = WIDE
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')

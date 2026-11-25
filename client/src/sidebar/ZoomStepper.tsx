@@ -26,7 +26,7 @@ const KINDS = {
     into: 'Zoom the sidebar in',
     outTitle: withKeys('Zoom the sidebar out', '⌘−'),
     intoTitle: withKeys('Zoom the sidebar in', '⌘+'),
-    valueTitle: 'Sidebar zoom. Click for 100%',
+    valueTitle: 'Sidebar zoom (this window). Click for 100%',
   },
   app: {
     steps: APP_ZOOM_STEPS,
@@ -46,7 +46,7 @@ const KINDS = {
     into: 'Zoom the table of contents in',
     outTitle: withKeys('Zoom the table of contents out', '⌘−'),
     intoTitle: withKeys('Zoom the table of contents in', '⌘+'),
-    valueTitle: 'Table of contents zoom. Click for 100%',
+    valueTitle: 'Table of contents zoom (this window). Click for 100%',
   },
   explore: {
     steps: APP_ZOOM_STEPS,
@@ -57,7 +57,7 @@ const KINDS = {
     into: "Make Explore's search larger",
     outTitle: withKeys("Make Explore's search smaller", '⌘−'),
     intoTitle: withKeys("Make Explore's search larger", '⌘+'),
-    valueTitle: `Search size. Click for ${EXPLORE_SIZE_DEFAULT}%`,
+    valueTitle: `Search size (this window). Click for ${EXPLORE_SIZE_DEFAULT}%`,
   },
 } as const
 

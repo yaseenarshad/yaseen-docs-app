@@ -180,7 +180,7 @@ const barRow = (w: Page) =>
 
 test('the tab row at 200 px (YAZ-3283): Recents from ⋯, Focus hidden and Favorites dragged to the top in the panel; after a relaunch the row is the same', async () => {
   const seed = seededState(vault, path.join(vault, SEED_FILE))
-  seed.sidebarWidth = 200
+  seed.windows[0].sidebarWidth = 200
   app = await launchApp({ userData: rowData, seedState: seed })
   win = await appWindow(app, 'w1')
   await expectLens(win, 'Files')

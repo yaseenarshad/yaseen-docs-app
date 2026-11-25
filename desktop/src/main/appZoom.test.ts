@@ -27,8 +27,8 @@ describe('the App size in main (YAZ-3432)', () => {
     const off = subscribeAppZoom(store, apply)
     expect(apply).not.toHaveBeenCalled()
 
-    store.setSettings({ ...DEFAULT_SETTINGS, sidebarZoom: 150 }) // a settings write, the same App size
-    store.setSidebarWidth(321)
+    store.setSettings({ ...DEFAULT_SETTINGS, newWindowSidebarZoom: 150 }) // a settings write, the same App size
+    store.pushRecent('/v', 1)
     expect(apply).not.toHaveBeenCalled()
 
     store.setSettings({ ...DEFAULT_SETTINGS, appZoom: 125 })

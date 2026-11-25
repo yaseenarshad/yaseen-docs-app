@@ -17,10 +17,10 @@ afterEach(() => {
   host = null
 })
 
-function render(props: { sidebar?: number; app?: number; explore?: number; onSidebar?: (p: number) => void; onApp?: (p: number) => void; onExplore?: (p: number) => void; onOpenChange?: (open: boolean) => void } = {}): HTMLElement {
+function render(props: { sidebar?: number; app?: number; explore?: number; defaultSidebar?: number; defaultExplore?: number; onSidebar?: (p: number) => void; onApp?: (p: number) => void; onExplore?: (p: number) => void; onSetDefaults?: (sidebar: number, explore: number) => void; onOpenChange?: (open: boolean) => void } = {}): HTMLElement {
   host ??= document.body.appendChild(document.createElement('div'))
   root ??= createRoot(host)
-  act(() => root?.render(<ZoomMenu sidebar={props.sidebar ?? 100} onSidebar={props.onSidebar ?? vi.fn()} app={props.app ?? 100} onApp={props.onApp ?? vi.fn()} explore={props.explore ?? 125} onExplore={props.onExplore ?? vi.fn()} onOpenChange={props.onOpenChange} />))
+  act(() => root?.render(<ZoomMenu sidebar={props.sidebar ?? 100} onSidebar={props.onSidebar ?? vi.fn()} app={props.app ?? 100} onApp={props.onApp ?? vi.fn()} explore={props.explore ?? 125} onExplore={props.onExplore ?? vi.fn()} defaultSidebar={props.defaultSidebar} defaultExplore={props.defaultExplore} onSetDefaults={props.onSetDefaults} onOpenChange={props.onOpenChange} />))
   return host
 }
 
@@ -52,8 +52,10 @@ describe('ZoomMenu', () => {
     expect(menu()!.parentElement).toBe(document.body)
     expect(chip().getAttribute('aria-expanded')).toBe('true')
     expect(chip().className).toBe('zoom-chip zoom-chip--open')
-    // App size on top, Sidebar, then Explore (YAZ-5881 D1); each row the same "− 100% +".
-    expect([...menu()!.querySelectorAll('.zoom-menu__label, [role="group"]')].map((l) => l.getAttribute('aria-label') ?? l.textContent)).toEqual(['App size', 'App size', 'Sidebar', 'Sidebar zoom', 'Search size', 'Search size'])
+    // Grouped into This window (Sidebar, Search size) + divider + All windows (App size), each row − % +.
+    expect([...menu()!.querySelectorAll('.zoom-menu__section')].map((s) => s.textContent)).toEqual(['This window', 'All windows'])
+    expect(menu()!.querySelector('.zoom-menu__divider[role="separator"]')).not.toBeNull()
+    expect([...menu()!.querySelectorAll('.zoom-menu__label, [role="group"]')].map((l) => l.getAttribute('aria-label') ?? l.textContent)).toEqual(['Sidebar', 'Sidebar zoom', 'Search size', 'Search size', 'App size', 'App size'])
     expect([value('App size').textContent, value('Sidebar zoom').textContent, value('Search size').textContent]).toEqual(['100%', '150%', '125%'])
 
     act(() => chip().click())
@@ -86,8 +88,30 @@ describe('ZoomMenu', () => {
     expect(button("Make Explore's search larger").disabled).toBe(true)
     act(() => value('Search size').click())
     expect(onExplore).toHaveBeenLastCalledWith(125)
-    expect(value('Search size').title).toBe('Search size. Click for 125%')
+    expect(value('Search size').title).toBe('Search size (this window). Click for 125%')
     expect(onApp).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-6490: Set as default appears in This window only when Sidebar or Search size differs from new-window defaults, and saves both on click', () => {
+    const onSetDefaults = vi.fn()
+    render({ sidebar: 100, explore: 125, defaultSidebar: 100, defaultExplore: 125, onSetDefaults })
+    act(() => chip().click())
+    expect(menu()!.querySelector('.zoom-menu__default-btn')).toBeNull()
+
+    // Sidebar differs from default -> button shows
+    render({ sidebar: 150, explore: 125, defaultSidebar: 100, defaultExplore: 125, onSetDefaults })
+    const btn = menu()!.querySelector<HTMLButtonElement>('.zoom-menu__default-btn')
+    expect(btn?.textContent).toBe('Set as default')
+    act(() => btn!.click())
+    expect(onSetDefaults).toHaveBeenCalledExactlyOnceWith(150, 125)
+
+    // Matching again -> button disappears
+    render({ sidebar: 150, explore: 125, defaultSidebar: 150, defaultExplore: 125, onSetDefaults })
+    expect(menu()!.querySelector('.zoom-menu__default-btn')).toBeNull()
+
+    // Search size differs from default -> button shows
+    render({ sidebar: 150, explore: 150, defaultSidebar: 150, defaultExplore: 125, onSetDefaults })
+    expect(menu()!.querySelector('.zoom-menu__default-btn')).not.toBeNull()
   })
 
   it('YAZ-3487: a − and a + beside the chip step the sidebar zoom in one click, with no menu; each stops at its wall', () => {
@@ -103,9 +127,12 @@ describe('ZoomMenu', () => {
     expect([...document.querySelectorAll<HTMLButtonElement>('[aria-label="Zoom the sidebar in"]')].at(-1)!.disabled).toBe(true)
   })
 
-  it('the chip\'s tooltip and accessible name tell both values (D1)', () => {
+  it('the chip\'s tooltip and accessible name tell both values and their scope (YAZ-6490)', () => {
     render({ sidebar: 150, app: 90 })
-    expect([chip().title, chip().getAttribute('aria-label')]).toEqual(['Zoom: sidebar 150%, App size 90%', 'Zoom: sidebar 150%, App size 90%'])
+    expect([chip().title, chip().getAttribute('aria-label')]).toEqual([
+      'Sidebar 150% (this window) · App size 90% (all windows)',
+      'Sidebar 150% (this window) · App size 90% (all windows)',
+    ])
   })
 
   it('the menu is zoomed by 1 / the PAGE\'s zoom, so it keeps its size on the screen; its place is kept in screen px while it is open', () => {
@@ -193,13 +220,13 @@ describe('ZoomMenu', () => {
     expect(onOpenChange).toHaveBeenCalledTimes(10)
   })
 
-  it('YAZ-5982: the Settings pointer for Search size names its real place in this menu: the last row, and no other row', () => {
+  it('YAZ-5982, YAZ-6490: the Settings pointer for Search size names its real place in this menu (under This window), and no other row', () => {
     render()
     act(() => chip().click())
     const labels = [...menu()!.querySelectorAll('.zoom-menu__label')].map((l) => l.textContent)
-    expect(labels.at(-1)).toBe('Search size')
+    expect(labels).toContain('Search size')
     const pointer = settingCandidates({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined }).find((h) => h.item.id === 'exploreSearchSize')!
-    expect(pointer.item.hint).toContain('Search size is the last row.')
-    for (const other of labels.slice(0, -1)) expect(pointer.item.hint).not.toContain(other!)
+    expect(pointer.item.hint).toContain('Search size is under This window.')
+    for (const other of labels.filter((l) => l !== 'Search size')) expect(pointer.item.hint).not.toContain(other!)
   })
 })
