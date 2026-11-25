@@ -10,6 +10,7 @@ import { defaultAppState, defaultFolderState, defaultRightPanelIdentity, type Ap
 import { storage } from '../lib/storage'
 import { useVaultListsHere } from '../lists/useVaultListsHere'
 import { StartPage as Page, type StartPageProps } from './StartPage'
+import { useEscapeLast } from '../lib/escapeOrder'
 import { recentlyClosed } from './recentlyClosed'
 import startCss from './startPage.css?inline'
 import { HOVER_PREVIEW_DWELL_MS } from '../sidebar/HoverPreviewHost'
@@ -488,7 +489,7 @@ describe('StartPage', () => {
     expect(walk).toEqual(['recent 1', 'recent 2', 'recent 2', 'recent 1'])
   })
 
-  it('S36, S37: → and ← go to the next column that has rows, at the same row number or at its last row; → on the last column does nothing; ← on the first column, and Esc, put the caret in the search bar', async () => {
+  it('S36, S37, YAZ-6492: → and ← go to the next column that has rows, at the same row number or at its last row; → on the last column does nothing; ← on the first column goes back, while idle Esc bubbles unhandled so useEscapeLast closes the sidebar', async () => {
     const v = vault()
     const { el, props } = await mount(keysFixture(v))
     // The columns stand "Recently closed", "Recently viewed", "Favorites" (YAZ-3487 D13).
@@ -500,8 +501,11 @@ describe('StartPage', () => {
     expect(props.onBack).not.toHaveBeenCalled()
     press('ArrowLeft')
     expect(props.onBack).toHaveBeenCalledTimes(1)
+    const heard = vi.fn()
+    window.addEventListener('keydown', heard)
     const esc = press('Escape')
-    expect([vi.mocked(props.onBack).mock.calls.length, esc.defaultPrevented]).toEqual([2, true])
+    window.removeEventListener('keydown', heard)
+    expect([vi.mocked(props.onBack).mock.calls.length, esc.defaultPrevented, heard.mock.calls.length]).toEqual([1, false, 1])
     // The way back is to where the keyboard came from (YAZ-2663 D8): App's door, not always the search bar.
     expect(props.onBackToSearch).not.toHaveBeenCalled()
     // A key with ⌘, Ctrl or Alt is not the page's: a shortcut of the window stays one.
@@ -628,11 +632,11 @@ describe('StartPage', () => {
     press('ArrowLeft')
     wait(120)
     expect([told.at(-1), at()]).toEqual([`${v}/a.md`, 'recent 0'])
-    // Esc with the panel on show closes the panel only; the next Esc goes back to the search bar.
-    press('Escape')
-    expect([told.at(-1), vi.mocked(props.onBack).mock.calls.length, at()]).toEqual([null, 0, 'recent 0'])
-    press('Escape')
-    expect(props.onBack).toHaveBeenCalledTimes(1)
+    // Esc with the panel on show closes the panel only; the next Esc bubbles to useEscapeLast without calling onBack.
+    const closePreview = press('Escape')
+    expect([closePreview.defaultPrevented, told.at(-1), vi.mocked(props.onBack).mock.calls.length, at()]).toEqual([true, null, 0, 'recent 0'])
+    const idleEsc = press('Escape')
+    expect([idleEsc.defaultPrevented, vi.mocked(props.onBack).mock.calls.length]).toEqual([false, 0])
     // Space shows, and Space again closes. A move after that tells the panel nothing.
     press(' ')
     press(' ')
@@ -728,23 +732,40 @@ describe('StartPage', () => {
     expect(at()).toBe('recent 1')
   })
 
-  it('Esc with the row menu open is the menu\'s: the page does not take the key and does not go back, so the menu closes', async () => {
+  it('Esc with the row menu open lets the menu close; with QuickLook open closes QuickLook only; otherwise closes the sidebar directly (YAZ-6492)', async () => {
     const v = vault()
-    const { el, props } = await mount(keysFixture(v))
-    act(() => cell(el, 'recent', 0).focus())
-    // The row menu of the sidebar, open over the page: it closes on an Escape that reaches the window.
-    const menu = document.createElement('div')
-    menu.className = 'ctx-menu'
-    document.body.append(menu)
-    const heard = vi.fn()
-    window.addEventListener('keydown', heard)
-    const esc = press('Escape')
-    window.removeEventListener('keydown', heard)
-    menu.remove()
-    expect([esc.defaultPrevented, heard.mock.calls.length, vi.mocked(props.onBack).mock.calls.length]).toEqual([false, 1, 0])
-    // With no menu, Esc goes back, as before.
-    press('Escape')
-    expect(props.onBack).toHaveBeenCalledTimes(1)
+    const aside = document.createElement('aside')
+    document.body.appendChild(aside)
+    const onStep = vi.fn()
+    const WithEsc = (props: Props) => {
+      const [path, setPath] = useState<string | null>(null)
+      useEscapeLast(() => ({ aside, searchShown: false, canClose: true }), onStep)
+      return <StartPage {...props} previewPath={path} onPreview={setPath} />
+    }
+    const { el, props } = await mount(keysFixture(v), {}, WithEsc)
+    try {
+      act(() => cell(el, 'recent', 0).focus())
+      // The row menu of the sidebar, open over the page: it closes on an Escape that reaches the window.
+      const menu = document.createElement('div')
+      menu.className = 'ctx-menu'
+      document.body.append(menu)
+      const heard = vi.fn()
+      window.addEventListener('keydown', heard)
+      const esc = press('Escape')
+      window.removeEventListener('keydown', heard)
+      menu.remove()
+      expect([esc.defaultPrevented, heard.mock.calls.length, vi.mocked(props.onBack).mock.calls.length, onStep.mock.calls.length]).toEqual([false, 1, 0, 0])
+      // With QuickLook preview open: 1st Esc closes preview only (sidebar stays open).
+      press(' ')
+      expect(press('Escape').defaultPrevented).toBe(true)
+      expect(onStep).not.toHaveBeenCalled()
+      // Next Esc with no menu and no preview: closes the sidebar directly via useEscapeLast.
+      expect(press('Escape').defaultPrevented).toBe(true)
+      expect(onStep).toHaveBeenCalledExactlyOnceWith('closeSidebar')
+      expect(props.onBack).not.toHaveBeenCalled()
+    } finally {
+      aside.remove()
+    }
   })
 
   it('S41: a letter typed on a row asks for the caret in the search bar and leaves the key to the browser, which types it there; a key with ⌘, Ctrl or Alt is no letter', async () => {

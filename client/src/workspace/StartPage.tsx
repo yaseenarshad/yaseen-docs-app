@@ -347,13 +347,14 @@ export function StartPage({ roots, favorites, openTabs = NO_TABS, titles, onOpen
       if (next !== undefined) go(next, n)
       else if (e.key === 'ArrowLeft') back()
     }
-    // Esc with a panel on show closes the panel only. With none — the keyboard on a folder too — it goes back, as ← does (S37, S39).
+    // Esc with a panel on show closes the panel only. With none, it bubbles to `useEscapeLast` so 1st Esc closes the sidebar (YAZ-6492).
     else if (e.key === 'Escape') {
       // The row menu of the sidebar is open over the page: the key is the menu's, which closes on an Escape that reaches the window.
       if (document.querySelector('.ctx-menu') !== null) return
-      e.stopPropagation()
-      if (onPreview !== undefined && previewPath !== null) stopPreview()
-      else back()
+      if (onPreview !== undefined && previewPath !== null) {
+        e.stopPropagation()
+        stopPreview()
+      } else return
     }
     // Space on a file shows the preview panel on it, at once, and Space again closes it (S39). On a
     // folder it opens the folder in its column, and Space again closes it (D13); the preview stays on.

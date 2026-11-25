@@ -8,7 +8,7 @@
  * claims whenever focus is NOT inside any `.folder-page-doc`. At most one of each is
  * mounted, so exactly one bar answers.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { Crepe } from '@milkdown/crepe'
@@ -16,7 +16,8 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, type CreateCrepeOptions } from '../createCrepe'
 import { createFindChannel, type FindChannel } from './findChannel'
-import { FindBar } from './FindBar'
+import { FindBar, type FindBarProps } from './FindBar'
+import { useEscapeLast } from '../../lib/escapeOrder'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -37,12 +38,12 @@ async function mountEditor(markdown: string, opts: Omit<CreateCrepeOptions, 'roo
   return { crepe, el, view: view as EditorView }
 }
 
-function renderBar(channel: FindChannel, scope: 'page' | 'folder', host: HTMLElement) {
+function renderBar(channel: FindChannel, scope: 'page' | 'folder', host: HTMLElement, folds?: FindBarProps['folds']) {
   const el = document.createElement('div')
   document.body.appendChild(el)
   const root = createRoot(el)
   act(() => {
-    root.render(<FindBar channel={channel} scope={scope} hostRef={{ current: host }} />)
+    root.render(<FindBar channel={channel} scope={scope} hostRef={{ current: host }} folds={folds} />)
   })
   roots.push({ root, el })
   return el
@@ -310,5 +311,125 @@ describe('YAZ-6341: claim rule while DrawingModal is open', () => {
     const allowed = pressCmdF(view.dom)
     expect(allowed.defaultPrevented).toBe(true)
     expect(channel.getState().open).toBe(true)
+  })
+})
+
+describe('YAZ-6492: Read-only page and fold menu Esc order with FindBar + sidebar', () => {
+  function mountEscapeLast(aside: HTMLElement) {
+    const onStep = vi.fn()
+    function Probe() {
+      useEscapeLast(() => ({ aside, searchShown: false, canClose: true }), onStep)
+      return null
+    }
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    const root = createRoot(el)
+    act(() => root.render(<Probe />))
+    roots.push({ root, el })
+    return onStep
+  }
+
+  const pressEscOn = (target: EventTarget) => {
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    act(() => {
+      target.dispatchEvent(event)
+    })
+    return event
+  }
+
+  it('Read-only page body focused with FindBar open: 1st Esc closes FindBar only, 2nd Esc closes the sidebar', async () => {
+    const aside = document.createElement('aside')
+    document.body.appendChild(aside)
+    const onStep = mountEscapeLast(aside)
+    const channel = createFindChannel()
+    const { crepe, el, view } = await mountEditor('apple pie', { find: channel, readOnlyKeys: true })
+    el.className = 'editor-instance'
+    crepe.setReadonly(true)
+    renderBar(channel, 'page', el)
+
+    try {
+      pressCmdF(view.dom)
+      expect(channel.getState().open).toBe(true)
+      // Move focus out of the FindBar input back into the Read-only page body
+      act(() => view.dom.focus())
+      expect(document.activeElement).toBe(view.dom)
+
+      // 1st Esc closes FindBar and does NOT close sidebar
+      const first = pressEscOn(view.dom)
+      expect(first.defaultPrevented).toBe(true)
+      expect(channel.getState().open).toBe(false)
+      expect(onStep).not.toHaveBeenCalled()
+
+      // 2nd Esc closes sidebar
+      const second = pressEscOn(view.dom)
+      expect(second.defaultPrevented).toBe(true)
+      expect(onStep).toHaveBeenCalledExactlyOnceWith('closeSidebar')
+    } finally {
+      aside.remove()
+    }
+  })
+
+  it('Read-only page margin clicked (body focus) with FindBar open: 1st Esc closes FindBar, 2nd Esc closes sidebar', async () => {
+    const aside = document.createElement('aside')
+    document.body.appendChild(aside)
+    const onStep = mountEscapeLast(aside)
+    const channel = createFindChannel()
+    const { crepe, el } = await mountEditor('apple pie', { find: channel, readOnlyKeys: true })
+    el.className = 'editor-instance'
+    crepe.setReadonly(true)
+    renderBar(channel, 'page', el)
+
+    try {
+      pressCmdF()
+      expect(channel.getState().open).toBe(true)
+      act(() => (document.activeElement as HTMLElement | null)?.blur())
+
+      const first = pressEscOn(document.body)
+      expect(first.defaultPrevented).toBe(true)
+      expect(channel.getState().open).toBe(false)
+      expect(onStep).not.toHaveBeenCalled()
+
+      const second = pressEscOn(document.body)
+      expect(second.defaultPrevented).toBe(true)
+      expect(onStep).toHaveBeenCalledExactlyOnceWith('closeSidebar')
+    } finally {
+      aside.remove()
+    }
+  })
+
+  it('FindBar fold menu open: 1st Esc closes only fold menu, 2nd Esc closes FindBar, 3rd Esc closes sidebar', async () => {
+    const aside = document.createElement('aside')
+    document.body.appendChild(aside)
+    const onStep = mountEscapeLast(aside)
+    const channel = createFindChannel()
+    const { crepe, el, view } = await mountEditor('apple pie', { find: channel, readOnlyKeys: true })
+    el.className = 'editor-instance'
+    crepe.setReadonly(true)
+    const barEl = renderBar(channel, 'page', el, { own: null, app: 'current', onChange: vi.fn() })
+
+    try {
+      pressCmdF(view.dom)
+      act(() => view.dom.focus())
+      const foldBtn = barEl.querySelector<HTMLButtonElement>('.find-bar__btn--folds')!
+      act(() => foldBtn.click())
+      expect(barEl.querySelector('[role="menu"]')).not.toBeNull()
+
+      // 1st Esc closes ONLY the fold menu
+      expect(pressEscOn(view.dom).defaultPrevented).toBe(true)
+      expect(barEl.querySelector('[role="menu"]')).toBeNull()
+      expect(channel.getState().open).toBe(true)
+      expect(onStep).not.toHaveBeenCalled()
+
+      // 2nd Esc closes FindBar
+      expect(pressEscOn(view.dom).defaultPrevented).toBe(true)
+      expect(channel.getState().open).toBe(false)
+      expect(onStep).not.toHaveBeenCalled()
+
+      // 3rd Esc closes sidebar
+      expect(pressEscOn(view.dom).defaultPrevented).toBe(true)
+      expect(onStep).toHaveBeenCalledExactlyOnceWith('closeSidebar')
+    } finally {
+      aside.remove()
+    }
   })
 })

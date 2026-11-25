@@ -1480,15 +1480,18 @@ export function App() {
     return went
   }, [])
   /**
-   * The last Esc (YAZ-4995, `lib/escapeOrder.ts`): what no menu, dialog or Explore layer took (the Inbox is a tab, YAZ-5011). The sidebar's
-   * search goes back to its tab; then the sidebar closes, and the keyboard goes from it to the page, in place.
+   * The last Esc (YAZ-4995, YAZ-6492, `lib/escapeOrder.ts`): what no menu, dialog, find bar, or Explore layer took (the
+   * Inbox is a tab, YAZ-5011). An overlay right panel closes first; then the sidebar's search (when focus is in the
+   * sidebar) goes back to its tab; then the left sidebar closes, keeping document focus and active selection intact.
    */
   useEscapeLast(
-    () => ({ aside: sidebarCollapsedRef.current ? null : sidebarRef.current, searchShown: sidebarLens === 'search', canClose: !filesWindow }),
+    () => ({ aside: sidebarCollapsedRef.current ? null : sidebarRef.current, searchShown: sidebarLens === 'search', canClose: !filesWindow, rightOverlayOpen: rightPanel.open && rightOverlay }),
     (step) => {
+      if (step === 'closeRightOverlay') return setRightOpen(false)
       if (step === 'leaveSearch') return changeLens(lastNonSearchLens.current)
       const active = document.activeElement
-      if (active === null || active === document.body || sidebarRef.current?.contains(active) === true) {
+      const hasSelection = (document.getSelection()?.isCollapsed ?? true) === false
+      if (sidebarRef.current?.contains(active) === true || ((active === null || active === document.body) && !hasSelection)) {
         if (!focusOpenDocument(document, true)) leaveToPage()
       }
       if (!sidebarCollapsedRef.current) toggleSidebar()
@@ -4073,6 +4076,14 @@ export function App() {
     if (nextC !== undefined) { sidebarCollapsedRef.current = nextC; setSidebarCollapsed(nextC) }
     if (nextW !== undefined) { sidebarWidthRef.current = nextW; setSidebarWidth(nextW) }
   }, [filesWindow, sidebarPlace, settings.sidebarPerTabWidth, shown])
+  // Auto-open a collapsed sidebar when the last open tab closes (YAZ-6533), keeping whatever sidebar tab it was on.
+  const openTabCount = tabs.length + (session !== null ? 1 : 0) + (blank ? 1 : 0)
+  const prevOpenTabs = useRef<{ root: string | null; count: number }>({ root, count: openTabCount })
+  useLayoutEffect(() => {
+    const prev = prevOpenTabs.current
+    prevOpenTabs.current = { root, count: openTabCount }
+    if (!filesWindow && root !== null && prev.root === root && prev.count > 0 && openTabCount === 0 && sidebarCollapsedRef.current) toggleSidebar()
+  }, [filesWindow, root, openTabCount, toggleSidebar])
   // Tab sleep (YAZ-3737 5A, S10): this window is hidden or minimized; then the active tab may sleep too. A boolean
   // each, so a hide of another window renders no App here.
   const hiddenHere = useWindowHidden(storage.getWindowId())

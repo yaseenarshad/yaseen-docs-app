@@ -1,9 +1,7 @@
 /**
- * THE FOCUS HANDOFF (YAZ-961) — the keyboard loop's two half-steps, in ONE place because two
- * surfaces perform them: the Files rows and the search list both hand focus INTO
- * the open document (a second Enter, the "take me in"; Esc in the search bar, YAZ-2662 D9), and
- * `createCrepe`'s Escape hands it back OUT to whichever sidebar the walk came from. Both answer a
- * boolean so a caller that is a ProseMirror command can decline honestly and let the key fall through.
+ * THE FOCUS HANDOFF (YAZ-961) — hands keyboard focus INTO the open document from sidebar surfaces
+ * (the Files rows, the search list, and Esc in the search bar, YAZ-2662 D9), and restores focus in
+ * place after overlays close (`giveFocusBack`, YAZ-4971).
  *
  * They read the DOM rather than taking a ref: the two ends live in different React trees (the
  * sidebar's and the editor's), and the alternative — threading a focus handle from App through
@@ -57,22 +55,6 @@ export function focusInPlace(el: HTMLElement): void {
 export function giveFocusBack(from: Element | null): void {
   if (from instanceof HTMLElement && from.isConnected) focusInPlace(from)
   else focusOpenDocument(document, true)
-}
-
-/**
- * Focus whichever sidebar the walk lives in. The search bar has it whenever the bar is on the page
- * — the Search tab (YAZ-2638 D2), with text or with none: the bar drives the search tree, so the
- * input is the walk (YAZ-803). On every other tab there is no bar and the tree's active row wins.
- * Declines when neither is on screen (collapsed sidebar).
- */
-export function focusSidebar(): boolean {
-  const target =
-    document.querySelector<HTMLElement>('.sidebar__search-input') ??
-    document.querySelector<HTMLElement>('.tree__row--active') ??
-    document.querySelector<HTMLElement>('.tree__row')
-  if (target === null) return false
-  target.focus()
-  return true
 }
 
 /**
