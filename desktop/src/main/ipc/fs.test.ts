@@ -8,6 +8,7 @@ import { CONTRACT, type Envelope } from '@shared/ipc'
 import { dailyPageName } from '@shared/dailyPage'
 import { withCommentsHint } from '@shared/frontmatter'
 import { loadDrawing } from '../fs/drawing'
+import { isSuppressedExternalEdit } from '../fs/externalEdits'
 import { makeFixture, removeVault, sleep, vaultFiles } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
 import { _evictAll } from '../vaultIndex'
@@ -336,7 +337,7 @@ describe('registerFsIpc', () => {
       store.removeWindow('w-retitle')
     })
 
-    it('a title edit that keeps the name writes the title and moves nothing: no repair, no broadcast', async () => {
+    it('a title edit that keeps the name writes the title, logs the edit, and moves nothing: no repair, no broadcast', async () => {
       const file = path.join(root, 'same-name-k3m9x2pq7abc.md')
       await writeFile(file, PAGE)
       windowOn('w-retitle')
@@ -346,7 +347,9 @@ describe('registerFsIpc', () => {
       const before = store.get()
       expect(await registered(CONTRACT.file.retitle.channel)({ sender: {} }, { path: file, title: 'Same, Name' })).toEqual({ ok: true, value: { oldPath: file, newPath: file, kind: 'file' } })
       expect(await readFile(file, 'utf8')).toBe('---\nid: k3m9x2pq7abc\ntitle: Same, Name\n---\n')
-      expect(store.get()).toBe(before)
+      expect(store.get().windows).toBe(before.windows)
+      expect(store.get().folders[root].lastFile).toBe(before.folders[root]?.lastFile)
+      expect(typeof store.get().folders[root].edits[file]).toBe('number')
       expect(vi.mocked(favorites.renamePath)).not.toHaveBeenCalled()
       expect(w.webContents.send).not.toHaveBeenCalled()
       store.removeWindow('w-retitle')
@@ -1065,10 +1068,46 @@ describe('the save log at the fs:write door (YAZ-3235 D1)', () => {
     expect((await write({ sender: {} }, { path: conflict, content: 'x', expectedMtime: 1 })).ok).toBe(false)
     expect(store.get().folders[root].edits[conflict]).toBeUndefined()
 
-    // A tidy-up write the user did not make (a link rewrite after a rename, a column strip): `quiet` — the log skips it, the bytes land.
+    // A tidy-up write the user did not make (a link rewrite after a rename, a column strip): `quiet` — the log skips it, the bytes land, and the watcher echo is suppressed.
     const tidied = path.join(root, 'Tidied.md')
     expect((await write({ sender: {} }, { path: tidied, content: 'z', quiet: true })).ok).toBe(true)
     expect(store.get().folders[root].edits[tidied]).toBeUndefined()
+    expect(isSuppressedExternalEdit(root, tidied)).toBe(true)
+
+    // YAZ-6501: in-app createFile, makeDailyPage (only when created), and retitle (files only) log to Recents.
+    const createdFile = path.join(root, 'CreatedInApp.md')
+    expect((await registered(CONTRACT.createFile.channel)({ sender: {} }, { path: createdFile, content: '# New\n' })).ok).toBe(true)
+    expect(typeof store.get().folders[root].edits[createdFile]).toBe('number')
+
+    const dailyVault = await mkdtemp(path.join(tmpdir(), 'yd-ipc-daily-edit-'))
+    const prevSettings = store.get().settings
+    try {
+      await mkdir(path.join(dailyVault, 'Daily'))
+      store.setSettings({ ...prevSettings, dailyPages: true, dailyPageFolder: 'Daily', dailyPageFormat: 'YYYY-MM-DD', dailyPageDayFolder: false })
+      store.upsertWindow({ id: 'w-daily', root: dailyVault, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'recents', bounds: { x: 0, y: 0, width: 800, height: 600 } })
+      senderWinId = 'w-daily'
+      const first = (await registered(CONTRACT.makeDailyPage.channel)({ sender: {} }, dailyVault)) as { ok: true; value: { path: string; created: boolean } }
+      expect(first.ok).toBe(true)
+      expect(first.value.created).toBe(true)
+      expect(typeof store.get().folders[dailyVault].edits[first.value.path]).toBe('number')
+      const second = (await registered(CONTRACT.makeDailyPage.channel)({ sender: {} }, dailyVault)) as { ok: true; value: { path: string; created: boolean } }
+      expect(second.ok).toBe(true)
+      expect(second.value.created).toBe(false)
+    } finally {
+      store.setSettings(prevSettings)
+      store.removeWindow('w-daily')
+      await rm(dailyVault, { recursive: true, force: true })
+    }
+
+    senderWinId = 'w-log'
+    const retitledOld = path.join(root, 'RetitleLog.md')
+    await writeFile(retitledOld, '---\nid: k3m9x2pq7xyz\n---\n')
+    const retitledRes = (await registered(CONTRACT.file.retitle.channel)({ sender: {} }, { path: retitledOld, title: 'Logged Title' })) as { ok: true; value: { newPath: string } }
+    expect(retitledRes.ok).toBe(true)
+    expect(typeof store.get().folders[root].edits[retitledRes.value.newPath]).toBe('number')
+    // Retitling the vault root directory does not add the root path itself to edits.
+    expect((await registered(CONTRACT.file.retitle.channel)({ sender: {} }, { path: root, title: 'Vault' })).ok).toBe(true)
+    expect(store.get().folders[root].edits[root]).toBeUndefined()
 
     senderWinId = undefined // Welcome, or a sender no window owns: no vault, no log
     const other = path.join(root, 'Other.md')

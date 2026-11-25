@@ -39,6 +39,7 @@ import { maskCode } from '@shared/fences'
 import { findInlineDrawings } from '@shared/inlineDrawing'
 import { rootOfPath } from '@shared/types'
 import { mimeFor, resolveAsset } from './assets'
+import { withSuppressedEdit } from './externalEditSuppress'
 import { atomicWrite, isSkipped } from './fsUtils'
 
 const WIKILINK_EMBED_RE = /!\[\[([^\]\n]+)\]\]/g
@@ -105,7 +106,7 @@ async function copyAssetIds(
           await mkdir(dstDir, { recursive: true })
           madeDir = true
         }
-        await cp(srcFile, dstFile, { errorOnExist: true, force: false, preserveTimestamps: true })
+        await withSuppressedEdit(dstFile, () => cp(srcFile, dstFile, { errorOnExist: true, force: false, preserveTimestamps: true }))
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'EEXIST') continue
       }
@@ -122,7 +123,7 @@ async function dropBoardIdBestEffort(file: string): Promise<void> {
     if (!isRecord(parsed) || !isRecord(parsed[BOARD_META_KEY])) return
     const { [BOARD_META_KEY]: block, ...rest } = parsed
     const { [BOARD_ID_KEY]: _id, [FORMER_IDS_KEY]: _was, ...kept } = block
-    await atomicWrite(file, serializeBoard({ [BOARD_META_KEY]: kept, ...rest }))
+    await withSuppressedEdit(file, () => atomicWrite(file, serializeBoard({ [BOARD_META_KEY]: kept, ...rest })))
   } catch {
     // Best effort: leave the file untouched if unreadable or malformed.
   }
@@ -186,7 +187,7 @@ async function copyAssetWithClashCheck(
   }
 
   if (shouldCopy) {
-    await cp(srcAbs, target, { errorOnExist: true, force: false, preserveTimestamps: true })
+    await withSuppressedEdit(target, () => cp(srcAbs, target, { errorOnExist: true, force: false, preserveTimestamps: true }))
     if (isDrawing(target)) await dropBoardIdBestEffort(target)
   }
   if (isDrawing(srcAbs)) {
@@ -288,7 +289,7 @@ async function carryPageAssets(srcRoot: string, targetRoot: string, srcPagePath:
     })
   }
   if (updated !== original) {
-    await atomicWrite(dstPagePath, updated)
+    await withSuppressedEdit(dstPagePath, () => atomicWrite(dstPagePath, updated))
   }
 }
 

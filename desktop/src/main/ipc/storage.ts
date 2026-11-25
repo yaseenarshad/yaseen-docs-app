@@ -1,4 +1,5 @@
 import { CONTRACT } from '@shared/ipc'
+import { withSuppressedRoot } from '../fs/externalEditSuppress'
 import { requireAbsPath, requireDir } from '../fs/fsUtils'
 import { absPaths } from '../fs/validate'
 import { runOffThread } from '../storageJob'
@@ -27,6 +28,8 @@ export function registerStorageIpc(store?: Pick<Store, 'get'>): void {
     const dir = requireAbsPath(root, 'root')
     await requireDir(dir)
     // The outside pictures folders the user picked (YAZ-3943 demo round 3): the only ones the shrink writes to.
-    return runOffThread(storageWorker, { kind: 'shrink', root: dir, skip: absPaths(skip, 'skip'), approved: store?.get().approvedPictureFolders ?? [] })
+    return withSuppressedRoot(dir, () =>
+      runOffThread(storageWorker, { kind: 'shrink', root: dir, skip: absPaths(skip, 'skip'), approved: store?.get().approvedPictureFolders ?? [] }),
+    )
   })
 }

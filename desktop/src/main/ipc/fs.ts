@@ -15,6 +15,7 @@ import { downloadImage } from '../fs/downloadImage'
 import { copyEntry, importCopy, isCrossDevice, pasteEntries, type PasteOps } from '../fs/copy'
 import { carryCrossVaultAssets } from '../fs/carryAssets'
 import { createDir, createFile } from '../fs/create'
+import { suppressExternalEdit, suppressExternalRoot, withSuppressedEdit } from '../fs/externalEditSuppress'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure, fsCall, isSkipped, requireAbsPath } from '../fs/fsUtils'
 import { readHeads } from '../fs/heads'
@@ -72,11 +73,18 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   handle(CONTRACT.readImage, readImage)
   // A page's save goes in the save log (YAZ-3235 D1); a quiet tidy-up write (`FileWriteRequest.quiet`) does not.
   // The index takes a quiet write at once (YAZ-3258): the link rewrite of a move, read by a quick ⌘Z.
+  // Quiet writes also suppress the watcher's settle echo (YAZ-6501) so tidy-up writes never jump to Today.
   const quiet = (req: unknown): boolean => (req as { quiet?: unknown } | null)?.quiet === true
   const save = async (req: FileWriteRequest): Promise<FileWriteResponse> => {
-    const res = await writeFile(req)
-    if (quiet(req)) await indexWrote(res.path)
-    return res
+    if (!quiet(req)) return writeFile(req)
+    const rawPath = typeof (req as { path?: unknown } | null)?.path === 'string' ? (req as { path: string }).path : null
+    const run = async (): Promise<FileWriteResponse> => {
+      const res = await writeFile(req)
+      suppressExternalEdit(res.path)
+      await indexWrote(res.path)
+      return res
+    }
+    return rawPath === null ? run() : withSuppressedEdit(rawPath, run)
   }
   handleWithEvent(CONTRACT.writeFile, loggedSave(store, windows, save, (req) => !quiet(req)))
   const rootsOfSender = (e: IpcMainInvokeEvent): readonly string[] => senderRoots(store, windows, e)
@@ -96,9 +104,12 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // setting of the page's vault (its new-places.json), else the app's.
   handleWithEvent(CONTRACT.createFile, async (e, req) => {
     const p = typeof req === 'string' ? req : typeof req === 'object' && req !== null ? (req as { path?: unknown }).path : null
-    const root = typeof p === 'string' ? rootOfPath(rootsOfSender(e), p) : null
+    const roots = rootsOfSender(e)
+    const root = typeof p === 'string' ? rootOfPath(roots, p) : null
     const hint = root === null ? store.get().settings.commentsHint : (await vaultNewPlacesSettings(root, store.get().settings)).commentsHint
-    return createFile(req, await doorFor(e, req), { hint })
+    const res = await createFile(req, await doorFor(e, req), { hint })
+    store.addEdit(roots, res.path)
+    return res
   })
   // The door, for the front end (YAZ-2677 R17): the next ID of the vault that holds `path`, saved
   // before it is answered (R18). The caller needs it BEFORE its page exists — the page's file name
@@ -109,8 +120,11 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // Only for a vault of the calling window, by the settings the app has now.
   handleWithEvent(CONTRACT.makeDailyPage, async (e, raw: unknown) => {
     const vault = requireAbsPath(raw, 'path')
-    if (!rootsOfSender(e).includes(vault)) throw new BridgeFailure('BAD_REQUEST', 'not a vault of this window', { path: vault })
-    return (await dailyPage(vault, await vaultDailySettings(vault, await vaultNewPlacesSettings(vault, store.get().settings)), new Date(), true))!
+    const roots = rootsOfSender(e)
+    if (!roots.includes(vault)) throw new BridgeFailure('BAD_REQUEST', 'not a vault of this window', { path: vault })
+    const res = (await dailyPage(vault, await vaultDailySettings(vault, await vaultNewPlacesSettings(vault, store.get().settings)), new Date(), true))!
+    if (res.created) store.addEdit(roots, res.path)
+    return res
   })
   handle(CONTRACT.index, getIndex)
   // The cold-start reconcile diff (Links E1c, GRO-2242): the client's rename detector reads it
@@ -144,6 +158,8 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // (YAZ-3258), so a window that reads it after the push, and the next move of a gesture, see the
   // new paths; the shared watcher's unlink+add echo comes later and changes nothing.
   const afterRename = async (res: RenameFileResponse): Promise<RenameFileResponse> => {
+    if (res.kind === 'dir') suppressExternalRoot(res.newPath)
+    else suppressExternalEdit(res.newPath)
     await indexMoved(res.oldPath, res.newPath, res.kind)
     // YAZ-4128 6B2: the boards that keep their pictures in the folder, or under it, name its new path.
     const root = res.kind === 'dir' ? rootOfPath(rootsOf(store.get()), res.oldPath) : null
@@ -181,12 +197,18 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   handleWithEvent(CONTRACT.file.retitle, async (e, req: unknown) => {
     // The vault of the calling window that holds the page (YAZ-2602 S78): its title rules build the name.
     const target = (req as { path?: unknown } | null)?.path
-    const root = typeof target === 'string' ? rootOfPath(rootsOfSender(e), target) : null
+    const roots = rootsOfSender(e)
+    const root = typeof target === 'string' ? rootOfPath(roots, target) : null
     if (root === null) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that path')
     // Only a vault that uses IDs has titles (YAZ-2523 🔒 V3): where it does not, a name changes by `fs:rename`.
     if (!(await givesIds(root))) throw new BridgeFailure('BAD_REQUEST', 'this vault does not use IDs')
-    const res = await retitle(root, req)
-    return res.newPath === res.oldPath ? res : afterRename(res)
+    const res = await withSuppressedEdit(target as string, () => retitle(root, req))
+    const out = res.newPath === res.oldPath ? res : await afterRename(res)
+    if (out.kind === 'file') {
+      suppressExternalEdit(out.newPath)
+      store.addEdit(roots, out.newPath)
+    }
+    return out
   })
   // A vault's IDs (YAZ-2677). Both doors act on a vault OF THE CALLING WINDOW (YAZ-2602 S78): any other folder is refused.
   const ownVault = (e: IpcMainInvokeEvent, root: unknown): string => {

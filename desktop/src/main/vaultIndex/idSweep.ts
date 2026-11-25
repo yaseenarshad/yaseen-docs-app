@@ -9,6 +9,7 @@ import { moveFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { PAGE_ID_KEY, pageIdNumber, vaultPageId } from '@shared/pageId'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, VAULT_CONFIG_DIR, isFolderSettingsPath, type IndexRecord } from '@shared/types'
+import { withSuppressedEdit } from '../fs/externalEditSuppress'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure, createDurable } from '../fs/fsUtils'
 import { myPage, settleClash, type ClashFix, type Pair } from './clash'
@@ -413,7 +414,7 @@ async function moveOnce(root: string, once: string, files: readonly IndexRecord[
     await inTurn(async () => {
       const { content, mtime } = await readPage(r.path)
       const next = change(content)
-      if (next !== null) await writeFile({ path: r.path, content: next, ...(mtime !== undefined && { expectedMtime: mtime }) })
+      if (next !== null) await withSuppressedEdit(r.path, () => writeFile({ path: r.path, content: next, ...(mtime !== undefined && { expectedMtime: mtime }) }))
     }).catch(() => {
       done = false
     })
@@ -565,7 +566,7 @@ export async function giveCardIds(file: string, fixes: readonly CardFix[], ids: 
       continue
     }
     if (done.keeper !== null && done.keeper !== theirs[at].line)
-      await writeFile({ path: fix.keeper, content: rewritePageCards(there.content, (_card, n) => (n === at ? (done.keeper ?? undefined) : undefined)), expectedMtime: there.mtime })
+      await withSuppressedEdit(fix.keeper, () => writeFile({ path: fix.keeper!, content: rewritePageCards(there.content, (_card, n) => (n === at ? (done.keeper ?? undefined) : undefined)), expectedMtime: there.mtime }))
     lines[fix.index] = done.copy
   }
   const given = new Map(settled.map((fix, i) => [fix.index, ids[i]]))
@@ -575,7 +576,7 @@ export async function giveCardIds(file: string, fixes: readonly CardFix[], ids: 
     if (id !== undefined) return withCardId(archived.has(n) ? withCardOff(lines[n], true) : lines[n], id)
     return lines[n] === cards[n].line ? undefined : lines[n]
   })
-  await writeFile({ path: file, content: next, expectedMtime: mtime })
+  await withSuppressedEdit(file, () => writeFile({ path: file, content: next, expectedMtime: mtime }))
   return settled
 }
 
@@ -655,8 +656,10 @@ export async function giveId(
     if (!holds(content)) return
   }
   const given = setFrontmatterProperty(content, PAGE_ID_KEY, id)
-  if (mtime === undefined) await createDurable(file, given)
-  else await writeFile({ path: file, content: given, expectedMtime: mtime })
+  await withSuppressedEdit(file, async () => {
+    if (mtime === undefined) await createDurable(file, given)
+    else await writeFile({ path: file, content: given, expectedMtime: mtime })
+  })
   return id
 }
 
@@ -702,7 +705,7 @@ function carryPage(file: string, from: string, to: string): Promise<void> {
   const carry = async (): Promise<void> => {
     const { content, mtime } = await readFile(file)
     const moved = moveFolderValues(content, from, to)
-    if (moved !== content) await writeFile({ path: file, content: moved, expectedMtime: mtime })
+    if (moved !== content) await withSuppressedEdit(file, () => writeFile({ path: file, content: moved, expectedMtime: mtime }))
   }
   return inTurn(() => carry().catch(carry)).catch(() => undefined)
 }

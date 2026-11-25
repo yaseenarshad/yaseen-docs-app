@@ -12,6 +12,7 @@ import { FOLDER_SETTINGS_FILE, folderSettingsPath, type PasteResponse, type Rena
 import type { FileClip } from '../fileClip'
 import { carryFolderValues } from '../vaultIndex/idSweep'
 import type { IdDoor } from '../vaultIndex/mint'
+import { withSuppressedEdit, withSuppressedRoot } from './externalEditSuppress'
 import { atomicWrite, BridgeFailure, createDurable, createFolderSettings, fsCall, isMarkdown, isSkipped, requireAbsPath, requireDir, toBridgeFailure } from './fsUtils'
 import { requireRequest } from './validate'
 
@@ -118,7 +119,7 @@ function reborn(content: string, fresh: Fresh): { properties: Record<string, unk
 }
 
 /** A byte copy, whole and never over anything: an errno from it belongs to the TARGET (EEXIST → ALREADY_EXISTS on `to`). */
-const copyBytes = (src: string, to: string): Promise<void> => fsCall(to, () => cp(src, to, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true }))
+const copyBytes = (src: string, to: string): Promise<void> => withSuppressedRoot(to, () => fsCall(to, () => cp(src, to, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true })))
 
 /**
  * A copy of a board is another board (YAZ-3943 4C): the copy at `file` leaves its original's ID behind, and takes its own
@@ -136,7 +137,7 @@ async function dropBoardId(file: string): Promise<void> {
   }
   const { [BOARD_META_KEY]: block, ...rest } = scene
   const { [BOARD_ID_KEY]: _id, [FORMER_IDS_KEY]: _was, ...kept } = block as Record<string, unknown>
-  await fsCall(file, () => atomicWrite(file, serializeBoard({ [BOARD_META_KEY]: kept, ...rest })))
+  await withSuppressedEdit(file, () => fsCall(file, () => atomicWrite(file, serializeBoard({ [BOARD_META_KEY]: kept, ...rest }))))
 }
 
 /** `copyBytes`, and a board's copy without the original's ID (`dropBoardId`). Only a vault that gives IDs calls it. */
@@ -158,12 +159,12 @@ async function copyPage(src: string, dir: string, fresh: Fresh, suffix = ''): Pr
     const nextTitle = title !== '' && suffix !== '' ? title + suffix : title
     const content = nextTitle !== title ? rewritePageCards(born.content, (card, n) => (n === 0 ? withCardTitle(card.line, nextTitle) : undefined)) : born.content
     const to = path.join(dir, cardFileName(nextTitle, born.id))
-    await fsCall(to, () => createDurable(to, content))
+    await withSuppressedEdit(to, () => fsCall(to, () => createDurable(to, content)))
     return to
   }
   const title = titleOf(born.properties, path.parse(src).name) + suffix
   const to = path.join(dir, pageFileName(title, born.id))
-  await fsCall(to, () => createDurable(to, setFrontmatterProperty(born.content, TITLE_KEY, title)))
+  await withSuppressedEdit(to, () => fsCall(to, () => createDurable(to, setFrontmatterProperty(born.content, TITLE_KEY, title))))
   return to
 }
 
@@ -181,18 +182,20 @@ async function copyFolder(src: string, dir: string, fresh: Fresh, picked = false
   const born = settings === undefined ? undefined : reborn(settings, fresh)
   const title = picked ? await freeTitle(dir, titleOf(born?.properties ?? {}, path.basename(src))) : undefined
   const to = path.join(dir, title === undefined ? path.basename(src) : kebabTitle(title))
-  await fsCall(to, () => mkdir(to))
-  if (born !== undefined) await createFolderSettings(to, title === undefined ? born.content : setFrontmatterProperty(born.content, TITLE_KEY, title))
-  for (const entry of await readdir(src, { withFileTypes: true })) {
-    const from = path.join(src, entry.name)
-    if (entry.name === FOLDER_SETTINGS_FILE && born !== undefined) continue
-    if (entry.isDirectory() && !isSkipped(entry.name)) await copyFolder(from, to, fresh)
-    else if (!entry.isFile() || isSkipped(entry.name)) await copyBytes(from, path.join(to, entry.name))
-    else if ((await copyPage(from, to, fresh)) === undefined) await copyFile(from, path.join(to, entry.name))
-  }
-  // The values the pages hold for the original are under its id as its file holds it.
-  const held = born?.properties[PAGE_ID_KEY]
-  if (born !== undefined && typeof held === 'string' && vaultPageId(held, fresh.letters) !== undefined) await carryFolderValues(to, held, born.id)
+  await withSuppressedRoot(to, async () => {
+    await fsCall(to, () => mkdir(to))
+    if (born !== undefined) await createFolderSettings(to, title === undefined ? born.content : setFrontmatterProperty(born.content, TITLE_KEY, title))
+    for (const entry of await readdir(src, { withFileTypes: true })) {
+      const from = path.join(src, entry.name)
+      if (entry.name === FOLDER_SETTINGS_FILE && born !== undefined) continue
+      if (entry.isDirectory() && !isSkipped(entry.name)) await copyFolder(from, to, fresh)
+      else if (!entry.isFile() || isSkipped(entry.name)) await copyBytes(from, path.join(to, entry.name))
+      else if ((await copyPage(from, to, fresh)) === undefined) await copyFile(from, path.join(to, entry.name))
+    }
+    // The values the pages hold for the original are under its id as its file holds it.
+    const held = born?.properties[PAGE_ID_KEY]
+    if (born !== undefined && typeof held === 'string' && vaultPageId(held, fresh.letters) !== undefined) await carryFolderValues(to, held, born.id)
+  })
   return to
 }
 
