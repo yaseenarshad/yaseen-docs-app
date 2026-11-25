@@ -91,8 +91,8 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
   ].filter((group) => group.length > 0)
   // Four groups (YAZ-2949 D6), in this order: the tab's place · find the file · this tab
   // and its page · outside the app. `ContextMenu` skips an empty group and closes the menu after each item.
-  // The two list toggles (YAZ-3264 D2) stand where the sidebar's file menu has them: focus right after
-  // "Show in sidebar", favorites first in the last group, each with its sidebar tab's glyph (D6). Each acts on the state the menu read (S14).
+  // The two list toggles (YAZ-3264 D2) stand where the sidebar's file menu has them: focus right above
+  // favorites at the top of the last group (YAZ-6550), each with its sidebar tab's glyph (D6). Each acts on the state the menu read (S14).
   const lists = menu.lists ?? null
   /** The flyouts' last group (YAZ-4460 demo): "Workspace" and "Vault", each a ✓ toggle of that list, as in the sidebar's menu. */
   const tabScopeRows = (kind: 'focus' | 'favorites') => {
@@ -124,18 +124,6 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
             },
           ]),
       { id: 'show-in-sidebar', label: 'Show in sidebar', icon: <ShowInSidebarIcon />, onSelect: () => onShowInSidebar?.(menu.path) },
-      ...(lists === null || onToggleFocus === undefined
-        ? []
-        : [
-            {
-              id: 'focus',
-              label: lists.focus ? 'Remove from focus' : 'Add to focus',
-              icon: <EyeIcon />,
-              onSelect: () => onToggleFocus([menu.path], lists.focus),
-              // YAZ-4460 F4: the focus folders, as the sidebar row's menu has them — in focus too, to move the page; a click still adds or removes.
-              ...(lists.intoFolder === undefined ? {} : { children: [...focusPlaces(lists.folders ?? [], lists.focus ? (lists.folderId ?? null) : undefined, (to) => lists.intoFolder?.([menu.path], to)), ...tabScopeRows('focus')] }),
-            },
-          ]),
       {
         id: 'copy-path',
         label: 'Copy path',
@@ -160,6 +148,18 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     // Omitted for inline drawing tabs (YAZ-6468: would rename the parent Markdown page unexpectedly); grey on a tab that shows no file.
     onRenameFile === undefined || inlineDrawingIndex !== undefined ? [] : [{ id: 'rename-file', label: 'Rename file', icon: <PencilIcon />, disabled: !isSupportedFile(menu.path), onSelect: () => onRenameFile(menu.path) }],
     [
+      ...(lists === null || onToggleFocus === undefined
+        ? []
+        : [
+            {
+              id: 'focus',
+              label: lists.focus ? 'Remove from focus' : 'Add to focus',
+              icon: <EyeIcon />,
+              onSelect: () => onToggleFocus([menu.path], lists.focus),
+              // YAZ-4460 F4: the focus folders, as the sidebar row's menu has them — in focus too, to move the page; a click still adds or removes.
+              ...(lists.intoFolder === undefined ? {} : { children: [...focusPlaces(lists.folders ?? [], lists.focus ? (lists.folderId ?? null) : undefined, (to) => lists.intoFolder?.([menu.path], to)), ...tabScopeRows('focus')] }),
+            },
+          ]),
       ...(lists === null || onToggleFavorite === undefined
         ? []
         : [

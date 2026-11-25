@@ -133,26 +133,31 @@ describe('TabMenu "Move to ▸" (YAZ-3091 D3)', () => {
 describe('TabMenu Focus and Favorites (YAZ-3264 D2)', () => {
   const lists = (over: Partial<TabMenuProps> = {}, state: TabMenuAt['lists'] = { focus: false, favorite: false }) => all({ menu: at({ lists: state }), onToggleFocus: vi.fn(), onToggleFavorite: vi.fn(), ...over })
 
-  it('S1: "Add to focus" right after "Show in sidebar", "Add to favorites" first in the last group', () => {
-    expect(groups(mount(lists()))).toEqual([
+  it('S1, YAZ-6550: "Add to focus" sits directly above "Add to favorites" at the top of the last group', () => {
+    const rendered = groups(mount(lists()))
+    expect(rendered).toEqual([
       ['Move to new window', 'Duplicate tab', 'Move to'],
-      ['Show in sidebar', 'Add to focus', 'Copy path'],
+      ['Show in sidebar', 'Copy path'],
       ['Set display name'],
-      ['Add to favorites', 'Reveal in Finder', 'Open in VS Code'],
+      ['Add to focus', 'Add to favorites', 'Reveal in Finder', 'Open in VS Code'],
     ])
+    const flat = rendered.flat()
+    expect(flat.indexOf('Add to focus')).toBe(flat.indexOf('Add to favorites') - 1)
   })
 
   it('D6: the two items carry their sidebar tab\'s glyph, the eye and the heart, "Show in sidebar" its sidebar glyph (YAZ-6535), and "Copy path" its copy glyph (YAZ-3487); "Set display name" has none (YAZ-5772); the other rows have none', () => {
     const el = mount(lists())
     const withGlyph = [...el.querySelectorAll('.ctx-menu__item')].filter((b) => b.querySelector('svg') !== null).map((b) => b.textContent)
-    expect(withGlyph).toEqual(['Show in sidebar', 'Add to focus', 'Copy path', 'Add to favorites'])
+    expect(withGlyph).toEqual(['Show in sidebar', 'Copy path', 'Add to focus', 'Add to favorites'])
     expect(el.querySelector('.ctx-menu')?.classList.contains('ctx-menu--glyphs')).toBe(true)
   })
 
   it('S2, S14: a page in a list reads "Remove from …", and each item toggles the path with the state the menu read', () => {
     const props = lists({}, { focus: true, favorite: true })
     let el = mount(props)
-    expect([groups(el)[1][1], groups(el)[3][0]]).toEqual(['Remove from focus', 'Remove from favorites'])
+    expect([groups(el)[3][0], groups(el)[3][1]]).toEqual(['Remove from focus', 'Remove from favorites'])
+    const flat = groups(el).flat()
+    expect(flat.indexOf('Remove from focus')).toBe(flat.indexOf('Remove from favorites') - 1)
     act(() => item(el, 'Remove from focus')?.click())
     expect(props.onToggleFocus).toHaveBeenCalledExactlyOnceWith(['/v/a.md'], true)
     expect(props.onClose).toHaveBeenCalledTimes(1)

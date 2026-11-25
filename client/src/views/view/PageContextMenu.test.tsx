@@ -277,3 +277,28 @@ it('handles inline card rows safely: resolves <page>:<line> on Copy path, target
     else Object.defineProperty(navigator, 'clipboard', descriptor)
   }
 })
+
+it('places Focus directly above Favorites in the page group (YAZ-6550)', () => {
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const toggleFocus = vi.fn()
+  const toggleFavorite = vi.fn()
+  const onClose = vi.fn()
+
+  try {
+    act(() => {
+      root.render(
+        <PageActions.Provider value={{ listState: () => ({ focus: false, favorite: true }), toggleFocus, toggleFavorite }}>
+          <PageContextMenu x={12} y={34} path="/vault/page.md" title="page" onOpen={vi.fn()} onClose={onClose} />
+        </PageActions.Provider>,
+      )
+    })
+    const items = mainItems(host)
+    expect(items).toEqual(['Open', 'Open in', 'Add to focus', 'Remove from favorites', 'Copy path'])
+    expect(items.indexOf('Add to focus')).toBe(items.indexOf('Remove from favorites') - 1)
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+  }
+})

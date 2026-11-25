@@ -210,14 +210,14 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
       </FlyoutParent>,
     ]
   }
-  // The page itself (13AW, as the tab menu has them): Favorites, Focus, Copy path, then Move to Other files.
+  // The page itself (13AW, as the tab menu has them): Focus, Favorites, Copy path, then Move to Other files.
   const pageGroup: ReactNode[] = [
-    ...(lists === null || doors?.toggleFavorite === undefined
-      ? []
-      : [item(<span className="ctx-menu__label"><HeartIcon />{lists.favorite ? 'Remove from favorites' : 'Add to favorites'}</span>, () => doors.toggleFavorite!([page], lists.favorite))]),
     ...(lists === null || doors?.toggleFocus === undefined
       ? []
       : [item(<span className="ctx-menu__label"><EyeIcon />{lists.focus ? 'Remove from focus' : 'Add to focus'}</span>, () => doors.toggleFocus!([page], lists.focus))]),
+    ...(lists === null || doors?.toggleFavorite === undefined
+      ? []
+      : [item(<span className="ctx-menu__label"><HeartIcon />{lists.favorite ? 'Remove from favorites' : 'Add to favorites'}</span>, () => doors.toggleFavorite!([page], lists.favorite))]),
     item(<span className="ctx-menu__label"><CopyIcon />Copy path</span>, copyPath),
     ...(inlineRef?.kind === 'card'
       ? [

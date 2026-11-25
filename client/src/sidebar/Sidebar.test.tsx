@@ -3657,8 +3657,9 @@ describe('search-row context menu (YAZ-2050)', () => {
     expect(expected).not.toContain('Show in sidebar')
     expect(labels(el)).toEqual(['Show in sidebar', ...expected])
     // YAZ-4470: a single folder row also gets "Open in new tab" in the open group, after "Open folder page"; then
-    // "Open in new window" (YAZ-4778).
-    expect(labels(el).slice(0, 5)).toEqual(['Show in sidebar', 'Open folder page', 'Open in new tab', 'Open in new window', 'Add to focus'])
+    // "Open in new window" (YAZ-4778). Focus sits directly above Favorites in the Open-in group (YAZ-6550).
+    expect(labels(el).slice(0, 4)).toEqual(['Show in sidebar', 'Open folder page', 'Open in new tab', 'Open in new window'])
+    expect(labels(el).indexOf('Add to focus')).toBe(labels(el).indexOf('Add to favorites') - 1)
   })
 
   it('follows the FILES rules whichever tab the search was shown from (🔒 D1): from Favorites the same menu, "Add to focus"', async () => {
@@ -3991,7 +3992,10 @@ describe('"Show in sidebar" on a row of Search, Focus and Favorites (YAZ-2638 D1
     await type(searchBar(el)!, 'projects')
     expect(menuOf(el, row(el, `${v}/Projects`))).toEqual([ITEM, ...inFiles['/Projects']])
     // YAZ-4470: one folder row also has "Open in new tab", after "Open folder page"; then "Open in new window" (YAZ-4778).
-    expect(menuOf(el, row(el, `${v}/Projects`)).slice(0, 5)).toEqual([ITEM, 'Open folder page', 'Open in new tab', 'Open in new window', 'Remove from focus'])
+    // Focus sits directly above Favorites in the Open-in group (YAZ-6550).
+    const projMenu = menuOf(el, row(el, `${v}/Projects`))
+    expect(projMenu.slice(0, 4)).toEqual([ITEM, 'Open folder page', 'Open in new tab', 'Open in new window'])
+    expect(projMenu.indexOf('Remove from focus')).toBe(projMenu.indexOf('Remove from favorites') - 1)
     await type(searchBar(el)!, 'plan')
     expect(menuOf(el, row(el, `${v}/Projects`))[0]).toBe(ITEM) // the parent of the match
   })
@@ -8480,11 +8484,10 @@ describe('context menu order (GRO-2272 C1a)', () => {
     act(() => void el.querySelector('.tree__row--file')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(menuItems(el).map((b) => b.textContent?.replace('▸', '').trim())).toEqual([
       // The Open group (🔒 D7 amended, YAZ-1674): one file row opens in a new tab or a new window
-      // (YAZ-4470: "Open in new window" left the flyout), then the focus toggle (YAZ-2619 R6) — the
-      // other OS verbs fold into the "Open in ▸" flyout, in its own group before Delete.
+      // (YAZ-4470: "Open in new window" left the flyout) — the other OS verbs fold into the
+      // "Open in ▸" flyout, in its own group before Delete.
       'Open in new tab',
       'Open in new window',
-      'Add to focus',
       // The clipboard group: the file clipboard first (Paste is DISABLED, not hidden, while it is
       // empty — 🔒 D5), then the text clipboard. Hints are `data-hint`, so the text stays bare.
       'Cut',
@@ -8499,7 +8502,8 @@ describe('context menu order (GRO-2272 C1a)', () => {
       'Rename',
       // "Change icon ▸" (YAZ-3440 D8, one flyout) closes the row's own group, after Rename.
       'Change icon',
-      // The favorite toggle (YAZ-1766 D3) leads the "Open in ▸" group, one hairline above Delete.
+      // Focus sits directly above Favorites at the top of the "Open in ▸" group (YAZ-6550), one hairline above Delete.
+      'Add to focus',
       'Add to favorites',
       'Open in',
       'Delete',

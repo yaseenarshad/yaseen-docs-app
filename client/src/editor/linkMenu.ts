@@ -16,8 +16,8 @@
  *   Copy path                  the target's path on disk, with the copy icon (M2)
  *   Copy address               a web link: its href
  *   ───────────
- *   Add to favorites           "Remove from favorites" when it is one; as the tab menu (S5), with its heart (M2)
- *   Add to focus               "Remove from focus" likewise, with its eye (M2)
+ *   Add to focus               "Remove from focus" when it is one; as the tab menu (S5), with its eye (M2)
+ *   Add to favorites           "Remove from favorites" likewise, with its heart (M2)
  *   Open in ▸                  VS Code · Default app ─ Reveal in Finder (S3, S4)
  *   ───────────
  *   Show as embed              a link to a drawing or a diagram: a window into it (YAZ-4829 D8); not read-only
@@ -138,8 +138,8 @@ export function linkMenuRows(menu: LinkMenu): MenuRow[] {
   group([row('Open', menu.open), row('Open in new tab', menu.openNew), row('Open in new window', menu.openNewWindow), row('Open in Explore', menu.openExplore), row('Show in sidebar', menu.showInSidebar, undefined, showInSidebarGlyph)])
   group([row('Copy name and ID', menu.copyNameAndId), row('Copy name', menu.copyName), row('Copy ID', menu.copyId), row('Copy path', menu.copyPath, undefined, copyGlyph), row('Copy address', menu.copyAddress)])
   group([
-    menu.favorite === undefined ? null : { label: menu.favorite.on ? 'Remove from favorites' : 'Add to favorites', run: menu.favorite.run, icon: heartGlyph },
     menu.focus === undefined ? null : { label: menu.focus.on ? 'Remove from focus' : 'Add to focus', run: menu.focus.run, icon: eyeGlyph },
+    menu.favorite === undefined ? null : { label: menu.favorite.on ? 'Remove from favorites' : 'Add to favorites', run: menu.favorite.run, icon: heartGlyph },
     children.every((list) => list.length === 0) ? null : { label: 'Open in', run: () => {}, children },
   ])
   group([

@@ -4,9 +4,9 @@
  * the tab menu's own, built here from the same doors (`LinkActions`, App's rename), so they stay the same:
  *
  *   Open in new tab · Open in new window · Open in mini window
- *   Show in sidebar · Add to focus › · Copy path
+ *   Show in sidebar · Copy path
  *   Rename file (the tab menu's path: the file shows in the sidebar, and its own rename starts there)
- *   Add to favorites › · Reveal in Finder · Open in VS Code
+ *   Add to focus › · Add to favorites › · Reveal in Finder · Open in VS Code
  *
  * No display name, no icon, no delete ("we should not allow for delete"). After "Show in sidebar", the three opens
  * and "Rename file" the stack closes, so you see where it went; the others keep it open.
@@ -112,9 +112,10 @@ export function explorePageSections(path: string, doors: ExploreMenuDoors): Menu
         },
       },
     ],
-    [...(a.showInSidebar === undefined ? [] : [{ id: 'show-in-sidebar', label: 'Show in sidebar', icon: <ShowInSidebarIcon />, onSelect: then(() => a.showInSidebar?.(path)) }]), ...focus, { id: 'copy-path', label: 'Copy path', icon: <CopyIcon />, onSelect: () => void copyText(path, 'path', doors.onNotice) }],
+    [...(a.showInSidebar === undefined ? [] : [{ id: 'show-in-sidebar', label: 'Show in sidebar', icon: <ShowInSidebarIcon />, onSelect: then(() => a.showInSidebar?.(path)) }]), { id: 'copy-path', label: 'Copy path', icon: <CopyIcon />, onSelect: () => void copyText(path, 'path', doors.onNotice) }],
     doors.onRenameFile === undefined ? [] : [{ id: 'rename-file', label: 'Rename file', icon: <PencilIcon />, onSelect: then(() => doors.onRenameFile?.(path)) }],
     [
+      ...focus,
       ...favorite,
       ...(a.reveal === undefined ? [] : [{ id: 'reveal', label: 'Reveal in Finder', onSelect: () => a.reveal?.(path) }]),
       ...(a.openVsCode === undefined ? [] : [{ id: 'open-vscode', label: 'Open in VS Code', onSelect: () => a.openVsCode?.(path) }]),
