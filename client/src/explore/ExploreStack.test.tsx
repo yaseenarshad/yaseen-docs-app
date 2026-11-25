@@ -564,7 +564,8 @@ describe('the explore stack', () => {
     const row = top().querySelector<HTMLElement>('.search-results__row') as HTMLElement
     act(() => void row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 })))
     const items = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
-    expect(items().map((b) => b.textContent)).toEqual(['Open in new tab', 'Open in new window', 'Open in mini window', 'Show in sidebar', 'Add to focus', 'Copy path', 'Rename file', 'Remove from favorites', 'Reveal in Finder', 'Open in VS Code'])
+    expect(items().map((b) => b.textContent)).toEqual(['Open in new tab', 'Open in new window', 'Open in mini window', 'Show in sidebar', 'Copy path', 'Rename file', 'Add to focus', 'Remove from favorites', 'Reveal in Finder', 'Open in VS Code'])
+    expect(items().map((b) => b.textContent).indexOf('Add to focus')).toBe(items().map((b) => b.textContent).indexOf('Remove from favorites') - 1)
     expect(items().find((b) => b.textContent === 'Show in sidebar')?.querySelector('svg')).not.toBeNull()
     // Not there: Set display name, Change icon, Delete, Cut, Paste.
     act(() => items().find((b) => b.textContent === 'Copy path')?.click())

@@ -29,9 +29,9 @@ import type { MenuTargets } from './Sidebar'
  *
  * D7 amended (YAZ-1674): the OS verbs collapse into ONE "Open in ▸" parent whose flyout is itself
  * groups of leaves — the same renderer, the same separator rule, one level deep — and that parent
- * is its OWN group between the this-row group and Delete. The Open group keeps only a folder's
- * Open, the plural open and the focus toggle — its one item on a single file row of the Files tab
- * (YAZ-2619 R6). On a row of Search, Focus or Favorites "Show in sidebar" leads it (YAZ-2638 D1, D3).
+ * is its OWN group between the this-row group and Delete. The Open group keeps a folder's Open,
+ * the plural open and "Open in new window"; the focus toggle sits directly above favorites at the
+ * top of the "Open in ▸" group (YAZ-6550). On a row of Search, Focus or Favorites "Show in sidebar" leads it (YAZ-2638 D1, D3).
  */
 interface MenuItemBase {
   /** Only a strip has one. */
@@ -252,7 +252,7 @@ type Leaf = (t: MenuSectionTargets, h: MenuHandlers) => MenuAction | null
 /** Why a clipboard write failed, as the notices spell it — shared with the vault menu (YAZ-1798). */
 export const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
-// ---- (1) Open / View: "Show in sidebar", a folder's Open, the plural open and the focus toggle — nothing here writes to disk ----
+// ---- (1) Open / View: "Show in sidebar", a folder's Open, the plural open and "Open in new window" — nothing here writes to disk ----
 
 /**
  * "Open folder page" — a FOLDER row (YAZ-2290 D3, YAZ-3377 D2): a click on its row only folds and a
@@ -291,8 +291,8 @@ const showInSidebar: Leaf = (t, h) => {
 /**
  * The focus toggle (YAZ-2619 D3): the favorite toggle's rule on the focus list of the row's vault (YAZ-2702) — ONE
  * state-aware item on every ROW, file or dir, any lens, never on blank space (R7); a 2+ selection
- * is counted, and a mixed one reads as Add (R9). A VIEW verb, so it closes the Open group (R6): it
- * changes what the Focus tab shows, never what is on disk.
+ * is counted, and a mixed one reads as Add (R9). Leads the "Open in ▸" group directly above the
+ * favorite toggle (YAZ-6550): it changes what the Focus tab shows, never what is on disk.
  */
 const focus: Item = (t, h) => {
   const paths = t.focusPaths
@@ -553,8 +553,8 @@ const changeIcon: Item = (t, h) => {
  * The favorite toggle (YAZ-1766 D3): ONE state-aware item on every ROW — file or dir, any lens —
  * never on blank space. Inside a 2+ selection it names the whole ordered selection and counts it
  * ("Add 3 to favorites"); `favoriteIsOn` is true only when EVERY path is already a favorite, so a
- * mixed selection reads as Add and the handler adds the missing ones. Leads the "Open in ▸"
- * group (Yasin, demo 2026-09-21): a place-verb beside the OS place-verbs, one hairline above Delete.
+ * mixed selection reads as Add and the handler adds the missing ones. Sits directly below the
+ * focus toggle in the "Open in ▸" group (YAZ-6550): a place-verb beside the OS place-verbs, one hairline above Delete.
  */
 const toggleFavorite: Item = (t, h) => {
   const paths = t.favoritePaths
@@ -749,11 +749,11 @@ const forgetClosed: Leaf = (t, h) => {
 const clearClosed: Leaf = (t, h) => (t.forgetClosed === null ? null : { id: 'clear-closed', label: 'Clear Recently closed', onSelect: () => h.onClearClosed() })
 
 const CLOSED_GROUP: readonly Item[] = [forgetClosed, clearClosed]
-const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, openInNewWindow, focus]
+const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, openInNewWindow]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
 const CREATE_GROUP: readonly Item[] = [newPageMenu, newCard, newDrawingMenu, newFolderMenu]
 const ROW_GROUP: readonly Item[] = [reviewFolder, reviewPage, rename, changeIcon]
-const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, hideOthers, addShortcut, openAlone, openIn, addVault]
+const OPEN_IN_GROUP: readonly Item[] = [focus, toggleFavorite, hideOthers, addShortcut, openAlone, openIn, addVault]
 const DELETE_GROUP: readonly Item[] = [share, history, info, del, removeShortcut, removeVault]
 
 /** Runs a group's rules and keeps the items they offered — the root's groups and a flyout's leaves alike. */

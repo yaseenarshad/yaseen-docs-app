@@ -176,15 +176,15 @@ describe('the six groups (🔒 D7, amended; YAZ-3085 D3)', () => {
     expect(build({ targetDir: null })).toHaveLength(6)
   })
 
-  it('a Markdown FILE row fills all six, in the pinned order — the focus toggle is the Open group\'s one item there (YAZ-2619 R6)', () => {
-    // No plural open and no folder to open: "Open in new window" (out of the flyout since YAZ-4470), then the focus
-    // toggle, above the clipboard group; the other OS verbs live in the "Open in ▸" flyout, a group of its own before Delete.
+  it('a Markdown FILE row fills all six, in the pinned order — the focus toggle sits at the top of the Open in group (YAZ-6550)', () => {
+    // No plural open and no folder to open: "Open in new window" (out of the flyout since YAZ-4470) is in the Open
+    // group above the clipboard group; the focus toggle leads the "Open in ▸" group directly above favorites and the OS verbs.
     expect(groupsOf(build(FILE_ROW))).toEqual([
-      ['Open in new window', 'Add to focus'],
+      ['Open in new window'],
       ['Cut', 'Copy', 'Paste', 'Copy path'],
       ['New page', 'New drawing', 'New folder'],
       ['Rename'],
-      ['Open in'],
+      ['Add to focus', 'Open in'],
       ['Delete'],
     ])
   })
@@ -343,14 +343,14 @@ describe('"Open in ▸" (D7 amended)', () => {
     expect(listOf(build(FILE_ROW), 'Open in')).toEqual([['VS Code', 'Default app'], ['Reveal in Finder']])
   })
 
-  it('the parent is a parent: no onSelect, and it stands ALONE in its own group between the this-row items and Delete', () => {
+  it('the parent is a parent: no onSelect, and it sits in its group between the this-row items and Delete', () => {
     const sections = build({ ...FILE_ROW, openTabPaths: ['/v/a.md', '/v/b.md'] })
     // Unlike the create parents (YAZ-3085 D1), "Open in ▸" has no default: a click only opens it.
     expect(parentOf(sections, 'Open in')).toBeDefined()
     expect(itemOf(sections, 'Open in')?.onSelect).toBeUndefined()
-    expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs', 'Open in new window', 'Add to focus'])
+    expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs', 'Open in new window'])
     expect(sections[3].map((i) => i.label)).toEqual(['Rename'])
-    expect(sections[4].map((i) => i.label)).toEqual(['Open in'])
+    expect(sections[4].map((i) => i.label)).toEqual(['Add to focus', 'Open in'])
   })
 
   it('no child at all → no parent', () => {
@@ -397,10 +397,11 @@ describe('"Open folder page" item (YAZ-2290 D3, YAZ-3377 D2)', () => {
     expect(itemOf(build(BLANK), 'Open folder page')).toBeUndefined()
   })
 
-  it('a folder row: it LEADS the menu, above Focus, and hands the caller the folder', () => {
+  it('a folder row: it LEADS the menu, and hands the caller the folder', () => {
     const onOpen = vi.fn()
     const sections = build({ openPath: '/v/Projects', focusPaths: ['/v/Projects'] }, { onOpen })
-    expect(sections[0].map((i) => i.label)).toEqual(['Open folder page', 'Add to focus'])
+    expect(sections[0].map((i) => i.label)).toEqual(['Open folder page'])
+    expect(sections[4].map((i) => i.label)).toEqual(['Add to focus'])
     select(sections, 'Open folder page')
     expect(onOpen).toHaveBeenCalledExactlyOnceWith('/v/Projects')
   })
@@ -419,12 +420,12 @@ describe('"Show in sidebar" item (YAZ-2638 D1, D3)', () => {
     expect(itemOf(build(BLANK), 'Show in sidebar')).toBeUndefined()
   })
 
-  it('S26, S27, S34: with a target it is the FIRST item of the menu — before "Add to focus" on a file row, before "Open folder page" on a folder row — and the rest of the menu is as it was', () => {
+  it('S26, S27, S34: with a target it is the FIRST item of the menu — before "Open in new window" on a file row, before "Open folder page" on a folder row — and the rest of the menu is as it was', () => {
     const file = build({ ...FILE_ROW, showPath: '/v/Page.md' })
-    expect(file[0].map((i) => i.label)).toEqual(['Show in sidebar', 'Open in new window', 'Add to focus'])
+    expect(file[0].map((i) => i.label)).toEqual(['Show in sidebar', 'Open in new window'])
     expect(labelsOf(file)).toEqual(['Show in sidebar', ...labelsOf(build(FILE_ROW))])
     const folder = build({ openPath: '/v/Projects', focusPaths: ['/v/Projects'], showPath: '/v/Projects' })
-    expect(folder[0].map((i) => i.label)).toEqual(['Show in sidebar', 'Open folder page', 'Add to focus'])
+    expect(folder[0].map((i) => i.label)).toEqual(['Show in sidebar', 'Open folder page'])
     // A vault row of a search (S26) has no Open and no focus item: the item is the Open group's one item.
     const vault = build({ removeVault: '/v', showPath: '/v' })
     expect(vault[0].map((i) => i.label)).toEqual(['Show in sidebar'])
@@ -464,10 +465,20 @@ describe('Focus item (YAZ-2619 D3)', () => {
     expect(onRemove).toHaveBeenCalledExactlyOnceWith(['/v/a.md'], true)
   })
 
-  it('R6: closes the Open group — after the plural open, before the clipboard group', () => {
-    const sections = build({ ...FILE_ROW, focusPaths: ['/v/a.md', '/v/b.md'], openTabPaths: ['/v/a.md', '/v/b.md'] })
-    expect(sections[0].map((i) => i.label)).toEqual(['Open 2 in new tabs', 'Open in new window', 'Add 2 to focus'])
-    expect(sections[1][0]?.label).toBe('Cut')
+  it('YAZ-6550: leads the "Open in ▸" group directly above Favorites (focus index === favorites index - 1), and degrades cleanly when only one list item is present', () => {
+    const both = build({ ...FILE_ROW, focusPaths: ['/v/a.md', '/v/b.md'], favoritePaths: ['/v/a.md', '/v/b.md'], openTabPaths: ['/v/a.md', '/v/b.md'] })
+    expect(both[0].map((i) => i.label)).toEqual(['Open 2 in new tabs', 'Open in new window'])
+    expect(both[4].map((i) => i.label)).toEqual(['Add 2 to focus', 'Add 2 to favorites', 'Open in'])
+    const flat = labelsOf(both)
+    expect(flat.indexOf('Add 2 to focus')).toBe(flat.indexOf('Add 2 to favorites') - 1)
+
+    const removeBoth = build({ ...FILE_ROW, focusPaths: ['/v/Page.md'], focusIsOn: true, favoritePaths: ['/v/Page.md'], favoriteIsOn: true })
+    const removeFlat = labelsOf(removeBoth)
+    expect(removeFlat.indexOf('Remove from focus')).toBe(removeFlat.indexOf('Remove from favorites') - 1)
+
+    // Only focus (no favorites) and only favorites (no focus) keep clean groups with no empty artifacts.
+    expect(build({ ...FILE_ROW, focusPaths: ['/v/Page.md'], favoritePaths: null })[4].map((i) => i.label)).toEqual(['Add to focus', 'Open in'])
+    expect(build({ ...FILE_ROW, focusPaths: null, favoritePaths: ['/v/Page.md'] })[4].map((i) => i.label)).toEqual(['Add to favorites', 'Open in'])
   })
 })
 
@@ -675,10 +686,11 @@ describe('favorite toggle item (YAZ-1766 D3)', () => {
     expect(onRemove).toHaveBeenCalledExactlyOnceWith(['/v/a.md'], true)
   })
 
-  it('leads the "Open in ▸" group — the this-row group ends on Rename, and the toggle sits directly above the flyout', () => {
+  it('sits directly below Focus in the "Open in ▸" group — the this-row group ends on Rename, and Focus + Favorites sit directly above the flyout (YAZ-6550)', () => {
     const sections = build({ ...FILE_ROW, favoritePaths: ['/v/Page.md'], favoriteIsOn: false })
     expect(sections[3].map((i) => i.label)).toEqual(['Rename'])
-    expect(sections[4].map((i) => i.label)).toEqual(['Add to favorites', 'Open in'])
+    expect(sections[4].map((i) => i.label)).toEqual(['Add to focus', 'Add to favorites', 'Open in'])
+    expect(labelsOf(sections).indexOf('Add to focus')).toBe(labelsOf(sections).indexOf('Add to favorites') - 1)
   })
 })
 
@@ -747,12 +759,12 @@ describe('a shortcut row (YAZ-2290 E5)', () => {
     expect(onRemoveShortcut).toHaveBeenCalledExactlyOnceWith('/v/Page.md', '/v/Projects')
   })
 
-  it('withholds Cut, Copy and Paste — even with something clipped — and keeps the real-place items, the focus toggle among them (YAZ-2619 R8)', () => {
+  it('withholds Cut, Copy and Paste — even with something clipped — and keeps the real-place items, the focus toggle among them (YAZ-2619 R8, YAZ-6550)', () => {
     expect(groupsOf(build({ ...SHORTCUT_ROW, clip: { count: 2, op: 'copy', paths: ['/v/a.md', '/v/b.md'] } }))).toEqual([
-      ['Open in new window', 'Add to focus'],
+      ['Open in new window'],
       ['Copy path'],
       ['New page', 'New drawing', 'New folder'],
-      ['Open in'],
+      ['Add to focus', 'Open in'],
       ['Remove shortcut'],
     ])
   })

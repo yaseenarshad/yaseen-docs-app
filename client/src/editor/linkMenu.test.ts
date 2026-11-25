@@ -141,7 +141,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
       '(ID: YAS-466)', '──', // only what the pill hides (YAZ-3747 demo)
       'Open', 'Open in new tab', 'Open in new window', 'Show in sidebar', '──',
       'Copy name and ID', 'Copy ID', 'Copy path', '──',
-      'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
+      'Add to focus', 'Remove from favorites', 'Open in ▸', '──',
       'Pill style ▸', 'Add alias', 'Edit link', 'Remove link',
     ])
     expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
@@ -153,7 +153,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     expect(shape(menu)).toEqual([
       'Open', 'Open in new tab', 'Open in new window', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
-      'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
+      'Add to focus', 'Remove from favorites', 'Open in ▸', '──',
       'Pill style ▸', 'Add alias', 'Edit link', 'Remove link',
     ])
     expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
@@ -179,7 +179,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     expect(shape(menu)).toEqual([
       'Open', 'Open in new tab', 'Open in new window', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
-      'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
+      'Add to focus', 'Remove from favorites', 'Open in ▸', '──',
       'Pill style ▸', 'Add alias', 'Edit link', 'Remove link',
     ])
     expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
@@ -202,7 +202,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
     expect(shape(menu)).toEqual([
       'Open', 'Open in new tab', 'Open in new window', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
-      'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
+      'Add to focus', 'Remove from favorites', 'Open in ▸', '──',
       'Pill style ▸', 'Edit alias', 'Edit link', 'Remove link',
     ])
     expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
@@ -245,7 +245,7 @@ describe('each new row calls its door with the link\'s target (YAZ-3740)', () =>
     const { root, view } = await mount('pad [[YAS-466]] tail\n')
     const menu = menuOf(root, view, 'AR v2 plan')
     const rows = Array.from(menu.querySelectorAll<HTMLElement>(':scope > .ctx-menu__item, :scope > .ctx-menu__parent > .ctx-menu__item'))
-    expect(rows.filter((row) => row.querySelector('svg') !== null).map((row) => row.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Remove from favorites', 'Add to focus'])
+    expect(rows.filter((row) => row.querySelector('svg') !== null).map((row) => row.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Add to focus', 'Remove from favorites'])
     expect(rows.filter((row) => row.dataset.hint !== undefined && row.dataset.hint !== '')).toEqual([])
   })
 

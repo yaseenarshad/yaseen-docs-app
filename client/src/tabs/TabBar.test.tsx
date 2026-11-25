@@ -889,14 +889,16 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     }
   })
 
-  it('YAZ-3264 D2, S14: the tab\'s list state is read when the menu opens; "Add to focus" and "Remove from favorites" toggle THAT path with it', () => {
+  it('YAZ-3264 D2, S14, YAZ-6550: the tab\'s list state is read when the menu opens; "Add to focus" sits directly above "Remove from favorites" and toggles THAT path with it', () => {
     const listState = vi.fn(() => ({ focus: false, favorite: true }))
     const [onToggleFocus, onToggleFavorite] = [vi.fn(), vi.fn()]
     const el = mount({ ...props, listState, onToggleFocus, onToggleFavorite })
     rightClick(tabAt(el, 1))
     expect(listState).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Page.md')
-    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Add to focus', 'Copy path', 'Remove from favorites', 'Reveal in Finder', 'Open in VS Code'])
-    act(() => items(el)[1]?.click())
+    const labels = items(el).map((b) => b.textContent)
+    expect(labels).toEqual(['Show in sidebar', 'Copy path', 'Add to focus', 'Remove from favorites', 'Reveal in Finder', 'Open in VS Code'])
+    expect(labels.indexOf('Add to focus')).toBe(labels.indexOf('Remove from favorites') - 1)
+    act(() => items(el)[2]?.click())
     expect(onToggleFocus).toHaveBeenCalledExactlyOnceWith(['/vault/sub/Deep Page.md'], false)
     expect(menuOf(el)).toBeNull()
     rightClick(tabAt(el, 1))

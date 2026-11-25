@@ -1,7 +1,7 @@
 /** Unit tests for `exploreInlineSections` (YAZ-6470 #5): inline drawing and inline card right-click menus. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MenuAction, MenuItem, MenuParent, MenuSection } from '../sidebar/menuSections'
-import { exploreInlineSections, type ExploreInlineMenuDoors } from './exploreMenu'
+import { exploreInlineSections, explorePageSections, type ExploreInlineMenuDoors } from './exploreMenu'
 
 const { readFile, copyText, landOnCard, landOnInlineDrawing } = vi.hoisted(() => ({
   readFile: vi.fn<(path: string) => Promise<{ path: string; content: string; mtime: number; size: number }>>(),
@@ -165,5 +165,33 @@ describe('exploreInlineSections (YAZ-6470 #5)', () => {
     expect(labels).not.toContain('Copy card ID')
     expect(labels).not.toContain('Copy card link')
     expect(labels).toContain('Copy path')
+  })
+})
+
+describe('explorePageSections (YAZ-6550)', () => {
+  it('places Focus directly above Favorites in the bottom section', () => {
+    const sections = explorePageSections('/v/Architecture.md', {
+      openInTab: vi.fn(),
+      onRenameFile: vi.fn(),
+      onNotice: vi.fn(),
+      closeStack: vi.fn(),
+      linkActions: {
+        showInSidebar: vi.fn(),
+        openNewWindow: vi.fn(),
+        reveal: vi.fn(),
+        openVsCode: vi.fn(),
+        listState: () => ({ focus: false, favorite: true }),
+        toggleFocus: vi.fn(),
+        toggleFavorite: vi.fn(),
+      },
+    })
+    expect(sections.map((group) => group.map((i) => i.label))).toEqual([
+      ['Open in new tab', 'Open in new window', 'Open in mini window'],
+      ['Show in sidebar', 'Copy path'],
+      ['Rename file'],
+      ['Add to focus', 'Remove from favorites', 'Reveal in Finder', 'Open in VS Code'],
+    ])
+    const flat = sections.flat().map((i) => i.label)
+    expect(flat.indexOf('Add to focus')).toBe(flat.indexOf('Remove from favorites') - 1)
   })
 })

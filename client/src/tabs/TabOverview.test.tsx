@@ -595,10 +595,10 @@ describe('TabOverview', () => {
     // This window's lists: '/x' is a vault it does not show (null).
     const listState = (path: string) => (path.startsWith('/x/') ? null : { focus: path === '/w/y.md', favorite: false })
     const { el } = await mount({ listState, onToggleFocus, onToggleFavorite })
-    // S16: a card of this window — the tab row's places (D2) and glyphs (D6).
+    // S16: a card of this window — the tab row's places (D2, YAZ-6550) and glyphs (D6).
     rightClick(page(el, '/v/a.md'))
     expect(menuItems(el)).toEqual(expect.arrayContaining(['Show in sidebar', 'Add to focus', 'Add to favorites']))
-    expect(menuItems(el).indexOf('Add to focus')).toBe(menuItems(el).indexOf('Show in sidebar') + 1)
+    expect(menuItems(el).indexOf('Add to focus')).toBe(menuItems(el).indexOf('Add to favorites') - 1)
     expect(menuItems(el).indexOf('Add to favorites')).toBe(menuItems(el).indexOf('Reveal in Finder') - 1)
     act(() => menuItem(el, 'Add to favorites')?.click())
     expect(onToggleFavorite).toHaveBeenLastCalledWith(['/v/a.md'], false)
