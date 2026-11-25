@@ -12528,6 +12528,10 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
   beforeEach(() => {
     NOW = Date.now()
   })
+  afterEach(async () => {
+    installBridge()
+    await storage.init()
+  })
   const tree3511 = (): TreeNode[] => [
     page('/v/plan b.md', NOW - 34 * 60_000),
     { type: 'dir', name: 'plan old', path: '/v/plan old', children: [page('/v/plan old/x.md', NOW - 150 * D)] },
@@ -12623,15 +12627,17 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     expect(highlighted(el)).toBe('/v/plan old/x.md')
   })
 
-  it('S9, S34, D3, D4, D7, D12, YAZ-6502: the button opens the Search menu — Best match first, no Manual, "Show last updated", "Show IDs" (when vault has IDs), then Type and Time — and a pick writes `searchSort` or `rowDates` alone', async () => {
-    const { el, props } = await search()
+  it('S9, S34, D3, D4, D7, D12, YAZ-6502, YAZ-6529: the button opens the Search menu — Best match first, no Manual, "Show last updated", "Show IDs" (when vault has IDs), then Type and Time — and a pick writes `searchSort` or per-vault `rowDates` alone', async () => {
+    const { el, props, bridge } = await search()
     act(() => sortButton(el)?.click())
     expect(items(el)).toEqual(['Best match✓', 'Name', 'Last updated', 'Show last updated✓', 'Show IDsNumber (#12)', 'TypeAll types', 'TimeAny time', 'Include inside pages✓'])
     await act(async () => itemByLabel(el, 'Last updated')?.click())
     expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, searchSort: { by: 'updated', reverse: false } })
     act(() => sortButton(el)?.click())
     await act(async () => itemByLabel(el, 'Show last updated')?.click())
-    expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, rowDates: { ...DEFAULT_ROW_DATES, search: false } })
+    expect(bridge.state.setFolder).toHaveBeenLastCalledWith('/v', { rowDates: { ...DEFAULT_ROW_DATES, search: false } })
+    expect(storage.getFolderRowDates('/v')).toEqual({ ...DEFAULT_ROW_DATES, search: false })
+    expect(storage.getFolderRowDates('/other')).toBeNull()
   })
 
   it('S11: with the dates off no row shows a date', async () => {
@@ -12949,17 +12955,20 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     expect(props.onSetVaultOpen).not.toHaveBeenCalled()
   })
 
-  it('S22, S25, D10: Files has its own date switch, off by default; on, its rows show a date and Search keeps its own', async () => {
-    const { el, props, rerender } = await search(NAME)
+  it('S22, S25, D10, YAZ-6529: Files has its own per-vault date switch, off by default; on, its rows show a date while Search and other vaults keep their own', async () => {
+    const { el, props, bridge, rerender } = await search(NAME)
     await rerender({ lens: 'files' })
     expect(el.querySelector('.tree__date')).toBeNull()
     act(() => sortButton(el)?.click())
     expect(items(el)).toEqual(['Name✓', 'Last updated', 'Manual', 'A to Z✓', 'Z to A', 'Show last updated', 'Kind first'])
     await act(async () => itemByLabel(el, 'Show last updated')?.click())
-    expect(props.onChangeSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, ...NAME, rowDates: { ...DEFAULT_ROW_DATES, files: true } })
-    await rerender({ settings: { ...DEFAULT_SETTINGS, ...NAME, rowDates: { ...DEFAULT_ROW_DATES, files: true } } })
+    expect(bridge.state.setFolder).toHaveBeenLastCalledWith('/v', { rowDates: { ...DEFAULT_ROW_DATES, files: true } })
     expect(el.querySelector('.tree__row[data-path="/v/plan a.md"] .tree__date')?.textContent).toBe('1w')
     expect(el.querySelector('.tree__row[data-path="/v/plan empty"] .tree__date')).toBeNull()
+    // Switching to another vault does not inherit `/v`'s per-vault toggle.
+    await rerender({ vaults: [{ ...props.vaults[0], root: '/v2' }] })
+    expect(storage.getFolderRowDates('/v2')).toBeNull()
+    expect(el.querySelector('.tree__date')).toBeNull()
   })
 
   it('S9, S21: Files keeps its own sort and shows no dates', async () => {

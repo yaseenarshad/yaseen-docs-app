@@ -139,6 +139,7 @@ import {
   addRecentRoot,
   cleanVaultKey,
   cleanVaultLauncher,
+  cleanRowDates,
   cleanUpNextTaken,
   cleanCardsAdded,
   cleanVaultName,
@@ -1137,6 +1138,7 @@ function sanitizeFolder(raw: unknown): FolderState | null {
   const upNext = cleanUpNextTaken(raw.upNext)
   const added = cleanCardsAdded(raw.added)
   const launcher = cleanVaultLauncher(raw.launcher)
+  const rowDates = cleanRowDates(raw.rowDates)
   return {
     // Tree expansion is SESSION state (YAZ-1642): never restored, never written (`toDisk`).
     // A relaunch starts every tree collapsed; a pre-1642 file's leftover lists are ignored.
@@ -1162,6 +1164,8 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     ...(added !== null && { added }),
     // macOS Vault App launcher metadata (YAZ-5967, YAZ-6374): a junk entry is dropped.
     ...(launcher !== null && { launcher }),
+    // Per-vault "Show last updated" switches (YAZ-6529): a junk entry is dropped.
+    ...(rowDates !== null && { rowDates }),
   }
 }
 
@@ -1587,6 +1591,8 @@ export function createStore(filePath: string): Store {
         ...(patch.upNext !== undefined && cleanUpNextTaken(patch.upNext) !== null ? { upNext: cleanUpNextTaken(patch.upNext)! } : {}),
         // "Add more for today" (YAZ-5042): the renderer hands in the day's numbers whole; a junk value changes nothing.
         ...(patch.added !== undefined && cleanCardsAdded(patch.added) !== null ? { added: cleanCardsAdded(patch.added)! } : {}),
+        // Per-vault "Show last updated" switches (YAZ-6529): valid sets, junk changes nothing.
+        ...(patch.rowDates !== undefined && cleanRowDates(patch.rowDates) !== null ? { rowDates: cleanRowDates(patch.rowDates)! } : {}),
       }
       // macOS Vault App launcher metadata (YAZ-5967, YAZ-6374): null deletes, valid sets, junk changes nothing.
       if (patch.launcher === null) {

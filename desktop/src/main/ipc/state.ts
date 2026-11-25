@@ -1,4 +1,4 @@
-import { MAX_CANVAS_CARDS, MAX_CANVAS_FRAMES, cleanCardsAdded, cleanUpNextTaken, cleanVaultLauncher, isTocSource, type CanvasCard, type CanvasFrame, type FolderPatch, type TabCanvasPatch } from '@shared/types'
+import { MAX_CANVAS_CARDS, MAX_CANVAS_FRAMES, cleanCardsAdded, cleanRowDates, cleanUpNextTaken, cleanVaultLauncher, isTocSource, type CanvasCard, type CanvasFrame, type FolderPatch, type TabCanvasPatch } from '@shared/types'
 import { cleanCourseState, defaultCourseState, type CoursePatch } from '@shared/courseState'
 import { isRecord } from '@shared/guards'
 import { CONTRACT } from '@shared/ipc'
@@ -56,6 +56,12 @@ function requireFolderPatch(raw: unknown): FolderPatch {
       if (launcher === null) throw new BridgeFailure('BAD_REQUEST', "'launcher' must be a valid VaultLauncherInfo or null")
       patch.launcher = launcher
     }
+  }
+  // Per-vault "Show last updated" switches (YAZ-6529).
+  if (raw.rowDates !== undefined) {
+    const rowDates = cleanRowDates(raw.rowDates)
+    if (rowDates === null) throw new BridgeFailure('BAD_REQUEST', "'rowDates' must have a boolean for each sidebar tab")
+    patch.rowDates = rowDates
   }
   return patch
 }

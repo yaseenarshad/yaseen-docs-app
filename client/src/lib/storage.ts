@@ -27,6 +27,7 @@ import {
   type OpenStat,
   type RecentRoots,
   type RightPanelIdentity,
+  type RowDates,
   type SettingsState,
   type SidebarLens,
   type StartView,
@@ -367,6 +368,15 @@ export const storage = {
   setCardsAdded(root: string, added: CardsAdded): void {
     patchFolder(root, { added })
     send('state.setFolder', () => api.state.setFolder(root, { added }))
+  },
+
+  /** Per-vault "Show last updated" switches (YAZ-6529), or null when this vault has not saved its own yet. */
+  getFolderRowDates: (root: string): RowDates | null => folderOf(root).rowDates ?? null,
+  /** Save per-vault "Show last updated" switches (YAZ-6529): updates the cache, notifies listeners, and persists via `state.setFolder`. */
+  setFolderRowDates(root: string, rowDates: RowDates): void {
+    patchFolder(root, { rowDates })
+    send('state.setFolder', () => api.state.setFolder(root, { rowDates }))
+    listeners.forEach((l) => l())
   },
 
   /** A vault's number, 1–9, or null (YAZ-2555 D2): ⌘<key> goes to it. */
