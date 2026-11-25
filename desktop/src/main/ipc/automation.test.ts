@@ -1,12 +1,30 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, expect, it, vi } from 'vitest'
-import { BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, screen } from 'electron'
 import { CONTRACT } from '@shared/ipc'
 import type { Store } from '../store'
 import type { WindowManager } from '../windows'
 import { registerAutomationIpc } from './automation'
 
-vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: vi.fn() }, ipcMain: { handle: vi.fn() } }))
+vi.mock('electron', () => ({
+  app: { focus: vi.fn() },
+  BrowserWindow: { getAllWindows: vi.fn() },
+  ipcMain: { handle: vi.fn() },
+  screen: {
+    getPrimaryDisplay: vi.fn(() => ({
+      id: 1,
+      label: 'Primary',
+      bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      workArea: { x: 0, y: 25, width: 1920, height: 1055 },
+    })),
+    getAllDisplays: vi.fn(() => [
+      { id: 2, label: 'Left', bounds: { x: -1920, y: 0, width: 1920, height: 1080 }, workArea: { x: -1920, y: 25, width: 1920, height: 1055 } },
+      { id: 1, label: 'Primary', bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 25, width: 1920, height: 1055 } },
+    ]),
+    getCursorScreenPoint: vi.fn(() => ({ x: 100, y: 200 })),
+    getDisplayMatching: vi.fn((b: { x: number }) => ({ id: b.x < 0 ? 2 : 1 })),
+  },
+}))
 afterEach(() => { vi.clearAllMocks(); vi.useRealTimers() })
 const handler = (channel: string) => vi.mocked(ipcMain.handle).mock.calls.find(([name]) => name === channel)![1]
 
@@ -67,4 +85,100 @@ it('ignores a ready signal from a page that is no app window, and a malformed re
   await handler(CONTRACT.automation.reply.channel)({ sender: page } as never, { id: message.id, ok: false })
   await handler(CONTRACT.automation.reply.channel)({ sender: page } as never, { id: message.id, ok: true, value: 'done' })
   expect(await pending).toBe('done')
+})
+
+it('wires displays, windowInfo, fullscreen-exiting moveWindow, focusWindow, minimizeWindow, closeWindow, and command (YAZ-6539)', async () => {
+  const page = Object.assign(new EventEmitter(), { id: 12, send: vi.fn() })
+  let bounds = { x: 100, y: 100, width: 1000, height: 700 }
+  let minimized = true
+  let fullscreen = true
+  let focused = false
+  const win = Object.assign(new EventEmitter(), {
+    webContents: page,
+    isDestroyed: () => false,
+    isFocused: () => focused,
+    isMinimized: () => minimized,
+    isFullScreen: () => fullscreen,
+    getBounds: () => ({ ...bounds }),
+    setBounds: vi.fn((next: typeof bounds) => { bounds = { ...next } }),
+    setFullScreen: vi.fn((on: boolean) => {
+      fullscreen = on
+      if (!on) setTimeout(() => win.emit('leave-full-screen'), 5)
+    }),
+    restore: vi.fn(() => { minimized = false }),
+    show: vi.fn(),
+    focus: vi.fn(() => { focused = true }),
+    minimize: vi.fn(() => { minimized = true }),
+  })
+  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([win] as never)
+  const closeAutomationWindow = vi.fn(async () => 'closed' as const)
+  const windows = {
+    idFor: (sender: unknown) => sender === page ? 'w1' : undefined,
+    closeAutomationWindow,
+  } as unknown as WindowManager
+  const host = registerAutomationIpc({} as Store, windows)
+
+  // Displays: primary ordered first
+  expect(host.displays!().map(d => d.id)).toEqual([1, 2])
+  expect(host.displays!()[0].primary).toBe(true)
+  expect(host.cursorPoint!()).toEqual({ x: 100, y: 200 })
+
+  // windowInfo reflects ready state
+  expect(host.windowInfo!('w1')).toEqual({ ready: false, focused: false, minimized: true, fullscreen: true, displayId: 1, bounds })
+  await handler(CONTRACT.automation.ready.channel)({ sender: page } as never, true)
+  expect(host.windowInfo!('w1')?.ready).toBe(true)
+
+  // moveWindow exits fullscreen, restores minimized, sets bounds, and focuses when asked
+  const moved = await host.moveWindow!('w1', { x: -960, y: 25, width: 960, height: 1055 }, true)
+  expect(win.setFullScreen).toHaveBeenCalledWith(false)
+  expect(win.restore).toHaveBeenCalledOnce()
+  expect(win.setBounds).toHaveBeenCalledWith({ x: -960, y: 25, width: 960, height: 1055 }, false)
+  expect(moved).toEqual({ displayId: 2, bounds: { x: -960, y: 25, width: 960, height: 1055 }, focused: true, exitedFullScreen: true })
+
+  // minimizeWindow & focusWindow
+  expect(host.minimizeWindow!('w1')).toBe(true)
+  expect(win.minimize).toHaveBeenCalledOnce()
+  expect(host.focusWindow!('w1')).toEqual({ focused: true, restored: true })
+  if (process.platform === 'darwin') expect(app.focus).toHaveBeenCalledWith({ steal: true })
+
+  // closeWindow forwards to closeAutomationWindow
+  expect(await host.closeWindow!('w1', true)).toBe('closed')
+  expect(closeAutomationWindow).toHaveBeenCalledWith('w1', true)
+
+  // generalized command sends and resolves reply
+  const cmd = host.command!('w1', { action: 'inspect' }, 2000)
+  const sent = page.send.mock.calls.at(-1)![1]
+  expect(sent.action).toBe('inspect')
+  await handler(CONTRACT.automation.reply.channel)({ sender: page } as never, { id: sent.id, ok: true, value: { tabs: [] } })
+  expect(await cmd).toEqual({ tabs: [] })
+  expect(screen.getPrimaryDisplay).toHaveBeenCalled()
+})
+
+it('reports exitedFullScreen: false and detaches listeners when fullscreen exit times out (YAZ-6539)', async () => {
+  vi.useFakeTimers()
+  const page = Object.assign(new EventEmitter(), { id: 13, send: vi.fn() })
+  let bounds = { x: 0, y: 0, width: 1200, height: 800 }
+  const win = Object.assign(new EventEmitter(), {
+    webContents: page,
+    isDestroyed: () => false,
+    isFocused: () => true,
+    isMinimized: () => false,
+    isFullScreen: () => true,
+    getBounds: () => ({ ...bounds }),
+    setBounds: vi.fn((next: typeof bounds) => { bounds = { ...next } }),
+    setFullScreen: vi.fn(),
+    restore: vi.fn(),
+    show: vi.fn(),
+    focus: vi.fn(),
+    minimize: vi.fn(),
+  })
+  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([win] as never)
+  const host = registerAutomationIpc({} as Store, { idFor: (s: unknown) => s === page ? 'w1' : undefined } as unknown as WindowManager)
+
+  const pending = host.moveWindow!('w1', { x: 0, y: 25, width: 960, height: 1055 }, false)
+  await vi.advanceTimersByTimeAsync(3500)
+  const res = await pending
+  expect(res.exitedFullScreen).toBe(false)
+  expect(win.listenerCount('leave-full-screen')).toBe(0)
+  expect(win.listenerCount('closed')).toBe(0)
 })

@@ -10,34 +10,54 @@ import { descriptorPath, privateDirectory, readConnection, type Connection } fro
 import { userDataDir } from '../main/userData'
 import type { Io } from './cli'
 
-export const AUTOMATION_HELP = `Navigation (the running app; it starts Docs when needed):
-  yaseendocs open [--new-window] [--read-only] [--root <repo>] [--line <n>]
+export const AUTOMATION_HELP = `Navigation, windows & tabs (the running app; navigation/open starts Docs when needed):
+  yaseendocs open [--new-window] [--new-tab] [--read-only] [--no-focus] [--root <repo>] [--line <n>]
+      [--tile <preset>] [--display <primary|cursor|next|id>]
       [--sidebar files|favorites|focus] [--reveal true|false] [--view <name>]
       [--profile <absolute-path>] [--wait-ms <1..300000>] [--json] [<file[:line]> | <dir>]
   yaseendocs navigation open (--root <path> | --roots <JSON list> | --workspace <id or name> | --window <id>)
-      [--path <path>] [--line <n>] [--read-only true|false] [--sidebar files|favorites|focus] [--reveal true|false]
-      [--group <id or name>] [--view <name>] [--scope vault|workspace] [--mode reuse|new] [--allow-partial true]
+      [--path <path> ...] [--paths <JSON list>] [--active-path <path>] [--tab-mode reuse|new|activate-or-new | --new-tab]
+      [--line <n>] [--mode reuse|new] [--tile <preset>] [--display <primary|cursor|next|id>] [--focus | --no-focus]
+      [--read-only] [--sidebar files|favorites|focus] [--reveal | --no-reveal]
+      [--group <id or name>] [--view <name>] [--scope vault|workspace] [--allow-partial]
+  yaseendocs window list
+  yaseendocs window move --window <id> (--tile <preset> | --x <px> --y <px> --width <px> --height <px>)
+      [--display <primary|cursor|next|id>] [--focus | --no-focus]
+  yaseendocs window focus --window <id>
+  yaseendocs window minimize --window <id>
+  yaseendocs window close --window <id> [--force]
+  yaseendocs tab activate --window <id> (--tab <id> | --path <path>) [--focus | --no-focus]
+  yaseendocs tab close --window <id> [--tab <id> | --path <path> | --tabs <JSON list>] [--others] [--force]
+  yaseendocs tab move --from <id> (--tab <id> | --path <path>) (--to <id> | --new-window)
+      [--tile <preset>] [--display <primary|cursor|next|id>] [--focus | --no-focus]
   yaseendocs app status
   yaseendocs request status --id <request-id>
   yaseendocs capabilities --json
   yaseendocs <resource> <action> --help
 
-Each input field is also a flag: --root <path>, --allow-partial true, and so on. --input <JSON | @file | -> gives
-them as one JSON object. Unknown fields and flags fail before anything is sent.
+Each input field is also a flag: --root <path>, --allow-partial (or --allow-partial true), --no-focus, and so on.
+Boolean flags work as switches (--force, --others, --new-window, --no-focus) or explicit values (--focus false).
+Repeat --path on navigation open to open multiple tabs in order (or pass --paths as JSON). --new-tab aliases --tab-mode new.
+Tile presets: left, right, top, bottom, top-left, top-right, bottom-left, bottom-right, left-third, center-third, right-third, left-two-thirds, right-two-thirds, center, maximize.
+--input <JSON | @file | -> gives fields as one JSON object. Unknown fields and flags fail before anything is sent.
 --profile <absolute-path> selects an isolated app profile. --start starts Docs for a command other than navigation.
 --wait-ms <1..300000> changes the wait, not the operation's lifetime.
 --request <session/id/issuedAt> retries the exact same request, within five minutes.
 A timeout is an unknown outcome: check the receipt with request status before you try again.
 
-Example:
+Examples:
   # Open a file at line 42 in a transient read-only window without touching .yaseendocs/.
   yaseendocs open --read-only src/app.ts:42
-  # Open the Skills vault in a new window on Favorites, with its Mochi folder revealed and its Cards view.
-  yaseendocs navigation open --root "/Vaults/Skills" --path "/Vaults/Skills/Mochi" --sidebar favorites --view Cards --mode new
+  # Open two tabs in a new window tiled to the left half without stealing focus.
+  yaseendocs navigation open --root "/Vaults/Work" --path "/Vaults/Work/a.md" --path "/Vaults/Work/b.md" --mode new --tile left --no-focus
+  # List live windows/tabs, then tile a window to the right half of display 2.
+  yaseendocs window list --json
+  yaseendocs window move --window w1 --tile right --display 2
 `
 
 export const OPEN_HELP = `usage:
-  yaseendocs open [--new-window] [--read-only] [--root <repo>] [--line <n>]
+  yaseendocs open [--new-window] [--new-tab] [--read-only] [--no-focus] [--root <repo>] [--line <n>]
+      [--tile <preset>] [--display <primary|cursor|next|id>]
       [--sidebar files|favorites|focus] [--reveal true|false] [--view <name>]
       [--profile <absolute-path>] [--wait-ms <1..300000>] [--request <session/id/issuedAt>] [--json]
       [<file[:line]> | <dir>]
@@ -46,7 +66,11 @@ Opens a file or folder in Yaseen Docs (starting Docs when needed).
   <file[:line]>  File to open; append :<line> to jump to a 1-based line number.
   <dir>          Directory to open as a vault (or a folder inside --root).
   --new-window   Always open a new window.
+  --new-tab      Open in a new tab instead of reusing the current tab.
   --read-only    Open in transient read-only mode without writing .yaseendocs/.
+  --no-focus     Do not focus/raise the window.
+  --tile <name>  Tile preset on the target display (left, right, maximize, left-third, ...).
+  --display <d>  Target display: primary, cursor, next, or a display ID from window list.
   --root <repo>  Explicit vault/repo root (default: nearest .git or .yaseendocs ancestor, else file's directory).
   --line <n>     1-based line number to jump to in the target file.
   --sidebar      Sidebar list to show (files|favorites|focus).
@@ -55,8 +79,12 @@ Opens a file or folder in Yaseen Docs (starting Docs when needed).
   --request      Retry an earlier request reference (<session/id/issuedAt>), within five minutes.
 `
 
-const RESOURCES = new Set(['capabilities', 'navigation', 'app', 'request', 'open'])
+const RESOURCES = new Set(['capabilities', 'navigation', 'window', 'tab', 'app', 'request', 'open'])
 export const isAutomationCommand = (argv: readonly string[]): boolean => RESOURCES.has(argv[0] ?? '')
+
+const flagToKey = (flag: string): string => flag.slice(2).replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase())
+const isBooleanSchema = (schema: CommandSchema | undefined): boolean =>
+  schema !== undefined && (schema.type === 'boolean' || (Array.isArray(schema.type) && schema.type.includes('boolean')))
 
 /**
  * A flag's text as its field's value. Text fields take the text as it is. A text-or-null field takes `null` as null and
@@ -208,7 +236,11 @@ async function parseOpenCommand(argv: readonly string[]): Promise<
   let waitMs: number = AUTOMATION_LIMITS.waitMs
   let reference: string | undefined
   let newWindow = false
+  let newTab = false
   let readOnly = false
+  let noFocus = false
+  let tile: unknown
+  let display: unknown
   let rootFlag: string | undefined
   let lineFlag: number | undefined
   let sidebar: unknown
@@ -227,7 +259,9 @@ async function parseOpenCommand(argv: readonly string[]): Promise<
       seen.add(arg)
       if (arg === '--json') continue
       if (arg === '--new-window') { newWindow = true; continue }
+      if (arg === '--new-tab') { newTab = true; continue }
       if (arg === '--read-only') { readOnly = true; continue }
+      if (arg === '--no-focus') { noFocus = true; continue }
       if (i + 1 >= argv.length) throw new AutomationFailure('INVALID_INPUT', `Expected a flag and value: ${arg}`)
       const value = argv[++i]
       switch (arg) {
@@ -241,6 +275,8 @@ async function parseOpenCommand(argv: readonly string[]): Promise<
           lineFlag = parsed
           break
         }
+        case '--tile': tile = parsedValue(definition.input.properties!.tile, value, arg); break
+        case '--display': display = parsedValue(definition.input.properties!.display, value, arg); break
         case '--sidebar': sidebar = parsedValue(definition.input.properties!.sidebar, value, arg); break
         case '--reveal': reveal = parsedValue(definition.input.properties!.reveal, value, arg); break
         case '--view': view = value; break
@@ -306,6 +342,10 @@ async function parseOpenCommand(argv: readonly string[]): Promise<
     root,
     ...(path !== undefined ? { path } : {}),
     mode: newWindow ? 'new' : 'reuse',
+    ...(newTab ? { tabMode: 'new' } : {}),
+    ...(noFocus ? { focus: false } : {}),
+    ...(tile !== undefined ? { tile } : {}),
+    ...(display !== undefined ? { display } : {}),
     ...(readOnly ? { readOnly: true } : {}),
     ...(line !== undefined ? { line } : {}),
     ...(sidebar !== undefined ? { sidebar } : {}),
@@ -349,28 +389,77 @@ export async function runAutomation(argv: readonly string[], io: Io): Promise<nu
     // Only navigation starts Docs on its own (D1). Another command starts it only with --start.
     let start = definition.effect === 'navigate', waitMs: number = AUTOMATION_LIMITS.waitMs, input: string | undefined, reference: string | undefined
     const seen = new Set<string>()
+    const repeatedPaths: string[] = []
     for (let i = 2; i < argv.length; i++) {
       const flag = argv[i]
-      if (seen.has(flag)) throw new AutomationFailure('INVALID_INPUT', `Repeated flag: ${flag}`)
-      seen.add(flag)
       if (flag === '--help' || flag === '-h') { io.stdout(`${AUTOMATION_HELP}\n${JSON.stringify(definition, null, 2)}\n`); return 0 }
+      const repeatablePath = name === 'navigation.open' && flag === '--path'
+      if (!repeatablePath) {
+        if (seen.has(flag)) throw new AutomationFailure('INVALID_INPUT', `Repeated flag: ${flag}`)
+        seen.add(flag)
+      }
       if (flag === '--json') continue
       if (flag === '--start') { start = true; continue }
-      if (!flag.startsWith('--') || i + 1 >= argv.length) throw new AutomationFailure('INVALID_INPUT', `Expected a flag and value: ${flag}`)
-      const value = argv[++i]
-      switch (flag) {
-        case '--profile': profile = value; break
-        case '--wait-ms': waitMs = Number(value); break
-        case '--request': reference = value; break
-        case '--input': input = value; break
-        default: {
-          const key = flag.slice(2).replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase())
-          const schema = definition.input.properties?.[key]
-          if (!schema) throw new AutomationFailure('INVALID_INPUT', `Unknown flag: ${flag}`)
-          args[key] = parsedValue(schema, value, flag)
+      if (!flag.startsWith('--')) throw new AutomationFailure('INVALID_INPUT', `Expected a flag and value: ${flag}`)
+      if (name === 'navigation.open' && flag === '--new-tab') {
+        if (Object.hasOwn(args, 'tabMode')) throw new AutomationFailure('INVALID_INPUT', 'Cannot combine --new-tab with --tab-mode.')
+        args.tabMode = 'new'
+        continue
+      }
+      if (flag === '--profile' || flag === '--wait-ms' || flag === '--request' || flag === '--input') {
+        if (i + 1 >= argv.length) throw new AutomationFailure('INVALID_INPUT', `Expected a flag and value: ${flag}`)
+        const value = argv[++i]
+        switch (flag) {
+          case '--profile': profile = value; break
+          case '--wait-ms': waitMs = Number(value); break
+          case '--request': reference = value; break
+          case '--input': input = value; break
+        }
+        continue
+      }
+      const key = flagToKey(flag)
+      const schema = definition.input.properties?.[key]
+      if (schema) {
+        if (isBooleanSchema(schema)) {
+          if (Object.hasOwn(args, key)) throw new AutomationFailure('INVALID_INPUT', `Conflicting flag: ${flag}`)
+          const next = argv[i + 1]
+          if (next === undefined || next.startsWith('-')) {
+            args[key] = true
+          } else {
+            i++
+            args[key] = parsedValue(schema, next, flag)
+          }
+          continue
+        }
+        if (i + 1 >= argv.length) throw new AutomationFailure('INVALID_INPUT', `Expected a flag and value: ${flag}`)
+        const value = argv[++i]
+        if (repeatablePath) {
+          if (Object.hasOwn(args, 'paths')) throw new AutomationFailure('INVALID_INPUT', 'Cannot combine --path with --paths.')
+          repeatedPaths.push(parsedValue(schema, value, flag) as string)
+          continue
+        }
+        if (name === 'navigation.open' && key === 'paths' && repeatedPaths.length > 0) {
+          throw new AutomationFailure('INVALID_INPUT', 'Cannot combine --path with --paths.')
+        }
+        if (name === 'navigation.open' && key === 'tabMode' && Object.hasOwn(args, 'tabMode')) {
+          throw new AutomationFailure('INVALID_INPUT', 'Cannot combine --new-tab with --tab-mode.')
+        }
+        args[key] = parsedValue(schema, value, flag)
+        continue
+      }
+      if (flag.startsWith('--no-')) {
+        const positiveKey = flagToKey(`--${flag.slice(5)}`)
+        const positiveSchema = definition.input.properties?.[positiveKey]
+        if (isBooleanSchema(positiveSchema)) {
+          if (Object.hasOwn(args, positiveKey)) throw new AutomationFailure('INVALID_INPUT', `Conflicting flag: ${flag}`)
+          args[positiveKey] = false
+          continue
         }
       }
+      throw new AutomationFailure('INVALID_INPUT', `Unknown flag: ${flag}`)
     }
+    if (repeatedPaths.length === 1) args.path = repeatedPaths[0]
+    else if (repeatedPaths.length > 1) args.paths = repeatedPaths
     if (!isAbsolute(profile)) throw new AutomationFailure('INVALID_INPUT', '--profile must be an absolute path.')
     if (!Number.isInteger(waitMs) || waitMs < 1 || waitMs > 300_000) throw new AutomationFailure('INVALID_INPUT', '--wait-ms must be between 1 and 300000.')
     if (input !== undefined) {
@@ -380,6 +469,9 @@ export async function runAutomation(argv: readonly string[], io: Io): Promise<nu
         if (Object.hasOwn(args, key)) throw new AutomationFailure('INVALID_INPUT', `Repeated input: ${key}`)
         args[key] = value
       }
+    }
+    if (name === 'navigation.open' && Object.hasOwn(args, 'path') && Object.hasOwn(args, 'paths')) {
+      throw new AutomationFailure('INVALID_INPUT', 'Cannot combine path with paths.')
     }
     validateInput(definition.input, args)
     const connected = Date.now()

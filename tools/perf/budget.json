@@ -54,8 +54,8 @@
       "$comment": "Shipped .map bytes inside out/renderer (must stay 0)."
     },
     "mainBundleBytes": {
-      "max": 1100000,
-      "$comment": "Main process and CLI bundle bytes in out/main (measured 1,087,309 B on YAZ-6499 / 1,089,860 B with YAZ-6491 suite; raised from 1,080,000 with Yasin's OK)."
+      "max": 1150000,
+      "$comment": "Main process and CLI bundle bytes in out/main (measured 1,115,867 B with YAZ-6539 CLI window/tab control; raised from 1,100,000 with Yasin's approval)."
     },
     "shareViewerBytes": {
       "max": 2220000,

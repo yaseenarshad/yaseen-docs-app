@@ -36,7 +36,22 @@ describe('actual CLI process', () => {
     const result = await run('capabilities', '--json')
     expect(result.code).toBe(0)
     const data = JSON.parse(result.stdout)
+    expect(data.commands.map((command: { name: string }) => command.name)).toEqual([
+      'app.status',
+      'request.status',
+      'navigation.open',
+      'window.list',
+      'window.move',
+      'window.focus',
+      'window.minimize',
+      'window.close',
+      'tab.activate',
+      'tab.close',
+      'tab.move',
+    ])
     expect(data.commands.find((command: { name: string }) => command.name === 'app.status')).toMatchObject({ effect: 'read', input: { additionalProperties: false } })
+    expect(data.commands.find((command: { name: string }) => command.name === 'window.move')).toMatchObject({ effect: 'window', input: { required: ['window'], additionalProperties: false } })
+    expect(data.commands.find((command: { name: string }) => command.name === 'tab.close')).toMatchObject({ effect: 'window', input: { required: ['window'], additionalProperties: false } })
     expect(data.limits).toMatchObject({ active: 4, queued: 64, receipts: 256 })
   })
   it('reads app status through the profile socket and prints a reusable request reference', async () => {
@@ -52,6 +67,7 @@ describe('actual CLI process', () => {
       ['app', 'status', '--bogus', 'true'], ['app', 'status', '--input', '{"bogus":true}'],
       ['app', 'status', '--profile', 'relative'], ['app', 'status', '--wait-ms', 'NaN'],
       ['app', 'status', '--input'], ['app', 'secret'], ['navigation', 'link', '--root', '/v'],
+      ['window', 'bogus'], ['tab', 'bogus'],
       ['navigation', 'open', '--root', '/v', '--sidebar', 'search'], ['navigation', 'open', '--root', '/v', '--tab', 't1'], ['navigation', 'open', '--root', '/v', '--input', '{"name":"x"}'],
     ]) {
       const result = await run(...args)
@@ -171,14 +187,20 @@ describe('help and routing', () => {
     expect(result).toMatchObject({ code: 0, stdout: HELP })
   })
   it('prints the navigation help and one command’s definition without a running app', async () => {
-    for (const args of [['navigation', '--help'], ['app', '-h'], ['capabilities', '--help']]) expect((await run(...args)).stdout, args.join(' ')).toBe(AUTOMATION_HELP)
-    const one = await run('navigation', 'open', '--help', '--profile', join(profile, 'absent'))
-    expect(one.code).toBe(0)
-    expect(one.stdout.startsWith(AUTOMATION_HELP)).toBe(true)
-    expect(JSON.parse(one.stdout.slice(AUTOMATION_HELP.length))).toMatchObject({ name: 'navigation.open', effect: 'navigate' })
+    for (const args of [['navigation', '--help'], ['window', '--help'], ['tab', '-h'], ['app', '-h'], ['capabilities', '--help']]) expect((await run(...args)).stdout, args.join(' ')).toBe(AUTOMATION_HELP)
+    for (const [resource, action, name, effect] of [
+      ['navigation', 'open', 'navigation.open', 'navigate'],
+      ['window', 'move', 'window.move', 'window'],
+      ['tab', 'close', 'tab.close', 'window'],
+    ] as const) {
+      const one = await run(resource, action, '--help', '--profile', join(profile, 'absent'))
+      expect(one.code, name).toBe(0)
+      expect(one.stdout.startsWith(AUTOMATION_HELP), name).toBe(true)
+      expect(JSON.parse(one.stdout.slice(AUTOMATION_HELP.length)), name).toMatchObject({ name, effect })
+    }
   })
   it('answers a bare resource with a short usage that points to its help', async () => {
-    for (const resource of ['navigation', 'app', 'request']) {
+    for (const resource of ['navigation', 'window', 'tab', 'app', 'request']) {
       const result = await run(resource)
       expect(result.code, resource).toBe(2)
       expect(JSON.parse(result.stderr).error, resource).toEqual({ code: 'INVALID_INPUT', message: `Name an action: yaseendocs ${resource} <action>. Run yaseendocs ${resource} --help.` })
@@ -208,6 +230,11 @@ describe('flag values (YAZ-4575, YAZ-4569)', () => {
     expect(parsedValue({ type: 'boolean' }, 'true', '--reveal')).toBe(true)
     expect(parsedValue({ type: 'array', items: { type: 'string' } }, '["/a","/b"]', '--roots')).toEqual(['/a', '/b'])
     expect(parsedValue({ type: ['number', 'string'] }, 'large', '--size')).toBe('large')
+    expect(parsedValue({ type: ['string', 'integer'] }, '2', '--display')).toBe(2)
+    expect(parsedValue({ type: ['string', 'integer'] }, '69733248', '--display')).toBe(69733248)
+    expect(parsedValue({ type: ['string', 'integer'] }, 'primary', '--display')).toBe('primary')
+    expect(parsedValue({ type: ['string', 'integer'] }, 'cursor', '--display')).toBe('cursor')
+    expect(parsedValue({ type: ['string', 'integer'] }, 'next', '--display')).toBe('next')
     expect(() => parsedValue({ type: 'boolean' }, 'yes', '--reveal')).toThrow('--reveal expects JSON (boolean).')
   })
 })
@@ -284,16 +311,211 @@ describe('yaseendocs open shorthand (YAZ-4502)', () => {
         args: { root: standaloneDir, path: plainFile, mode: 'reuse' },
       })
 
-      // 6. Error cases
+      // 6. Optional window/tab convenience flags on `open`
+      const r6 = await cli('open', '--new-tab', '--no-focus', '--tile', 'left', '--display', '2', file)
+      expect(r6.code, r6.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'navigation.open',
+        args: { root: repo, path: file, mode: 'reuse', tabMode: 'new', focus: false, tile: 'left', display: 2 },
+      })
+
+      // 7. Error cases
       expect((await cli('open', `${file}:10`, '--line', '5')).code).toBe(2)
       expect((await cli('open', repo, '--line', '5')).code).toBe(2)
       expect((await cli('open', `${file}:0`)).code).toBe(2)
       expect((await cli('open', '--line', '0', file)).code).toBe(2)
+      expect((await cli('open', '--tile', 'bogus', file)).code).toBe(2)
       expect((await cli('open')).code).toBe(2)
       expect((await cli('open', '--bogus', file)).code).toBe(2)
       const missing = await cli('open', join(repo, 'does-not-exist.ts'))
       expect(missing.code).toBe(1)
       expect(JSON.parse(missing.stderr).error.code).toBe('NOT_FOUND')
+    } finally {
+      await srv.close()
+      await rm(tmp, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('window, tab, and navigation flags (YAZ-6539)', () => {
+  it('parses valueless/explicit booleans, --new-tab, repeatable --path, --display, and all window/tab commands', async () => {
+    const tmp = await mkdtemp(join(tmpdir(), 'docs-win-tab-test-'))
+    const received: Array<{ command: string; args: Record<string, unknown> }> = []
+    const srv = await startAutomationServer(tmp, (req) => {
+      received.push({ command: req.command, args: req.args as Record<string, unknown> })
+      return { writes: [], run: async () => ({ ok: true }) }
+    })
+    const cli = async (...argv: string[]) => {
+      let stdout = '', stderr = ''
+      const code = await runAutomation([...argv, '--profile', tmp], { stdin: async () => '', stdout: v => { stdout += v }, stderr: v => { stderr += v } })
+      return { code, stdout, stderr }
+    }
+    try {
+      expect(isAutomationCommand(['window', 'list'])).toBe(true)
+      expect(isAutomationCommand(['tab', 'activate'])).toBe(true)
+
+      // Valueless boolean switches + negated switches
+      let res = await cli('navigation', 'open', '--root', '/v', '--no-focus', '--read-only', '--no-reveal', '--allow-partial')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'navigation.open',
+        args: { root: '/v', focus: false, readOnly: true, reveal: false, allowPartial: true },
+      })
+
+      // Positive valueless boolean switches followed by another flag or end of argv
+      res = await cli('navigation', 'open', '--root', '/v', '--focus', '--reveal')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'navigation.open',
+        args: { root: '/v', focus: true, reveal: true },
+      })
+
+      // Explicit boolean values still work
+      res = await cli('navigation', 'open', '--root', '/v', '--focus', 'false', '--reveal', 'true', '--read-only', 'false')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'navigation.open',
+        args: { root: '/v', focus: false, reveal: true, readOnly: false },
+      })
+
+      // --new-tab shorthand + single --path stays args.path
+      res = await cli('navigation', 'open', '--root', '/v', '--path', '/v/a.md', '--new-tab')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'navigation.open',
+        args: { root: '/v', path: '/v/a.md', tabMode: 'new' },
+      })
+
+      // Repeatable --path collects into args.paths
+      res = await cli('navigation', 'open', '--root', '/v', '--path', '/v/a.md', '--path', '/v/b.md', '--path', '/v/c.md', '--active-path', '/v/b.md', '--tab-mode', 'activate-or-new')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'navigation.open',
+        args: { root: '/v', paths: ['/v/a.md', '/v/b.md', '/v/c.md'], activePath: '/v/b.md', tabMode: 'activate-or-new' },
+      })
+
+      // --display integer vs string selector on navigation.open
+      res = await cli('navigation', 'open', '--root', '/v', '--tile', 'left', '--display', '2')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'navigation.open',
+        args: { root: '/v', tile: 'left', display: 2 },
+      })
+      res = await cli('navigation', 'open', '--root', '/v', '--tile', 'right', '--display', 'primary')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'navigation.open',
+        args: { root: '/v', tile: 'right', display: 'primary' },
+      })
+
+      // window.list
+      res = await cli('window', 'list', '--json')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({ command: 'window.list', args: {} })
+
+      // window.move (tile + integer display + valueless --focus)
+      res = await cli('window', 'move', '--window', 'w1', '--tile', 'left-two-thirds', '--display', '2', '--focus')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'window.move',
+        args: { window: 'w1', tile: 'left-two-thirds', display: 2, focus: true },
+      })
+
+      // window.move (explicit pixel bounds including negative coordinates + --no-focus)
+      res = await cli('window', 'move', '--window', 'w1', '--x', '-100', '--y', '40', '--width', '1200', '--height', '800', '--no-focus')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'window.move',
+        args: { window: 'w1', x: -100, y: 40, width: 1200, height: 800, focus: false },
+      })
+
+      // window.focus / window.minimize / window.close
+      res = await cli('window', 'focus', '--window', 'w1')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({ command: 'window.focus', args: { window: 'w1' } })
+
+      res = await cli('window', 'minimize', '--window', 'w1')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({ command: 'window.minimize', args: { window: 'w1' } })
+
+      res = await cli('window', 'close', '--window', 'w1', '--force')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({ command: 'window.close', args: { window: 'w1', force: true } })
+
+      res = await cli('window', 'close', '--window', 'w1', '--force', 'false')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({ command: 'window.close', args: { window: 'w1', force: false } })
+
+      // tab.activate
+      res = await cli('tab', 'activate', '--window', 'w1', '--tab', 't2', '--focus')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({ command: 'tab.activate', args: { window: 'w1', tab: 't2', focus: true } })
+
+      res = await cli('tab', 'activate', '--window', 'w1', '--path', '/v/a.md', '--no-focus')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({ command: 'tab.activate', args: { window: 'w1', path: '/v/a.md', focus: false } })
+
+      // tab.close
+      res = await cli('tab', 'close', '--window', 'w1', '--path', '/v/a.md', '--force')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({ command: 'tab.close', args: { window: 'w1', path: '/v/a.md', force: true } })
+
+      res = await cli('tab', 'close', '--window', 'w1', '--others', '--tab', 't1')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({ command: 'tab.close', args: { window: 'w1', others: true, tab: 't1' } })
+
+      res = await cli('tab', 'close', '--window', 'w1', '--tabs', '["t1","t2"]')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({ command: 'tab.close', args: { window: 'w1', tabs: ['t1', 't2'] } })
+
+      // tab.move
+      res = await cli('tab', 'move', '--from', 'w1', '--path', '/v/a.md', '--to', 'w2', '--focus')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({ command: 'tab.move', args: { from: 'w1', path: '/v/a.md', to: 'w2', focus: true } })
+
+      res = await cli('tab', 'move', '--from', 'w1', '--tab', 't1', '--new-window', '--tile', 'right', '--display', 'next', '--no-focus')
+      expect(res.code, res.stderr).toBe(0)
+      expect(received.at(-1)).toEqual({
+        command: 'tab.move',
+        args: { from: 'w1', tab: 't1', newWindow: true, tile: 'right', display: 'next', focus: false },
+      })
+
+      // Reject conflicting, repeated, unknown, and malformed flags before dispatch
+      const countBefore = received.length
+      const invalidCases: string[][] = [
+        ['navigation', 'open', '--root', '/v', '--new-tab', '--tab-mode', 'reuse'],
+        ['navigation', 'open', '--root', '/v', '--tab-mode', 'new', '--new-tab'],
+        ['navigation', 'open', '--root', '/v', '--new-tab', 'true'],
+        ['tab', 'activate', '--window', 'w1', '--tab', 't1', '--new-tab'],
+        ['navigation', 'open', '--root', '/v', '--path', '/v/a.md', '--paths', '["/v/b.md"]'],
+        ['navigation', 'open', '--root', '/v', '--paths', '["/v/b.md"]', '--path', '/v/a.md'],
+        ['navigation', 'open', '--root', '/v', '--path', '/v/a.md', '--path', '/v/b.md', '--paths', '["/v/c.md"]'],
+        ['navigation', 'open', '--root', '/v', '--path', '/v/a.md', '--input', '{"paths":["/v/b.md"]}'],
+        ['navigation', 'open', '--root', '/v', '--path'],
+        ['tab', 'activate', '--window', 'w1', '--path', '/v/a.md', '--path', '/v/b.md'],
+        ['tab', 'close', '--window', 'w1', '--path', '/v/a.md', '--path', '/v/b.md'],
+        ['tab', 'move', '--from', 'w1', '--to', 'w2', '--path', '/v/a.md', '--path', '/v/b.md'],
+        ['navigation', 'open', '--root', '/v', '--focus', '--no-focus'],
+        ['navigation', 'open', '--root', '/v', '--no-focus', '--focus'],
+        ['navigation', 'open', '--root', '/v', '--no-focus', 'false'],
+        ['navigation', 'open', '--root', '/v', '--reveal', '--no-reveal'],
+        ['navigation', 'open', '--root', '/v', '--tile', 'bogus'],
+        ['navigation', 'open', '--root', '/v', '--display', '2.5'],
+        ['navigation', 'open', '--root', '/v', '--display', 'true'],
+        ['window', 'focus', '--window', 'w1', '--no-window'],
+        ['window', 'focus', '--window', 'w1', '--force'],
+        ['window', 'move', '--tile', 'left'],
+        ['window', 'close'],
+        ['tab', 'activate', '--tab', 't1'],
+        ['tab', 'move', '--tab', 't1', '--new-window'],
+      ]
+      for (const bad of invalidCases) {
+        const failed = await cli(...bad)
+        expect(failed.code, bad.join(' ')).toBe(2)
+        expect(failed.stdout, bad.join(' ')).toBe('')
+        expect(JSON.parse(failed.stderr).error.code, bad.join(' ')).toBe('INVALID_INPUT')
+      }
+      expect(received.length).toBe(countBefore)
     } finally {
       await srv.close()
       await rm(tmp, { recursive: true, force: true })
