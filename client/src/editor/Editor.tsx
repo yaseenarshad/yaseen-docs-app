@@ -1230,16 +1230,13 @@ function CrepeHost({
                 // A11: the drawing popup at the board's own vault, as a vault-relative target.
                 onEditInPopup: (boardRoot, target) => setOpenDrawing({ root: boardRoot, target: target.startsWith(`${boardRoot}/`) ? target.slice(boardRoot.length + 1) : target }),
                 open: (target, how) => (how === 'backgroundTab' ? (onOpenLinkBackground ?? onOpenLink)(target) : onOpenLink(target, how)),
-                linkMenu: (target) => {
-                  const notice = onNotice ?? (() => undefined)
-                  return {
-                    labels: [],
-                    open: () => onOpenLink(target, 'thisTab'),
-                    openNew: () => (onOpenLinkBackground ?? onOpenLink)(target),
-                    openExplore: onOpenExplore === undefined ? undefined : () => onOpenExplore(target),
-                    ...placeRows(target, linkActions, notice),
-                  }
-                },
+                linkMenu: (target) => ({
+                  labels: [],
+                  open: () => onOpenLink(target, 'thisTab'),
+                  openNew: () => (onOpenLinkBackground ?? onOpenLink)(target),
+                  openExplore: onOpenExplore === undefined ? undefined : () => onOpenExplore(target),
+                  ...placeRows(target, linkActions, onNotice ?? (() => undefined)),
+                }),
               },
       },
       find: findChannel,
