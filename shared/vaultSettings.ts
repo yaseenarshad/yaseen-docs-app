@@ -25,7 +25,16 @@ import { SHOW_IDS_FILE } from './showIds'
 import { TABLE_LOOK_FILE } from './tableLook'
 import { TEXT_FORMATTING_FILE } from './textFormatting'
 import { UNIT_WORD_FILE } from './unitWord'
-import type { RowDates, SettingsState } from './types'
+import {
+  DEFAULT_ROW_DATES,
+  SIDEBAR_BUTTONS,
+  SIDEBAR_TABS,
+  type RowDates,
+  type SettingsState,
+  type SidebarButton,
+  type SidebarTab,
+  type SidebarTabsPrefs,
+} from './types'
 
 export const VAULT_SETTINGS_FILE = 'settings.json'
 export const VAULT_SETTINGS_VERSION = 1
@@ -169,12 +178,72 @@ export function workspaceSettingsKey(roots: readonly string[], vaultSetId?: stri
   return `roots:${norm.join('\0')}`
 }
 
+/** Repair a hand-edited or partial `sidebarTabs` object so missing arrays never crash `.join()` in the sidebar. */
+function sanitizeSidebarTabsOverride(raw: unknown): SidebarTabsPrefs | undefined {
+  if (!isRecord(raw)) return undefined
+  const seen = new Set<SidebarTab>()
+  const order: SidebarTab[] = []
+  if (Array.isArray(raw.order)) {
+    for (const item of raw.order) {
+      if (SIDEBAR_TABS.includes(item as SidebarTab) && !seen.has(item as SidebarTab)) {
+        seen.add(item as SidebarTab)
+        order.push(item as SidebarTab)
+      }
+    }
+  }
+  for (const tab of SIDEBAR_TABS) if (!seen.has(tab)) order.push(tab)
+  const hiddenSet = new Set<SidebarTab>()
+  const hidden: SidebarTab[] = []
+  if (Array.isArray(raw.hidden)) {
+    for (const item of raw.hidden) {
+      if (item !== 'files' && SIDEBAR_TABS.includes(item as SidebarTab) && !hiddenSet.has(item as SidebarTab)) {
+        hiddenSet.add(item as SidebarTab)
+        hidden.push(item as SidebarTab)
+      }
+    }
+  }
+  const btnSet = new Set<SidebarButton>()
+  const hiddenButtons: SidebarButton[] = []
+  if (Array.isArray(raw.hiddenButtons)) {
+    for (const item of raw.hiddenButtons) {
+      if (SIDEBAR_BUTTONS.includes(item as SidebarButton) && !btnSet.has(item as SidebarButton)) {
+        btnSet.add(item as SidebarButton)
+        hiddenButtons.push(item as SidebarButton)
+      }
+    }
+  }
+  return { order, hidden, hiddenButtons }
+}
+
+/** Repair a partial `rowDates` object so every required boolean slot is present. */
+function sanitizeRowDatesOverride(raw: unknown): RowDates | undefined {
+  if (!isRecord(raw)) return undefined
+  return {
+    files: typeof raw.files === 'boolean' ? raw.files : DEFAULT_ROW_DATES.files,
+    focus: typeof raw.focus === 'boolean' ? raw.focus : DEFAULT_ROW_DATES.focus,
+    favorites: typeof raw.favorites === 'boolean' ? raw.favorites : DEFAULT_ROW_DATES.favorites,
+    search: typeof raw.search === 'boolean' ? raw.search : DEFAULT_ROW_DATES.search,
+    ...(typeof raw.recents === 'boolean' ? { recents: raw.recents } : {}),
+  }
+}
+
+function sanitizeOverrideEntry(key: VaultOverrideKey, value: unknown): unknown {
+  if (key === 'sidebarTabs') return sanitizeSidebarTabsOverride(value)
+  if (key === 'rowDates') return sanitizeRowDatesOverride(value)
+  if (key === 'sidebarSort' || key === 'searchSort' || key === 'goTo' || key === 'inlineCodeStyle') {
+    return isRecord(value) ? value : undefined
+  }
+  return value
+}
+
 /** Extract only the known sparse `SettingsState` override keys from a parsed `settings.json` object. */
 export function extractVaultOverrides(raw: unknown): VaultSettingsOverrides {
   if (!isRecord(raw)) return {}
   const out: Record<string, unknown> = {}
   for (const key of VAULT_OVERRIDE_KEYS) {
-    if (Object.hasOwn(raw, key) && raw[key] !== undefined) out[key] = raw[key]
+    if (!Object.hasOwn(raw, key) || raw[key] === undefined) continue
+    const clean = sanitizeOverrideEntry(key, raw[key])
+    if (clean !== undefined) out[key] = clean
   }
   return out as VaultSettingsOverrides
 }
@@ -184,7 +253,9 @@ export function extractWorkspaceChrome(raw: unknown): WorkspaceChromeOverrides {
   if (!isRecord(raw)) return {}
   const out: Record<string, unknown> = {}
   for (const key of VAULT_CHROME_KEYS) {
-    if (Object.hasOwn(raw, key) && raw[key] !== undefined) out[key] = raw[key]
+    if (!Object.hasOwn(raw, key) || raw[key] === undefined) continue
+    const clean = sanitizeOverrideEntry(key, raw[key])
+    if (clean !== undefined) out[key] = clean
   }
   return out as WorkspaceChromeOverrides
 }
