@@ -1,4 +1,3 @@
-import { runWindowCommand } from './automation/windowCommands'
 import { useAutomation } from './automation/useAutomation'
 import { useAutomationSurface } from './automation/surfaces'
 import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
@@ -2817,7 +2816,7 @@ export function App() {
 
   // CLI automation (YAZ-4502, YAZ-6539): navigate, inspect, and manage tabs; reply only once the window shows the result.
   useAutomationSurface('app', { ready: true, inspect: () => ({ path: pageOnShow, tab: activeTab, sidebar: sidebarLens, sidebarCollapsed }) })
-  useAutomation((command) => runWindowCommand(command, {
+  useAutomation(async (command) => (await import('./automation/windowCommands')).runWindowCommand(command, {
     getState: () => ({ path: activeFile.current, activeTab: now.current.active, tabs: now.current.tabs, sidebar: sidebarLens, sidebarCollapsed: sidebarCollapsedRef.current }),
     toggleSidebar, changeLens, openPage, openBatch, activateTab: activate, titleOf: (p, n) => n ?? nameOf(p),
     leaveChrome: () => { setOverview(OVERVIEW_CLOSED); setInboxFront(false) }, closeTabs: (ids, moved) => (now.current.phase === 'open' ? closeUnderOverview(ids, moved) : closeTabs(ids, moved)),

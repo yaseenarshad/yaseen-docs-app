@@ -838,7 +838,7 @@ button,
   min-width: 0;
   padding: 8px 0;
 }
-/* YAZ-5659: the vault's number, a soft rounded square in its own colour (1 blue, 2 amber, 3 green, 4 pink). */
+/* YAZ-5659, YAZ-6560: vault avatar square — synced launcher icon (badge/image) or 2-letter monogram fallback. */
 .vault-badge {
   display: inline-grid;
   flex: none;
@@ -848,9 +848,32 @@ button,
   border-radius: 9px;
   background: var(--badge-bg);
   color: var(--badge-fg);
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 500;
-  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+}
+.vault-badge--img {
+  display: block;
+  object-fit: cover;
+  background: transparent;
+}
+.vault-badge--custom {
+  color: #ffffff;
+  font-weight: 700;
+}
+.vault-badge__emoji {
+  font-size: 19px;
+  line-height: 1;
+}
+.vault-badge__letters {
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+.vault-badge__svg {
+  width: 20px;
+  height: 20px;
+  display: block;
 }
 .vault-badge[data-hue='blue'] { --badge-bg: #e3eaff; --badge-fg: #2a45b0; }
 .vault-badge[data-hue='amber'] { --badge-bg: #fcefd3; --badge-fg: #85560a; }

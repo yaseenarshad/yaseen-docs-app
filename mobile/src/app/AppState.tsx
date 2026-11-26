@@ -16,6 +16,10 @@ import type { SignInMode } from '../screens/SignIn'
 import { SAME_WORD, UNIT_WORD_PATH, readUnitWord, type UnitText } from './unitWord'
 import { readVaultTabs, sameTabs } from './vaultTabs'
 import { VAULT_SETTINGS_PATH } from '../settings/readVaultSettings'
+import type { MobileVaultIcon } from '../settings/readVaultIcon'
+
+const VAULT_ICON_PATH = '.yaseendocs/vault-icon.png'
+const loadIconReader = () => import('../settings/readVaultIcon')
 
 /**
  * The app's state and its actions: the one layer the screens (4A–4E) plug into. Every service is passed in, so
@@ -77,6 +81,8 @@ export interface AppModel {
   vaultKey: string | null
   /** What each vault's sign-in check learned, by `vaultId`. */
   accounts: Record<string, VaultAccount | undefined>
+  /** Each vault's synced launcher icon (`.yaseendocs/settings.json` / `vault-icon.png`), by `vaultId` (YAZ-6560). */
+  vaultIcons: Record<string, MobileVaultIcon | null>
   friendsAccount: FriendsAccount
   friendsSettings: FriendsSettings
   /** The open vault's word for "page": `unit('Search pages')` → "Search docs" (round 15, item 5). */
@@ -178,6 +184,7 @@ interface Loaded {
   phase: Phase
   list: VaultList
   accounts: Record<string, VaultAccount | undefined>
+  vaultIcons: Record<string, MobileVaultIcon | null>
   githubAccounts: readonly string[]
   friendsAccount: FriendsAccount
   friendsSettings: FriendsSettings
@@ -189,6 +196,7 @@ const EMPTY: Loaded = {
   phase: 'loading',
   list: { vaults: [], open: null },
   accounts: {},
+  vaultIcons: {},
   githubAccounts: [],
   friendsAccount: { kind: 'no-vaults' },
   friendsSettings: { vaults: null, nickname: null },
@@ -238,6 +246,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
         phase: start.kind === 'ready' ? 'ready' : start.kind,
         list,
         accounts,
+        vaultIcons: {},
         githubAccounts: await tokens.githubAccounts().catch(() => []),
         friendsAccount: await loadFriendsAccount(store),
         friendsSettings: await friends.settings(),
@@ -258,6 +267,24 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     },
     [store, tokens, sync, friends, tabsOfVault, keepTab],
   )
+
+  // YAZ-6560: load synced vault icons off the critical startup path so `phase: 'ready'` never waits on the lazy icon chunk.
+  const vaultIdsKey = useMemo(() => loaded.list.vaults.map((v) => vaultId(v)).join('\0'), [loaded.list.vaults])
+  useEffect(() => {
+    if (vaultIdsKey === '') return
+    let live = true
+    const ids = vaultIdsKey.split('\0')
+    void loadIconReader()
+      .then(async (m) => {
+        const entries = await Promise.all(ids.map(async (id) => [id, await m.readVaultIcon(store, id)] as const))
+        if (!live) return
+        setLoaded((l) => ({ ...l, vaultIcons: Object.fromEntries(entries) }))
+      })
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [vaultIdsKey, store])
 
   useEffect(() => {
     let live = true
@@ -338,6 +365,16 @@ export function AppProvider({ services, children }: { services: AppServices; chi
         const vault = event.vault
         // Round 15, item 5 (unified YAZ-6557): a new `.yaseendocs/settings.json` (or legacy `unit-word.json`) changes the words at once.
         if (event.settings.includes(VAULT_SETTINGS_PATH) || event.settings.includes(UNIT_WORD_PATH)) void readUnitWord(store, vault).then((unit) => setLoaded((l) => ({ ...l, unit })))
+        // YAZ-6560: refresh synced vault icon live when `.yaseendocs/settings.json` or `.yaseendocs/vault-icon.png` changes.
+        if (event.settings.includes(VAULT_SETTINGS_PATH) || event.settings.includes(VAULT_ICON_PATH)) {
+          void loadIconReader()
+            .then((m) => m.readVaultIcon(store, vault))
+            .then((icon) => {
+              if (openKey.current !== vault) return
+              setLoaded((l) => ({ ...l, vaultIcons: { ...l.vaultIcons, [vault]: icon } }))
+            })
+            .catch(() => undefined)
+        }
         // The vault's settings (or its first IDs) can bring a tab or take one away, at once.
         void tabsOfVault(store, vault, event.index).then((tabs) => {
           if (openKey.current !== vault) return

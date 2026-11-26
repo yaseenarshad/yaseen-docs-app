@@ -25,6 +25,7 @@ import { SHOW_IDS_FILE } from './showIds'
 import { TABLE_LOOK_FILE } from './tableLook'
 import { TEXT_FORMATTING_FILE } from './textFormatting'
 import { UNIT_WORD_FILE } from './unitWord'
+import { sanitizeVaultLauncherPreset, type VaultLauncherPreset } from './vaultIcon'
 import {
   DEFAULT_ROW_DATES,
   SIDEBAR_BUTTONS,
@@ -125,11 +126,11 @@ export const LEGACY_SECTION_MAP = {
 export type LegacySettingsFile = keyof typeof LEGACY_SECTION_MAP
 export type LegacySectionKey = (typeof LEGACY_SECTION_MAP)[LegacySettingsFile]
 
-export const LEGACY_SETTINGS_FILES: readonly LegacySettingsFile[] = Object.keys(LEGACY_SECTION_MAP) as LegacySettingsFile[]
-export const LEGACY_SECTION_KEYS: readonly LegacySectionKey[] = Object.values(LEGACY_SECTION_MAP) as LegacySectionKey[]
+export const LEGACY_SETTINGS_FILES: readonly LegacySettingsFile[] = /*#__PURE__*/ Object.keys(LEGACY_SECTION_MAP) as LegacySettingsFile[]
+export const LEGACY_SECTION_KEYS: readonly LegacySectionKey[] = /*#__PURE__*/ Object.values(LEGACY_SECTION_MAP) as LegacySectionKey[]
 
 /** Maps a legacy section key back to its old `.yaseendocs/` filename (for read fallback / migration). */
-export const SECTION_TO_LEGACY_FILE: Readonly<Record<LegacySectionKey, LegacySettingsFile>> = Object.fromEntries(
+export const SECTION_TO_LEGACY_FILE: Readonly<Record<LegacySectionKey, LegacySettingsFile>> = /*#__PURE__*/ Object.fromEntries(
   Object.entries(LEGACY_SECTION_MAP).map(([file, section]) => [section, file]),
 ) as Record<LegacySectionKey, LegacySettingsFile>
 
@@ -139,6 +140,8 @@ export const SECTION_TO_LEGACY_FILE: Readonly<Record<LegacySectionKey, LegacySet
  */
 export interface VaultSettingsDoc extends VaultSettingsOverrides {
   version: number
+  /** Portable synced vault launcher & icon preset (YAZ-6560). */
+  launcher?: VaultLauncherPreset
   textFormatting?: Record<string, unknown>
   tableLook?: Record<string, unknown>
   cardLook?: Record<string, unknown>
@@ -155,13 +158,14 @@ export interface VaultSettingsDoc extends VaultSettingsOverrides {
 
 export const VAULT_SETTINGS_DOC_KEYS: readonly string[] = [
   'version',
+  'launcher',
   ...VAULT_OVERRIDE_KEYS,
   ...LEGACY_SECTION_KEYS,
 ]
 
-const CHROME_KEY_SET: ReadonlySet<string> = new Set(VAULT_CHROME_KEYS)
-const OVERRIDE_KEY_SET: ReadonlySet<string> = new Set(VAULT_OVERRIDE_KEYS)
-const LEGACY_SECTION_SET: ReadonlySet<string> = new Set(LEGACY_SECTION_KEYS)
+const CHROME_KEY_SET: ReadonlySet<string> = /*#__PURE__*/ new Set(VAULT_CHROME_KEYS)
+const OVERRIDE_KEY_SET: ReadonlySet<string> = /*#__PURE__*/ new Set(VAULT_OVERRIDE_KEYS)
+const LEGACY_SECTION_SET: ReadonlySet<string> = /*#__PURE__*/ new Set(LEGACY_SECTION_KEYS)
 
 export const isVaultChromeKey = (key: string): key is VaultChromeKey => CHROME_KEY_SET.has(key)
 export const isVaultOverrideKey = (key: string): key is VaultOverrideKey => OVERRIDE_KEY_SET.has(key)
@@ -268,6 +272,12 @@ export function readVaultSection(raw: unknown, section: LegacySectionKey): Recor
   if (!isRecord(raw)) return null
   const val = raw[section]
   return isRecord(val) ? val : null
+}
+
+/** Read and validate the portable `launcher` preset from a unified `settings.json` object, or `null` when absent/invalid. */
+export function readVaultLauncherPreset(raw: unknown): VaultLauncherPreset | null {
+  if (!isRecord(raw)) return null
+  return sanitizeVaultLauncherPreset(raw.launcher)
 }
 
 /**

@@ -626,3 +626,157 @@ describe('launcher lifecycle & All Launchers IPC (YAZ-6447)', () => {
     expect(onChanged).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('synced vault & workspace launcher presets (YAZ-6560)', () => {
+  it('create saves portable badge preset into .yaseendocs/settings.json preserving existing keys, remove keeps synced preset, clearSynced clears it', async () => {
+    const vaultRoot = path.join(dir, 'synced-vault')
+    await mkdir(path.join(vaultRoot, '.yaseendocs'), { recursive: true })
+    await writeFile(
+      path.join(vaultRoot, '.yaseendocs', 'settings.json'),
+      JSON.stringify({ version: 1, contentWidth: 'wide', customFutureKey: true }, null, 2),
+      'utf8',
+    )
+
+    await registered(CONTRACT.vaultLauncher.create)(undefined, {
+      root: vaultRoot,
+      name: 'Daily Note Vault',
+      pngBase64: VALID_PNG_B64,
+      target: 'today',
+      badge: { kind: 'emoji', value: '📅', color: '#007AFF' },
+    })
+
+    const saved = JSON.parse(await readFile(path.join(vaultRoot, '.yaseendocs', 'settings.json'), 'utf8')) as Record<string, unknown>
+    expect(saved).toEqual({
+      version: 1,
+      contentWidth: 'wide',
+      customFutureKey: true,
+      launcher: {
+        name: 'Daily Note Vault',
+        target: 'today',
+        badge: { kind: 'emoji', value: '📅', color: '#007AFF' },
+      },
+    })
+    // Badge mode must not write vault-icon.png.
+    expect(existsSync(path.join(vaultRoot, '.yaseendocs', 'vault-icon.png'))).toBe(false)
+
+    // Remove deletes only the local .app & store entry; synced preset in settings.json stays intact!
+    await registered(CONTRACT.vaultLauncher.remove)(undefined, vaultRoot)
+    const afterRemove = (await registered(CONTRACT.vaultLauncher.status)(undefined, vaultRoot)) as { ok: true; value: Record<string, unknown> }
+    expect(afterRemove.ok).toBe(true)
+    expect(afterRemove.value.launcher).toBeNull()
+    expect(afterRemove.value.synced).toEqual({
+      name: 'Daily Note Vault',
+      target: 'today',
+      badge: { kind: 'emoji', value: '📅', color: '#007AFF' },
+    })
+    expect(String(afterRemove.value.syncedIconDataUrl)).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
+
+    // icons() falls back to the synced SVG data URL when no local .app exists.
+    const iconsRes = (await registered(CONTRACT.vaultLauncher.icons)(undefined)) as { ok: true; value: Record<string, string> }
+    expect(iconsRes.value[vaultRoot]).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
+
+    // clearSynced drops launcher from settings.json while keeping contentWidth & customFutureKey.
+    await registered(CONTRACT.vaultLauncher.clearSynced)(undefined, vaultRoot)
+    const afterClear = JSON.parse(await readFile(path.join(vaultRoot, '.yaseendocs', 'settings.json'), 'utf8')) as Record<string, unknown>
+    expect(afterClear).toEqual({ version: 1, contentWidth: 'wide', customFutureKey: true })
+  })
+
+  it('custom PNG launcher writes .yaseendocs/vault-icon.png and switching to badge cleans up stale PNG', async () => {
+    const vaultRoot = path.join(dir, 'custom-img-vault')
+    await mkdir(vaultRoot, { recursive: true })
+
+    await registered(CONTRACT.vaultLauncher.create)(undefined, {
+      root: vaultRoot,
+      name: 'Trevor Yaseen Docs',
+      pngBase64: VALID_PNG_B64,
+    })
+
+    const pngPath = path.join(vaultRoot, '.yaseendocs', 'vault-icon.png')
+    expect(existsSync(pngPath)).toBe(true)
+    expect(await readFile(pngPath)).toEqual(VALID_PNG)
+
+    await registered(CONTRACT.vaultLauncher.remove)(undefined, vaultRoot)
+    const status = (await registered(CONTRACT.vaultLauncher.status)(undefined, vaultRoot)) as { ok: true; value: Record<string, unknown> }
+    expect(status.value.synced).toEqual({ name: 'Trevor Yaseen Docs', iconFile: 'vault-icon.png' })
+    expect(status.value.syncedIconDataUrl).toBe(`data:image/png;base64,${VALID_PNG_B64}`)
+
+    // Switching to a badge removes stale vault-icon.png.
+    await registered(CONTRACT.vaultLauncher.create)(undefined, {
+      root: vaultRoot,
+      name: 'Trevor Yaseen Docs',
+      pngBase64: VALID_PNG_B64,
+      badge: { kind: 'letters', value: 'TD', color: '#0D9488' },
+    })
+    expect(existsSync(pngPath)).toBe(false)
+  })
+
+  it('read-only vaults skip writing settings.json/vault-icon.png and refuse clearSynced', async () => {
+    const roVault = path.join(dir, 'ro-vault')
+    await mkdir(path.join(roVault, '.yaseendocs'), { recursive: true })
+    await writeFile(path.join(roVault, '.yaseendocs', 'read-only.json'), JSON.stringify({ on: true }), 'utf8')
+
+    await registered(CONTRACT.vaultLauncher.create)(undefined, {
+      root: roVault,
+      name: 'RO Vault',
+      pngBase64: VALID_PNG_B64,
+      badge: { kind: 'emoji', value: '🔒', color: '#475569' },
+    })
+
+    expect(existsSync(path.join(roVault, '.yaseendocs', 'settings.json'))).toBe(false)
+    expect(await registered(CONTRACT.vaultLauncher.clearSynced)(undefined, roVault)).toMatchObject({
+      ok: false,
+      error: { code: 'FORBIDDEN' },
+    })
+  })
+
+  it('workspace launcher badge syncs via SettingsState.workspaceLaunchers, survives removeWorkspace, and falls back in workspaceIcons', async () => {
+    const ws = store.saveVaultSet('All Folders', ['/vaults/a', '/vaults/b'], 100)!
+
+    await registered(CONTRACT.vaultLauncher.createWorkspace)(undefined, {
+      workspaceId: ws.id,
+      name: 'All Folders',
+      pngBase64: VALID_PNG_B64,
+      badge: { kind: 'material', value: 'folder-docs', color: '#475569', svgPaths: ['M1 2h12v10H1z'] },
+    })
+
+    expect(store.get().settings.workspaceLaunchers['all folders']).toEqual({
+      name: 'All Folders',
+      badge: { kind: 'material', value: 'folder-docs', color: '#475569', svgPaths: ['M1 2h12v10H1z'] },
+    })
+
+    // Remove local .app on this Mac -> synced preset remains for other Macs and workspaceIcons falls back to SVG.
+    await registered(CONTRACT.vaultLauncher.removeWorkspace)(undefined, ws.id)
+    const wsStatus = (await registered(CONTRACT.vaultLauncher.workspaceStatus)(undefined, ws.id)) as { ok: true; value: Record<string, unknown> }
+    expect(wsStatus.value.launcher).toBeNull()
+    expect(wsStatus.value.synced).toEqual({
+      name: 'All Folders',
+      badge: { kind: 'material', value: 'folder-docs', color: '#475569', svgPaths: ['M1 2h12v10H1z'] },
+    })
+    expect(String(wsStatus.value.syncedIconDataUrl)).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
+
+    const wsIcons = (await registered(CONTRACT.vaultLauncher.workspaceIcons)(undefined)) as { ok: true; value: Record<string, string> }
+    expect(wsIcons.value[ws.id]).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
+
+    // clearSyncedWorkspace removes it from SettingsState.workspaceLaunchers.
+    await registered(CONTRACT.vaultLauncher.clearSyncedWorkspace)(undefined, ws.id)
+    expect(store.get().settings.workspaceLaunchers['all folders']).toBeUndefined()
+  })
+
+  it('malformed settings.json skips synced write without clobbering existing vault-icon.png (YAZ-6565)', async () => {
+    const vaultRoot = path.join(dir, 'corrupt-settings-vault')
+    await mkdir(path.join(vaultRoot, '.yaseendocs'), { recursive: true })
+    await writeFile(path.join(vaultRoot, '.yaseendocs', 'settings.json'), '{not-valid-json', 'utf8')
+    await writeFile(path.join(vaultRoot, '.yaseendocs', 'vault-icon.png'), VALID_PNG)
+
+    await registered(CONTRACT.vaultLauncher.create)(undefined, {
+      root: vaultRoot,
+      name: 'Corrupt Vault',
+      pngBase64: VALID_PNG_B64,
+      badge: { kind: 'emoji', value: '🧪', color: '#007AFF' },
+    })
+
+    // Must not overwrite corrupt settings.json or unlink vault-icon.png.
+    expect(await readFile(path.join(vaultRoot, '.yaseendocs', 'settings.json'), 'utf8')).toBe('{not-valid-json')
+    expect(existsSync(path.join(vaultRoot, '.yaseendocs', 'vault-icon.png'))).toBe(true)
+  })
+})

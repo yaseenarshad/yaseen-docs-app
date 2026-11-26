@@ -25,12 +25,14 @@ let host: HTMLElement | null = null
 const mockStatus = vi.fn<(root: string) => Promise<VaultLauncherStatus>>()
 const mockCreate = vi.fn()
 const mockRemove = vi.fn()
+const mockClearSynced = vi.fn()
 const mockReveal = vi.fn()
 const mockTest = vi.fn()
 const mockIcons = vi.fn()
 const mockWorkspaceStatus = vi.fn<(workspaceId: string) => Promise<VaultLauncherStatus>>()
 const mockCreateWorkspace = vi.fn()
 const mockRemoveWorkspace = vi.fn()
+const mockClearSyncedWorkspace = vi.fn()
 const mockRevealWorkspace = vi.fn()
 const mockTestWorkspace = vi.fn()
 const mockWorkspaceIcons = vi.fn()
@@ -82,12 +84,14 @@ beforeEach(() => {
       status: mockStatus,
       create: mockCreate,
       remove: mockRemove,
+      clearSynced: mockClearSynced,
       reveal: mockReveal,
       test: mockTest,
       icons: mockIcons,
       workspaceStatus: mockWorkspaceStatus,
       createWorkspace: mockCreateWorkspace,
       removeWorkspace: mockRemoveWorkspace,
+      clearSyncedWorkspace: mockClearSyncedWorkspace,
       revealWorkspace: mockRevealWorkspace,
       testWorkspace: mockTestWorkspace,
       workspaceIcons: mockWorkspaceIcons,
@@ -624,5 +628,138 @@ describe('VaultSwitcher & Welcome launcher icons', () => {
     })
     expect(el.textContent).toContain('Make a launcher…')
     expect(mockStatus).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows cross-Mac synced vault card and installs in 1 click, supports Customize… and Clear synced icon (YAZ-6560)', async () => {
+    const syncedBadge = { kind: 'emoji' as const, value: '📅', color: '#007AFF' }
+    const syncedPreset = { name: 'Daily Note Vault', target: 'today' as const, badge: syncedBadge }
+    const syncedSvg = 'data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E'
+    const onChanged = vi.fn()
+
+    mockStatus.mockResolvedValue({
+      supported: true,
+      launcher: null,
+      exists: false,
+      iconDataUrl: null,
+      synced: syncedPreset,
+      syncedIconDataUrl: syncedSvg,
+    })
+    mockCreate.mockResolvedValue({
+      supported: true,
+      exists: true,
+      iconDataUrl: FAKE_PNG_DATA_URL,
+      launcher: {
+        name: 'Daily Note Vault',
+        appPath: '/Applications/Daily Note Vault.app',
+        iconPath: '/tmp/daily.png',
+        target: 'today',
+        badge: syncedBadge,
+      },
+    })
+    mockRemove.mockResolvedValue(undefined)
+    mockClearSynced.mockResolvedValue(undefined)
+
+    const el = await render(<VaultLauncherControl root={ROOT} defaultName="Notes" onChanged={onChanged} />)
+    expect(el.textContent).toContain('Daily Note Vault.app')
+    expect(el.textContent).toContain("Opens on Today's Daily Page")
+    expect(el.textContent).toContain('Saved for this vault on another Mac — not installed on this Mac yet.')
+    expect(el.querySelector<HTMLImageElement>('.vault-launcher__icon')?.src).toBe(syncedSvg)
+
+    // 1-click install without opening modal!
+    await act(async () => buttonByText(el, 'Add launcher to this Mac')?.click())
+    expect(mockCreate).toHaveBeenCalledWith({
+      root: ROOT,
+      name: 'Daily Note Vault',
+      pngBase64: FAKE_PNG_DATA_URL.replace(/^data:image\/png;base64,/, ''),
+      target: 'today',
+      badge: syncedBadge,
+    })
+    expect(el.textContent).toContain('/Applications/Daily Note Vault.app')
+
+    // Removing the local .app transitions cleanly back to the synced cross-Mac card (preserving synced icon).
+    await act(async () => buttonByText(el, 'Remove')?.click())
+    expect(mockRemove).toHaveBeenCalledWith(ROOT)
+    expect(buttonByText(el, 'Add launcher to this Mac')).toBeDefined()
+
+    // Customize… opens modal pre-filled with synced name & badge.
+    await act(async () => buttonByText(el, 'Customize…')?.click())
+    const nameInput = el.querySelector<HTMLInputElement>('input[aria-label="App name"]')
+    expect(nameInput?.value).toBe('Daily Note Vault')
+    await act(async () => el.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())
+
+    // Clear synced icon removes the synced preset and falls back to "Make a launcher…".
+    await act(async () => buttonByText(el, 'Clear synced icon')?.click())
+    expect(mockClearSynced).toHaveBeenCalledWith(ROOT)
+    expect(buttonByText(el, 'Make a launcher…')).toBeDefined()
+  })
+
+  it('1-click installs custom PNG synced vault preset directly without canvas re-render (YAZ-6560)', async () => {
+    mockStatus.mockResolvedValue({
+      supported: true,
+      launcher: null,
+      exists: false,
+      iconDataUrl: null,
+      synced: { name: 'Trevor Yaseen Docs', iconFile: 'vault-icon.png' },
+      syncedIconDataUrl: FAKE_PNG_DATA_URL,
+    })
+    mockCreate.mockResolvedValue({
+      supported: true,
+      exists: true,
+      iconDataUrl: FAKE_PNG_DATA_URL,
+      launcher: {
+        name: 'Trevor Yaseen Docs',
+        appPath: '/Applications/Trevor Yaseen Docs.app',
+        iconPath: '/tmp/trevor.png',
+      },
+    })
+
+    const el = await render(<VaultLauncherControl root={ROOT} defaultName="trevor-yaseen-docs" />)
+    await act(async () => buttonByText(el, 'Add launcher to this Mac')?.click())
+    expect(mockCreate).toHaveBeenCalledWith({
+      root: ROOT,
+      name: 'Trevor Yaseen Docs',
+      pngBase64: FAKE_PNG_DATA_URL.replace(/^data:image\/png;base64,/, ''),
+    })
+  })
+
+  it('shows cross-Mac synced workspace card and wires 1-click install + clearSyncedWorkspace (YAZ-6560)', async () => {
+    const wsBadge = { kind: 'material' as const, value: 'folder-docs', color: '#475569', svgPaths: ['M1 2h12v10H1z'] }
+    mockWorkspaceStatus.mockResolvedValue({
+      supported: true,
+      launcher: null,
+      exists: false,
+      iconDataUrl: null,
+      synced: { name: 'All Folders', badge: wsBadge },
+      syncedIconDataUrl: 'data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E',
+    })
+    mockCreateWorkspace.mockResolvedValue({
+      supported: true,
+      exists: true,
+      iconDataUrl: FAKE_PNG_DATA_URL,
+      launcher: {
+        name: 'All Folders',
+        appPath: '/Applications/All Folders.app',
+        iconPath: '/tmp/ws.png',
+        badge: wsBadge,
+      },
+    })
+    mockClearSyncedWorkspace.mockResolvedValue(undefined)
+
+    const el = await render(<VaultLauncherControl workspaceId="ws-1" defaultName="All Folders" />)
+    expect(el.textContent).toContain('Saved for this workspace on another Mac — not installed on this Mac yet.')
+
+    await act(async () => buttonByText(el, 'Add launcher to this Mac')?.click())
+    expect(mockCreateWorkspace).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      name: 'All Folders',
+      pngBase64: FAKE_PNG_DATA_URL.replace(/^data:image\/png;base64,/, ''),
+      badge: wsBadge,
+    })
+
+    // Clear synced icon after local remove
+    mockRemoveWorkspace.mockResolvedValue(undefined)
+    await act(async () => buttonByText(el, 'Remove')?.click())
+    await act(async () => buttonByText(el, 'Clear synced icon')?.click())
+    expect(mockClearSyncedWorkspace).toHaveBeenCalledWith('ws-1')
   })
 })

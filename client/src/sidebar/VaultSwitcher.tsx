@@ -841,7 +841,8 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
             workspaceId={launcherModal.kind === 'workspace' ? launcherModal.workspaceId : undefined}
             defaultName={launcherModal.defaultName}
             initial={launcherModal.status?.launcher}
-            initialIconDataUrl={launcherModal.status?.iconDataUrl}
+            preset={launcherModal.status?.launcher == null ? launcherModal.status?.synced : null}
+            initialIconDataUrl={launcherModal.status?.launcher != null ? launcherModal.status?.iconDataUrl : launcherModal.status?.syncedIconDataUrl}
             recreating={launcherModal.status?.launcher !== null && launcherModal.status?.launcher !== undefined && !launcherModal.status.exists}
             onSaved={() => {
               setLauncherModal(null)

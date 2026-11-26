@@ -174,7 +174,7 @@ function VaultRow({ vault, more, onMore, busy, run }: { vault: PhoneVault; more:
           onClick={() => !isOpen && void run(() => app.switchVault(id))}
           disabled={busy}
         >
-          {number !== null && <VaultBadge n={number} />}
+          {number !== null && <VaultBadge n={number} name={name} icon={app.vaultIcons[id]} />}
           <span className="row__main vault-row__words">
             <span className="vault-row__name">{name}</span>
             <span className="vault-row__path">

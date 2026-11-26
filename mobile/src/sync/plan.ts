@@ -12,6 +12,8 @@ import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR } from '@shared/types'
  */
 /** Downloaded on first sync and kept current. */
 export const isEager = (path: string): boolean => isMarkdown(path) || path.split('/').includes(VAULT_CONFIG_DIR) || path.endsWith(FOLDER_SETTINGS_FILE)
+/** Eager files decoded as UTF-8 text; binary assets under `.yaseendocs/` (e.g. `vault-icon.png`) stay raw `Uint8Array` bytes (YAZ-6560). */
+export const isTextEager = (path: string): boolean => isEager(path) && !/\.(png|jpe?g|webp|gif|ico|icns)$/i.test(path)
 /** Also downloaded ahead: the pictures and sounds of cards due within this many days (decision 6). */
 export const MEDIA_AHEAD_DAYS = 7
 /** Anything else is fetched the first time a page or a card shows it, then kept. */
