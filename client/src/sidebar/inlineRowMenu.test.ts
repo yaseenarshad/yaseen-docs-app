@@ -5,6 +5,7 @@ import { takeInlineDrawingLanding } from '../editor/drawing/inlineDrawingLand'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { copySearchRowPath, inlineRowMenuSections, type InlineRowMenuHandlers } from './inlineRowMenu'
 import type { MenuAction, MenuItem, MenuParent } from './menuSections'
+import { applyMenuIcons, resetMenuIconsForTest } from '../views/view/menuIconsStore'
 
 const PAGE = '/vault/Notes.md'
 
@@ -67,6 +68,7 @@ describe('inlineRowMenu (YAZ-6469)', () => {
   })
 
   afterEach(() => {
+    resetMenuIconsForTest()
     vi.restoreAllMocks()
     if (clipDescriptor === undefined) delete (navigator as unknown as Record<string, unknown>).clipboard
     else Object.defineProperty(navigator, 'clipboard', clipDescriptor)
@@ -221,5 +223,31 @@ describe('inlineRowMenu (YAZ-6469)', () => {
     writeText.mockRejectedValueOnce(new Error('denied'))
     await copySearchRowPath('/vault/Plain.md', undefined, onNotice)
     expect(onNotice).toHaveBeenCalledWith("Can't copy path: denied")
+  })
+
+  it('YAZ-6567: attaches default icons to Open in new tab, Open in new window, and Show in sidebar and omits them on none / off', () => {
+    const h = makeHandlers({ onOpenNewWindow: vi.fn() })
+    for (const candidate of [drawingRow, cardRow]) {
+      const sections = inlineRowMenuSections(candidate, h)
+      for (const label of ['Open in new tab', 'Open in new window', 'Show in sidebar']) {
+        expect((findItem(sections, label) as MenuAction).icon).toBeDefined()
+      }
+    }
+
+    applyMenuIcons({ openNewTab: 'none', newWindow: 'none', showInSidebar: 'none' })
+    for (const candidate of [drawingRow, cardRow]) {
+      const sections = inlineRowMenuSections(candidate, h)
+      for (const label of ['Open in new tab', 'Open in new window', 'Show in sidebar']) {
+        expect((findItem(sections, label) as MenuAction).icon).toBeUndefined()
+      }
+    }
+
+    applyMenuIcons('off')
+    for (const candidate of [drawingRow, cardRow]) {
+      const sections = inlineRowMenuSections(candidate, h)
+      for (const label of ['Open in new tab', 'Open in new window', 'Show in sidebar']) {
+        expect((findItem(sections, label) as MenuAction).icon).toBeUndefined()
+      }
+    }
   })
 })

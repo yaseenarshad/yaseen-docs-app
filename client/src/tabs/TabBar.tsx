@@ -10,7 +10,8 @@ import { PART_MS, drawnPlaces as drawnAt, gapOf, glide, motionOff, partGap, part
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
-import { AsleepIcon, GridIcon, InboxIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
+import { AsleepIcon, GridIcon, InboxIcon, NewWindowIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
+import { isMenuIconVisible, useMenuIcons } from '../views/view/menuIconsStore'
 import { dragWidth, foreignDrag, readPageDrag, windowTabOf, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import { duplicateTabIds, type Tab } from '../workspace/useWorkspace'
 import type { ListState } from '../lists/useVaultListsHere'
@@ -297,6 +298,7 @@ export interface NavStep {
 export const NAV_HOLD_MS = 500
 
 export function TabBar({ roots, windowId, tabs: pages, active, preview = null, blank = false, inbox, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, onOpenStep, zoomLabels, onShowSidebar, onShowInSidebar, onOpenPage, inlineDrawingTitle, onRenameFile, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake, pathIds, tabIdSpec, tabWidth = 'auto', inactiveTabWidth = 'auto' }: TabBarProps) {
+  useMenuIcons()
   // THE INBOX TAB IN THE STRIP (YAZ-5016): one list of the page tabs and the Inbox tab, at its slot. Every slot, drag and
   // glide of the strip reads this list; what goes out to App is in page tabs (`pageSlot`, `drop`).
   const inboxAt = inbox === undefined ? null : Math.min(Math.max(inbox.at ?? pages.length, 0), pages.length)
@@ -1237,7 +1239,7 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
           sections={[
             // Where it goes (YAZ-5054), as a page tab's first group: no "Duplicate tab" (one Inbox per window) and no "Right panel" (no page).
             [
-              ...(inbox.onMoveToNewWindow === undefined ? [] : [{ id: 'new-window', label: 'Move to new window', onSelect: inbox.onMoveToNewWindow }]),
+              ...(inbox.onMoveToNewWindow === undefined ? [] : [{ id: 'new-window', label: 'Move to new window', ...(isMenuIconVisible('newWindow') ? { icon: <NewWindowIcon /> } : {}), onSelect: inbox.onMoveToNewWindow }]),
               ...(inbox.onMoveToWindow === undefined || inboxMenu.targets.length === 0
                 ? []
                 : [{ id: 'move-to', label: 'Move to', children: [inboxMenu.targets.map((t) => ({ id: `move-window:${t.id}`, label: t.label, onSelect: () => inbox.onMoveToWindow?.(t.id), onPreview: (on: boolean) => onHighlightWindow?.(on ? t.id : null) }))] }]),

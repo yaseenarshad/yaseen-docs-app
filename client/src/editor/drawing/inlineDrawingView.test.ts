@@ -13,6 +13,7 @@ import * as inlineDrawingLand from './inlineDrawingLand'
 import { inlineDrawingPathAtLine } from './useInlineDrawing'
 import { READ_ONLY_EDIT, type ReadOnlyEditEvent } from '../readOnlyEdit'
 import { drawingMenu } from '../drawingMenu'
+import { applyMenuIcons, resetMenuIconsForTest } from '../../views/view/menuIconsStore'
 
 interface Fake {
   host: BoardWindowHost
@@ -511,5 +512,35 @@ describe('landOnInlineDrawing (Show in page)', () => {
     ;[...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub .ctx-menu__item')].find((b) => b.textContent === 'App default')!.click()
     expect(dom.dataset.align).toBeUndefined()
     expect(getMarkdownForSave(crepe)).toContain('<!-- drawing: 640x360 locked -->')
+  })
+
+  it('YAZ-6567: Open in new tab glyph follows menuIconsStore variants, none, and off', async () => {
+    const { root } = await mount(SAMPLE_MD, { inlineDrawing: { root: '/vault', onOpenInTab: vi.fn() } })
+    await flushMicrotasks()
+    const openMenu = () => {
+      root.querySelector<HTMLButtonElement>('.inline-drawing__more')!.click()
+      return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Open in new tab')!
+    }
+
+    try {
+      const defaultRow = openMenu()
+      const defaultSvg = defaultRow.querySelector('svg')
+      expect(defaultSvg?.getAttribute('viewBox')).toBe('0 0 16 16')
+      const defaultHtml = defaultSvg?.innerHTML
+      expect(defaultHtml).toBeTruthy()
+
+      applyMenuIcons({ openNewTab: 'raised-tab' })
+      expect(openMenu().querySelector('svg')?.innerHTML).not.toBe(defaultHtml)
+
+      applyMenuIcons({ openNewTab: 'none' })
+      const noneRow = openMenu()
+      expect(noneRow.querySelector('svg')).toBeNull()
+      expect(noneRow.querySelector('.ctx-menu__label')).toBeNull()
+
+      applyMenuIcons('off')
+      expect(openMenu().querySelector('svg')).toBeNull()
+    } finally {
+      resetMenuIconsForTest()
+    }
   })
 })

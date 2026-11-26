@@ -12,7 +12,8 @@ import { PlacedCreate, rowArrows, type PendingCreate } from './Tree'
 import type { EntryKind } from './createEntry'
 import { scopeGroup } from './menuSections'
 import { NewKindIcon } from './FileIcon'
-import { PencilIcon } from '../views/view/icons'
+import { IsolateIcon, PencilIcon } from '../views/view/icons'
+import { isMenuIconVisible, useMenuIcons } from '../views/view/menuIconsStore'
 import type { OnListFold } from './listFold'
 
 /** Two clicks on a name inside this gap rename it, as on a session (YAZ-3147, YAZ-4460 F3). */
@@ -109,6 +110,7 @@ interface FocusFolderListProps {
  * The folds last the session (YAZ-4470, 9): a tab switch keeps them, a relaunch opens every folder again.
  */
 export function FocusFolderList({ kind, folders, roots, renderItems, editing, onEdit, onRename, onDelete, onGhost, onHideOthers, only, scopesOf, onSetScope, scope, openableOf, onOpenAll, onReorderFolders, onNew, pending = null, onFold }: FocusFolderListProps) {
+  useMenuIcons()
   const unit = useUnit()
   const shut = useSyncExternalStore(subscribeShut, () => SHUT[kind])
   const setShut = (next: (was: ReadonlySet<string>) => ReadonlySet<string>) => setShutStackFolders(kind, next(SHUT[kind]))
@@ -315,7 +317,7 @@ export function FocusFolderList({ kind, folders, roots, renderItems, editing, on
               { id: 'focus-folder-new-page', label: unit('New page'), icon: <NewKindIcon kind="file" />, onSelect: () => newIn(menu.id, 'file') },
               { id: 'focus-folder-new-drawing', label: 'New drawing', icon: <NewKindIcon kind="drawing" />, onSelect: () => newIn(menu.id, 'drawing') },
               { id: 'focus-folder-new-folder', label: 'New folder', icon: <NewKindIcon kind="dir" />, onSelect: () => newIn(menu.id, 'dir') },
-            ]]), [{ id: 'focus-folder-rename', label: 'Rename', icon: <PencilIcon />, onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', onSelect: () => onHideOthers(menu.id) }])], scopeGroup(kind, scopesOf(menu.id), (to, on) => onSetScope(menu.id, to, on), { scope, ask: () => leave(menu.id) }), [{ id: 'focus-folder-delete', label: kind === 'focus' ? 'Delete focus folder' : 'Delete favorite folder', danger: true, onSelect: () => setDeleting(folders.find((f) => f.id === menu.id) ?? null) }]]}
+            ]]), [{ id: 'focus-folder-rename', label: 'Rename', icon: <PencilIcon />, onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', ...(isMenuIconVisible('hideOthers') ? { icon: <IsolateIcon /> } : {}), onSelect: () => onHideOthers(menu.id) }])], scopeGroup(kind, scopesOf(menu.id), (to, on) => onSetScope(menu.id, to, on), { scope, ask: () => leave(menu.id) }), [{ id: 'focus-folder-delete', label: kind === 'focus' ? 'Delete focus folder' : 'Delete favorite folder', danger: true, onSelect: () => setDeleting(folders.find((f) => f.id === menu.id) ?? null) }]]}
             onClose={() => setMenu(null)}
           />,
           document.body,

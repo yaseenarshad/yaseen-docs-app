@@ -33,6 +33,8 @@ import { innermostItemPos } from '../outline/listNodes'
 import { embedFolds, toggleOutlineFold } from '../outline/outlineFolding'
 import { tellReadOnlyEdit } from '../readOnlyEdit'
 import { vaultUnit } from '../../vault/unitWord'
+import { createMenuIconSvgElement } from '../../views/view/menuIconShapes'
+import { getResolvedMenuIcons } from '../../views/view/menuIconsStore'
 import { BOARD_EMBED_CLASS, BOARD_VIEW_META } from './boardEmbed'
 import { positionMenuRow, setInlineDrawingAlign, syncAlignAttr } from './drawingAlign'
 import { landOnInlineDrawing, landWhenShown, takeInlineDrawingLanding, watchInlineDrawingLanding } from './inlineDrawingLand'
@@ -58,7 +60,12 @@ function menuGlyph(shapes: Array<[string, Record<string, string>]>): SVGElement 
 
 const editGlyph = () => menuGlyph([['path', { d: 'M3 21l3.5-1 11-11a2.1 2.1 0 0 0-3-3l-11 11z' }], ['path', { d: 'M14 6l3 3' }]])
 const renameGlyph = () => menuGlyph([['path', { d: 'M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z' }]])
-const openTabGlyph = () => menuGlyph([['path', { d: 'M15 3h6v6' }], ['path', { d: 'M10 14 21 3' }], ['path', { d: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6' }]])
+const openTabGlyph = (): (() => SVGElement) | undefined => {
+  const { enabled, picks } = getResolvedMenuIcons()
+  if (!enabled || picks.openNewTab === 'none') return undefined
+  const variant = picks.openNewTab
+  return () => createMenuIconSvgElement('openNewTab', variant) as SVGElement
+}
 const exploreGlyph = () => menuGlyph([['polygon', { points: '12 2 2 7 12 12 22 7 12 2' }], ['polyline', { points: '2 17 12 22 22 17' }], ['polyline', { points: '2 12 12 17 22 12' }]])
 const moveFileGlyph = () => menuGlyph([['path', { d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }], ['polyline', { points: '14 2 14 8 20 8' }], ['path', { d: 'M12 18v-6' }], ['path', { d: 'm9 15 3-3 3 3' }]])
 const copyGlyph = () => menuGlyph([['rect', { x: '8', y: '8', width: '13', height: '13', rx: '2' }], ['path', { d: 'M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3' }]])
@@ -424,7 +431,10 @@ export class InlineDrawingView implements NodeView {
         ? {
             label: 'Open in new tab',
             hint: '⌘↵',
-            icon: openTabGlyph,
+            ...(() => {
+              const icon = openTabGlyph()
+              return icon === undefined ? {} : { icon }
+            })(),
             run: () => {
               const live = this.liveNode()
               if (live === null) return

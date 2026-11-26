@@ -18,6 +18,7 @@ import { holdOverStrip, releaseOverStrip } from './stripDrop'
 import { IconsContext } from '../sidebar/FileIcon'
 import { buildRowIcons, rowIcon } from '../sidebar/rowIcons'
 import { INBOX_TRAY_PATH } from '../views/view/icons'
+import { applyMenuIcons, resetMenuIconsForTest } from '../views/view/menuIconsStore'
 
 // The OS-action items call the bridge (YAZ-963): stub the verbs, keep BridgeRequestError real.
 vi.mock('../api', async (importOriginal) => ({
@@ -293,6 +294,15 @@ describe('TabBar', () => {
     moveTargets.mockReturnValue([])
     open()
     expect(items().map((item) => item.textContent)).toEqual(['Move to new window', 'Close tab', 'Close other tabs', 'Close tabs to the right'])
+    // YAZ-6567: Inbox "Move to new window" carries NewWindowIcon and omits it when set to none/off.
+    try {
+      expect(items()[0].querySelector('svg')).not.toBeNull()
+      act(() => applyMenuIcons({ newWindow: 'none' }))
+      expect(items()[0].querySelector('svg')).toBeNull()
+      expect(items()[0].querySelector('.ctx-menu__label')).toBeNull()
+    } finally {
+      resetMenuIconsForTest()
+    }
   })
 
   it('the blank tab (YAZ-2655 D10) is the last tab, named "New tab", and the active one while it shows: its ✕ and a middle click close it, it does not drag and has no menu; the "+" stands after the tabs, outside the scroller (S87)', () => {

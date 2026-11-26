@@ -8,6 +8,7 @@ import { act, type ComponentProps } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { FocusFolder } from '@shared/types'
 import { FocusFolderList, setShutStackFolders, shutStackFolders } from './FocusFolderList'
+import { applyMenuIcons, resetMenuIconsForTest } from '../views/view/menuIconsStore'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -211,5 +212,26 @@ describe('FocusFolderList', () => {
     act(() => root?.unmount())
     root = null
     expect(onFold).toHaveBeenLastCalledWith(null)
+  })
+
+  it('YAZ-6567: "Hide all others" carries IsolateIcon and responds to variant switch, none, and off', () => {
+    try {
+      mount()
+      menuOf('Clients')
+      const defaultSvg = item('Hide all others')?.querySelector('svg')?.innerHTML
+      expect(defaultSvg).toBeTruthy()
+
+      act(() => applyMenuIcons({ hideOthers: 'funnel' }))
+      expect(item('Hide all others')?.querySelector('svg')?.innerHTML).not.toBe(defaultSvg)
+
+      act(() => applyMenuIcons({ hideOthers: 'none' }))
+      expect(item('Hide all others')?.querySelector('svg')).toBeNull()
+      expect(item('Hide all others')?.querySelector('.ctx-menu__label')).toBeNull()
+
+      act(() => applyMenuIcons('off'))
+      expect(item('Hide all others')?.querySelector('svg')).toBeNull()
+    } finally {
+      resetMenuIconsForTest()
+    }
   })
 })

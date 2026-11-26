@@ -26,6 +26,7 @@ import { useReviewSettings } from '../review/useReviewSettings'
 import { takeCardLanding } from '../editor/card/cardOpen'
 import { takeInlineDrawingLanding } from '../editor/drawing/inlineDrawingLand'
 import { CollapseAllIcon, ExpandAllIcon } from '../views/view/icons'
+import { applyMenuIcons, resetMenuIconsForTest } from '../views/view/menuIconsStore'
 
 /**
  * File-row render counter (YAZ-2194): every file row renders its label through `pageLabel`, so the
@@ -9339,6 +9340,18 @@ describe('Inbox row (YAZ-2322)', () => {
     expect(menu.defaultPrevented).toBe(true)
     const items = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
     expect(items().map((item) => [item.textContent, item.disabled])).toEqual([['Open in new tab', false], ['Open in new window', false]])
+    // YAZ-6567: Inbox row menu carries customizable icons and omits them cleanly on none.
+    try {
+      expect(items()[0].querySelector('svg')).not.toBeNull()
+      expect(items()[1].querySelector('svg')).not.toBeNull()
+      act(() => applyMenuIcons({ openNewTab: 'none', newWindow: 'none' }))
+      expect(items()[0].querySelector('svg')).toBeNull()
+      expect(items()[1].querySelector('svg')).toBeNull()
+      expect(items()[0].querySelector('.ctx-menu__label')).toBeNull()
+      act(() => resetMenuIconsForTest())
+    } finally {
+      resetMenuIconsForTest()
+    }
     act(() => items()[0].click())
     expect(props.onOpenInbox).toHaveBeenCalledTimes(1)
     expect(document.querySelector('.ctx-menu')).toBeNull()

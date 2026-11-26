@@ -17,7 +17,8 @@ import { landOnCard, type CardPlace } from '../editor/card/cardOpen'
 import { landOnInlineDrawing } from '../editor/drawing/inlineDrawingLand'
 import { resolveInlineCopyPath } from '../lib/inlinePath'
 import { focusPlaces, scopeGroup, type MenuAction, type MenuItem, type MenuSection } from '../sidebar/menuSections'
-import { CopyIcon, EyeIcon, HeartIcon, PencilIcon, ShowInSidebarIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, HeartIcon, NewTabIcon, NewWindowIcon, PencilIcon, ShowInSidebarIcon } from '../views/view/icons'
+import { isMenuIconVisible } from '../views/view/menuIconsStore'
 import { requestPageWindow } from '../views/pageWindowRequest'
 
 export interface ExploreMenuDoors {
@@ -100,8 +101,8 @@ export function explorePageSections(path: string, doors: ExploreMenuDoors): Menu
         ]
   return [
     [
-      { id: 'open-tab', label: 'Open in new tab', onSelect: then(() => doors.openInTab(path)) },
-      ...(a.openNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', onSelect: then(() => a.openNewWindow?.(path)) }]),
+      { id: 'open-tab', label: 'Open in new tab', ...(isMenuIconVisible('openNewTab') ? { icon: <NewTabIcon /> } : {}), onSelect: then(() => doors.openInTab(path)) },
+      ...(a.openNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', ...(isMenuIconVisible('newWindow') ? { icon: <NewWindowIcon /> } : {}), onSelect: then(() => a.openNewWindow?.(path)) }]),
       {
         id: 'open-mini-window',
         label: 'Open in mini window',
@@ -112,7 +113,7 @@ export function explorePageSections(path: string, doors: ExploreMenuDoors): Menu
         },
       },
     ],
-    [...(a.showInSidebar === undefined ? [] : [{ id: 'show-in-sidebar', label: 'Show in sidebar', icon: <ShowInSidebarIcon />, onSelect: then(() => a.showInSidebar?.(path)) }]), { id: 'copy-path', label: 'Copy path', icon: <CopyIcon />, onSelect: () => void copyText(path, 'path', doors.onNotice) }],
+    [...(a.showInSidebar === undefined ? [] : [{ id: 'show-in-sidebar', label: 'Show in sidebar', ...(isMenuIconVisible('showInSidebar') ? { icon: <ShowInSidebarIcon /> } : {}), onSelect: then(() => a.showInSidebar?.(path)) }]), { id: 'copy-path', label: 'Copy path', icon: <CopyIcon />, onSelect: () => void copyText(path, 'path', doors.onNotice) }],
     doors.onRenameFile === undefined ? [] : [{ id: 'rename-file', label: 'Rename file', icon: <PencilIcon />, onSelect: then(() => doors.onRenameFile?.(path)) }],
     [
       ...focus,
@@ -148,6 +149,7 @@ export function exploreInlineSections(target: ExploreInlineTarget, doors: Explor
         {
           id: 'open-tab',
           label: 'Open in new tab',
+          ...(isMenuIconVisible('openNewTab') ? { icon: <NewTabIcon /> } : {}),
           onSelect: then(() => {
             if (doors.openInlineDrawingTab !== undefined) doors.openInlineDrawingTab(target.page, target.index, false)
             else {
@@ -156,7 +158,7 @@ export function exploreInlineSections(target: ExploreInlineTarget, doors: Explor
             }
           }),
         },
-        ...(a.openNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', onSelect: then(() => a.openNewWindow?.(target.page)) }]),
+        ...(a.openNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', ...(isMenuIconVisible('newWindow') ? { icon: <NewWindowIcon /> } : {}), onSelect: then(() => a.openNewWindow?.(target.page)) }]),
       ],
       [
         {
@@ -180,12 +182,13 @@ export function exploreInlineSections(target: ExploreInlineTarget, doors: Explor
       {
         id: 'open-tab',
         label: 'Open in new tab',
+        ...(isMenuIconVisible('openNewTab') ? { icon: <NewTabIcon /> } : {}),
         onSelect: then(() => {
           if (cardId !== null) landOnCard(target.page, cardId)
           doors.openInTab(target.page)
         }),
       },
-      ...(a.openNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', onSelect: then(() => a.openNewWindow?.(target.page)) }]),
+      ...(a.openNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', ...(isMenuIconVisible('newWindow') ? { icon: <NewWindowIcon /> } : {}), onSelect: then(() => a.openNewWindow?.(target.page)) }]),
     ],
     [
       {
