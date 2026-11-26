@@ -3143,6 +3143,7 @@ export function App() {
           }
           renamedUnderOverview(oldPath, newPath, true)
           setFilesOnly((only) => filesOnlyAfterRename(only, oldPath, newPath))
+          setFocusOnly((only) => filesOnlyAfterRename(only, oldPath, newPath))
           renamePlacesFilesOnly(oldPath, newPath)
           renameWorkspaceDir(oldPath, newPath, moved[0] !== now.roots[0] ? moved[0] : undefined)
           if (vaultMoved) setRoots(moved)
@@ -3689,6 +3690,7 @@ export function App() {
         if (kind === 'dir') {
           retireDeletedDir(path)
           setFilesOnly((only) => filesOnlyAfterDelete(only, path))
+          setFocusOnly((only) => filesOnlyAfterDelete(only, path))
           deletePlacesFilesOnly(path)
           dropPageWindowsAt(path)
           moveExploreRecent(path, null)

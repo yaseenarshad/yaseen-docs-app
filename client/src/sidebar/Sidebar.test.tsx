@@ -7583,6 +7583,69 @@ describe('favorites (YAZ-1766)', () => {
       }
     })
   })
+  describe('"Hide all others" on disk folders in Favorites and Focus (YAZ-6574)', () => {
+    const menuLabels = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)
+    const bar = (el: HTMLElement) => el.querySelector('.sidebar__focus-bar')
+
+    it('Favorites: root disk folder offers Hide all others with IsolateIcon, isolates the folder alone under Only <folder> · Show all, and Show all restores the list', async () => {
+      const { el, v, props, rerender } = await mountVault(
+        { lens: 'favorites', onFocusOnly: vi.fn() },
+        { favorites: ['/Projects', '/Pages', '/top.md'] },
+      )
+      expect(topLabels(el)).toEqual(['Projects', 'Pages', 'top'])
+
+      rightClick(rowByPath(el, `${v}/Projects`))
+      const hideBtn = itemByLabel(el, 'Hide all others')
+      expect(hideBtn).not.toBeNull()
+      expect(hideBtn?.querySelector('.ctx-menu__label > svg')).not.toBeNull()
+      await act(async () => hideBtn?.click())
+      expect(props.onFocusOnly).toHaveBeenLastCalledWith(`${v}/Projects`)
+
+      await rerender({ focusOnly: `${v}/Projects` })
+      expect(bar(el)?.querySelector('span')?.textContent).toBe('Only Projects')
+      expect(topLabels(el)).toEqual(['Projects'])
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      expect(rowByPath(el, `${v}/Projects/p.md`)).not.toBeNull()
+      expect(rowByPath(el, `${v}/Pages`)).toBeNull()
+
+      rightClick(rowByPath(el, `${v}/Projects`))
+      const showBtn = itemByLabel(el, 'Show all')
+      expect(showBtn).not.toBeNull()
+      expect(showBtn?.querySelector('.ctx-menu__label > svg')).not.toBeNull()
+      expect(menuLabels()).not.toContain('Hide all others')
+      await act(async () => showBtn?.click())
+      expect(props.onFocusOnly).toHaveBeenLastCalledWith(null)
+
+      await rerender({ focusOnly: null })
+      expect(topLabels(el)).toEqual(['Projects', 'Pages', 'top'])
+    })
+
+    it('Focus: root disk folder offers Hide all others with IsolateIcon, isolates the folder alone, and Show all bar button restores Focus', async () => {
+      const { el, v, props, rerender } = await mountVault(
+        { lens: 'focus', onFocusOnly: vi.fn() },
+        { focus: ['/Projects', '/Pages', '/top.md'] },
+      )
+      expect(topLabels(el)).toEqual(['Projects', 'Pages', 'top'])
+
+      rightClick(rowByPath(el, `${v}/Projects`))
+      const hideBtn = itemByLabel(el, 'Hide all others')
+      expect(hideBtn).not.toBeNull()
+      expect(hideBtn?.querySelector('.ctx-menu__label > svg')).not.toBeNull()
+      await act(async () => hideBtn?.click())
+      expect(props.onFocusOnly).toHaveBeenLastCalledWith(`${v}/Projects`)
+
+      await rerender({ focusOnly: `${v}/Projects` })
+      expect(bar(el)?.querySelector('span')?.textContent).toBe('Only Projects')
+      expect(topLabels(el)).toEqual(['Projects'])
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      expect(rowByPath(el, `${v}/Pages`)).toBeNull()
+
+      await act(async () => [...(bar(el)?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === 'Show all')?.click())
+      expect(props.onFocusOnly).toHaveBeenLastCalledWith(null)
+      await rerender({ focusOnly: null })
+      expect(topLabels(el)).toEqual(['Projects', 'Pages', 'top'])
+    })
+  })
   it('YAZ-5664: on Favorites too, Collapse all closes both stack folders and the real folder inside; Expand all opens them all again', async () => {
     const ids = ['yaz5664-fav-a', 'yaz5664-fav-b'] as const
     const { el, v } = await mountVault({ lens: 'favorites' }, { folders: (name) => twoStacks(name, ids) })

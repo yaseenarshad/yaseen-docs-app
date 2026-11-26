@@ -136,4 +136,26 @@ describe('tabPlace', () => {
     expect(readPlace('none')?.filesOnly).toBeNull()
     expect(readPlace(null)?.filesOnly).toBeNull()
   })
+
+  it('YAZ-6574: rename, delete, and prune keep disk-path focusOnly synced without touching custom folder IDs', () => {
+    savePlace('disk', place('favorites', 0, { focusOnly: '/v/Projects' }))
+    savePlace('nested', place('focus', 0, { focusOnly: '/v/Projects/Alpha' }))
+    savePlace('custom', place('focus', 0, { focusOnly: 'stack-1' }))
+    savePlace(null, place('favorites', 0, { focusOnly: '/w/Notes' }))
+
+    renamePlacesFilesOnly('/v/Projects', '/v/Work')
+    expect(readPlace('disk')?.focusOnly).toBe('/v/Work')
+    expect(readPlace('nested')?.focusOnly).toBe('/v/Work/Alpha')
+    expect(readPlace('custom')?.focusOnly).toBe('stack-1')
+
+    deletePlacesFilesOnly('/v/Work/Alpha')
+    expect(readPlace('disk')?.focusOnly).toBe('/v/Work')
+    expect(readPlace('nested')?.focusOnly).toBeNull()
+    expect(readPlace('custom')?.focusOnly).toBe('stack-1')
+
+    prunePlacesFilesOnly(['/v'])
+    expect(readPlace('disk')?.focusOnly).toBe('/v/Work')
+    expect(readPlace('custom')?.focusOnly).toBe('stack-1')
+    expect(readPlace(null)?.focusOnly).toBeNull()
+  })
 })

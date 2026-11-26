@@ -994,6 +994,25 @@ export function Sidebar({
   const shownTab = lens === 'favorites' ? lists.favoritesTab : lists.focusTab
   // "Hide all others" (F8): the folder shown alone, while it still exists in the tab that shows (folder ids are unique).
   const onlyFolder = focusOnly === null ? undefined : shownTab.folders.find((folder) => folder.id === focusOnly)
+  // "Hide all others" on a disk folder in Favorites or Focus (YAZ-6574): `focusOnly` holds the folder path when it is not a custom `+ Folder` id.
+  const onlyListDir = useMemo(() => {
+    if (focusOnly === null || onlyFolder !== undefined || forest === null || (lens !== 'favorites' && lens !== 'focus')) return null
+    const listNodes = lens === 'favorites' ? favoriteNodes : focusNodes
+    const topHit = findDirNode(listNodes, focusOnly)
+    if (topHit !== null) return topHit
+    for (const folder of shownTab.folders) {
+      const paths = folder.items.map((item) => resolveItem(item, roots)).flatMap((r) => ('path' in r ? [r.path] : []))
+      const subHit = findDirNode(favoriteRoots(forest, paths), focusOnly)
+      if (subHit !== null) return subHit
+    }
+    return null
+  }, [focusOnly, onlyFolder, forest, lens, favoriteNodes, focusNodes, shownTab.folders, roots])
+  const prevOnlyListDir = useRef<string | null>(null)
+  useEffect(() => {
+    const dir = onlyListDir?.path ?? null
+    if (dir !== null && prevOnlyListDir.current !== dir) openTo(`${dir}/x`, dir)
+    prevOnlyListDir.current = dir
+  }, [onlyListDir, openTo])
   const newFolder = (): void => {
     const id = shownTab.addTo([], null)
     if (id !== null) setEditingFolder(id)
@@ -1694,10 +1713,10 @@ export function Sidebar({
       const listLens = !asSearch && (lens === 'focus' || lens === 'favorites') ? lens : null
       const listTab = listLens === 'focus' ? listsNow.current.focusTab : listsNow.current.favoritesTab
       const shownAlone = listLens === null ? undefined : listTab.folders.find((folder) => folder.id === focusOnly)
-      // The folder Files shows alone (YAZ-5790): its blank space is that folder, in a window with one vault or more.
-      const filesAloneDir = !asSearch && lens === 'files' ? filesOnly : null
+      // The folder shown alone in Files (YAZ-5790) or as a disk folder in Favorites/Focus (YAZ-6574): blank space targets that folder.
+      const aloneDir = !asSearch ? (lens === 'files' ? filesOnly : (onlyListDir?.path ?? null)) : null
       // Blank space of a window with two or more vaults is a vault's root on Focus and Favorites alone (YAZ-4782).
-      const targetDir = node === null && filesAloneDir !== null ? filesAloneDir : node === null && multi ? (listLens === null ? null : vaultOfFolder(shownAlone, roots)) : targetDirFor(node, top)
+      const targetDir = node === null && aloneDir !== null ? aloneDir : node === null && multi ? (listLens === null ? null : vaultOfFolder(shownAlone, roots)) : targetDirFor(node, top)
       const place: CreatePlace | null =
         listLens === null ? null
         : node === null ? { list: listLens, folder: shownAlone?.id ?? null, after: null }
@@ -1765,8 +1784,17 @@ export function Sidebar({
         reviewCard: pageRecord?.kind === 'card',
         // A shortcut is a folder's ID on a page: offered only where the vault uses IDs (YAZ-2523 🔒 V5).
         shortcutDir: home.index.ids && plural === null && node?.type === 'dir' && vaultRow === null ? node.path : null,
-        // "Hide all others" (YAZ-5790): a folder row of the Files tree itself, outside a 2+ selection; "Show all" on the one shown alone.
-        hideOthers: !asSearch && lens === 'files' && plural === null && node?.type === 'dir' && vaultRow === null && shortcutIn === null && node.pageOf === undefined ? { dir: node.path, on: node.path === filesOnly } : null,
+        // "Hide all others" (YAZ-5790, YAZ-6574): a folder row of Files, Favorites, or Focus outside a 2+ selection; "Show all" on the one shown alone.
+        hideOthers:
+          !asSearch &&
+          (lens === 'files' || lens === 'focus' || lens === 'favorites') &&
+          plural === null &&
+          node?.type === 'dir' &&
+          vaultRow === null &&
+          shortcutIn === null &&
+          node.pageOf === undefined
+            ? { dir: node.path, on: node.path === (lens === 'files' ? filesOnly : focusOnly) }
+            : null,
         removeShortcut: node === null || shortcutIn === null ? null : { path: node.path, dir: shortcutIn },
         // The known vaults that are not in this window (YAZ-2602 D2), in the order of the ⌘O list, read as the menu opens.
         addVaults: node !== null ? null : storage.listVaults().flatMap(({ path, name }) => (roots.includes(path) ? [] : [{ path, name }])),
@@ -1779,7 +1807,7 @@ export function Sidebar({
         ...(skillRow !== null ? { cardSkill: skillRow, ...cardSkillTargets(skillRow) } : inSkill ? READ_ONLY_APP_ROW : {}),
       })
     },
-    [root, roots, appRoots, cardSkillTargets, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, dirs, iconTargets, focusOnly, filesOnly],
+    [root, roots, appRoots, cardSkillTargets, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, dirs, iconTargets, focusOnly, filesOnly, onlyListDir],
   )
   // A right-click on a Recents row (YAZ-3235 D7, S20): the one-row file menu, "Show in sidebar" first,
   // as a row of the new tab page. Through a ref, so the memo list does not draw again on each selection.
@@ -2454,18 +2482,20 @@ export function Sidebar({
             {errorLines}
             {!loaded && favoriteNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
             {loaded && (
-              // Favorite folders (YAZ-4460 demo), by the Focus tab's rules: the bar with "+ Folder" — or, while one folder
-              // shows alone, its name and "Show all".
+              // Favorite folders (YAZ-4460 demo, YAZ-6574), by the Focus tab's rules: the bar with "+ Folder" — or, while one folder
+              // (custom or disk folder) shows alone, its name and "Show all".
               <div className="sidebar__focus-bar">
                 {/* No count (YAZ-4470, 10): which list shows, and on hover what that means. */}
-                <span title={onlyFolder !== undefined ? undefined : lists.favoritesScope === 'workspace' ? SCOPE_TIPS.barWorkspace : SCOPE_TIPS.barVault}>{onlyFolder !== undefined ? `Only ${onlyFolder.name}` : lists.favoritesScope === 'workspace' ? 'Workspace list' : 'Vault list'}</span>
-                <button type="button" className="sidebar__focus-clear" onClick={onlyFolder !== undefined ? () => onFocusOnly?.(null) : newFolder}>
-                  {onlyFolder !== undefined ? 'Show all' : '+ Folder'}
+                <span title={onlyFolder !== undefined || onlyListDir !== null ? undefined : lists.favoritesScope === 'workspace' ? SCOPE_TIPS.barWorkspace : SCOPE_TIPS.barVault}>
+                  {onlyFolder !== undefined ? `Only ${onlyFolder.name}` : onlyListDir !== null ? `Only ${nameOf(onlyListDir.path)}` : lists.favoritesScope === 'workspace' ? 'Workspace list' : 'Vault list'}
+                </span>
+                <button type="button" className="sidebar__focus-clear" onClick={onlyFolder !== undefined || onlyListDir !== null ? () => onFocusOnly?.(null) : newFolder}>
+                  {onlyFolder !== undefined || onlyListDir !== null ? 'Show all' : '+ Folder'}
                 </button>
               </div>
             )}
-            {loaded && onlyFolder === undefined && favoriteNodes.length === 0 && lists.favoritesTab.folders.length === 0 && <p className="sidebar__msg">{lists.favoritesScope === 'workspace' ? 'No favorites in this workspace yet.' : 'No favorites yet.'} Right-click a file or folder → Add to favorites.</p>}
-            {lists.favoritesTab.folders.length > 0 && forest !== null && (
+            {loaded && onlyFolder === undefined && onlyListDir === null && favoriteNodes.length === 0 && lists.favoritesTab.folders.length === 0 && <p className="sidebar__msg">{lists.favoritesScope === 'workspace' ? 'No favorites in this workspace yet.' : 'No favorites yet.'} Right-click a file or folder → Add to favorites.</p>}
+            {onlyListDir === null && lists.favoritesTab.folders.length > 0 && forest !== null && (
               <FocusFolderList
                 kind="favorites"
                 onFold={setStackFold}
@@ -2489,7 +2519,8 @@ export function Sidebar({
                 onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
               />
             )}
-            {onlyFolder === undefined && favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
+            {onlyListDir !== null && <Tree {...treeProps} nodes={[onlyListDir]} move={fileMove} sort={sort} copies />}
+            {onlyFolder === undefined && onlyListDir === null && favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
             {listEndField('favorites')}
           </>
         ) : lens === 'focus' ? (
@@ -2501,16 +2532,16 @@ export function Sidebar({
           <>
             {errorLines}
             {!loaded && focusNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
-            {loaded && onlyFolder !== undefined && (
-              // "Hide all others" (YAZ-4460 F8): the one folder, and the way back.
+            {loaded && (onlyFolder !== undefined || onlyListDir !== null) && (
+              // "Hide all others" (YAZ-4460 F8, YAZ-6574): the one folder (custom or disk), and the way back.
               <div className="sidebar__focus-bar">
-                <span>Only {onlyFolder.name}</span>
+                <span>Only {onlyFolder !== undefined ? onlyFolder.name : nameOf(onlyListDir!.path)}</span>
                 <button type="button" className="sidebar__focus-clear" onClick={() => onFocusOnly?.(null)}>
                   Show all
                 </button>
               </div>
             )}
-            {loaded && onlyFolder === undefined && (
+            {loaded && onlyFolder === undefined && onlyListDir === null && (
               // The bar stands whenever the tab can make a focus folder (YAZ-4460 F3). No count (YAZ-4470, 10): which list shows.
               <div className="sidebar__focus-bar">
                 <span title={lists.focusScope === 'workspace' ? SCOPE_TIPS.barWorkspace : SCOPE_TIPS.barVault}>{lists.focusScope === 'workspace' ? 'Workspace list' : 'Vault list'}</span>
@@ -2527,8 +2558,8 @@ export function Sidebar({
                 </span>
               </div>
             )}
-            {loaded && onlyFolder === undefined && focusNodes.length === 0 && lists.focusTab.folders.length === 0 && <p className="sidebar__msg">{lists.focusScope === 'workspace' ? 'Nothing in focus in this workspace.' : 'Nothing in focus.'} Right-click a file or folder → Add to focus.</p>}
-            {lists.focusTab.folders.length > 0 && forest !== null && (
+            {loaded && onlyFolder === undefined && onlyListDir === null && focusNodes.length === 0 && lists.focusTab.folders.length === 0 && <p className="sidebar__msg">{lists.focusScope === 'workspace' ? 'Nothing in focus in this workspace.' : 'Nothing in focus.'} Right-click a file or folder → Add to focus.</p>}
+            {onlyListDir === null && lists.focusTab.folders.length > 0 && forest !== null && (
               <FocusFolderList
                 kind="focus"
                 onFold={setStackFold}
@@ -2552,6 +2583,7 @@ export function Sidebar({
                 onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
               />
             )}
+            {onlyListDir !== null && <Tree {...treeProps} nodes={[onlyListDir]} move={fileMove} sort={sort} copies />}
             {confirmClear &&
               createPortal(
                 <ConfirmSheet
@@ -2573,7 +2605,7 @@ export function Sidebar({
                 />,
                 document.body,
               )}
-            {onlyFolder === undefined && focusNodes.length > 0 && <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
+            {onlyFolder === undefined && onlyListDir === null && focusNodes.length > 0 && <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
             {listEndField('focus')}
           </>
         ) : (
@@ -2758,7 +2790,7 @@ export function Sidebar({
               onReviewFolder,
               onReviewPage,
               onAddShortcut: setPickingShortcut,
-              onHideOthers: onFilesOnly,
+              onHideOthers: lens === 'files' ? onFilesOnly : onFocusOnly,
               // A removal clears no value (YAZ-4713 C9): it runs at once, with no sheet.
               onRemoveShortcut: (path, dir) => removeShortcutRow(path, dir),
               onRename: viaTree((path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir', top: menu.top })),
