@@ -144,6 +144,37 @@ describe('YAZ-5659: Settings starts with the vaults; each row a number, a name a
     expect(h.host.querySelector('.topbar__title')?.textContent).toBe('second')
   })
 
+  it('synced launcher icons persist when switching between vaults (YAZ-6560 regression)', async () => {
+    h = await twoVaults()
+    await h.store.write(
+      'yaseen/vault@main',
+      '.yaseendocs/settings.json',
+      JSON.stringify({ version: 1, launcher: { name: 'Daily', badge: { kind: 'emoji', value: '📅', color: '#007AFF' } } }),
+    )
+    await h.store.write(
+      'yaseen/second@main',
+      '.yaseendocs/settings.json',
+      JSON.stringify({ version: 1, launcher: { name: 'Knowledge', badge: { kind: 'emoji', value: '🧠', color: '#5856D6' } } }),
+    )
+    // Remount so both vaults' icons load cleanly from storage on boot, then switch vaults back and forth.
+    const phone = { store: h.store, tokens: h.tokens }
+    h.unmount()
+    h = await mount({ phone })
+    await h.click('Settings')
+    await h.waitText('📅')
+    expect(rows(h).map((r) => r.n)).toEqual(['📅', '🧠'])
+
+    // Switch to Vault 1 — both synced icons must stay intact (never revert to 'VA'/'SE'!).
+    await h.click('Open Vault, yaseen/vault')
+    await h.click('Settings')
+    expect(rows(h).map((r) => r.n)).toEqual(['📅', '🧠'])
+
+    // Switch back to Vault 2 — icons still stay intact.
+    await h.click('Open Second, yaseen/second')
+    await h.click('Settings')
+    expect(rows(h).map((r) => r.n)).toEqual(['📅', '🧠'])
+  })
+
   it('the badge: 34 px rounded square, medium weight, a soft colour per number (1 blue, 2 amber, 3 green, 4 pink, again)', () => {
     expect(BADGE_HUES).toEqual(['blue', 'amber', 'green', 'pink'])
     const list = ['a/one', 'a/two', 'a/three', 'a/four', 'a/five'].map((repo) => ({ repo, branch: 'main' }))
