@@ -184,7 +184,6 @@ interface Loaded {
   phase: Phase
   list: VaultList
   accounts: Record<string, VaultAccount | undefined>
-  vaultIcons: Record<string, MobileVaultIcon | null>
   githubAccounts: readonly string[]
   friendsAccount: FriendsAccount
   friendsSettings: FriendsSettings
@@ -196,7 +195,6 @@ const EMPTY: Loaded = {
   phase: 'loading',
   list: { vaults: [], open: null },
   accounts: {},
-  vaultIcons: {},
   githubAccounts: [],
   friendsAccount: { kind: 'no-vaults' },
   friendsSettings: { vaults: null, nickname: null },
@@ -222,6 +220,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   const [github, setGithub] = useState<GithubFlow>({ kind: 'none' })
   const tabsOfVault = services.vaultTabs ?? readVaultTabs
   const [loaded, setLoaded] = useState<Loaded>(EMPTY)
+  const [vaultIcons, setVaultIcons] = useState<Record<string, MobileVaultIcon | null>>({})
   const [nav, setNav] = useState<NavState>({ tab: 'review', stack: [] })
   // The browser's history follows the screens, so Safari's own back swipe (in a tab) goes back too.
   const shownStack = useRef(nav.stack)
@@ -246,7 +245,6 @@ export function AppProvider({ services, children }: { services: AppServices; chi
         phase: start.kind === 'ready' ? 'ready' : start.kind,
         list,
         accounts,
-        vaultIcons: {},
         githubAccounts: await tokens.githubAccounts().catch(() => []),
         friendsAccount: await loadFriendsAccount(store),
         friendsSettings: await friends.settings(),
@@ -268,17 +266,20 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     [store, tokens, sync, friends, tabsOfVault, keepTab],
   )
 
-  // YAZ-6560: load synced vault icons off the critical startup path so `phase: 'ready'` never waits on the lazy icon chunk.
+  // YAZ-6560: load synced vault icons off the critical startup path in independent state so `load()` / `switchVault()` never wipes them.
   const vaultIdsKey = useMemo(() => loaded.list.vaults.map((v) => vaultId(v)).join('\0'), [loaded.list.vaults])
   useEffect(() => {
-    if (vaultIdsKey === '') return
+    if (vaultIdsKey === '') {
+      setVaultIcons({})
+      return
+    }
     let live = true
     const ids = vaultIdsKey.split('\0')
     void loadIconReader()
       .then(async (m) => {
         const entries = await Promise.all(ids.map(async (id) => [id, await m.readVaultIcon(store, id)] as const))
         if (!live) return
-        setLoaded((l) => ({ ...l, vaultIcons: Object.fromEntries(entries) }))
+        setVaultIcons(Object.fromEntries(entries))
       })
       .catch(() => undefined)
     return () => {
@@ -371,7 +372,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
             .then((m) => m.readVaultIcon(store, vault))
             .then((icon) => {
               if (openKey.current !== vault) return
-              setLoaded((l) => ({ ...l, vaultIcons: { ...l.vaultIcons, [vault]: icon } }))
+              setVaultIcons((prev) => ({ ...prev, [vault]: icon }))
             })
             .catch(() => undefined)
         }
@@ -459,6 +460,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
       const wasOpen = openKey.current === vault
       if (wasOpen) await stopSync(sync)
       await store.resetCopy(vault)
+      setVaultIcons((prev) => ({ ...prev, [vault]: null }))
       await load(wasOpen)
       if (wasOpen) setNav((n) => navigate(n, { type: 'home' }))
     },
@@ -552,6 +554,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     () => ({
       services,
       ...loaded,
+      vaultIcons,
       vault,
       vaultKey,
       sync: syncState,
@@ -575,6 +578,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     [
       services,
       loaded,
+      vaultIcons,
       vault,
       vaultKey,
       syncState,
