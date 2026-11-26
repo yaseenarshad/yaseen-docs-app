@@ -5,6 +5,7 @@ import { LINK_CLICK_FILE, PHONE_DEFAULT_LINK_CLICK, sanitizeLinkClick, type Link
 import { LINK_PILLS_FILE, NO_LINK_PILLS, isDefaultLinkPills, sanitizeLinkPills, type LinkPills } from '@shared/linkPills'
 import { TEXT_FORMATTING_FILE, sanitizeTextFormatting, spacingVars } from '@shared/textFormatting'
 import { TABLE_LOOK_FILE, sanitizeTableLook, tableLookSettings } from '@shared/tableLook'
+import { sanitizeWebLinks, webLinkVars } from '@shared/webLinks'
 import { tableLookVars, type PhoneTableLook } from './tableLook'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
@@ -18,6 +19,8 @@ import './linkPills.css'
  *  - the link pills (`link-pills.json`): sanitised by the Mac's `sanitizeLinkPills`; the box and the parts'
  *    styles as the Mac's CSS variables (`linkPillVars`), the format's ends drawn on a page's links (`pageLook.ts`).
  *    No file, or a file that is not JSON: today's look (`NO_LINK_PILLS`), as the Mac.
+ *  - web links (`settings.json` › `webLinks`, YAZ-6585): sanitised by `sanitizeWebLinks` and emitted as `--ext-link-*`
+ *    CSS variables (`webLinkVars`), read by `linkPills.css`. Absent or corrupt: today's look (no variables).
  *  - the text formatting (`text-formatting.json`, `sanitizeTextFormatting`) as the Mac's `textVars`: the Text
  *    size (`--text-size`, the page's and a card's set to Same as pages), the headings' sizes, weight and underline
  *    (`--h1-size` …) and the default line (`--line-default-*`, a `---` rule), which the reader's CSS reads.
@@ -61,9 +64,15 @@ export function loadVaultLook(store: VaultStore, data: VaultData): Promise<Vault
       ])
       const clean = sanitizeLinkPills(rawPills)
       const pills = isDefaultLinkPills(clean) ? NO_LINK_PILLS : clean
+      const webLinks = sanitizeWebLinks(doc?.webLinks)
       const text = sanitizeTextFormatting(rawText)
       const table = rawTable === undefined ? null : tableLookSettings(sanitizeTableLook(rawTable))
-      return { pills, click: sanitizeLinkClick(rawClick, PHONE_DEFAULT_LINK_CLICK).click, style: { ...linkPillVars(pills), ...textVars(text), ...spacingVars(text.spacing), ...card, ...tableLookVars(table) }, table }
+      return {
+        pills,
+        click: sanitizeLinkClick(rawClick, PHONE_DEFAULT_LINK_CLICK).click,
+        style: { ...linkPillVars(pills), ...webLinkVars(webLinks), ...textVars(text), ...spacingVars(text.spacing), ...card, ...tableLookVars(table) },
+        table,
+      }
     })().catch(() => NO_LOOK)
     looks.set(data, held)
     void held.then((look) => {

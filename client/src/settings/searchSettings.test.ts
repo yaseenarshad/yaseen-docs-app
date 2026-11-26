@@ -294,7 +294,10 @@ describe('searchSettings', () => {
 
   it('matches on the section title, returning every row of that section', () => {
     const linkClick: SettingsCtx['linkClick'] = { settings: { click: 'open' }, isExplore: () => false, save: () => undefined }
-    expect(ids(searchSettings(settingCandidates({ ...ctx(), linkClick }), 'links & ids'))).toEqual(['ids', 'idLetters', 'showIds', 'showIds.title', 'showIds.files', 'showIds.recents', 'showIds.tabs', 'showIds.tabsLayout', 'linkClick', ...LINK_PILL_ROWS, 'duplicates', 'oldIds', 'backfillCreated'])
+    expect(ids(searchSettings(settingCandidates({ ...ctx(), linkClick }), 'links & ids'))).toEqual(['ids', 'idLetters', 'showIds', 'showIds.title', 'showIds.files', 'showIds.recents', 'showIds.tabs', 'showIds.tabsLayout', 'linkClick', ...LINK_PILL_ROWS, 'webLinks', 'duplicates', 'oldIds', 'backfillCreated'])
+    expect(ids(searchSettings(settingCandidates({ ...ctx(), linkClick }), 'web links'))[0]).toBe('webLinks')
+    expect(ids(searchSettings(settingCandidates({ ...ctx(), linkClick }), 'hyperlink'))).toContain('webLinks')
+    expect(ids(searchSettings(settingCandidates({ ...ctx(), linkClick }), 'emoji'))).toContain('webLinks')
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {

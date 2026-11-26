@@ -58,15 +58,15 @@ const svg = (inner: string): string =>
   `<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`
 
 export const LINK_MARK_SVG: Readonly<Record<SharedLinkMark, string>> = {
-  'arrow-up-right': svg('<path d="M7 17 17 7M8 7h9v9"/>'),
-  link: svg('<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.5 1.5M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.5-1.5"/>'),
-  globe: svg('<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4.2" ry="9"/><path d="M3.5 12h17"/>'),
-  'arrow-right': svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
-  return: svg('<path d="M9 10l-5 5 5 5M20 4v7a4 4 0 0 1-4 4H4"/>'),
-  dot: svg('<circle cx="12" cy="12" r="4" fill="currentColor"/>'),
-  diamond: svg('<path d="M12 5l7 7-7 7-7-7z" fill="currentColor"/>'),
-  star: svg('<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>'),
-  bookmark: svg('<path d="M6 3.5h12V21l-6-4-6 4z"/>'),
+  'arrow-up-right': /*#__PURE__*/ svg('<path d="M7 17 17 7M8 7h9v9"/>'),
+  link: /*#__PURE__*/ svg('<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.5 1.5M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.5-1.5"/>'),
+  globe: /*#__PURE__*/ svg('<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4.2" ry="9"/><path d="M3.5 12h17"/>'),
+  'arrow-right': /*#__PURE__*/ svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
+  return: /*#__PURE__*/ svg('<path d="M9 10l-5 5 5 5M20 4v7a4 4 0 0 1-4 4H4"/>'),
+  dot: /*#__PURE__*/ svg('<circle cx="12" cy="12" r="4" fill="currentColor"/>'),
+  diamond: /*#__PURE__*/ svg('<path d="M12 5l7 7-7 7-7-7z" fill="currentColor"/>'),
+  star: /*#__PURE__*/ svg('<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>'),
+  bookmark: /*#__PURE__*/ svg('<path d="M6 3.5h12V21l-6-4-6 4z"/>'),
 }
 
 /** Each mark as a CSS mask `url("data:image/svg+xml,...")`, built once at module load. */

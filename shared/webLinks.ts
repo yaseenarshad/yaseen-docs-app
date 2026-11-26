@@ -1,4 +1,5 @@
 import { isRecord } from './guards'
+import { DEFAULT_WEB_LINKS } from './webLinksDefault'
 import {
   LINK_FILL_PERCENT,
   LINK_HOVER_FILL_PERCENT,
@@ -76,7 +77,7 @@ export interface WebLinksStyle {
   hover?: LinkHover
 }
 
-export const DEFAULT_WEB_LINKS: WebLinksStyle = Object.freeze({})
+export { DEFAULT_WEB_LINKS }
 
 export interface WebLinkPreset {
   id: 'classic' | 'arrow' | 'link' | 'emoji' | 'pill'
@@ -97,9 +98,9 @@ const oneOf =
   (v: unknown): v is T =>
     typeof v === 'string' && (choices as readonly string[]).includes(v)
 
-const isTextNamedColor = oneOf(['accent', 'same', 'muted', ...LINK_PALETTE_COLORS] as const)
+const isTextNamedColor = /*#__PURE__*/ oneOf(['accent', 'same', 'muted', ...LINK_PALETTE_COLORS] as const)
 const textColorOf = (v: unknown): WebLinkColor | undefined => (isTextNamedColor(v) ? v : linkHex(v))
-const isMarkIcon = oneOf(WEB_LINK_MARKS)
+const isMarkIcon = /*#__PURE__*/ oneOf(WEB_LINK_MARKS)
 
 /** Clean custom mark string (trimmed, no control chars, 1..WEB_LINK_CUSTOM_MAX code points), or undefined. */
 export function cleanWebLinkCustomMark(raw: unknown): string | undefined {

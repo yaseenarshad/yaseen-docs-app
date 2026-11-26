@@ -14,32 +14,25 @@
  *    draw reads the pieces, never the string. The ID and the folder come from the index snapshot through `pathInfo`,
  *    a Map built once per snapshot, as `pathTitles` is.
  */
-import { DEFAULT_LINK_PILL_FORMAT, DEFAULT_LINK_PILL_MARK, LINK_PILL_PARTS, linkPillIconColors, parseLinkPillFormat, type LinkPillHoverColor, type LinkPillMark, type LinkPillPartColor, type LinkPillSegment, type LinkPillToken, type LinkPills } from '@shared/linkPills'
+import { DEFAULT_LINK_PILL_FORMAT, DEFAULT_LINK_PILL_MARK, LINK_PILL_MARKS, LINK_PILL_PARTS, linkPillIconColors, parseLinkPillFormat, type LinkPillMark, type LinkPillPartColor, type LinkPillSegment, type LinkPillToken, type LinkPills } from '@shared/linkPills'
+import {
+  LINK_FILL_PERCENT,
+  LINK_HOVER_FILL_PERCENT,
+  LINK_HOVER_TINT_PERCENT,
+  LINK_HOVER_WASH_PERCENT,
+  LINK_MARK_MASK,
+  LINK_MARK_SVG,
+  linkColorCss,
+  linkFillSolidCss,
+  linkHoverSolidCss,
+  linkHoverTextCss,
+} from '@shared/linkStyle'
 import { idNumber } from '@shared/pageId'
 import type { IndexRecord } from '@shared/types'
 import { dirname } from '../../lib/paths'
 
-/** The wash of a palette fill at each strength (a card's, `views.css`). */
-const STRENGTH_PERCENT = { light: 15, medium: 30, strong: 50 } as const
-/** Hover wash percentages (YAZ-5991): subtle (8%), medium (14%), strong (22%). */
-const HOVER_WASH_PERCENT = { light: 8, medium: 14, strong: 22 } as const
-/** Hover tint percentages for default accent-tinted boxes when strength is raised. */
-const HOVER_TINT_PERCENT = { light: 18, medium: 24, strong: 32 } as const
-/** Hover darkening mix over a palette/custom-filled box. */
-const HOVER_FILL_PERCENT = { light: 7, medium: 12, strong: 18 } as const
-const hoverSolid = (color: LinkPillHoverColor): string =>
-  color === 'accent' ? 'var(--accent)' : color.startsWith('#') ? color : `var(--table-fill-solid-${color})`
-const hoverTextColor = (color: LinkPillHoverColor): string =>
-  color === 'accent' ? 'var(--accent)' : color.startsWith('#') ? color : `var(--table-text-${color})`
-
-/**
- * A part's colour as CSS. A custom `#rrggbb` (YAZ-5972) is itself, in light and dark alike. `kind` never reaches here:
- * it is the icon's Default, which sets no variable.
- */
-const colorValue = (color: LinkPillPartColor): string =>
-  color === 'accent' ? 'var(--accent)' : color === 'same' ? 'currentColor' : color === 'muted' ? 'var(--fg-muted)' : color.startsWith('#') ? color : `var(--table-text-${color})`
 /** An icon's colour as CSS: its "Text" is the page's text colour (inside the icon, `currentColor` is the name's). */
-const iconValue = (color: LinkPillPartColor): string => (color === 'same' ? 'var(--fg)' : colorValue(color))
+const iconValue = (color: Exclude<LinkPillPartColor, 'kind'>): string => (color === 'same' ? 'var(--fg)' : linkColorCss(color))
 
 /** The custom properties of the changed fields, for example `{ '--pill-bg': 'transparent' }`. `{}` sets none. */
 export function linkPillVars(pills: LinkPills): Record<string, string> {
@@ -51,8 +44,7 @@ export function linkPillVars(pills: LinkPills): Record<string, string> {
       vars['--pill-pad'] = '0'
     } else if (box.fill !== undefined) {
       // A custom fill (YAZ-5972) washes at the same strengths as a palette fill.
-      const solid = box.fill.startsWith('#') ? box.fill : `var(--table-fill-solid-${box.fill})`
-      vars['--pill-bg'] = `color-mix(in srgb, ${solid} ${STRENGTH_PERCENT[box.strength ?? 'medium']}%, transparent)`
+      vars['--pill-bg'] = `color-mix(in srgb, ${linkFillSolidCss(box.fill)} ${LINK_FILL_PERCENT[box.strength ?? 'medium']}%, transparent)`
     }
     if (box.shape === 'square') vars['--pill-radius'] = '0'
     else if (box.shape === 'underline') {
@@ -84,10 +76,11 @@ export function linkPillVars(pills: LinkPills): Record<string, string> {
       if (style.bold) vars[`--pill-${part}-weight`] = 'bold'
       if (style.italic) vars[`--pill-${part}-style`] = 'italic'
       if (style.underline) vars[`--pill-${part}-decoration`] = 'underline'
-      if (style.color !== undefined) vars[`--pill-${part}-fg`] = colorValue(style.color)
+      if (style.color !== undefined && style.color !== 'kind') vars[`--pill-${part}-fg`] = linkColorCss(style.color)
       if (style.size !== undefined) vars[`--pill-${part}-size`] = style.size === 'small' ? '0.85em' : '1em'
     }
   // Hover styling (YAZ-5991 / D5): NO_LINK_PILLS emits nothing so `wikilink.css` fallbacks carry the default look.
+  // External web links are decoupled and styled independently via `webLinkVars` (`shared/webLinks.ts`, YAZ-6580).
   const hover = pills.hover
   const hoverStyle = hover?.style ?? 'wash'
   const hoverStrength = hover?.strength ?? 'light'
@@ -104,30 +97,27 @@ export function linkPillVars(pills: LinkPills): Record<string, string> {
     vars['--pill-hover-bg'] = 'transparent'
     vars['--pill-hover-fg'] =
       hover?.color !== undefined
-        ? hoverTextColor(hover.color)
+        ? linkHoverTextCss(hover.color)
         : pills.parts?.name?.color === 'same'
           ? 'var(--accent)'
           : 'color-mix(in srgb, var(--accent) 72%, var(--fg))'
   } else {
     if (hover?.color !== undefined) {
-      const wash = `color-mix(in srgb, ${hoverSolid(hover.color)} ${HOVER_WASH_PERCENT[hoverStrength]}%, transparent)`
+      const wash = `color-mix(in srgb, ${linkHoverSolidCss(hover.color)} ${LINK_HOVER_WASH_PERCENT[hoverStrength]}%, transparent)`
       vars['--pill-hover-bg'] = wash
       vars['--pill-mark-hover-bg'] = wash
-      vars['--pill-ext-hover-bg'] = wash
       if (noFill) vars['--pill-hover-overhang'] = '1'
     } else {
       if (noFill) {
-        vars['--pill-hover-bg'] = `color-mix(in srgb, var(--fg) ${HOVER_WASH_PERCENT[hoverStrength]}%, transparent)`
+        vars['--pill-hover-bg'] = `color-mix(in srgb, var(--fg) ${LINK_HOVER_WASH_PERCENT[hoverStrength]}%, transparent)`
         vars['--pill-hover-overhang'] = '1'
       } else if (customFill) {
-        vars['--pill-hover-bg'] = `color-mix(in srgb, var(--fg) ${HOVER_FILL_PERCENT[hoverStrength]}%, var(--pill-bg))`
+        vars['--pill-hover-bg'] = `color-mix(in srgb, var(--fg) ${LINK_HOVER_FILL_PERCENT[hoverStrength]}%, var(--pill-bg))`
       } else if (hoverStrength !== 'light') {
-        vars['--pill-hover-bg'] = `color-mix(in srgb, var(--accent) ${HOVER_TINT_PERCENT[hoverStrength]}%, transparent)`
+        vars['--pill-hover-bg'] = `color-mix(in srgb, var(--accent) ${LINK_HOVER_TINT_PERCENT[hoverStrength]}%, transparent)`
       }
       if (hoverStrength !== 'light') {
-        const wash = `color-mix(in srgb, var(--fg) ${HOVER_WASH_PERCENT[hoverStrength]}%, transparent)`
-        vars['--pill-mark-hover-bg'] = wash
-        vars['--pill-ext-hover-bg'] = wash
+        vars['--pill-mark-hover-bg'] = `color-mix(in srgb, var(--fg) ${LINK_HOVER_WASH_PERCENT[hoverStrength]}%, transparent)`
       }
     }
   }
@@ -139,19 +129,9 @@ export function linkPillVars(pills: LinkPills): Record<string, string> {
  * size (a heading's in a heading), stroked or filled in `currentColor` so it takes the mark's colour. No text: a screen
  * reader skips it. Drawn as is by the style panel's Icon row; a pill draws it as a mask (`LINK_PILL_MARK_MASK`).
  */
-const svg = (inner: string): string =>
-  `<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`
-export const LINK_PILL_MARK_SVG: Readonly<Record<LinkPillMark, string>> = {
-  'arrow-up-right': svg('<path d="M7 17 17 7M8 7h9v9"/>'),
-  'arrow-right': svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
-  link: svg('<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.5 1.5M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.5-1.5"/>'),
-  return: svg('<path d="M9 10l-5 5 5 5M20 4v7a4 4 0 0 1-4 4H4"/>'),
-  dot: svg('<circle cx="12" cy="12" r="4" fill="currentColor"/>'),
-  diamond: svg('<path d="M12 5l7 7-7 7-7-7z" fill="currentColor"/>'),
-  star: svg('<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>'),
-  bookmark: svg('<path d="M6 3.5h12V21l-6-4-6 4z"/>'),
-}
-
+export const LINK_PILL_MARK_SVG: Readonly<Record<LinkPillMark, string>> = Object.fromEntries(
+  LINK_PILL_MARKS.map((mark) => [mark, LINK_MARK_SVG[mark]]),
+) as Readonly<Record<LinkPillMark, string>>
 
 /**
  * Each mark's icon as a CSS image, built once at load: a pill's mark (`endSpan`, `LinkPillParts.tsx`) is an inline span
@@ -159,8 +139,8 @@ export const LINK_PILL_MARK_SVG: Readonly<Record<LinkPillMark, string>> = {
  * an svg is an atomic inline box, and the browser may break a line before and after one even next to a period or a
  * bracket, so `Example: [[Redis]].` with the mark at the tail's end left the period alone on the next line.
  */
-export const LINK_PILL_MARK_MASK = Object.fromEntries(
-  Object.entries(LINK_PILL_MARK_SVG).map(([mark, icon]) => [mark, `url("data:image/svg+xml,${encodeURIComponent(icon.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" '))}")`]),
+export const LINK_PILL_MARK_MASK: Readonly<Record<LinkPillMark, string>> = Object.fromEntries(
+  LINK_PILL_MARKS.map((mark) => [mark, LINK_MARK_MASK[mark]]),
 ) as Readonly<Record<LinkPillMark, string>>
 /** What the index knows of a page: its ID (a page with one) and its root-relative folder ('' at the root). */
 export interface PathInfo {

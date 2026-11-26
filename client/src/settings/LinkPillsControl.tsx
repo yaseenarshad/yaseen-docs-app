@@ -26,11 +26,10 @@
  *     the file holds only changes.
  * Reset brings today's look back. Every default is today's look.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
 import {
   DEFAULT_LINK_PILL_FORMAT,
   DEFAULT_LINK_PILL_MARK,
-  LINK_PILL_COLORS,
   LINK_PILL_FORMAT_MAX,
   LINK_PILL_MARKS,
   LINK_PILL_PART_DEFAULTS,
@@ -40,7 +39,6 @@ import {
   linkPillFormatProblem,
   linkPillFormatTokens,
   parseLinkPillFormat,
-  isLinkPillHex,
   linkPillIconColors,
   withLinkPillBox,
   withLinkPillHover,
@@ -48,23 +46,27 @@ import {
   withLinkPillPart,
   withLinkPillReady,
   withLinkPills,
-  type LinkPillColor,
-  type LinkPillHex,
   type LinkPillHoverColor,
   type LinkPillHoverStyle,
-  type LinkPillMark,
   type LinkPillPart,
   type LinkPillPartColor,
   type LinkPillStrength,
-  type LinkPills,
 } from '@shared/linkPills'
 import { LINK_PILL_MARK_SVG, linkPillVars, pillsShowVault } from '../editor/wikilink/linkPillLook'
 import { PillEnds, PillLook } from '../editor/wikilink/LinkPillParts'
-import { capital, fillSwatch, textSwatch } from '../editor/table/colours'
-import { ColourBox } from '../editor/highlightColourBox'
+import { fillSwatch, textSwatch } from '../editor/table/colours'
 import { FileIcon } from '../sidebar/FileIcon'
 import { useUnit } from '../vault/unitWord'
 import { Segmented, Select } from './controls'
+import {
+  LINK_HOVER_STRENGTH_OPTIONS,
+  LINK_HOVER_STYLE_OPTIONS,
+  LINK_MARK_NAMES,
+  LINK_STRENGTH_OPTIONS,
+  LinkColorSwatches,
+  LinkStyleRow,
+  LinkStyleToggle,
+} from './linkStyleParts'
 import type { Option } from './options'
 import type { LinkPillsState } from './useLinkPills'
 
@@ -73,8 +75,6 @@ type Target = { kind: 'part'; part: LinkPillPart } | { kind: 'box' }
 
 /** What the panel's title names: "Styling: the name". */
 const PART_NAMES: Record<LinkPillPart, string> = { name: 'the name', icon: 'the icon', id: 'the ID', number: 'the number', vault: 'the vault', folder: 'the folder', path: 'the path', mark: 'the mark', text: 'your text' }
-/** The mark's icons by name, as the Icon row says them. */
-const MARK_NAMES: Record<LinkPillMark, string> = { 'arrow-up-right': 'Arrow up-right', 'arrow-right': 'Arrow right', link: 'Link', return: 'Return arrow', dot: 'Dot', diamond: 'Diamond', star: 'Star', bookmark: 'Bookmark' }
 const BOX_NAME = 'the box'
 const VAULT_OPTIONS: readonly Option<'other' | 'always' | 'never'>[] = [
   { label: 'Vault name: other vaults only', value: 'other' },
@@ -90,95 +90,9 @@ const SHAPE_OPTIONS: readonly Option<'round' | 'square' | 'underline'>[] = [
   { label: 'Square', value: 'square' },
   { label: 'Underline', value: 'underline' },
 ]
-const STRENGTH_OPTIONS: readonly Option<'light' | 'medium' | 'strong'>[] = [
-  { label: 'Light', value: 'light' },
-  { label: 'Medium', value: 'medium' },
-  { label: 'Strong', value: 'strong' },
-]
-const HOVER_STYLE_OPTIONS: readonly Option<LinkPillHoverStyle>[] = [
-  { label: 'Wash', value: 'wash' },
-  { label: 'Underline', value: 'underline' },
-  { label: 'Text colour', value: 'text' },
-  { label: 'Off', value: 'off' },
-]
-const HOVER_STRENGTH_OPTIONS: readonly Option<LinkPillStrength>[] = [
-  { label: 'Subtle', value: 'light' },
-  { label: 'Medium', value: 'medium' },
-  { label: 'Strong', value: 'strong' },
-]
 /** The ready formats dropdown: a picker, so its own value never changes. */
 const READY_PICK = -1
 const READY_OPTIONS: readonly Option<number>[] = [{ label: 'Ready formats…', value: READY_PICK }, ...LINK_PILL_READY.map((r, i) => ({ label: r.label, value: i }))]
-
-/** Where the colour box opens when the row holds no custom colour, as the table's "Custom colour…" does. */
-const CUSTOM_START: LinkPillHex = '#000000'
-
-/**
- * The ten palette swatches as a radio row (the Band colour row's look), then **Custom colour…** (YAZ-5972): a radio of
- * its own, checked while the value is a `#rrggbb`, showing that colour (else the words). A click opens the app's colour
- * box (`ColourBox`) on its own line under the swatches, at the custom colour (else black); each finished pick calls
- * `onPick` with the hex, and the box stays for the next; a second click or Escape in its R G B fields closes it.
- */
-function Swatches({ label, value, swatch, onPick }: { label: string; value: string | undefined; swatch: (c: LinkPillColor) => string; onPick: (c: LinkPillColor | LinkPillHex) => void }) {
-  const custom = isLinkPillHex(value) ? value : undefined
-  const [open, setOpen] = useState(false)
-  const holder = useRef<HTMLSpanElement>(null)
-  const box = useRef<ColourBox | null>(null)
-  const pick = useRef(onPick)
-  pick.current = onPick
-  const startAt = useRef(custom)
-  startAt.current = custom
-  useEffect(() => {
-    if (!open) return
-    if (box.current === null) {
-      box.current = new ColourBox(document, { preview: () => {}, pick: (hex) => pick.current(hex.toLowerCase() as LinkPillHex), close: () => setOpen(false) })
-      holder.current?.append(box.current.el)
-    }
-    box.current.show(startAt.current ?? CUSTOM_START)
-    return () => box.current?.hide()
-  }, [open])
-  return (
-    <span className="settings__band-colours" role="radiogroup" aria-label={label}>
-      {LINK_PILL_COLORS.map((c) => (
-        <button key={c} type="button" role="radio" aria-checked={value === c} title={capital(c)} className="settings__band-colour" onClick={() => onPick(c)}>
-          <span className="settings__band-swatch" style={{ background: swatch(c) }} aria-hidden />
-        </button>
-      ))}
-      <button
-        type="button"
-        role="radio"
-        aria-checked={custom !== undefined}
-        aria-expanded={open}
-        aria-label={custom === undefined ? 'Custom colour…' : `Custom colour… (${custom})`}
-        title={custom === undefined ? 'Custom colour…' : `Custom colour… ${custom}`}
-        className="settings__band-colour pill-toolbar__custom"
-        onClick={() => setOpen(!open)}
-      >
-        {custom === undefined ? 'Custom…' : <span className="settings__band-swatch" style={{ background: custom }} aria-hidden />}
-      </button>
-      <span ref={holder} className="pill-toolbar__custom-box" hidden={!open} />
-    </span>
-  )
-}
-
-/** A small toggle or pick button of the toolbar. */
-function Tool({ label, on, mark, onClick, className = '' }: { label: string; on: boolean; mark: string; onClick: () => void; className?: string }) {
-  return (
-    <button type="button" className={`settings__option pill-toolbar__item${on ? ' settings__option--active' : ''}${className}`} aria-pressed={on} aria-label={label} title={label} onClick={onClick}>
-      {mark}
-    </button>
-  )
-}
-
-/** One row of the panel: its short label on the left, its controls after. `wide`: a longer label (the icon's rows). */
-function Row({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) {
-  return (
-    <div className="pill-toolbar__row">
-      <span className={`pill-toolbar__label${wide ? ' pill-toolbar__label--wide' : ''}`}>{label}</span>
-      {children}
-    </div>
-  )
-}
 
 /** The icon's rows (YAZ-5843 D4, YAZ-5972): what each colours and its label. */
 const ICON_ROWS = [
@@ -201,15 +115,15 @@ function IconRows({ look }: { look: LinkPillsState }) {
         const color = colors[row]
         const pick = (c: LinkPillPartColor) => save(withLinkPillIconColor(pills, row, c))
         return (
-          <Row key={row} label={unit(label)} wide>
+          <LinkStyleRow key={row} label={unit(label)} wide>
             <span className="pill-toolbar__group" role="group" aria-label={`Colour (${unit(who)})`}>
-              <Tool label="Default: the app's icon colours" on={color === 'kind'} mark="Default" onClick={() => pick('kind')} />
-              <Tool label="Accent colour" on={color === 'accent'} mark="Accent" onClick={() => pick('accent')} />
-              <Tool label="Same as text" on={color === 'same'} mark="Text" onClick={() => pick('same')} />
-              <Tool label="Muted" on={color === 'muted'} mark="Muted" onClick={() => pick('muted')} />
-              <Swatches label={`Palette (${who})`} value={color} swatch={textSwatch} onPick={pick} />
+              <LinkStyleToggle label="Default: the app's icon colours" on={color === 'kind'} mark="Default" onClick={() => pick('kind')} />
+              <LinkStyleToggle label="Accent colour" on={color === 'accent'} mark="Accent" onClick={() => pick('accent')} />
+              <LinkStyleToggle label="Same as text" on={color === 'same'} mark="Text" onClick={() => pick('same')} />
+              <LinkStyleToggle label="Muted" on={color === 'muted'} mark="Muted" onClick={() => pick('muted')} />
+              <LinkColorSwatches label={`Palette (${who})`} value={color} swatch={textSwatch} onPick={pick} />
             </span>
-          </Row>
+          </LinkStyleRow>
         )
       })}
     </>
@@ -232,7 +146,7 @@ function PartRows({ look, part }: { look: LinkPillsState; part: LinkPillPart }) 
   return (
     <>
       {part === 'mark' ? (
-        <Row label="Icon">
+        <LinkStyleRow label="Icon">
           <span className="pill-toolbar__group pill-toolbar__marks" role="radiogroup" aria-label={`Icon (${who})`}>
             {LINK_PILL_MARKS.map((m) => (
               <button
@@ -240,35 +154,35 @@ function PartRows({ look, part }: { look: LinkPillsState; part: LinkPillPart }) 
                 type="button"
                 role="radio"
                 aria-checked={icon === m}
-                aria-label={MARK_NAMES[m]}
-                title={MARK_NAMES[m]}
+                aria-label={LINK_MARK_NAMES[m]}
+                title={LINK_MARK_NAMES[m]}
                 className={`settings__option pill-toolbar__item pill-toolbar__mark${icon === m ? ' settings__option--active' : ''}`}
                 onClick={() => save(withLinkPillPart(pills, 'mark', { icon: m === DEFAULT_LINK_PILL_MARK ? undefined : m }))}
                 dangerouslySetInnerHTML={{ __html: LINK_PILL_MARK_SVG[m] }}
               />
             ))}
           </span>
-        </Row>
+        </LinkStyleRow>
       ) : (
-        <Row label="Text">
+        <LinkStyleRow label="Text">
           <span className="pill-toolbar__group" role="group" aria-label={`Text (${who})`}>
-            <Tool label="Bold" on={style.bold === true} mark="B" className=" pill-toolbar__b" onClick={() => toggle('bold')} />
-            <Tool label="Italic" on={style.italic === true} mark="I" className=" pill-toolbar__i" onClick={() => toggle('italic')} />
-            <Tool label="Underline" on={style.underline === true} mark="U" className=" pill-toolbar__u" onClick={() => toggle('underline')} />
+            <LinkStyleToggle label="Bold" on={style.bold === true} mark="B" className=" pill-toolbar__b" onClick={() => toggle('bold')} />
+            <LinkStyleToggle label="Italic" on={style.italic === true} mark="I" className=" pill-toolbar__i" onClick={() => toggle('italic')} />
+            <LinkStyleToggle label="Underline" on={style.underline === true} mark="U" className=" pill-toolbar__u" onClick={() => toggle('underline')} />
           </span>
-        </Row>
+        </LinkStyleRow>
       )}
-      <Row label="Colour">
+      <LinkStyleRow label="Colour">
         <span className="pill-toolbar__group" role="group" aria-label={`Colour (${who})`}>
-          <Tool label="Accent colour" on={color === 'accent'} mark="Accent" onClick={() => save(withLinkPillPart(pills, part, { color: named('accent') }))} />
-          <Tool label="Same as text" on={color === 'same'} mark="Text" onClick={() => save(withLinkPillPart(pills, part, { color: named('same') }))} />
-          <Tool label="Muted" on={color === 'muted'} mark="Muted" onClick={() => save(withLinkPillPart(pills, part, { color: named('muted') }))} />
-          <Swatches label={`Palette (${who})`} value={color} swatch={textSwatch} onPick={(c) => save(withLinkPillPart(pills, part, { color: named(c) }))} />
+          <LinkStyleToggle label="Accent colour" on={color === 'accent'} mark="Accent" onClick={() => save(withLinkPillPart(pills, part, { color: named('accent') }))} />
+          <LinkStyleToggle label="Same as text" on={color === 'same'} mark="Text" onClick={() => save(withLinkPillPart(pills, part, { color: named('same') }))} />
+          <LinkStyleToggle label="Muted" on={color === 'muted'} mark="Muted" onClick={() => save(withLinkPillPart(pills, part, { color: named('muted') }))} />
+          <LinkColorSwatches label={`Palette (${who})`} value={color} swatch={textSwatch} onPick={(c) => save(withLinkPillPart(pills, part, { color: named(c) }))} />
         </span>
-      </Row>
-      <Row label="Size">
+      </LinkStyleRow>
+      <LinkStyleRow label="Size">
         <Segmented options={SIZE_OPTIONS} value={style.size ?? defaults.size} onChange={(size) => save(withLinkPillPart(pills, part, { size: size === defaults.size ? undefined : size }))} ariaLabel={`Size (${who})`} />
-      </Row>
+      </LinkStyleRow>
     </>
   )
 }
@@ -284,34 +198,34 @@ function HoverSection({ look }: { look: LinkPillsState }) {
   return (
     <div className="link-pills-hover" role="group" aria-label="Hover">
       <div className="link-pills-hover__title">Hover</div>
-      <Row label="Style">
+      <LinkStyleRow label="Style">
         <Segmented
-          options={HOVER_STYLE_OPTIONS}
+          options={LINK_HOVER_STYLE_OPTIONS}
           value={style}
           onChange={(next: LinkPillHoverStyle) =>
             save(withLinkPillHover(pills, { style: next === 'wash' ? undefined : next, ...(next === 'off' || next === 'underline' ? { color: undefined, strength: undefined } : next === 'text' ? { strength: undefined } : {}) }))
           }
           ariaLabel="Hover style"
         />
-      </Row>
+      </LinkStyleRow>
       {(style === 'wash' || style === 'text') && (
-        <Row label="Colour">
+        <LinkStyleRow label="Colour">
           <span className="pill-toolbar__group" role="group" aria-label="Hover colour">
-            <Tool label="Auto hover colour" on={color === undefined} mark="Auto" onClick={() => pickColor(undefined)} />
-            <Tool label="Accent hover colour" on={color === 'accent'} mark="Accent" onClick={() => pickColor('accent')} />
-            <Swatches label="Palette (hover)" value={color} swatch={style === 'wash' ? fillSwatch : textSwatch} onPick={pickColor} />
+            <LinkStyleToggle label="Auto hover colour" on={color === undefined} mark="Auto" onClick={() => pickColor(undefined)} />
+            <LinkStyleToggle label="Accent hover colour" on={color === 'accent'} mark="Accent" onClick={() => pickColor('accent')} />
+            <LinkColorSwatches label="Palette (hover)" value={color} swatch={style === 'wash' ? fillSwatch : textSwatch} onPick={pickColor} />
           </span>
-        </Row>
+        </LinkStyleRow>
       )}
       {style === 'wash' && (
-        <Row label="Strength">
+        <LinkStyleRow label="Strength">
           <Segmented
-            options={HOVER_STRENGTH_OPTIONS}
+            options={LINK_HOVER_STRENGTH_OPTIONS}
             value={strength}
             onChange={(next: LinkPillStrength) => save(withLinkPillHover(pills, { strength: next === 'light' ? undefined : next }))}
             ariaLabel="Hover strength"
           />
-        </Row>
+        </LinkStyleRow>
       )}
     </div>
   )
@@ -324,20 +238,20 @@ function BoxRows({ look }: { look: LinkPillsState }) {
   const fill = box.fill
   return (
     <>
-      <Row label="Shape">
+      <LinkStyleRow label="Shape">
         <Segmented options={SHAPE_OPTIONS} value={box.shape ?? 'round'} onChange={(shape: 'round' | 'square' | 'underline') => save(withLinkPillBox(pills, { shape: shape === 'round' ? undefined : shape }))} ariaLabel="Shape" />
-      </Row>
-      <Row label="Fill">
+      </LinkStyleRow>
+      <LinkStyleRow label="Fill">
         <span className="pill-toolbar__group" role="group" aria-label="Fill">
-          <Tool label="Accent tint" on={fill === undefined} mark="Tint" onClick={() => save(withLinkPillBox(pills, { fill: undefined, strength: undefined }))} />
-          <Tool label="No fill" on={fill === 'none'} mark="None" onClick={() => save(withLinkPillBox(pills, { fill: 'none', strength: undefined }))} />
-          <Swatches label="Palette (the box)" value={fill} swatch={fillSwatch} onPick={(c) => save(withLinkPillBox(pills, { fill: c }))} />
+          <LinkStyleToggle label="Accent tint" on={fill === undefined} mark="Tint" onClick={() => save(withLinkPillBox(pills, { fill: undefined, strength: undefined }))} />
+          <LinkStyleToggle label="No fill" on={fill === 'none'} mark="None" onClick={() => save(withLinkPillBox(pills, { fill: 'none', strength: undefined }))} />
+          <LinkColorSwatches label="Palette (the box)" value={fill} swatch={fillSwatch} onPick={(c) => save(withLinkPillBox(pills, { fill: c }))} />
         </span>
-      </Row>
+      </LinkStyleRow>
       {fill !== undefined && fill !== 'none' && (
-        <Row label="Strength">
-          <Segmented options={STRENGTH_OPTIONS} value={box.strength ?? 'medium'} onChange={(strength: 'light' | 'medium' | 'strong') => save(withLinkPillBox(pills, { strength: strength === 'medium' ? undefined : strength }))} ariaLabel="Strength" />
-        </Row>
+        <LinkStyleRow label="Strength">
+          <Segmented options={LINK_STRENGTH_OPTIONS} value={box.strength ?? 'medium'} onChange={(strength: 'light' | 'medium' | 'strong') => save(withLinkPillBox(pills, { strength: strength === 'medium' ? undefined : strength }))} ariaLabel="Strength" />
+        </LinkStyleRow>
       )}
     </>
   )
@@ -476,15 +390,12 @@ export function LinkPillsControl({ look, vault }: { look: LinkPillsState; vault:
             <span className="wikilink view-link-pill link-pills-preview__card">
               <PillEnds text={<span className="link-pills-preview__name">{SAMPLE_CARD.text}</span>} info={SAMPLE_CARD.info} icon={<span className="card-icon" aria-hidden />} />
             </span>
-            {/* YAZ-5991: a highlighted pill and external link in the same bar so hover styles preview across all link kinds. */}
+            {/* YAZ-5991: a highlighted pill in the same bar so hover styles preview on highlighted pills too. */}
             <mark className="link-pills-preview__mark">
               <span className="wikilink view-link-pill link-pills-preview__highlight">
                 <PillEnds text={<span className="link-pills-preview__name">{SAMPLE_MARK.text}</span>} info={SAMPLE_MARK.info} icon={<FileIcon path={SAMPLE_MARK.path} />} />
               </span>
             </mark>
-            <a className="link-pills-preview__ext" href="#" onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
-              docs.example.com
-            </a>
           </span>
           <button
             type="button"

@@ -17,31 +17,22 @@ import { DEFAULT_DAILY_PAGE_FORMAT } from './dailyPageDefault'
 import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from './iconPacks'
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT } from './timeFormat'
 import { DEFAULT_MENU_ICONS, type MenuIconsSetting } from './menuIcons'
-import { DEFAULT_WEB_LINKS, type WebLinksStyle } from './webLinks'
+import { DEFAULT_WEB_LINKS } from './webLinksDefault'
+import type { WebLinksStyle } from './webLinks'
 import { sanitizeVaultLauncherBadge, type VaultLauncherPreset } from './vaultIcon'
-export {
-  DEFAULT_WEB_LINKS,
-  DEFAULT_WEB_LINK_MARK,
-  WEB_LINK_CUSTOM_MAX,
-  WEB_LINK_MARKS,
-  WEB_LINK_PRESETS,
-  cleanWebLinkCustomMark,
-  isDefaultWebLinks,
-  isWebLinksStyle,
-  sameWebLinks,
-  sanitizeWebLinks,
-  webLinkVars,
-  type WebLinkBox,
-  type WebLinkBoxFill,
-  type WebLinkBoxShape,
-  type WebLinkColor,
-  type WebLinkMark,
-  type WebLinkMarkColor,
-  type WebLinkMarkIcon,
-  type WebLinkMarkPlace,
-  type WebLinkMarkSize,
-  type WebLinkPreset,
-  type WebLinksStyle,
+export { DEFAULT_WEB_LINKS } from './webLinksDefault'
+export type {
+  WebLinkBox,
+  WebLinkBoxFill,
+  WebLinkBoxShape,
+  WebLinkColor,
+  WebLinkMark,
+  WebLinkMarkColor,
+  WebLinkMarkIcon,
+  WebLinkMarkPlace,
+  WebLinkMarkSize,
+  WebLinkPreset,
+  WebLinksStyle,
 } from './webLinks'
 export { IDS_IN_TABS, TAB_ID_LAYOUTS, type IdsInTabs, type TabIdLayout } from './showIds'
 export type { VaultLauncherPreset } from './vaultIcon'

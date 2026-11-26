@@ -23,6 +23,7 @@ import {
   type VaultSettingsOverrides,
   type WorkspaceChromeOverrides,
 } from '@shared/vaultSettings'
+import { webLinkVars } from '@shared/webLinks'
 import { contentWidthVars, tablePositionVars } from '../lib/contentWidth'
 import { storage } from '../lib/storage'
 import { inlineCodeVars } from './inlineCodeStyle'
@@ -133,6 +134,7 @@ const PAGE_CSS_KEYS = [
   'sectionStep',
   'codeBlockWidth',
   'inlineCodeStyle',
+  'webLinks',
   'guideLineDarkness',
 ] as const
 
@@ -152,6 +154,7 @@ export function pageOverrideVars(pageSettings: SettingsState, overrides: VaultSe
     ...(overrides.sectionStep !== undefined ? { '--section-step-setting': pageSettings.sectionStep } : {}),
     ...(Object.hasOwn(overrides, 'codeBlockWidth') ? { '--code-block-width': pageSettings.codeBlockWidth != null ? `${pageSettings.codeBlockWidth}px` : 'initial' } : {}),
     ...(overrides.inlineCodeStyle !== undefined ? inlineCodeVars(pageSettings.inlineCodeStyle) : {}),
+    ...(overrides.webLinks !== undefined ? webLinkVars(pageSettings.webLinks, { resetDefaults: true }) : {}),
     ...(overrides.guideLineDarkness !== undefined
       ? {
           '--guide-line-darkness': `${pageSettings.guideLineDarkness}%`,
