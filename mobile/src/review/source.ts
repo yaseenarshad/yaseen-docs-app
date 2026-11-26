@@ -4,6 +4,7 @@ import { IDS_FILE, idLettersOf, idsAnswer } from '@shared/pageId'
 import { LINK_PILLS_FILE, NO_LINK_PILLS, isDefaultLinkPills, sanitizeLinkPills } from '@shared/linkPills'
 import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
+import { VAULT_SETTINGS_PATH, readVaultSectionOrLegacy, readVaultSettingsDoc } from '../settings/readVaultSettings'
 import type { PhoneIndex } from '../sync/phoneIndex'
 import type { ReviewLink } from './link'
 
@@ -87,12 +88,16 @@ export function createReviewSource(link: ReviewLink, vault: string, vaultName: s
   const wake = () => listeners.forEach((l) => l())
 
   async function readConfig(): Promise<void> {
-    const [review, ids, pills] = await Promise.all([store.read(vault, REVIEW_SETTINGS_PATH), store.read(vault, IDS_PATH), store.read(vault, LINK_PILLS_PATH)])
+    const [doc, ids] = await Promise.all([readVaultSettingsDoc(store, vault), store.read(vault, IDS_PATH)])
+    const [rawReview, rawPills] = await Promise.all([
+      readVaultSectionOrLegacy(store, vault, 'review', REVIEW_SETTINGS_FILE, doc),
+      readVaultSectionOrLegacy(store, vault, 'linkPills', LINK_PILLS_FILE, doc),
+    ])
     // YAZ-5792: the card's links follow the vault's link format (`cardPill`); the same look object while the file holds still.
-    const clean = sanitizeLinkPills(parse(pills?.content))
+    const clean = sanitizeLinkPills(rawPills)
     const look = isDefaultLinkPills(clean) ? NO_LINK_PILLS : clean
     if (JSON.stringify(look) !== JSON.stringify(links.pills)) links.setLook(look, vaultName)
-    const next = sanitizeReviewSettings(parse(review?.content))
+    const next = sanitizeReviewSettings(rawReview)
     // ONE settings object while the file holds still: the hook's plan follows its identity.
     if (JSON.stringify(next) !== JSON.stringify(settings)) settings = next
     const config = parse(ids?.content)
@@ -168,7 +173,7 @@ export function createReviewSource(link: ReviewLink, vault: string, vaultName: s
 
   const offEngine = engine.subscribe((event) => {
     if (event.type !== 'changed' || event.vault !== vault) return
-    if (event.diff === null || event.settings.some((p) => p === REVIEW_SETTINGS_PATH || p === IDS_PATH)) readSettings = true
+    if (event.diff === null || event.settings.some((p) => p === VAULT_SETTINGS_PATH || p === REVIEW_SETTINGS_PATH || p === IDS_PATH || p === LINK_PILLS_PATH)) readSettings = true
     void refresh()
   })
   const offAnswers = answers.subscribe((event) => {

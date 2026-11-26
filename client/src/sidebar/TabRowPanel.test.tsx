@@ -75,6 +75,18 @@ describe('the panel', () => {
     expect(plain.onChange).not.toHaveBeenCalled()
   })
 
+  it('YAZ-6546: renders "Reset to global" when onResetToGlobal is provided and invokes it on click', () => {
+    const onResetToGlobal = vi.fn()
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    root = createRoot(host)
+    act(() => root!.render(<TabRowPanel x={20} y={30} prefs={DEFAULT_SIDEBAR_TABS} focus={null} autoFocus={false} onChange={vi.fn()} onResetToGlobal={onResetToGlobal} onClose={vi.fn()} />))
+    const btn = host.querySelector<HTMLButtonElement>('.tab-row-panel__reset--global')
+    expect(btn?.textContent).toBe('Reset to global')
+    click(btn)
+    expect(onResetToGlobal).toHaveBeenCalledTimes(1)
+  })
+
   it('S26: Esc, a press outside and the window losing focus close it; a press inside does not', () => {
     const { el, onClose } = mount()
     pointer(box(el, 'Focus'), 'pointerdown', 0)

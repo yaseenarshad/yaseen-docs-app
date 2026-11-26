@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { SHOW_IDS_FILE, idInFiles, sanitizeShowIds, type IdsInFiles } from '@shared/showIds'
-import { VAULT_CONFIG_DIR } from '@shared/types'
 import { useApp } from '../app/AppState'
-import { readJson, type VaultData } from './vaultData'
+import { readVaultSectionOrLegacy } from '../settings/readVaultSettings'
+import type { VaultData } from './vaultData'
 
 /** How a page row shows its ID: the vault's "In the files list" when it is on. */
 export type IdsForm = Exclude<IdsInFiles, 'off'>
@@ -21,7 +21,7 @@ export function useIdsForm(data: VaultData): IdsForm | null {
   const [form, setForm] = useState(() => held.get(data.vault) ?? null)
   useEffect(() => {
     let live = true
-    void readJson(services.store, data.vault, `${VAULT_CONFIG_DIR}/${SHOW_IDS_FILE}`).then((raw) => {
+    void readVaultSectionOrLegacy(services.store, data.vault, 'showIds', SHOW_IDS_FILE).then((raw) => {
       const files = sanitizeShowIds(raw).files
       const next = files === 'off' ? null : files
       held.set(data.vault, next)

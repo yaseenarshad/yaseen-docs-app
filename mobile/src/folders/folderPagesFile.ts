@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { DEFAULT_FOLDER_PAGES } from '@shared/folderPagesDefault'
 import { FOLDER_PAGES_FILE, folderPagesFor, folderPagesVault, sanitizeFolderPagesFile } from '@shared/folderPages'
-import { VAULT_CONFIG_DIR, type FolderPagesSettings } from '@shared/types'
+import type { FolderPagesSettings } from '@shared/types'
+import { readVaultSectionOrLegacy } from '../settings/readVaultSettings'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
 
@@ -19,9 +20,8 @@ export function loadFolderPages(store: VaultStore, data: VaultData): Promise<Fol
   let held = read.get(data)
   if (held === undefined) {
     held = (async () => {
-      const file = await store.read(data.vault, `${VAULT_CONFIG_DIR}/${FOLDER_PAGES_FILE}`)
-      if (file === null) return DEFAULT_FOLDER_PAGES
-      const raw: unknown = JSON.parse(typeof file.content === 'string' ? file.content : new TextDecoder().decode(file.content))
+      const raw = await readVaultSectionOrLegacy(store, data.vault, 'folderPages', FOLDER_PAGES_FILE)
+      if (raw === undefined) return DEFAULT_FOLDER_PAGES
       return folderPagesFor(DEFAULT_FOLDER_PAGES, folderPagesVault(sanitizeFolderPagesFile(raw)))
     })().catch(() => DEFAULT_FOLDER_PAGES)
     read.set(data, held)

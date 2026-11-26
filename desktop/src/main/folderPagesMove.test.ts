@@ -18,7 +18,14 @@ async function makeVault(): Promise<string> {
   return root
 }
 const file = (root: string) => path.join(root, VAULT_CONFIG_DIR, FOLDER_PAGES_FILE)
-const onDisk = async (root: string): Promise<unknown> => JSON.parse(await readFile(file(root), 'utf8'))
+const unifiedFile = (root: string) => path.join(root, VAULT_CONFIG_DIR, 'settings.json')
+const onDisk = async (root: string): Promise<unknown> => {
+  try {
+    return JSON.parse(await readFile(file(root), 'utf8'))
+  } catch {
+    return (JSON.parse(await readFile(unifiedFile(root), 'utf8')) as { folderPages?: unknown }).folderPages
+  }
+}
 const seed = async (root: string, content: string) => {
   await mkdir(path.join(root, VAULT_CONFIG_DIR), { recursive: true })
   await writeFile(file(root), content)
@@ -69,11 +76,11 @@ describe('YAZ-5489: the folder page defaults move once into each vault', () => {
     expect(await exists(gone)).toBe(false)
     const m = marks()
     await run([plain], APP, m, async () => false)
-    expect(await exists(file(plain))).toBe(false)
+    expect(await exists(unifiedFile(plain))).toBe(false)
     await run([plain], APP, m)
-    expect(await exists(file(plain))).toBe(true)
-    await rm(file(plain))
+    expect(await exists(unifiedFile(plain))).toBe(true)
+    await rm(unifiedFile(plain))
     await run([plain], APP, m)
-    expect(await exists(file(plain))).toBe(false)
+    expect(await exists(unifiedFile(plain))).toBe(false)
   })
 })

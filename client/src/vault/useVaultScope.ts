@@ -14,18 +14,32 @@ import { useVaultName } from '../lib/useVaultName'
 import { useExternalRenames, type ExternalRenames } from '../links/useExternalRenames'
 import { useCardReview, type CardReviewApi } from '../review/useCardReview'
 import { desktopReviewHost } from '../review/desktopReviewHost'
-import { useReviewSettings, type ReviewSettingsState } from '../review/useReviewSettings'
-import { useLinkClick, type LinkClickState } from '../explore/linkClick'
-import { useShowIds, type ShowIdsState } from '../search/showIds'
-import { useLinkPills, type LinkPillsState } from '../settings/useLinkPills'
-import { useVaultUnitWord, type UnitWordState } from './unitWord'
+import type { ReviewSettingsState } from '../review/useReviewSettings'
+import type { LinkClickState } from '../explore/linkClick'
+import type { ShowIdsState } from '../search/showIds'
+import type { LinkPillsState } from '../settings/useLinkPills'
+import type { UnitWordState } from './unitWord'
 import { useReadOnlyVault, type ReadOnlyVaultState } from './readOnlyVault'
-import { useTextFormatting, type TextFormattingState } from '../settings/useTextFormatting'
-import { useCardLook, type CardLookState } from '../review/useCardLook'
-import { useTableLook, type TableLookState } from '../settings/useTableLook'
-import { useFolderPagesFile, type FolderPagesFileState } from '../settings/useFolderPagesFile'
-import { useDailyPages, type DailyPagesState } from '../settings/useDailyPages'
-import { useVaultNewPlaces, type VaultNewPlacesState } from '../settings/useVaultNewPlaces'
+import type { TextFormattingState } from '../settings/useTextFormatting'
+import type { CardLookState } from '../review/useCardLook'
+import type { TableLookState } from '../settings/useTableLook'
+import type { FolderPagesFileState } from '../settings/useFolderPagesFile'
+import type { DailyPagesState } from '../settings/useDailyPages'
+import type { VaultNewPlacesState } from '../settings/useVaultNewPlaces'
+import { useVaultSettings, type VaultSettingsState } from '../settings/useVaultSettings'
+import {
+  useDerivedCardLook,
+  useDerivedDailyPages,
+  useDerivedFolderPages,
+  useDerivedLinkClick,
+  useDerivedLinkPills,
+  useDerivedNewPlaces,
+  useDerivedReviewSettings,
+  useDerivedShowIds,
+  useDerivedTableLook,
+  useDerivedTextFormatting,
+  useDerivedUnitWord,
+} from '../settings/vaultSettingsAdapters'
 import { useProperties } from '../views/useProperties'
 
 /**
@@ -73,6 +87,8 @@ export interface VaultScope {
   dailyPages: DailyPagesState
   /** Where new pages and boards go in this vault (YAZ-5486): `.yaseendocs/new-places.json`'s `newPage` and `newBoard`. */
   newPlaces: VaultNewPlacesState
+  /** Unified per-vault settings (`<vault>/.yaseendocs/settings.json`, YAZ-6546): sparse overrides + section writer. */
+  vaultSettings: VaultSettingsState
   review: CardReviewApi
   renames: ExternalRenames
   /**
@@ -147,19 +163,21 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   // The vault's answer on IDs as the last snapshot said it (below, with `onSnapshot`): here, so Cards follow it (YAZ-5154).
   const [idsSnapshot, setIdsSnapshot] = useState<{ root: string | null; enabled: boolean; held: boolean; old: number; unfinished: boolean; ask: IndexResponse['ask'] } | null>(null)
   const vaultIds = idsSnapshot?.root === root ? idsSnapshot : null
-  // Cards need IDs (YAZ-5154): a vault the index says gives none publishes Cards off. No answer yet hides nothing.
-  const reviewSettings = useReviewSettings(root, notify, vaultIds?.enabled === false)
-  const linkClick = useLinkClick(root)
-  const showIds = useShowIds(root)
-  const unit = useVaultUnitWord(root)
+  // Unified per-vault settings (YAZ-6546): ONE read of `.yaseendocs/settings.json` + `.yaseendocs/read-only.json`.
   const readOnlyVault = useReadOnlyVault(root, transientReadOnly)
-  const textFormatting = useTextFormatting(root, notify)
-  const cardLook = useCardLook(root, notify)
-  const tableLook = useTableLook(root, notify)
-  const folderPages = useFolderPagesFile(root, notify)
-  const linkPills = useLinkPills(root, notify)
-  const dailyPages = useDailyPages(root, notify)
-  const newPlaces = useVaultNewPlaces(root, notify)
+  const vaultSettings = useVaultSettings(root, readOnlyVault.locked)
+  // Cards need IDs (YAZ-5154): a vault the index says gives none publishes Cards off. No answer yet hides nothing.
+  const reviewSettings = useDerivedReviewSettings(root, vaultSettings, notify, vaultIds?.enabled === false)
+  const linkClick = useDerivedLinkClick(root, vaultSettings)
+  const showIds = useDerivedShowIds(root, vaultSettings)
+  const unit = useDerivedUnitWord(root, vaultSettings)
+  const textFormatting = useDerivedTextFormatting(root, vaultSettings, notify)
+  const cardLook = useDerivedCardLook(root, vaultSettings, notify)
+  const tableLook = useDerivedTableLook(root, vaultSettings, notify)
+  const folderPages = useDerivedFolderPages(root, vaultSettings, notify)
+  const linkPills = useDerivedLinkPills(root, vaultSettings, notify)
+  const dailyPages = useDerivedDailyPages(root, vaultSettings, notify)
+  const newPlaces = useDerivedNewPlaces(root, vaultSettings, notify)
   // The look's text pieces and the vault's name reach every editor of the vault through its resolve source (YAZ-4924):
   // one object the editors already subscribe to, so a change draws the pills again without a prop on each editor.
   useEffect(() => wikilinks.setLook(linkPills.pills, name), [wikilinks, linkPills.pills, name])
@@ -252,6 +270,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     linkPills,
     dailyPages,
     newPlaces,
+    vaultSettings,
     review,
     renames,
     ids: vaultIds === null ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, set: saveIds, check: checkIds, old: vaultIds.old, unfinished: vaultIds.unfinished, state: idsState, reletter, backfill, backfillCreated },

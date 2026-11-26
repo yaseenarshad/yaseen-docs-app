@@ -10,7 +10,7 @@ import { writeFolds } from '../store/foldPref'
 import type { CommentsPort } from '../comments/bridge'
 import type { WaitingComment } from '../comments/outbox'
 import type { NewCommentInput } from '../comments/sender'
-import { MOBILE_SETTINGS_PATH } from '../comments/mobileWrite'
+import { LEGACY_MOBILE_SETTINGS_PATH, MOBILE_SETTINGS_PATH } from '../comments/mobileWrite'
 import { forgetMobileSettings } from './mobileSettings'
 import { attachFolds, HIDDEN_ATTR } from './folds'
 import { landOn } from './headings'
@@ -328,8 +328,8 @@ describe('YAZ-5591 / YAZ-5592: the page view, its ⋯ row, the vault\'s mobile s
     expect(await stuckAt(h, BODY_TOP + 400)).toEqual(['Beds', 'North bed'])
   })
 
-  it('the vault says off (mobile.json): no sticky headings, no fold arrows; the rows say so', async () => {
-    h = await open('Garden', fakePort(), '{"version":1,"folding":false,"stickyHeadings":false}')
+  it('the vault says off (settings.json mobile section): no sticky headings, no fold arrows; the rows say so', async () => {
+    h = await open('Garden', fakePort(), '{"version":1,"mobile":{"version":1,"folding":false,"stickyHeadings":false}}')
     expect(h.host.querySelectorAll('.reader__body .fold-btn')).toHaveLength(0)
     expect(await stuckAt(h, BODY_TOP + 400)).toEqual([])
     await h.click('Page tools')
@@ -337,7 +337,7 @@ describe('YAZ-5591 / YAZ-5592: the page view, its ⋯ row, the vault\'s mobile s
   })
 
   it("a page's own setting wins over the vault's, both ways", async () => {
-    h = await open('Own on', fakePort(), '{"version":1,"folding":false,"stickyHeadings":false}')
+    h = await open('Own on', fakePort(), '{"version":1,"mobile":{"version":1,"folding":false,"stickyHeadings":false}}')
     expect(h.host.querySelectorAll('.reader__body .fold-btn').length).toBeGreaterThan(0)
     expect(await stuckAt(h, BODY_TOP + 400)).toEqual(['Beds', 'North bed'])
     h.unmount()
@@ -345,15 +345,15 @@ describe('YAZ-5591 / YAZ-5592: the page view, its ⋯ row, the vault\'s mobile s
     expect(await stuckAt(h, BODY_TOP + 400)).toEqual([])
   })
 
-  it('never waits for mobile.json: drawn at once with both on, then the file\'s "off" switches the arrows and the stuck headings on the page as drawn', async () => {
+  it('never waits for mobile settings (and falls back to legacy mobile.json): drawn at once with both on, then the file\'s "off" switches the arrows and the stuck headings on the page as drawn', async () => {
     const p = await newPhone()
-    await seedReaderVault(p.store, p.tokens, { ...FILES, [MOBILE_SETTINGS_PATH]: '{"version":1,"folding":false,"stickyHeadings":false}' })
+    await seedReaderVault(p.store, p.tokens, { ...FILES, [LEGACY_MOBILE_SETTINGS_PATH]: '{"version":1,"folding":false,"stickyHeadings":false}' })
     // The settings file reads only when let go (a slow storage read); every other read goes on.
     let letGo: () => void = () => {}
     const held = new Promise<void>((r) => (letGo = r))
     const read = p.store.read.bind(p.store)
     p.store.read = (async (vault: string, path: string) => {
-      if (path === MOBILE_SETTINGS_PATH) await held
+      if (path === LEGACY_MOBILE_SETTINGS_PATH) await held
       return read(vault, path)
     }) as typeof p.store.read
     h = await mount({ phone: p })

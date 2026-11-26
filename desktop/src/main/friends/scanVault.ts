@@ -30,6 +30,7 @@ import { splitFrontmatter } from '@shared/frontmatterSplit'
 import type { FriendVault } from '@shared/friendStatsFormat'
 import { IDS_FILE, idsAnswer } from '@shared/pageId'
 import { REVIEW_SETTINGS_FILE, sanitizeReviewSettings } from '@shared/reviews'
+import { readVaultSection, VAULT_SETTINGS_FILE } from '@shared/vaultSettings'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, VAULT_CONFIG_DIR } from '@shared/types'
 import { atomicWrite } from '../fs/fsUtils'
 import { CACHE_VERSION, cacheFile } from '../vaultIndex/cache'
@@ -201,14 +202,24 @@ async function scanUnchecked(root: string, opts: ScanOptions): Promise<ScanResul
   await checkRoot(root)
   const kept = await loadScanCache(opts.scanDir, root)
   if (kept !== null && opts.key !== undefined && kept.key === opts.key) return { vault: kept.pack, scanned: false, read: 0 }
-  // YAZ-5388: a review.json that is not JSON (a merge conflict, a half-written file) gives the default settings, as the
-  // open vault's `readConfigDetailed` does. Before, the parse error escaped the read's error handler and failed EVERY count.
-  const review = await readInside(path.join(root, VAULT_CONFIG_DIR, REVIEW_SETTINGS_FILE))
+  // YAZ-5388 / YAZ-6546: check unified settings.json's `review` section first, falling back to legacy review.json;
+  // malformed JSON gives the default settings so one corrupt file never fails every count.
   let raw: unknown = null
-  try {
-    raw = review?.text == null ? null : (JSON.parse(review.text) as unknown)
-  } catch {
-    raw = null
+  const unified = await readInside(path.join(root, VAULT_CONFIG_DIR, VAULT_SETTINGS_FILE))
+  if (unified?.text != null) {
+    try {
+      raw = readVaultSection(JSON.parse(unified.text) as unknown, 'review')
+    } catch {
+      raw = null
+    }
+  }
+  if (raw === null) {
+    const review = await readInside(path.join(root, VAULT_CONFIG_DIR, REVIEW_SETTINGS_FILE))
+    try {
+      raw = review?.text == null ? null : (JSON.parse(review.text) as unknown)
+    } catch {
+      raw = null
+    }
   }
   const settings = sanitizeReviewSettings(raw)
   const files: Record<string, Entry> = {}

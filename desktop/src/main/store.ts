@@ -254,6 +254,7 @@ import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, appKeyId, keyFor, 
 import { ASIDE_PLACES, asideId, gestureRow, isDefaultGesture, isGestureEntry, isUsableFor, keyRow, withAside, type HotkeyAside } from '@shared/keys'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import { travellingChanged, travels } from '@shared/settingsSync'
+import { isVaultChromeKey } from '@shared/vaultSettings'
 import { atomicWrite } from './fs/fsUtils'
 
 /**
@@ -706,6 +707,62 @@ export const isGoToPlace = (v: unknown): v is GoToPlace => {
   return keys === 'kind,path' && typeof v.path === 'string' && isValidNewPageFolder(v.path) && (v.kind === 'folder' || v.path !== '')
 }
 
+/** Max stored workspace chrome override entries (YAZ-6546). */
+export const MAX_WORKSPACE_SETTINGS = 50
+
+/**
+ * Per-workspace window/sidebar/tab chrome overrides (`SettingsState.workspaceSettings`, YAZ-6546), strict at the IPC
+ * boundary: at most `MAX_WORKSPACE_SETTINGS` non-empty keys (`ws:...` or `roots:...`), each holding ONLY valid
+ * `VAULT_CHROME_KEYS` validated by the same field guards as `SETTINGS_FIELD_OK`.
+ */
+const isWorkspaceSettings = (v: unknown): v is Record<string, Record<string, unknown>> => {
+  if (!isRecord(v)) return false
+  const entries = Object.entries(v)
+  if (entries.length > MAX_WORKSPACE_SETTINGS) return false
+  return entries.every(
+    ([wsKey, entry]) =>
+      wsKey.trim().length > 0 &&
+      isRecord(entry) &&
+      Object.entries(entry).every(([k, val]) => isVaultChromeKey(k) && SETTINGS_FIELD_OK[k](val)),
+  )
+}
+
+/**
+ * Lenient repair of `SettingsState.workspaceSettings` on load / folder merge (YAZ-6546):
+ * - Invalid chrome keys are dropped individually without discarding valid siblings;
+ * - Non-chrome keys and empty workspace keys are dropped;
+ * - `sidebarTabs` is repaired via `sanitizeSidebarTabs` when it is an object, `sidebarRowHeight` is clamped 20–40;
+ * - Empty workspace objects are pruned, and entries are capped at `MAX_WORKSPACE_SETTINGS`.
+ */
+export function sanitizeWorkspaceSettings(raw: unknown): Record<string, Record<string, unknown>> {
+  if (!isRecord(raw)) return {}
+  const out: Record<string, Record<string, unknown>> = {}
+  let count = 0
+  for (const [wsKey, entry] of Object.entries(raw)) {
+    if (count >= MAX_WORKSPACE_SETTINGS) break
+    if (wsKey.trim().length === 0 || !isRecord(entry)) continue
+    const clean: Record<string, unknown> = {}
+    for (const [k, val] of Object.entries(entry)) {
+      if (!isVaultChromeKey(k)) continue
+      if (k === 'sidebarTabs') {
+        if (isRecord(val)) clean[k] = sanitizeSidebarTabs(val)
+      } else if (k === 'sidebarRowHeight') {
+        if (isFiniteNumber(val)) clean[k] = Math.min(SIDEBAR_ROW_HEIGHT_MAX, Math.max(SIDEBAR_ROW_HEIGHT_MIN, val))
+      } else if (k === 'rowDates') {
+        const rd = cleanRowDates(val)
+        if (rd !== null) clean[k] = rd
+      } else if (SETTINGS_FIELD_OK[k](val)) {
+        clean[k] = val
+      }
+    }
+    if (Object.keys(clean).length > 0) {
+      out[wsKey] = clean
+      count += 1
+    }
+  }
+  return out
+}
+
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
 const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is SettingsState[K] } = {
   lineSpacing: isFiniteNumber,
@@ -885,6 +942,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tabSleepAfter: (v): v is TabSleepAfter => typeof v === 'string' && (TAB_SLEEP_AFTER as readonly string[]).includes(v),
   memoryReload: (v): v is boolean => typeof v === 'boolean',
   folderPages: isFolderPages,
+  workspaceSettings: isWorkspaceSettings,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -917,6 +975,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   // YAZ-3440 D9: a rule that does not read costs itself alone.
   out.sidebarIconRules = cleanIconRules(src.sidebarIconRules)
   out.codeOutlineHidden = sanitizeOutlineHidden(src.codeOutlineHidden)
+  out.workspaceSettings = sanitizeWorkspaceSettings(src.workspaceSettings)
   // YAZ-6490: clamp new-window defaults (50–200), and seed from retired global keys on upgrade when absent.
   if (isFiniteNumber(src.newWindowSidebarZoom)) out.newWindowSidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.newWindowSidebarZoom))
   else if (src.newWindowSidebarZoom === undefined && isFiniteNumber(src.sidebarZoom)) out.newWindowSidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
@@ -933,7 +992,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
 /** Object fields that travel as a whole (YAZ-3397): the incoming one replaces this Mac's, after its own repair. */
 // The icon colours too (YAZ-3440 D4): a colour another Mac reset to its default is a key gone, which a merge by part would bring back.
 // ⌘D's place too (YAZ-3556 D2): a tab and a folder have other parts, and a merge by part would mix them.
-const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside', 'sidebarIconColors', 'goTo', 'inlineCodeStyle']
+const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside', 'sidebarIconColors', 'goTo', 'inlineCodeStyle', 'workspaceSettings']
 
 /**
  * Another Mac's travelling fields over this Mac's settings (YAZ-3276 D3). A value that this build can't read,

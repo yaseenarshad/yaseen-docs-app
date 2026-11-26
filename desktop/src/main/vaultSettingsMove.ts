@@ -1,8 +1,9 @@
 import { stat } from 'node:fs/promises'
 import { isRecord } from '@shared/guards'
 import { placeVaults, type AppState, type SettingsState } from '@shared/types'
+import { LEGACY_SECTION_MAP, patchVaultSettingsDoc, readVaultSection, VAULT_SETTINGS_FILE, type LegacySettingsFile } from '@shared/vaultSettings'
 import type { Store } from './store'
-import { createConfig, readConfigDetailed, writeConfig } from './vaultConfig'
+import { createConfig, readConfigDetailed, withConfigLock, writeConfig, writeConfigUnlocked } from './vaultConfig'
 
 /**
  * THE ONE-TIME MOVE OF AN APP VALUE INTO A VAULT FILE (YAZ-5491 and the vault settings rows after it; scoping section 6,
@@ -44,6 +45,58 @@ export async function seedVaultPart(
 ): Promise<SeedResult> {
   if (store.seededConfig(root, mark)) return 'seeded-before'
   if (!(await isFolder(root))) return 'unreachable'
+
+  // Consolidated settings files (YAZ-6546): check & seed into `.yaseendocs/settings.json` under the shared lock so
+  // consolidated or clean vaults never recreate retired legacy `.yaseendocs/*.json` files on another Mac.
+  if (Object.hasOwn(LEGACY_SECTION_MAP, name)) {
+    const sectionKey = LEGACY_SECTION_MAP[name as LegacySettingsFile]
+    return withConfigLock(root, VAULT_SETTINGS_FILE, async () => {
+      const unified = await readConfigDetailed(root, VAULT_SETTINGS_FILE)
+      if (unified.state === 'malformed') {
+        store.markSeededConfig(root, mark)
+        return 'malformed'
+      }
+      const legacy = await readConfigDetailed(root, name)
+      if (legacy.state === 'malformed') {
+        store.markSeededConfig(root, mark)
+        return 'malformed'
+      }
+      if (unified.state === 'ok') {
+        if (!isRecord(unified.value)) {
+          store.markSeededConfig(root, mark)
+          return 'present'
+        }
+        const existingSection = readVaultSection(unified.value, sectionKey)
+        if (existingSection !== null && owns.some((k) => k !== 'version' && holds(existingSection, k))) {
+          store.markSeededConfig(root, mark)
+          return 'present'
+        }
+      }
+      const heldLegacy = legacy.state === 'ok' && isRecord(legacy.value) ? legacy.value : null
+      if (legacy.state === 'ok' && (heldLegacy === null || owns.some((k) => k !== 'version' && holds(heldLegacy, k)))) {
+        store.markSeededConfig(root, mark)
+        return 'present'
+      }
+      if (part === null) return 'default'
+      if (!(await canSeed(root))) return 'not-yet'
+      if (heldLegacy !== null && unified.state === 'absent') {
+        await writeConfig(root, name, mergeIn(heldLegacy, part))
+      } else {
+        const existingSection = unified.state === 'ok' ? readVaultSection(unified.value, sectionKey) : null
+        const baseSection = existingSection ?? heldLegacy
+        const nextSection = baseSection !== null ? mergeIn(baseSection, part) : { ...fresh, ...part }
+        await writeConfigUnlocked(
+          root,
+          VAULT_SETTINGS_FILE,
+          patchVaultSettingsDoc(unified.state === 'ok' ? unified.value : null, { [sectionKey]: nextSection }),
+          ['version', sectionKey],
+        )
+      }
+      store.markSeededConfig(root, mark)
+      return 'written'
+    })
+  }
+
   const now = await readConfigDetailed(root, name)
   if (now.state === 'malformed') {
     store.markSeededConfig(root, mark)

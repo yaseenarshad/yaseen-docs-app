@@ -1,0 +1,319 @@
+/**
+ * UNIFIED PER-VAULT SETTINGS (`<vault>/.yaseendocs/settings.json`, YAZ-6546).
+ *
+ * One sparse JSON file per vault holding ONLY keys overridden from the user's Global defaults (`SettingsState`),
+ * plus the 12 consolidated legacy settings sections (`textFormatting`, `tableLook`, `cardLook`, `linkPills`,
+ * `linkClick`, `dailyPages`, `folderPages`, `newPlaces`, `showIds`, `review`, `unitWord`, `mobile`).
+ *
+ * Omitted keys inherit Global defaults live. Multi-vault windows resolve window/sidebar/tab chrome from
+ * `SettingsState.workspaceSettings[key]` (so chrome never flips on tab switches), while page-level settings always
+ * resolve from each page's own vault.
+ *
+ * Pure: no React, no Electron, no fs — shared by Desktop main, Desktop renderer, CLI, and Mobile.
+ */
+import { CARD_LOOK_FILE } from './cardLook'
+import { keepUnknownKeys } from './configMerge'
+import { DAILY_PAGES_FILE } from './dailyPagesFile'
+import { FOLDER_PAGES_FILE } from './folderPages'
+import { isRecord } from './guards'
+import { LINK_CLICK_FILE } from './linkClick'
+import { LINK_PILLS_FILE } from './linkPills'
+import { MOBILE_SETTINGS_FILE, MOBILE_SETTINGS_KEYS, mobileSettingsValue, sanitizeMobileSettings, type MobileSettingKey } from './mobileSettings'
+import { NEW_PLACES_FILE } from './newPlaces'
+import { REVIEW_SETTINGS_FILE } from './reviews'
+import { SHOW_IDS_FILE } from './showIds'
+import { TABLE_LOOK_FILE } from './tableLook'
+import { TEXT_FORMATTING_FILE } from './textFormatting'
+import { UNIT_WORD_FILE } from './unitWord'
+import type { RowDates, SettingsState } from './types'
+
+export const VAULT_SETTINGS_FILE = 'settings.json'
+export const VAULT_SETTINGS_VERSION = 1
+
+/**
+ * Window / Sidebar / Tab-bar chrome keys (13 keys):
+ * - Single-vault window: read & written in `<vault>/.yaseendocs/settings.json`.
+ * - Multi-vault window: read & written in `SettingsState.workspaceSettings[workspaceKey]` so switching tabs across
+ *   vaults never causes sidebar tabs, sort order, or tab widths to jump around.
+ */
+export const VAULT_CHROME_KEYS = [
+  'sidebarTabs',
+  'sidebarSort',
+  'searchSort',
+  'rowDates',
+  'tabWidth',
+  'inactiveTabWidth',
+  'sidebarLines',
+  'sidebarLineStyle',
+  'sidebarThreadColor',
+  'sidebarRowHeight',
+  'sidebarStickyLevels',
+  'cardSkillInSidebar',
+  'searchIncludeInline',
+] as const
+
+/** Vault-level navigation & launch defaults (2 keys). */
+export const VAULT_NAV_KEYS = ['goTo', 'vaultOpensOn'] as const
+
+/** Outline, guide-line, folding, section-indent, and TOC defaults (13 keys). */
+export const VAULT_OUTLINE_KEYS = [
+  'bulletThreading',
+  'threadWidth',
+  'threadColor',
+  'guideLinesOnByDefault',
+  'guideLinesShow',
+  'guideLineDarkness',
+  'foldingOnByDefault',
+  'sectionStep',
+  'sectionLines',
+  'tocOnByDefault',
+  'tableOfContents',
+  'tableOfContentsWidth',
+  'tocLines',
+] as const
+
+/** Page, embed, and new-item layout defaults (8 keys). */
+export const VAULT_LAYOUT_KEYS = [
+  'contentWidth',
+  'contentPosition',
+  'drawingPosition',
+  'imagePosition',
+  'codeBlockWidth',
+  'inlineCodeStyle',
+  'newPageTitleTemplate',
+  'newPageDrawing',
+] as const
+
+/** All 36 newly per-vault `SettingsState` override keys (Bundles A + B + C). */
+export const VAULT_OVERRIDE_KEYS = [
+  ...VAULT_CHROME_KEYS,
+  ...VAULT_NAV_KEYS,
+  ...VAULT_OUTLINE_KEYS,
+  ...VAULT_LAYOUT_KEYS,
+] as const
+
+export type VaultChromeKey = (typeof VAULT_CHROME_KEYS)[number]
+export type VaultOverrideKey = (typeof VAULT_OVERRIDE_KEYS)[number]
+export type VaultSettingsOverrides = Partial<Pick<SettingsState, VaultOverrideKey>>
+export type WorkspaceChromeOverrides = Partial<Pick<SettingsState, VaultChromeKey>>
+
+/** Consolidated legacy `.yaseendocs/*.json` settings sections nested inside `settings.json`. */
+export const LEGACY_SECTION_MAP = {
+  [TEXT_FORMATTING_FILE]: 'textFormatting',
+  [TABLE_LOOK_FILE]: 'tableLook',
+  [CARD_LOOK_FILE]: 'cardLook',
+  [LINK_PILLS_FILE]: 'linkPills',
+  [LINK_CLICK_FILE]: 'linkClick',
+  [DAILY_PAGES_FILE]: 'dailyPages',
+  [FOLDER_PAGES_FILE]: 'folderPages',
+  [NEW_PLACES_FILE]: 'newPlaces',
+  [SHOW_IDS_FILE]: 'showIds',
+  [REVIEW_SETTINGS_FILE]: 'review',
+  [UNIT_WORD_FILE]: 'unitWord',
+  [MOBILE_SETTINGS_FILE]: 'mobile',
+} as const
+
+export type LegacySettingsFile = keyof typeof LEGACY_SECTION_MAP
+export type LegacySectionKey = (typeof LEGACY_SECTION_MAP)[LegacySettingsFile]
+
+export const LEGACY_SETTINGS_FILES: readonly LegacySettingsFile[] = Object.keys(LEGACY_SECTION_MAP) as LegacySettingsFile[]
+export const LEGACY_SECTION_KEYS: readonly LegacySectionKey[] = Object.values(LEGACY_SECTION_MAP) as LegacySectionKey[]
+
+/** Maps a legacy section key back to its old `.yaseendocs/` filename (for read fallback / migration). */
+export const SECTION_TO_LEGACY_FILE: Readonly<Record<LegacySectionKey, LegacySettingsFile>> = Object.fromEntries(
+  Object.entries(LEGACY_SECTION_MAP).map(([file, section]) => [section, file]),
+) as Record<LegacySectionKey, LegacySettingsFile>
+
+/**
+ * The canonical shape of `<vault>/.yaseendocs/settings.json`.
+ * All fields other than `version` are optional (sparse).
+ */
+export interface VaultSettingsDoc extends VaultSettingsOverrides {
+  version: number
+  textFormatting?: Record<string, unknown>
+  tableLook?: Record<string, unknown>
+  cardLook?: Record<string, unknown>
+  linkPills?: Record<string, unknown>
+  linkClick?: Record<string, unknown>
+  dailyPages?: Record<string, unknown>
+  folderPages?: Record<string, unknown>
+  newPlaces?: Record<string, unknown>
+  showIds?: Record<string, unknown>
+  review?: Record<string, unknown>
+  unitWord?: Record<string, unknown>
+  mobile?: Record<string, unknown>
+}
+
+export const VAULT_SETTINGS_DOC_KEYS: readonly string[] = [
+  'version',
+  ...VAULT_OVERRIDE_KEYS,
+  ...LEGACY_SECTION_KEYS,
+]
+
+const CHROME_KEY_SET: ReadonlySet<string> = new Set(VAULT_CHROME_KEYS)
+const OVERRIDE_KEY_SET: ReadonlySet<string> = new Set(VAULT_OVERRIDE_KEYS)
+const LEGACY_SECTION_SET: ReadonlySet<string> = new Set(LEGACY_SECTION_KEYS)
+
+export const isVaultChromeKey = (key: string): key is VaultChromeKey => CHROME_KEY_SET.has(key)
+export const isVaultOverrideKey = (key: string): key is VaultOverrideKey => OVERRIDE_KEY_SET.has(key)
+export const isLegacySectionKey = (key: string): key is LegacySectionKey => LEGACY_SECTION_SET.has(key)
+
+/**
+ * Stable key for `SettingsState.workspaceSettings`:
+ * - Saved workspace (`VaultSet.id`): `ws:<id>`
+ * - Ad-hoc multi-vault window: `roots:<sorted canonical roots joined by \0>`
+ */
+export function workspaceSettingsKey(roots: readonly string[], vaultSetId?: string | null): string {
+  if (vaultSetId !== undefined && vaultSetId !== null && vaultSetId.trim() !== '') return `ws:${vaultSetId}`
+  const norm = [...new Set(roots.map((r) => r.replace(/\/+$/, '')))].sort()
+  return `roots:${norm.join('\0')}`
+}
+
+/** Extract only the known sparse `SettingsState` override keys from a parsed `settings.json` object. */
+export function extractVaultOverrides(raw: unknown): VaultSettingsOverrides {
+  if (!isRecord(raw)) return {}
+  const out: Record<string, unknown> = {}
+  for (const key of VAULT_OVERRIDE_KEYS) {
+    if (Object.hasOwn(raw, key) && raw[key] !== undefined) out[key] = raw[key]
+  }
+  return out as VaultSettingsOverrides
+}
+
+/** Extract only the known sparse chrome override keys from a workspace overrides record. */
+export function extractWorkspaceChrome(raw: unknown): WorkspaceChromeOverrides {
+  if (!isRecord(raw)) return {}
+  const out: Record<string, unknown> = {}
+  for (const key of VAULT_CHROME_KEYS) {
+    if (Object.hasOwn(raw, key) && raw[key] !== undefined) out[key] = raw[key]
+  }
+  return out as WorkspaceChromeOverrides
+}
+
+/**
+ * Read a nested legacy section (`textFormatting`, `tableLook`, `review`, etc.) from a unified `settings.json` object,
+ * or `null` when absent / not an object.
+ */
+export function readVaultSection(raw: unknown, section: LegacySectionKey): Record<string, unknown> | null {
+  if (!isRecord(raw)) return null
+  const val = raw[section]
+  return isRecord(val) ? val : null
+}
+
+/**
+ * Resolve effective `SettingsState` from Global defaults + optional per-vault overrides + optional workspace chrome.
+ *
+ * - Single-vault window (`workspace == null`): lays all present `vault` overrides over `global`.
+ * - Multi-vault window (`workspace != null`): lays non-chrome `vault` overrides (page/outline/layout/nav) over `global`,
+ *   and lays `workspace` chrome overrides over `global` so switching tabs never flips sidebar/tab-bar chrome.
+ */
+export function resolveVaultSettings(
+  global: SettingsState,
+  vault?: VaultSettingsOverrides | null,
+  workspace?: WorkspaceChromeOverrides | null,
+): SettingsState {
+  const hasVault = vault !== undefined && vault !== null && Object.keys(vault).length > 0
+  const hasWorkspace = workspace !== undefined && workspace !== null && Object.keys(workspace).length > 0
+  if (!hasVault && !hasWorkspace) return global
+  const out: Record<string, unknown> = { ...global }
+  if (hasVault) {
+    for (const key of VAULT_OVERRIDE_KEYS) {
+      if (workspace !== undefined && workspace !== null && isVaultChromeKey(key)) continue
+      const v = vault[key]
+      if (v !== undefined) out[key] = v
+    }
+  }
+  if (hasWorkspace) {
+    for (const key of VAULT_CHROME_KEYS) {
+      const v = workspace[key]
+      if (v !== undefined) out[key] = v
+    }
+  }
+  return out as unknown as SettingsState
+}
+
+/**
+ * Apply a sparse patch to a `VaultSettingsDoc` (setting keys in `patch` or deleting keys whose value is `undefined`
+ * or listed in `unset`). Preserves unknown top-level keys for forward compatibility.
+ */
+export function patchVaultSettingsDoc(
+  current: unknown,
+  patch: Record<string, unknown>,
+  unset: readonly string[] = [],
+): VaultSettingsDoc {
+  const base: Record<string, unknown> = isRecord(current) ? { ...current } : {}
+  const version = typeof base.version === 'number' && base.version > VAULT_SETTINGS_VERSION ? base.version : VAULT_SETTINGS_VERSION
+  const out: Record<string, unknown> = { version, ...base }
+  out.version = version
+  for (const [k, v] of Object.entries(patch)) {
+    if (k === 'version') continue
+    if (v === undefined) delete out[k]
+    else out[k] = v
+  }
+  for (const k of unset) {
+    if (k !== 'version') delete out[k]
+  }
+  return out as unknown as VaultSettingsDoc
+}
+
+/** True when a `VaultSettingsDoc` has no overrides and no nested sections (only `version`). */
+export function isVaultSettingsDocEmpty(raw: unknown): boolean {
+  if (!isRecord(raw)) return true
+  return Object.keys(raw).every((k) => k === 'version' || raw[k] === undefined)
+}
+
+/**
+ * Merge any discovered legacy `.yaseendocs/*.json` files (and optional legacy `folders[root].rowDates`) into an
+ * existing (or new) `VaultSettingsDoc`. Existing keys in `current` ALWAYS win (never overwritten by legacy files).
+ */
+export function mergeLegacyFilesIntoDoc(
+  current: unknown,
+  legacyFiles: Partial<Record<LegacySettingsFile, unknown>>,
+  legacyRowDates?: RowDates | null,
+): { doc: VaultSettingsDoc; migratedFiles: LegacySettingsFile[]; migratedRowDates: boolean } {
+  const base: Record<string, unknown> = isRecord(current) ? { ...current } : { version: VAULT_SETTINGS_VERSION }
+  if (typeof base.version !== 'number' || base.version < VAULT_SETTINGS_VERSION) base.version = VAULT_SETTINGS_VERSION
+  const migratedFiles: LegacySettingsFile[] = []
+  let migratedRowDates = false
+
+  for (const file of LEGACY_SETTINGS_FILES) {
+    const raw = legacyFiles[file]
+    if (!isRecord(raw)) continue
+    const section = LEGACY_SECTION_MAP[file]
+    if (!Object.hasOwn(base, section) || base[section] === undefined) {
+      base[section] = { ...raw }
+    }
+    migratedFiles.push(file)
+  }
+
+  if (legacyRowDates !== undefined && legacyRowDates !== null && (!Object.hasOwn(base, 'rowDates') || base.rowDates === undefined)) {
+    base.rowDates = { ...legacyRowDates }
+    migratedRowDates = true
+  }
+
+  return { doc: base as unknown as VaultSettingsDoc, migratedFiles, migratedRowDates }
+}
+
+/**
+ * Update a single mobile boolean setting inside `<vault>/.yaseendocs/settings.json` (YAZ-6546), preserving every
+ * other key and section of `settings.json` (the `withMobileSetting` contract applied to the unified file).
+ */
+export function withMobileSettingInVaultSettings(text: string | null, key: MobileSettingKey, on: boolean): string {
+  let raw: unknown = undefined
+  if (text !== null && text.trim() !== '') {
+    raw = JSON.parse(text)
+    if (!isRecord(raw)) throw new Error(`${VAULT_SETTINGS_FILE} is not a JSON object`)
+  }
+  const existingMobile = readVaultSection(raw, 'mobile')
+  const nextMobile = keepUnknownKeys(
+    existingMobile,
+    mobileSettingsValue({ ...sanitizeMobileSettings(existingMobile), [key]: on }),
+    MOBILE_SETTINGS_KEYS,
+  ) as Record<string, unknown>
+  const hasNonDefault = Object.keys(nextMobile).some((k) => k !== 'version')
+  const patched = patchVaultSettingsDoc(raw, hasNonDefault ? { mobile: nextMobile } : {}, hasNonDefault ? [] : ['mobile'])
+  const merged = keepUnknownKeys(raw, patched, VAULT_SETTINGS_DOC_KEYS) as Record<string, unknown>
+  const order = isRecord(raw) ? Object.keys(raw).filter((k) => Object.hasOwn(merged, k)) : []
+  const out: Record<string, unknown> = {}
+  for (const k of [...order, ...Object.keys(merged)]) if (!Object.hasOwn(out, k)) out[k] = merged[k]
+  return `${JSON.stringify(out, null, 2)}\n`
+}

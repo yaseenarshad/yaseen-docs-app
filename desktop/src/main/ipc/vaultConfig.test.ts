@@ -113,4 +113,24 @@ describe('registerVaultConfigIpc', () => {
     await writeFile(path.join(vault, VAULT_CONFIG_DIR, 'types.json'), '{"a":2}')
     await until(() => a.webContents.send.mock.calls.some(([ch, c]) => ch === CONTRACT.vaultConfig.onChange.channel && (c as { name: string }).name === 'types.json'))
   })
+
+  it('YAZ-6546: reading settings.json auto-migrates legacy files, and reading a legacy filename falls back to settings.json', async () => {
+    await mkdir(path.join(vault, VAULT_CONFIG_DIR), { recursive: true })
+    await writeFile(path.join(vault, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify({ version: 1, enabled: false }))
+    const unified = await registered(CONTRACT.vaultConfig.read.channel)({ sender }, vault, 'settings.json')
+    expect(unified).toEqual(ok({ version: 1, review: { version: 1, enabled: false } }))
+    // After migration review.json is unlinked, yet legacy callers reading review.json still get its section from settings.json.
+    expect(await registered(CONTRACT.vaultConfig.read.channel)({ sender }, vault, 'review.json')).toEqual(ok({ version: 1, enabled: false }))
+  })
+
+  it('YAZ-6546: reading settings.json on a transient read-only root never writes or deletes files on disk', async () => {
+    vi.mocked(ipcMain.handle).mockClear()
+    registerVaultConfigIpc(store, (r) => r === vault)
+    await mkdir(path.join(vault, VAULT_CONFIG_DIR), { recursive: true })
+    await writeFile(path.join(vault, VAULT_CONFIG_DIR, 'unit-word.json'), JSON.stringify({ version: 1, word: 'note' }))
+    const res = await registered(CONTRACT.vaultConfig.read.channel)({ sender }, vault, 'settings.json')
+    expect(res).toEqual(ok({ version: 1, unitWord: { version: 1, word: 'note' } }))
+    // unit-word.json is still present and settings.json was NOT created on disk.
+    expect(await registered(CONTRACT.vaultConfig.read.channel)({ sender }, vault, 'unit-word.json')).toEqual(ok({ version: 1, word: 'note' }))
+  })
 })

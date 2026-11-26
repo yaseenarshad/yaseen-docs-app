@@ -2782,6 +2782,12 @@ export interface SettingsState {
   memoryReload: boolean
   /** Settings › Folder pages (YAZ-4585, D34 of YAZ-4501): one object, `FolderPagesSettings`. Travels. */
   folderPages: FolderPagesSettings
+  /**
+   * Multi-vault workspace chrome overrides (YAZ-6546): keyed by `ws:<vaultSetId>` for saved workspaces or
+   * `roots:<sortedRoots>` for ad-hoc multi-vault windows. Holds only chrome keys overridden for that workspace;
+   * omitted keys inherit Global defaults. Travels across Macs via the Settings folder.
+   */
+  workspaceSettings: Record<string, Record<string, unknown>>
 }
 
 /** ⌘D's place (YAZ-3556 D2): a tab of the sidebar, a folder or a file by its path inside the vault ('' = the vault root), or today's daily page (YAZ-3607 D1). */
@@ -3424,6 +3430,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tabSleepAfter: '30m',
   memoryReload: true,
   folderPages: DEFAULT_FOLDER_PAGES,
+  workspaceSettings: {},
 }
 
 export interface WindowBounds {
