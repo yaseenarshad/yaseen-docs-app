@@ -16,20 +16,22 @@ vi.mock('../api', async (original) => ({
 /** The lazy panel, stood in: it reports the cache key the host handed it. */
 const panel = vi.hoisted(() => ({
   keys: [] as string[],
-  pages: [] as { path: string; size: unknown }[],
+  boards: [] as { cacheKey: string; idInTitle?: boolean; hasWikilinks: boolean }[],
+  pages: [] as { path: string; size: unknown; idInTitle?: boolean }[],
   code: [] as string[],
   inline: [] as { inlineRef: unknown; root?: string; place?: string; name?: string; dark?: boolean; diagramDarkColors?: string }[],
 }))
 vi.mock('./BoardPreview', () => ({
-  default: ({ cacheKey }: { cacheKey: string }) => {
+  default: ({ cacheKey, idInTitle, wikilinks }: { cacheKey: string; idInTitle?: boolean; wikilinks?: unknown }) => {
     panel.keys.push(cacheKey)
+    panel.boards.push({ cacheKey, idInTitle, hasWikilinks: wikilinks !== undefined })
     return <div className="fake-board-preview" />
   },
 }))
 /** The lazy page panel, stood in: it reports which page and which text formatting the host handed it. */
 vi.mock('./PagePreview', () => ({
-  default: ({ node, textVars }: { node: { path: string }; textVars: Record<string, unknown> }) => {
-    panel.pages.push({ path: node.path, size: textVars['--text-size'] })
+  default: ({ node, textVars, idInTitle }: { node: { path: string }; textVars: Record<string, unknown>; idInTitle?: boolean }) => {
+    panel.pages.push({ path: node.path, size: textVars['--text-size'], idInTitle })
     return <div className="fake-page-preview" />
   },
 }))
@@ -180,6 +182,7 @@ describe('HoverPreviewHost', () => {
   beforeEach(() => {
     vi.useRealTimers()
     panel.keys = []
+    panel.boards = []
     panel.pages = []
     vi.mocked(api.boardHead).mockReset()
   })
@@ -188,11 +191,11 @@ describe('HoverPreviewHost', () => {
   const watch = { subscribe: (l: (ev: WatchEvent) => void) => (listeners.add(l), () => void listeners.delete(l)) }
 
   const wikilinks = createWikilinkResolveSource()
-  async function show(shown: TreeNode = file): Promise<void> {
+  async function show(shown: TreeNode = file, idInTitleOf?: (path: string) => boolean): Promise<void> {
     const hover = createStore<HoverState>({ path: shown.path, shown: true })
     await act(async () => {
       root?.render(
-        <HoverPreviewHost hover={hover} forest={[shown]} rootOf={() => '/v'} watchOf={() => watch} wikilinksOf={() => wikilinks} nameOf={(p) => p.slice(p.lastIndexOf('/') + 1).replace(/\.md$/, '')} textVarsOf={() => ({ '--text-size': '18px' }) as never} enabled diagramDarkColors="adapt" anchor={createRef<HTMLElement>()} onClose={() => undefined} />,
+        <HoverPreviewHost hover={hover} forest={[shown]} rootOf={() => '/v'} watchOf={() => watch} wikilinksOf={() => wikilinks} idInTitleOf={idInTitleOf} nameOf={(p) => p.slice(p.lastIndexOf('/') + 1).replace(/\.md$/, '')} textVarsOf={() => ({ '--text-size': '18px' }) as never} enabled diagramDarkColors="adapt" anchor={createRef<HTMLElement>()} onClose={() => undefined} />,
       )
     })
     // The lazy chunk and the head read both settle.
@@ -232,10 +235,19 @@ describe('HoverPreviewHost', () => {
   it('YAZ-3075 C20, C27: a page opens its own panel in its vault`s text formatting, with no board head read and no watch subscription', async () => {
     listeners.clear()
     await show({ type: 'file', name: 'Plan.md', path: '/v/Plan.md', size: 10, mtime: 1000, kind: 'markdown' })
-    expect(panel.pages.at(-1)).toEqual({ path: '/v/Plan.md', size: '18px' })
+    expect(panel.pages.at(-1)).toEqual({ path: '/v/Plan.md', size: '18px', idInTitle: undefined })
     expect(api.boardHead).not.toHaveBeenCalled()
     expect(listeners.size).toBe(0)
     expect(panel.keys).toEqual([])
+  })
+
+  it('YAZ-6567 1E: forwards idInTitleOf to both PagePreview and BoardPreview (with wikilinks)', async () => {
+    await show({ type: 'file', name: 'Plan.md', path: '/v/Plan.md', size: 10, mtime: 1000, kind: 'markdown' }, () => true)
+    expect(panel.pages.at(-1)?.idInTitle).toBe(true)
+
+    vi.mocked(api.boardHead).mockResolvedValue({ mtime: 2000 } as never)
+    await show(file, () => true)
+    expect(panel.boards.at(-1)).toMatchObject({ idInTitle: true, hasWikilinks: true })
   })
 
   it('YAZ-6468: an inline card or inline drawing ref resolves its parent page in forest and renders lazy InlineRefPreview with root, place, wikilinks, diagramDarkColors, and dark', async () => {

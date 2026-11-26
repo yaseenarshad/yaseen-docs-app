@@ -39,6 +39,16 @@
   white-space: nowrap;
 }
 
+/* The page's, card file's, or board's ID after its name in an ID vault (YAZ-6567 1E, matches `.explore__id`). */
+.board-preview__id {
+  flex: none;
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
 .board-preview__folder {
   min-width: 0;
   overflow: hidden;

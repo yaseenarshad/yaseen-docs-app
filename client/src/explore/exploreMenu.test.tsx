@@ -1,6 +1,7 @@
 /** Unit tests for `exploreInlineSections` (YAZ-6470 #5): inline drawing and inline card right-click menus. */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MenuAction, MenuItem, MenuParent, MenuSection } from '../sidebar/menuSections'
+import { applyMenuIcons, resetMenuIconsForTest } from '../views/view/menuIconsStore'
 import { exploreInlineSections, explorePageSections, type ExploreInlineMenuDoors } from './exploreMenu'
 
 const { readFile, copyText, landOnCard, landOnInlineDrawing } = vi.hoisted(() => ({
@@ -75,10 +76,15 @@ function makeDoors(overrides: Partial<ExploreInlineMenuDoors> = {}): ExploreInli
 }
 
 beforeEach(() => {
+  resetMenuIconsForTest()
   readFile.mockReset().mockResolvedValue({ path: '/v/Architecture.md', content: PAGE_MD, mtime: 1, size: PAGE_MD.length })
   copyText.mockReset().mockResolvedValue(undefined)
   landOnCard.mockReset()
   landOnInlineDrawing.mockReset()
+})
+
+afterEach(() => {
+  resetMenuIconsForTest()
 })
 
 describe('exploreInlineSections (YAZ-6470 #5)', () => {
@@ -193,5 +199,48 @@ describe('explorePageSections (YAZ-6550)', () => {
     ])
     const flat = sections.flat().map((i) => i.label)
     expect(flat.indexOf('Add to focus')).toBe(flat.indexOf('Remove from favorites') - 1)
+  })
+
+  it('YAZ-6567: attaches default icons to page and inline Explore menus and omits them on none / off', () => {
+    const pageDoors = {
+      openInTab: vi.fn(),
+      onNotice: vi.fn(),
+      closeStack: vi.fn(),
+      linkActions: { showInSidebar: vi.fn(), openNewWindow: vi.fn() },
+    }
+    const pageSections = explorePageSections('/v/Architecture.md', pageDoors)
+    for (const label of ['Open in new tab', 'Open in new window', 'Show in sidebar']) {
+      expect(findAction(pageSections, label).icon).toBeDefined()
+    }
+
+    const inlineDoors = makeDoors()
+    for (const target of [
+      { kind: 'drawing' as const, page: '/v/Architecture.md', index: 0 },
+      { kind: 'card' as const, page: '/v/Architecture.md', id: 'YAZ-42', index: 0 },
+    ]) {
+      const sections = exploreInlineSections(target, inlineDoors)
+      expect(findAction(sections, 'Open in new tab').icon).toBeDefined()
+      expect(findAction(sections, 'Open in new window').icon).toBeDefined()
+    }
+
+    applyMenuIcons({ openNewTab: 'none', newWindow: 'none', showInSidebar: 'none' })
+    const nonePage = explorePageSections('/v/Architecture.md', pageDoors)
+    for (const label of ['Open in new tab', 'Open in new window', 'Show in sidebar']) {
+      expect(findAction(nonePage, label).icon).toBeUndefined()
+    }
+    for (const target of [
+      { kind: 'drawing' as const, page: '/v/Architecture.md', index: 0 },
+      { kind: 'card' as const, page: '/v/Architecture.md', id: 'YAZ-42', index: 0 },
+    ]) {
+      const sections = exploreInlineSections(target, inlineDoors)
+      expect(findAction(sections, 'Open in new tab').icon).toBeUndefined()
+      expect(findAction(sections, 'Open in new window').icon).toBeUndefined()
+    }
+
+    applyMenuIcons('off')
+    const offPage = explorePageSections('/v/Architecture.md', pageDoors)
+    for (const label of ['Open in new tab', 'Open in new window', 'Show in sidebar']) {
+      expect(findAction(offPage, label).icon).toBeUndefined()
+    }
   })
 })

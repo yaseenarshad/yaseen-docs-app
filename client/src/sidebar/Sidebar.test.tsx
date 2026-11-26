@@ -26,6 +26,7 @@ import { useReviewSettings } from '../review/useReviewSettings'
 import { takeCardLanding } from '../editor/card/cardOpen'
 import { takeInlineDrawingLanding } from '../editor/drawing/inlineDrawingLand'
 import { CollapseAllIcon, ExpandAllIcon } from '../views/view/icons'
+import { applyMenuIcons, resetMenuIconsForTest } from '../views/view/menuIconsStore'
 
 /**
  * File-row render counter (YAZ-2194): every file row renders its label through `pageLabel`, so the
@@ -7582,6 +7583,121 @@ describe('favorites (YAZ-1766)', () => {
       }
     })
   })
+  describe('"Hide all others" on disk folders in Favorites and Focus (YAZ-6574)', () => {
+    const menuLabels = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)
+    const bar = (el: HTMLElement) => el.querySelector('.sidebar__focus-bar')
+
+    it('Favorites: root disk folder offers Hide all others with IsolateIcon, isolates the folder alone under Only <folder> · Show all, and Show all restores the list', async () => {
+      const { el, v, props, rerender } = await mountVault(
+        { lens: 'favorites', onFocusOnly: vi.fn() },
+        { favorites: ['/Projects', '/Pages', '/top.md'] },
+      )
+      expect(topLabels(el)).toEqual(['Projects', 'Pages', 'top'])
+
+      rightClick(rowByPath(el, `${v}/Projects`))
+      const hideBtn = itemByLabel(el, 'Hide all others')
+      expect(hideBtn).not.toBeNull()
+      expect(hideBtn?.querySelector('.ctx-menu__label > svg')).not.toBeNull()
+      await act(async () => hideBtn?.click())
+      expect(props.onFocusOnly).toHaveBeenLastCalledWith(`${v}/Projects`)
+
+      await rerender({ focusOnly: `${v}/Projects` })
+      expect(bar(el)?.querySelector('span')?.textContent).toBe('Only Projects')
+      expect(topLabels(el)).toEqual(['Projects'])
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      expect(rowByPath(el, `${v}/Projects/p.md`)).not.toBeNull()
+      expect(rowByPath(el, `${v}/Pages`)).toBeNull()
+
+      rightClick(rowByPath(el, `${v}/Projects`))
+      const showBtn = itemByLabel(el, 'Show all')
+      expect(showBtn).not.toBeNull()
+      expect(showBtn?.querySelector('.ctx-menu__label > svg')).not.toBeNull()
+      expect(menuLabels()).not.toContain('Hide all others')
+      await act(async () => showBtn?.click())
+      expect(props.onFocusOnly).toHaveBeenLastCalledWith(null)
+
+      await rerender({ focusOnly: null })
+      expect(topLabels(el)).toEqual(['Projects', 'Pages', 'top'])
+    })
+
+    it('Focus: root disk folder offers Hide all others with IsolateIcon, isolates the folder alone, and Show all bar button restores Focus', async () => {
+      const { el, v, props, rerender } = await mountVault(
+        { lens: 'focus', onFocusOnly: vi.fn() },
+        { focus: ['/Projects', '/Pages', '/top.md'] },
+      )
+      expect(topLabels(el)).toEqual(['Projects', 'Pages', 'top'])
+
+      rightClick(rowByPath(el, `${v}/Projects`))
+      const hideBtn = itemByLabel(el, 'Hide all others')
+      expect(hideBtn).not.toBeNull()
+      expect(hideBtn?.querySelector('.ctx-menu__label > svg')).not.toBeNull()
+      await act(async () => hideBtn?.click())
+      expect(props.onFocusOnly).toHaveBeenLastCalledWith(`${v}/Projects`)
+
+      await rerender({ focusOnly: `${v}/Projects` })
+      expect(bar(el)?.querySelector('span')?.textContent).toBe('Only Projects')
+      expect(topLabels(el)).toEqual(['Projects'])
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      expect(rowByPath(el, `${v}/Pages`)).toBeNull()
+
+      await act(async () => [...(bar(el)?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === 'Show all')?.click())
+      expect(props.onFocusOnly).toHaveBeenLastCalledWith(null)
+      await rerender({ focusOnly: null })
+      expect(topLabels(el)).toEqual(['Projects', 'Pages', 'top'])
+    })
+
+    it('YAZ-6576: blank-space New page in an isolated Favorites disk folder opens inline inside the folder and does not add a stray top-level favorite', async () => {
+      const { el, v, props, bridge, rerender } = await mountVault(
+        { lens: 'favorites', onFocusOnly: vi.fn() },
+        { favorites: ['/Projects', '/Pages'] },
+      )
+      await rerender({ focusOnly: `${v}/Projects` })
+      const callsBefore = bridge.favorites.set.mock.calls.length
+
+      rightClick(el.querySelector('.sidebar__body'))
+      await act(async () => itemByLabel(el, 'New page')?.click())
+      const field = el.querySelector<HTMLInputElement>('.create-inline__input')
+      expect(field?.closest('[role="treeitem"]')?.querySelector(':scope > .tree__row')).toBe(rowByPath(el, `${v}/Projects`))
+
+      await act(async () => {
+        field!.value = 'InsideOnly'
+        field!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      })
+      const made = vi.mocked(props.onOpenFile).mock.calls.at(-1)?.[0] ?? ''
+      expect(made.slice(0, made.lastIndexOf('/'))).toBe(`${v}/Projects`)
+      expect(bridge.favorites.set.mock.calls.length).toBe(callsBefore)
+    })
+
+    it('YAZ-6577: removing an isolated disk folder from Favorites clears focusOnly immediately', async () => {
+      const { el, v, props, rerender } = await mountVault(
+        { lens: 'favorites', onFocusOnly: vi.fn() },
+        { favorites: ['/Projects', '/Pages'] },
+      )
+      await rerender({ focusOnly: `${v}/Projects` })
+      expect(bar(el)?.querySelector('span')?.textContent).toBe('Only Projects')
+
+      rightClick(rowByPath(el, `${v}/Projects`))
+      await act(async () => itemByLabel(el, 'Remove from favorites')?.click())
+      expect(props.onFocusOnly).toHaveBeenLastCalledWith(null)
+    })
+
+    it('YAZ-6578: Expand all / Collapse all scopes to the isolated Favorites disk folder only', async () => {
+      const { el, v, rerender } = await mountVault(
+        { lens: 'favorites', onFocusOnly: vi.fn() },
+        { favorites: ['/Projects', '/Pages'] },
+      )
+      await rerender({ focusOnly: `${v}/Projects` })
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      const collapseBtn = el.querySelector<HTMLButtonElement>('button[aria-label="Collapse all"]')
+      expect(collapseBtn).not.toBeNull()
+      await act(async () => collapseBtn?.click())
+      expect(isOpen(el, `${v}/Projects`)).toBe('false')
+      const expandBtn = el.querySelector<HTMLButtonElement>('button[aria-label="Expand all"]')
+      expect(expandBtn).not.toBeNull()
+      await act(async () => expandBtn?.click())
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+    })
+  })
   it('YAZ-5664: on Favorites too, Collapse all closes both stack folders and the real folder inside; Expand all opens them all again', async () => {
     const ids = ['yaz5664-fav-a', 'yaz5664-fav-b'] as const
     const { el, v } = await mountVault({ lens: 'favorites' }, { folders: (name) => twoStacks(name, ids) })
@@ -9339,6 +9455,18 @@ describe('Inbox row (YAZ-2322)', () => {
     expect(menu.defaultPrevented).toBe(true)
     const items = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
     expect(items().map((item) => [item.textContent, item.disabled])).toEqual([['Open in new tab', false], ['Open in new window', false]])
+    // YAZ-6567: Inbox row menu carries customizable icons and omits them cleanly on none.
+    try {
+      expect(items()[0].querySelector('svg')).not.toBeNull()
+      expect(items()[1].querySelector('svg')).not.toBeNull()
+      act(() => applyMenuIcons({ openNewTab: 'none', newWindow: 'none' }))
+      expect(items()[0].querySelector('svg')).toBeNull()
+      expect(items()[1].querySelector('svg')).toBeNull()
+      expect(items()[0].querySelector('.ctx-menu__label')).toBeNull()
+      act(() => resetMenuIconsForTest())
+    } finally {
+      resetMenuIconsForTest()
+    }
     act(() => items()[0].click())
     expect(props.onOpenInbox).toHaveBeenCalledTimes(1)
     expect(document.querySelector('.ctx-menu')).toBeNull()

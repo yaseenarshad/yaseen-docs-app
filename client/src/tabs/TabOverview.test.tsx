@@ -16,6 +16,7 @@ import { TabOverview as IdTabOverview, SETTLE_MS, TOOLBAR_INSET, ZOOM_MS, type T
 import { boardHighlight } from './boardHighlight'
 import { _resetTabHeads, plainLines } from './useTabHeads'
 import { HOVER_PREVIEW_DWELL_MS } from '../sidebar/HoverPreviewHost'
+import { applyMenuIcons, resetMenuIconsForTest } from '../views/view/menuIconsStore'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -1266,6 +1267,17 @@ describe('TabOverview', () => {
     // A vault's top level: with two or more vaults its row in the sidebar is the vault's; with one there is no such row, and no item.
     rightClick(island(el, 'Work').querySelector('.taboverview__island-head'))
     expect(menuItems(el)).toEqual(['Show in sidebar', 'Copy path', 'Tidy up this group', 'Close 1 tab'])
+    // YAZ-6567: Show in sidebar icon and ctx-menu--glyphs drop cleanly when showInSidebar is 'none'.
+    try {
+      expect(el.querySelector('.ctx-menu')?.classList.contains('ctx-menu--glyphs')).toBe(true)
+      expect(menuItem(el, 'Show in sidebar')?.querySelector('svg')).not.toBeNull()
+      act(() => applyMenuIcons({ showInSidebar: 'none' }))
+      expect(el.querySelector('.ctx-menu')?.classList.contains('ctx-menu--glyphs')).toBe(false)
+      expect(menuItem(el, 'Show in sidebar')?.querySelector('svg')).toBeNull()
+      act(() => resetMenuIconsForTest())
+    } finally {
+      resetMenuIconsForTest()
+    }
     act(() => menuItem(el, 'Show in sidebar')?.click())
     expect(props.onShowInSidebar).toHaveBeenLastCalledWith('/w')
     act(() => root?.unmount())

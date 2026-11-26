@@ -1,6 +1,13 @@
 /** Where the hover preview panel goes (YAZ-1800): a pure rule of the sidebar's right edge and the window. */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, createRef } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import BoardPreview from './BoardPreview'
+import { boardPreviews } from './boardPreviewCache'
 import { belowPlacement, besidePlacement, boardPreviewPlacement, edgePlacement } from './previewPlacement'
+
+;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('boardPreviewPlacement', () => {
   it('sits a gap right of the sidebar, a little over half the room wide, vertically centred', () => {
@@ -88,5 +95,39 @@ describe('edgePlacement (YAZ-3429: a linked mention — Yasin: "cant it be on th
   it('stays inside the window for a row near the bottom, and is null with no room', () => {
     expect(edgePlacement({ ...row, top: 860, bottom: 884 }, 1440, 900, 'page')).toMatchObject({ top: 254, height: 630 })
     expect(edgePlacement(row, 0, 900)).toBeNull()
+  })
+})
+
+describe('BoardPreview header ID (YAZ-6567 1E)', () => {
+  let root: Root | null = null
+
+  afterEach(() => {
+    act(() => root?.unmount())
+    root = null
+    vi.restoreAllMocks()
+    document.body.replaceChildren()
+  })
+
+  it('shows an indexed board ID right after its name when idInTitle is on, and hides it when off', async () => {
+    vi.spyOn(boardPreviews, 'load').mockResolvedValue('')
+    const source = createWikilinkResolveSource()
+    source.update(() => null, [{ path: '/v/Diagrams/Flow.drawio', title: 'Flow', id: 'EMB-119', aliases: [], links: [], properties: {} } as never], [], true)
+    const aside = document.createElement('aside')
+    document.body.appendChild(aside)
+    const anchor = createRef<HTMLElement>() as { current: HTMLElement | null }
+    anchor.current = aside
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+
+    await act(async () => {
+      root?.render(<BoardPreview root="/v" node={{ path: '/v/Diagrams/Flow.drawio' }} cacheKey="k1" wikilinks={source} idInTitle anchor={anchor} />)
+    })
+    expect(document.querySelector('.board-preview__name + .board-preview__id')?.textContent).toBe('EMB-119')
+
+    await act(async () => {
+      root?.render(<BoardPreview root="/v" node={{ path: '/v/Diagrams/Flow.drawio' }} cacheKey="k1" wikilinks={source} idInTitle={false} anchor={anchor} />)
+    })
+    expect(document.querySelector('.board-preview__id')).toBeNull()
   })
 })

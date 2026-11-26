@@ -3483,3 +3483,216 @@ span.cards-wizard__pill {
   display: inline-block;
   line-height: 1.4286;
 }
+
+/* ---------- Menu icons (YAZ-6571, MenuIconsControl.tsx) ---------- */
+
+.menu-icons-control {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.menu-icons-control__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.menu-icons-control__disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.menu-icons-control__disclosure:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.menu-icons-control__disclosure:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.menu-icons-control__chevron {
+  flex: none;
+  transition: transform 120ms ease;
+}
+
+.menu-icons-control__disclosure[aria-expanded='true'] .menu-icons-control__chevron {
+  transform: rotate(180deg);
+}
+
+.menu-icons-control__panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px;
+  gap: 14px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.menu-icons-control__picker {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.menu-icons-control__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 30px;
+}
+
+.menu-icons-control__row-label {
+  font-size: 13px;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.menu-icons-control__tiles {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.menu-icons-control__tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-side);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.menu-icons-control__tile:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.menu-icons-control__tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.menu-icons-control__tile--off {
+  width: auto;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.menu-icons-control__tile--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.menu-icons-control__tile--active:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.menu-icons-control__footer {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 4px;
+}
+
+.menu-icons-control__reset {
+  padding: 4px 10px;
+  font-size: 12.5px;
+}
+
+.menu-icons-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.menu-icons-preview__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+.menu-icons-preview__menu {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--fg);
+  user-select: none;
+}
+
+[data-theme='dark'] .menu-icons-preview__menu {
+  background: var(--bg-side);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.menu-icons-preview__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  border-radius: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-icons-preview__slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--fg);
+  opacity: 0.75;
+}
+
+.menu-icons-preview__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-icons-preview__divider {
+  height: 1px;
+  margin: 3px 4px;
+  background: var(--border);
+}
+
+@media (max-width: 780px) {
+  .menu-icons-control__panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

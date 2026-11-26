@@ -10,6 +10,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { IndexRecord } from '@shared/types'
 import { SWITCH_MS } from '../sidebar/ContextMenu'
+import { applyMenuIcons, resetMenuIconsForTest } from '../views/view/menuIconsStore'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
 import { openMenuAt, type LinkActions } from './linkMenu'
 import type { MarkdownLinkNav } from './markdownLink'
@@ -85,6 +86,7 @@ async function mountMarkdown(markdown: string, extra: Partial<MarkdownLinkNav> =
 }
 
 afterEach(async () => {
+  resetMenuIconsForTest()
   for (const m of mounted.splice(0)) {
     await m.crepe.destroy()
     m.root.remove()
@@ -298,12 +300,44 @@ describe('each new row calls its door with the link\'s target (YAZ-3740)', () =>
     expect(acts.listState).toHaveBeenCalledWith(PAGE)
   })
 
-  it('demo M2: only Show in sidebar (YAZ-6535), Copy path, Add to focus and Add to favorites carry an icon, as in the tab menu; no row has a hint', async () => {
+  it('demo M2 / YAZ-6567: Open in new tab, Open in new window, Show in sidebar, Copy path, Add to focus and Add to favorites carry an icon; no row has a hint', async () => {
     const { root, view } = await mount('pad [[YAS-466]] tail\n')
     const menu = menuOf(root, view, 'AR v2 plan')
     const rows = Array.from(menu.querySelectorAll<HTMLElement>(':scope > .ctx-menu__item, :scope > .ctx-menu__parent > .ctx-menu__item'))
-    expect(rows.filter((row) => row.querySelector('svg') !== null).map((row) => row.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Add to focus', 'Remove from favorites'])
+    expect(rows.filter((row) => row.querySelector('svg') !== null).map((row) => row.textContent)).toEqual(['Open in new tab', 'Open in new window', 'Show in sidebar', 'Copy path', 'Add to focus', 'Remove from favorites'])
     expect(rows.filter((row) => row.dataset.hint !== undefined && row.dataset.hint !== '')).toEqual([])
+  })
+
+  it('YAZ-6567: customizable icons follow menuIconsStore variants, per-action none, and global off', async () => {
+    const { root, view } = await mount('pad [[YAS-466]] tail\n')
+    const defaultMenu = menuOf(root, view, 'AR v2 plan')
+    const defaultNewTabHtml = rowOf(defaultMenu, 'Open in new tab').querySelector('svg')?.innerHTML
+    const defaultNewWinHtml = rowOf(defaultMenu, 'Open in new window').querySelector('svg')?.innerHTML
+    const defaultSidebarHtml = rowOf(defaultMenu, 'Show in sidebar').querySelector('svg')?.innerHTML
+    expect(defaultNewTabHtml).toBeTruthy()
+    expect(defaultNewWinHtml).toBeTruthy()
+    expect(defaultSidebarHtml).toBeTruthy()
+
+    applyMenuIcons({ openNewTab: 'raised-tab', newWindow: 'win-plus', showInSidebar: 'crosshair' })
+    const customMenu = menuOf(root, view, 'AR v2 plan')
+    expect(rowOf(customMenu, 'Open in new tab').querySelector('svg')?.innerHTML).not.toBe(defaultNewTabHtml)
+    expect(rowOf(customMenu, 'Open in new window').querySelector('svg')?.innerHTML).not.toBe(defaultNewWinHtml)
+    expect(rowOf(customMenu, 'Show in sidebar').querySelector('svg')?.innerHTML).not.toBe(defaultSidebarHtml)
+
+    applyMenuIcons({ openNewTab: 'none', newWindow: 'none', showInSidebar: 'none' })
+    const noneMenu = menuOf(root, view, 'AR v2 plan')
+    for (const label of ['Open in new tab', 'Open in new window', 'Show in sidebar']) {
+      expect(rowOf(noneMenu, label).querySelector('svg')).toBeNull()
+      expect(rowOf(noneMenu, label).querySelector('.ctx-menu__label')).toBeNull()
+    }
+    expect(rowOf(noneMenu, 'Copy path').querySelector('svg')).not.toBeNull()
+
+    applyMenuIcons('off')
+    expect(document.documentElement.dataset.menuIcons).toBe('off')
+    const offMenu = menuOf(root, view, 'AR v2 plan')
+    for (const label of ['Open in new tab', 'Open in new window', 'Show in sidebar']) {
+      expect(rowOf(offMenu, label).querySelector('svg')).toBeNull()
+    }
   })
 
   it('Copy name and ID, Copy name and Copy path copy their text; the notice shows what a name or ID row copied (demo M1)', async () => {

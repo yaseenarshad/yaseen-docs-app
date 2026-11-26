@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { cardSkillPrompt } from '../vault/cardSkill'
+import { applyMenuIcons, resetMenuIconsForTest } from '../views/view/menuIconsStore'
 import { AGENT_PROMPT } from '../course/script'
 import { buildMenuSections, CARD_SKILL_MENU, type MenuAction, type MenuHandlers, type MenuParent, type MenuSection, type MenuSectionTargets, scopeGroup, SCOPE_TIPS } from './menuSections'
 
@@ -1042,5 +1043,58 @@ describe('the card skill\'s row (YAZ-5108)', () => {
 
   it('a row that is not the skill\'s keeps the menu it had', () => {
     expect(labelsOf(build({ ...FILE_ROW, cardSkill: null }))).toEqual(labelsOf(build(FILE_ROW)))
+  })
+})
+
+describe('customizable menu icons in menuSections (YAZ-6567)', () => {
+  afterEach(() => {
+    resetMenuIconsForTest()
+  })
+
+  const svgOf = (sections: MenuSection[], label: string): string | null => {
+    const icon = itemOf(sections, label)?.icon
+    return icon === undefined ? null : renderToStaticMarkup(icon as ReactElement)
+  }
+
+  it('attaches default icons to Open in new tab, Open N in new tabs, Open in new window, Show in sidebar, Hide all others, and Show all', () => {
+    const h = { onHideOthers: vi.fn() }
+    const single = build({ ...FILE_ROW, openTabPaths: ['/v/a.md'], newWindowPath: '/v/a.md', showPath: '/v/a.md', hideOthers: { dir: '/v/d', on: false } }, h)
+    const plural = build({ ...FILE_ROW, openTabPaths: ['/v/a.md', '/v/b.md'], hideOthers: { dir: '/v/d', on: true } }, h)
+    for (const label of ['Open in new tab', 'Open in new window', 'Show in sidebar', 'Hide all others']) {
+      expect(svgOf(single, label)).toContain('<svg')
+    }
+    expect(svgOf(plural, 'Open 2 in new tabs')).toContain('<svg')
+    expect(svgOf(plural, 'Show all')).toContain('<svg')
+  })
+
+  it('swaps SVG markup on variant switch and omits icon cleanly on per-action none and global off', () => {
+    const h = { onHideOthers: vi.fn() }
+    const row = { ...FILE_ROW, openTabPaths: ['/v/a.md'], newWindowPath: '/v/a.md', showPath: '/v/a.md', hideOthers: { dir: '/v/d', on: false } }
+    const defSections = build(row, h)
+    const defTab = svgOf(defSections, 'Open in new tab')
+    const defWin = svgOf(defSections, 'Open in new window')
+    const defShow = svgOf(defSections, 'Show in sidebar')
+    const defHide = svgOf(defSections, 'Hide all others')
+
+    applyMenuIcons({ openNewTab: 'raised-tab', newWindow: 'win-plus', showInSidebar: 'crosshair', hideOthers: 'funnel' })
+    const customSections = build(row, h)
+    expect(svgOf(customSections, 'Open in new tab')).not.toBe(defTab)
+    expect(svgOf(customSections, 'Open in new window')).not.toBe(defWin)
+    expect(svgOf(customSections, 'Show in sidebar')).not.toBe(defShow)
+    expect(svgOf(customSections, 'Hide all others')).not.toBe(defHide)
+
+    applyMenuIcons({ openNewTab: 'none', newWindow: 'none', showInSidebar: 'none', hideOthers: 'none' })
+    const noneSections = build(row, h)
+    for (const label of ['Open in new tab', 'Open in new window', 'Show in sidebar', 'Hide all others']) {
+      expect(itemOf(noneSections, label)?.icon).toBeUndefined()
+    }
+    expect(itemOf(build({ ...row, hideOthers: { dir: '/v/d', on: true } }, h), 'Show all')?.icon).toBeUndefined()
+
+    applyMenuIcons('off')
+    expect(document.documentElement.dataset.menuIcons).toBe('off')
+    const offSections = build(row, h)
+    for (const label of ['Open in new tab', 'Open in new window', 'Show in sidebar', 'Hide all others']) {
+      expect(itemOf(offSections, label)?.icon).toBeUndefined()
+    }
   })
 })

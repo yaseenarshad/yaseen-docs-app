@@ -16,9 +16,37 @@ export type { CoursePatch, CourseSpeed, CourseState } from './courseState'
 import { DEFAULT_DAILY_PAGE_FORMAT } from './dailyPageDefault'
 import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from './iconPacks'
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT } from './timeFormat'
+import { DEFAULT_MENU_ICONS, type MenuIconsSetting } from './menuIcons'
 import { sanitizeVaultLauncherBadge, type VaultLauncherPreset } from './vaultIcon'
 export { IDS_IN_TABS, TAB_ID_LAYOUTS, type IdsInTabs, type TabIdLayout } from './showIds'
 export type { VaultLauncherPreset } from './vaultIcon'
+export {
+  DEFAULT_MENU_ICONS,
+  DEFAULT_MENU_ICON_PICKS,
+  DUPLICATE_TAB_ICON_VARIANTS,
+  HIDE_OTHERS_ICON_VARIANTS,
+  MENU_ICON_ACTIONS,
+  MENU_ICON_VARIANTS,
+  NEW_WINDOW_ICON_VARIANTS,
+  OPEN_NEW_TAB_ICON_VARIANTS,
+  SHOW_IN_SIDEBAR_ICON_VARIANTS,
+  isDefaultMenuIcons,
+  isMenuIconsSetting,
+  patchMenuIconPick,
+  resolveMenuIcons,
+  sanitizeMenuIcons,
+  type DuplicateTabIconVariant,
+  type HideOthersIconVariant,
+  type MenuIconAction,
+  type MenuIconVariantOf,
+  type MenuIconsCustom,
+  type MenuIconsSetting,
+  type NewWindowIconVariant,
+  type OpenNewTabIconVariant,
+  type ResolvedMenuIconPicks,
+  type ResolvedMenuIcons,
+  type ShowInSidebarIconVariant,
+} from './menuIcons'
 
 // ---------- Errors ----------
 
@@ -2585,6 +2613,8 @@ export interface SettingsState {
   sidebarFolderIcons: SidebarFolderIcons
   /** The sidebar tree (YAZ-3440 D6): a folder's arrow turns at once (`instant`, the default) or over 0.12s (`smooth`, as before). Reduce motion always turns it at once. It travels with the settings folder. */
   sidebarArrowMotion: SidebarArrowMotion
+  /** Settings › Appearance › Menus › Menu icons (YAZ-6567): `'on'` (approved defaults), `'off'` (hide all action icons), or per-action variant overrides. Global-only; travels with the settings folder. */
+  menuIcons: MenuIconsSetting
   /**
    * The sidebar tree (YAZ-3440 D13): the Files tab follows the open tab, as VS Code's "Auto Reveal" does. When the
    * active tab changes to a file or a folder in a vault of the window, Files opens the folders above it and scrolls
@@ -3390,6 +3420,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarFileIcons: 'quiet',
   sidebarFolderIcons: 'plain',
   sidebarArrowMotion: 'instant',
+  menuIcons: DEFAULT_MENU_ICONS,
   sidebarRevealActive: false,
   sidebarPlace: 'window',
   sidebarPerTabWidth: true,

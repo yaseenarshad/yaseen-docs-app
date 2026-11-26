@@ -4,6 +4,7 @@ import { expect, it, vi } from 'vitest'
 import { api, BridgeRequestError } from '../../api'
 import { PageActions } from '../../lib/pageActions'
 import { OtherFilesMove } from './otherFilesMove'
+import { applyMenuIcons, resetMenuIconsForTest } from './menuIconsStore'
 import { PageContextMenu } from './PageContextMenu'
 import { ShortcutActions } from './shortcutDoors'
 
@@ -298,6 +299,48 @@ it('places Focus directly above Favorites in the page group (YAZ-6550)', () => {
     expect(items).toEqual(['Open', 'Open in', 'Add to focus', 'Remove from favorites', 'Copy path'])
     expect(items.indexOf('Add to focus')).toBe(items.indexOf('Remove from favorites') - 1)
   } finally {
+    act(() => root.unmount())
+    host.remove()
+  }
+})
+
+it('YAZ-6567: carries ctx-menu--glyphs and wires customizable Open in new tab / Open in new window icons', () => {
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const buttonOf = (label: string) => [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent === label)!
+
+  try {
+    act(() => {
+      root.render(
+        <PageActions.Provider value={{ openNewWindow: vi.fn() }}>
+          <PageContextMenu x={12} y={34} path="/vault/page.md" title="page" onOpen={vi.fn()} onOpenBackground={vi.fn()} onClose={vi.fn()} />
+        </PageActions.Provider>,
+      )
+    })
+    expect(host.querySelector('.ctx-menu')?.classList.contains('ctx-menu--glyphs')).toBe(true)
+    const defaultTabSvg = buttonOf('Open in new tab').querySelector('svg')?.innerHTML
+    const defaultWinSvg = buttonOf('Open in new window').querySelector('svg')?.innerHTML
+    expect(defaultTabSvg).toBeTruthy()
+    expect(defaultWinSvg).toBeTruthy()
+    expect(buttonOf('Open').querySelector('.ctx-menu__label')).toBeNull()
+
+    act(() => applyMenuIcons({ openNewTab: 'raised-tab', newWindow: 'win-arrow' }))
+    expect(buttonOf('Open in new tab').querySelector('svg')?.innerHTML).not.toBe(defaultTabSvg)
+    expect(buttonOf('Open in new window').querySelector('svg')?.innerHTML).not.toBe(defaultWinSvg)
+
+    act(() => applyMenuIcons({ openNewTab: 'none', newWindow: 'none' }))
+    expect(buttonOf('Open in new tab').querySelector('svg')).toBeNull()
+    expect(buttonOf('Open in new tab').querySelector('.ctx-menu__label')).toBeNull()
+    expect(buttonOf('Open in new window').querySelector('svg')).toBeNull()
+    expect(buttonOf('Open in new window').querySelector('.ctx-menu__label')).toBeNull()
+
+    act(() => applyMenuIcons('off'))
+    expect(document.documentElement.dataset.menuIcons).toBe('off')
+    expect(buttonOf('Open in new tab').querySelector('svg')).toBeNull()
+    expect(buttonOf('Open in new window').querySelector('svg')).toBeNull()
+  } finally {
+    resetMenuIconsForTest()
     act(() => root.unmount())
     host.remove()
   }

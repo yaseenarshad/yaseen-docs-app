@@ -3422,6 +3422,20 @@ body.drag-held iframe {
   padding-left: 33px;
 }
 
+/* Settings › Appearance › Menus › Menu icons = Off (YAZ-6567, YAZ-6575): hide every glyph and file icon inside context menus
+   and collapse the 33 px icon gutter to 10 px, without affecting swatch/style dropdown panels (.view-style__panel, .cal-line__panel). */
+[data-menu-icons='off'] .ctx-menu .ctx-menu__label > svg,
+[data-menu-icons='off'] .ctx-menu .ctx-menu__label > .file-icon {
+  display: none;
+}
+
+[data-menu-icons='off'] .ctx-menu.ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__item:not(:has(> .ctx-menu__label)),
+[data-menu-icons='off'] .ctx-menu.ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__parent > .ctx-menu__item:not(:has(> .ctx-menu__label)),
+[data-menu-icons='off'] .ctx-menu.ctx-menu--editor.ctx-menu--glyphs > .ctx-menu__item:not(:has(> .ctx-menu__label)),
+[data-menu-icons='off'] .ctx-menu.ctx-menu--editor.ctx-menu--glyphs > .ctx-menu__parent > .ctx-menu__item:not(:has(> .ctx-menu__label)) {
+  padding-left: 10px;
+}
+
 /* The link menu's top line, the page's name (YAZ-3747 demo): a long one ends in "…" and never widens the menu. */
 .ctx-menu--editor > .ctx-menu__item:disabled:first-child {
   display: block;

@@ -6,6 +6,9 @@
 /** `path` is the folder `dir` or stands inside it, at any depth. */
 export const inFolder = (dir: string, path: string): boolean => path === dir || path.startsWith(`${dir}/`)
 
+/** True when a `focusOnly` value is a disk folder path (POSIX or Windows) rather than a custom `+ Folder` id (YAZ-6577). */
+export const isDiskFolderPath = (value: string | null): value is string => value !== null && (value.includes('/') || value.includes('\\'))
+
 /** A folder renamed or moved (`file:renamed`, kind `dir`): the folder shown alone follows when it is that folder or inside it. */
 export const filesOnlyAfterRename = (only: string | null, oldDir: string, newDir: string): string | null =>
   only !== null && inFolder(oldDir, only) ? newDir + only.slice(oldDir.length) : only

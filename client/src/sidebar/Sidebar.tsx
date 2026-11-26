@@ -10,7 +10,8 @@ import { isReadOnlyProperties } from '@shared/readOnly'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api } from '../api'
 import { osVerbs } from '../lib/osVerbs'
-import { CalendarIcon, GridIcon, InboxIcon, SidebarPanelIcon } from '../views/view/icons'
+import { CalendarIcon, GridIcon, InboxIcon, NewTabIcon, NewWindowIcon, SidebarPanelIcon } from '../views/view/icons'
+import { isMenuIconVisible, useMenuIcons } from '../views/view/menuIconsStore'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { embeddedCards, makeCardResolver } from '@shared/cardLinks'
 import type { WatchSource } from '../hooks/useWatch'
@@ -51,6 +52,7 @@ import { folderPageRows, showFolderPageFiles } from './folderPageRows'
 import { askPageTab } from '../views/pageTabRequest'
 import { datedSeed, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
 import { FILES_ONLY_GRACE_MS, inFolder } from './filesOnly'
+import { useListOnlyDir } from './useListOnlyDir'
 import { SettingsButton } from '../settings/SettingsButton'
 import { UpdatePill } from '../update/UpdatePill'
 import { ZoomMenu } from './ZoomMenu'
@@ -110,6 +112,8 @@ export interface SidebarVault {
   idsInSearch?: () => IdsInSearch
   /** Saves this vault's "Show IDs in search" choice (YAZ-6502), used by the Search ↑↓ menu. */
   setIdsInSearch?: (next: IdsInSearch) => void
+  /** This vault's "Show IDs in the title" (YAZ-4940, YAZ-6567 1E): also shows the page/board ID in hover preview headers. Absent → off. */
+  idInTitle?: boolean
   /** This vault's "Show IDs in the files list" (YAZ-4940): each page row of Files, Focus and Favorites ends with its ID's number ("#12") or the full ID. Absent → off. */
   idsInFiles?: IdsInFiles
   /** This vault's "Show IDs in recents" (YAZ-6537) and its setter, used by the Recents ↑↓ menu. Absent → off. */
@@ -826,6 +830,7 @@ export function Sidebar({
   onHistoryFile,
   onShareFile,
 }: SidebarProps) {
+  useMenuIcons()
   // The tab the sort button serves (YAZ-3227 D5): Files, Focus, Favorites and Search, whose sort is its own (YAZ-3511 D3). Sessions and Recents have none.
   const sortedTab: SortMenuTab | null = lens === 'files' || lens === 'focus' || lens === 'favorites' || lens === 'search' ? lens : null
   const stored = sortedTab === null ? undefined : sortedTab === 'search' ? settings.searchSort : settings.sidebarSort[sortedTab]
@@ -992,6 +997,8 @@ export function Sidebar({
   const shownTab = lens === 'favorites' ? lists.favoritesTab : lists.focusTab
   // "Hide all others" (F8): the folder shown alone, while it still exists in the tab that shows (folder ids are unique).
   const onlyFolder = focusOnly === null ? undefined : shownTab.folders.find((folder) => folder.id === focusOnly)
+  // "Hide all others" on a disk folder in Favorites or Focus (YAZ-6574, YAZ-6577).
+  const onlyListDir = useListOnlyDir({ focusOnly, onlyFolder, forest, lens, favoriteNodes, focusNodes, folders: shownTab.folders, roots, loaded, openTo, onFocusOnly })
   const newFolder = (): void => {
     const id = shownTab.addTo([], null)
     if (id !== null) setEditingFolder(id)
@@ -1122,7 +1129,8 @@ export function Sidebar({
     return copyDirs(favoriteRoots(forest, paths))
   }, [forest, stackFolders, onlyFolder, roots])
   const tabDirs = lens === 'favorites' ? favoriteDirs : focusDirs
-  const listDirs = useMemo(() => (stackDirs.length === 0 ? tabDirs : [...new Set([...tabDirs, ...stackDirs])]), [tabDirs, stackDirs])
+  const onlyListDirs = useMemo(() => (onlyListDir === null ? NO_DIRS : copyDirs([onlyListDir])), [onlyListDir])
+  const listDirs = useMemo(() => (onlyListDir !== null ? onlyListDirs : stackDirs.length === 0 ? tabDirs : [...new Set([...tabDirs, ...stackDirs])]), [onlyListDir, onlyListDirs, tabDirs, stackDirs])
   // What the chevrons button unfolds on the active lens: the folders that tab shows (YAZ-2619 R10).
   // With a folder shown alone in Files (YAZ-5790), only the folders in it.
   const filesDirs = useMemo(() => (filesOnly === null ? dirs : dirs.filter((dir) => inFolder(filesOnly, dir))), [dirs, filesOnly])
@@ -1586,7 +1594,7 @@ export function Sidebar({
     reveal: async (target) => {
       flushSync(() => {
         setAutomationReveal(target)
-        if (onlyFolder !== undefined) onFocusOnly?.(null)
+        if (onlyFolder !== undefined || onlyListDir !== null) onFocusOnly?.(null)
         if (target.path !== undefined) {
           const path = target.path
           // A folder opens itself too, as a reveal in Files does.
@@ -1692,13 +1700,13 @@ export function Sidebar({
       const listLens = !asSearch && (lens === 'focus' || lens === 'favorites') ? lens : null
       const listTab = listLens === 'focus' ? listsNow.current.focusTab : listsNow.current.favoritesTab
       const shownAlone = listLens === null ? undefined : listTab.folders.find((folder) => folder.id === focusOnly)
-      // The folder Files shows alone (YAZ-5790): its blank space is that folder, in a window with one vault or more.
-      const filesAloneDir = !asSearch && lens === 'files' ? filesOnly : null
+      // The folder shown alone in Files (YAZ-5790) or as a disk folder in Favorites/Focus (YAZ-6574): blank space targets that folder.
+      const aloneDir = !asSearch ? (lens === 'files' ? filesOnly : (onlyListDir?.path ?? null)) : null
       // Blank space of a window with two or more vaults is a vault's root on Focus and Favorites alone (YAZ-4782).
-      const targetDir = node === null && filesAloneDir !== null ? filesAloneDir : node === null && multi ? (listLens === null ? null : vaultOfFolder(shownAlone, roots)) : targetDirFor(node, top)
+      const targetDir = node === null && aloneDir !== null ? aloneDir : node === null && multi ? (listLens === null ? null : vaultOfFolder(shownAlone, roots)) : targetDirFor(node, top)
       const place: CreatePlace | null =
         listLens === null ? null
-        : node === null ? { list: listLens, folder: shownAlone?.id ?? null, after: null }
+        : node === null ? (onlyListDir !== null ? null : { list: listLens, folder: shownAlone?.id ?? null, after: null })
         : node.type === 'file' && node.shortcutIn === undefined && node.pageOf === undefined && node.top === node.path ? { list: listLens, folder: listTab.folderOf(node.path)?.id ?? null, after: node.path }
         : null
       // The course's guided tour (YAZ-5123): a folder's menu opened (the tour checks which folder).
@@ -1715,7 +1723,7 @@ export function Sidebar({
         cardDir: targetDir !== null && vaultOf(targetDir).review && vaultOf(targetDir).index.ids ? targetDir : null,
         place,
         rowKind: node?.type ?? null,
-        top: asSearch ? null : (node?.top ?? null),
+        top: asSearch ? null : (node?.top ?? (node === null && onlyListDir !== null ? onlyListDir.path : null)),
         // ONE field per item, each resolved on its own (GRO-2296). Several are the same
         // expression TODAY and must stay independent anyway — `copyPath`'s root fallback
         // below is exactly the divergence the split exists for.
@@ -1763,8 +1771,17 @@ export function Sidebar({
         reviewCard: pageRecord?.kind === 'card',
         // A shortcut is a folder's ID on a page: offered only where the vault uses IDs (YAZ-2523 🔒 V5).
         shortcutDir: home.index.ids && plural === null && node?.type === 'dir' && vaultRow === null ? node.path : null,
-        // "Hide all others" (YAZ-5790): a folder row of the Files tree itself, outside a 2+ selection; "Show all" on the one shown alone.
-        hideOthers: !asSearch && lens === 'files' && plural === null && node?.type === 'dir' && vaultRow === null && shortcutIn === null && node.pageOf === undefined ? { dir: node.path, on: node.path === filesOnly } : null,
+        // "Hide all others" (YAZ-5790, YAZ-6574): a folder row of Files, Favorites, or Focus outside a 2+ selection; "Show all" on the one shown alone.
+        hideOthers:
+          !asSearch &&
+          (lens === 'files' || lens === 'focus' || lens === 'favorites') &&
+          plural === null &&
+          node?.type === 'dir' &&
+          vaultRow === null &&
+          shortcutIn === null &&
+          node.pageOf === undefined
+            ? { dir: node.path, on: node.path === (lens === 'files' ? filesOnly : focusOnly) }
+            : null,
         removeShortcut: node === null || shortcutIn === null ? null : { path: node.path, dir: shortcutIn },
         // The known vaults that are not in this window (YAZ-2602 D2), in the order of the ⌘O list, read as the menu opens.
         addVaults: node !== null ? null : storage.listVaults().flatMap(({ path, name }) => (roots.includes(path) ? [] : [{ path, name }])),
@@ -1777,7 +1794,7 @@ export function Sidebar({
         ...(skillRow !== null ? { cardSkill: skillRow, ...cardSkillTargets(skillRow) } : inSkill ? READ_ONLY_APP_ROW : {}),
       })
     },
-    [root, roots, appRoots, cardSkillTargets, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, dirs, iconTargets, focusOnly, filesOnly],
+    [root, roots, appRoots, cardSkillTargets, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, dirs, iconTargets, focusOnly, filesOnly, onlyListDir],
   )
   // A right-click on a Recents row (YAZ-3235 D7, S20): the one-row file menu, "Show in sidebar" first,
   // as a row of the new tab page. Through a ref, so the memo list does not draw again on each selection.
@@ -1940,6 +1957,20 @@ export function Sidebar({
   const newInFolder = (list: 'focus' | 'favorites') => (id: string, kind: EntryKind) => {
     const folder = (list === 'focus' ? lists.focusTab : lists.favoritesTab).folders.find((f) => f.id === id)
     startCreateAt(kind, '', { targetDir: vaultOfFolder(folder, roots), lens: list, top: null, place: { list, folder: id, after: null } })
+  }
+  const focusFolderList = (kind: 'focus' | 'favorites') => {
+    const tab = kind === 'favorites' ? lists.favoritesTab : lists.focusTab
+    return (
+      <FocusFolderList
+        kind={kind} onFold={setStackFold} folders={onlyFolder === undefined ? tab.folders : [onlyFolder]} only={onlyFolder?.id ?? null}
+        onHideOthers={(id) => onFocusOnly?.(id)} roots={roots} editing={editingFolder} onEdit={setEditingFolder}
+        renderItems={(_folder, paths) => <Tree {...treeProps} nodes={favoriteRoots(forest!, paths)} move={fileMove} reorder={reorder} sort={sort} copies shift={1} />}
+        onRename={tab.rename} onDelete={tab.remove} scopesOf={tab.scopesOfFolder} onSetScope={tab.setFolderScope}
+        onReorderFolders={tab.reorderFolders} scope={kind === 'favorites' ? lists.favoritesScope : lists.focusScope}
+        onNew={newInFolder(kind)} pending={pending} openableOf={(paths) => paths.filter((path) => findNode(forest ?? [], path) !== null)}
+        onOpenAll={(paths) => paths.forEach((path) => (onOpenFileTab ?? onOpenFileBackground)(path))} onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
+      />
+    )
   }
   /** A New … on blank space of the tab (YAZ-4782), with no folder shown alone: the field after the top level's last row, where the item goes. */
   const listEndField = (list: 'focus' | 'favorites') =>
@@ -2125,7 +2156,7 @@ export function Sidebar({
 
   // Blank space is one vault's root only in a window with one vault, and only on a tab that has a tree of it (YAZ-3247 D12).
   // With a folder shown alone in Files (YAZ-5790), blank space is that folder, and its row lights.
-  const blankAlone = lens === 'files' && !searching ? filesOnly : null
+  const blankAlone = !searching ? (lens === 'files' ? filesOnly : (onlyListDir?.path ?? null)) : null
   const blankDrop = (blankAlone !== null || !multi) && !searching && lens !== 'sessions' && lens !== 'recents'
   const blankDir = blankAlone ?? top
   const blankLight = (): HTMLElement | null => (blankAlone === null ? headerRef.current : (bodyRef.current?.querySelector<HTMLElement>(`.tree__row[data-path="${CSS.escape(blankAlone)}"]`) ?? null))
@@ -2452,42 +2483,22 @@ export function Sidebar({
             {errorLines}
             {!loaded && favoriteNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
             {loaded && (
-              // Favorite folders (YAZ-4460 demo), by the Focus tab's rules: the bar with "+ Folder" — or, while one folder
-              // shows alone, its name and "Show all".
+              // Favorite folders (YAZ-4460 demo, YAZ-6574), by the Focus tab's rules: the bar with "+ Folder" — or, while one folder
+              // (custom or disk folder) shows alone, its name and "Show all".
               <div className="sidebar__focus-bar">
                 {/* No count (YAZ-4470, 10): which list shows, and on hover what that means. */}
-                <span title={onlyFolder !== undefined ? undefined : lists.favoritesScope === 'workspace' ? SCOPE_TIPS.barWorkspace : SCOPE_TIPS.barVault}>{onlyFolder !== undefined ? `Only ${onlyFolder.name}` : lists.favoritesScope === 'workspace' ? 'Workspace list' : 'Vault list'}</span>
-                <button type="button" className="sidebar__focus-clear" onClick={onlyFolder !== undefined ? () => onFocusOnly?.(null) : newFolder}>
-                  {onlyFolder !== undefined ? 'Show all' : '+ Folder'}
+                <span title={onlyFolder !== undefined || onlyListDir !== null ? undefined : lists.favoritesScope === 'workspace' ? SCOPE_TIPS.barWorkspace : SCOPE_TIPS.barVault}>
+                  {onlyFolder !== undefined ? `Only ${onlyFolder.name}` : onlyListDir !== null ? `Only ${nameOf(onlyListDir.path)}` : lists.favoritesScope === 'workspace' ? 'Workspace list' : 'Vault list'}
+                </span>
+                <button type="button" className="sidebar__focus-clear" onClick={onlyFolder !== undefined || onlyListDir !== null ? () => onFocusOnly?.(null) : newFolder}>
+                  {onlyFolder !== undefined || onlyListDir !== null ? 'Show all' : '+ Folder'}
                 </button>
               </div>
             )}
-            {loaded && onlyFolder === undefined && favoriteNodes.length === 0 && lists.favoritesTab.folders.length === 0 && <p className="sidebar__msg">{lists.favoritesScope === 'workspace' ? 'No favorites in this workspace yet.' : 'No favorites yet.'} Right-click a file or folder → Add to favorites.</p>}
-            {lists.favoritesTab.folders.length > 0 && forest !== null && (
-              <FocusFolderList
-                kind="favorites"
-                onFold={setStackFold}
-                folders={onlyFolder === undefined ? lists.favoritesTab.folders : [onlyFolder]}
-                only={onlyFolder?.id ?? null}
-                onHideOthers={(id) => onFocusOnly?.(id)}
-                roots={roots}
-                renderItems={(_folder, paths) => <Tree {...treeProps} nodes={favoriteRoots(forest, paths)} move={fileMove} reorder={reorder} sort={sort} copies shift={1} />}
-                editing={editingFolder}
-                onEdit={setEditingFolder}
-                onRename={lists.favoritesTab.rename}
-                onDelete={lists.favoritesTab.remove}
-                scopesOf={lists.favoritesTab.scopesOfFolder}
-                onSetScope={lists.favoritesTab.setFolderScope}
-                onReorderFolders={lists.favoritesTab.reorderFolders}
-                scope={lists.favoritesScope}
-                onNew={newInFolder('favorites')}
-                pending={pending}
-                openableOf={(paths) => paths.filter((path) => findNode(forest ?? [], path) !== null)}
-                onOpenAll={(paths) => paths.forEach((path) => (onOpenFileTab ?? onOpenFileBackground)(path))}
-                onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
-              />
-            )}
-            {onlyFolder === undefined && favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
+            {loaded && onlyFolder === undefined && onlyListDir === null && favoriteNodes.length === 0 && lists.favoritesTab.folders.length === 0 && <p className="sidebar__msg">{lists.favoritesScope === 'workspace' ? 'No favorites in this workspace yet.' : 'No favorites yet.'} Right-click a file or folder → Add to favorites.</p>}
+            {onlyListDir === null && lists.favoritesTab.folders.length > 0 && forest !== null && focusFolderList('favorites')}
+            {onlyListDir !== null && <Tree {...treeProps} nodes={[onlyListDir]} move={fileMove} sort={sort} copies />}
+            {onlyFolder === undefined && onlyListDir === null && favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
             {listEndField('favorites')}
           </>
         ) : lens === 'focus' ? (
@@ -2499,16 +2510,16 @@ export function Sidebar({
           <>
             {errorLines}
             {!loaded && focusNodes.length === 0 && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
-            {loaded && onlyFolder !== undefined && (
-              // "Hide all others" (YAZ-4460 F8): the one folder, and the way back.
+            {loaded && (onlyFolder !== undefined || onlyListDir !== null) && (
+              // "Hide all others" (YAZ-4460 F8, YAZ-6574): the one folder (custom or disk), and the way back.
               <div className="sidebar__focus-bar">
-                <span>Only {onlyFolder.name}</span>
+                <span>Only {onlyFolder !== undefined ? onlyFolder.name : nameOf(onlyListDir!.path)}</span>
                 <button type="button" className="sidebar__focus-clear" onClick={() => onFocusOnly?.(null)}>
                   Show all
                 </button>
               </div>
             )}
-            {loaded && onlyFolder === undefined && (
+            {loaded && onlyFolder === undefined && onlyListDir === null && (
               // The bar stands whenever the tab can make a focus folder (YAZ-4460 F3). No count (YAZ-4470, 10): which list shows.
               <div className="sidebar__focus-bar">
                 <span title={lists.focusScope === 'workspace' ? SCOPE_TIPS.barWorkspace : SCOPE_TIPS.barVault}>{lists.focusScope === 'workspace' ? 'Workspace list' : 'Vault list'}</span>
@@ -2525,31 +2536,9 @@ export function Sidebar({
                 </span>
               </div>
             )}
-            {loaded && onlyFolder === undefined && focusNodes.length === 0 && lists.focusTab.folders.length === 0 && <p className="sidebar__msg">{lists.focusScope === 'workspace' ? 'Nothing in focus in this workspace.' : 'Nothing in focus.'} Right-click a file or folder → Add to focus.</p>}
-            {lists.focusTab.folders.length > 0 && forest !== null && (
-              <FocusFolderList
-                kind="focus"
-                onFold={setStackFold}
-                folders={onlyFolder === undefined ? lists.focusTab.folders : [onlyFolder]}
-                only={onlyFolder?.id ?? null}
-                onHideOthers={(id) => onFocusOnly?.(id)}
-                roots={roots}
-                renderItems={(_folder, paths) => <Tree {...treeProps} nodes={favoriteRoots(forest, paths)} move={fileMove} reorder={reorder} sort={sort} copies shift={1} />}
-                editing={editingFolder}
-                onEdit={setEditingFolder}
-                onRename={lists.focusTab.rename}
-                onDelete={lists.focusTab.remove}
-                scopesOf={lists.focusTab.scopesOfFolder}
-                onSetScope={lists.focusTab.setFolderScope}
-                onReorderFolders={lists.focusTab.reorderFolders}
-                scope={lists.focusScope}
-                onNew={newInFolder('focus')}
-                pending={pending}
-                openableOf={(paths) => paths.filter((path) => findNode(forest ?? [], path) !== null)}
-                onOpenAll={(paths) => paths.forEach((path) => (onOpenFileTab ?? onOpenFileBackground)(path))}
-                onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
-              />
-            )}
+            {loaded && onlyFolder === undefined && onlyListDir === null && focusNodes.length === 0 && lists.focusTab.folders.length === 0 && <p className="sidebar__msg">{lists.focusScope === 'workspace' ? 'Nothing in focus in this workspace.' : 'Nothing in focus.'} Right-click a file or folder → Add to focus.</p>}
+            {onlyListDir === null && lists.focusTab.folders.length > 0 && forest !== null && focusFolderList('focus')}
+            {onlyListDir !== null && <Tree {...treeProps} nodes={[onlyListDir]} move={fileMove} sort={sort} copies />}
             {confirmClear &&
               createPortal(
                 <ConfirmSheet
@@ -2571,7 +2560,7 @@ export function Sidebar({
                 />,
                 document.body,
               )}
-            {onlyFolder === undefined && focusNodes.length > 0 && <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
+            {onlyFolder === undefined && onlyListDir === null && focusNodes.length > 0 && <Tree {...treeProps} nodes={focusNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
             {listEndField('focus')}
           </>
         ) : (
@@ -2649,7 +2638,10 @@ export function Sidebar({
         <ContextMenu
           x={inboxMenu.x}
           y={inboxMenu.y}
-          sections={[[{ id: 'open-tabs', label: 'Open in new tab', onSelect: () => onInbox(inboxMenu.root) }, ...(onInboxNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', onSelect: () => onInboxNewWindow(inboxMenu.root) }])]]}
+          sections={[[
+            { id: 'open-tabs', label: 'Open in new tab', ...(isMenuIconVisible('openNewTab') ? { icon: <NewTabIcon /> } : {}), onSelect: () => onInbox(inboxMenu.root) },
+            ...(onInboxNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', ...(isMenuIconVisible('newWindow') ? { icon: <NewWindowIcon /> } : {}), onSelect: () => onInboxNewWindow(inboxMenu.root) }]),
+          ]]}
           onClose={() => setInboxMenu(null)}
         />
       )}
@@ -2753,7 +2745,7 @@ export function Sidebar({
               onReviewFolder,
               onReviewPage,
               onAddShortcut: setPickingShortcut,
-              onHideOthers: onFilesOnly,
+              onHideOthers: lens === 'files' ? onFilesOnly : onFocusOnly,
               // A removal clears no value (YAZ-4713 C9): it runs at once, with no sheet.
               onRemoveShortcut: (path, dir) => removeShortcutRow(path, dir),
               onRename: viaTree((path) => setRenamingEntry({ path, kind: menu.rowKind === 'file' ? 'file' : 'dir', top: menu.top })),
@@ -2818,7 +2810,7 @@ export function Sidebar({
           </Suspense>
         </ContextMenuSurface>
       )}
-      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} wikilinksOf={(path) => vaultOf(path).index} nameOf={nameOf} textVarsOf={textVarsFor} enabled={hoverHere} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} float={previewFloat} onClose={closePreview} />
+      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} wikilinksOf={(path) => vaultOf(path).index} idInTitleOf={(path) => vaultOf(path).idInTitle === true} nameOf={nameOf} textVarsOf={textVarsFor} enabled={hoverHere} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} float={previewFloat} onClose={closePreview} />
       {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} unit={vaultUnit(rootOf(confirmingDelete.path))} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
       {pickingShortcut !== null && (
         <ShortcutPicker

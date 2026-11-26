@@ -3942,4 +3942,38 @@ describe('FolderState.launcher (YAZ-6374)', () => {
     await s2.flush()
     expect((await onDisk()).vaultSets.find((s: { id: string }) => s.id === ws.id)?.launcher).toBeUndefined()
   })
+
+  it('YAZ-6567: persists, sanitizes, and syncs menuIcons as a WHOLE_FIELDS global setting', async () => {
+    const s1 = createStore(file)
+    expect(s1.get().settings.menuIcons).toBe('on')
+
+    const custom = { newWindow: 'win-arrow', hideOthers: 'funnel' } as const
+    s1.setSettings({ ...s1.get().settings, menuIcons: custom })
+    await s1.flush()
+    expect((await onDisk()).settings.menuIcons).toEqual(custom)
+
+    // Corrupt keys/values on disk sanitize back cleanly without losing valid overrides.
+    const raw = await onDisk()
+    ;(raw.settings as unknown as Record<string, unknown>).menuIcons = {
+      newWindow: 'win-plus',
+      duplicateTab: 'bogus',
+      extra: 'drop',
+    }
+    await seed(raw)
+    const s2 = createStore(file)
+    expect(s2.get().settings.menuIcons).toEqual({ newWindow: 'win-plus' })
+
+    // WHOLE_FIELDS sync: incoming menuIcons replaces this Mac's object as a whole (reset keys do not resurrect).
+    const merged = mergeFolderSettings(
+      { ...DEFAULT_SETTINGS, menuIcons: { newWindow: 'win-plus', duplicateTab: 'two-tabs' } },
+      { menuIcons: { hideOthers: 'solo-row' } },
+    )
+    expect(merged.menuIcons).toEqual({ hideOthers: 'solo-row' })
+
+    const mergedOff = mergeFolderSettings(
+      { ...DEFAULT_SETTINGS, menuIcons: { newWindow: 'win-plus' } },
+      { menuIcons: 'off' },
+    )
+    expect(mergedOff.menuIcons).toBe('off')
+  })
 })

@@ -30,3 +30,20 @@ it('a pill colour row with its colour box open keeps its label at the top, on th
   expect(label).toMatch(/align-items:\s*center/)
   expect(label).toMatch(/min-height:\s*28px/)
 })
+
+// YAZ-6575: Menu icons Off must hide both SVG glyphs and .file-icon rows inside .ctx-menu and scope gutter collapse
+// to .ctx-menu.ctx-menu--glyphs so swatch/style dropdowns (.view-style__panel, .cal-line__panel) stay aligned.
+it('YAZ-6575: [data-menu-icons=off] hides svg and file-icon inside .ctx-menu and scopes gutter reset to .ctx-menu.ctx-menu--glyphs', () => {
+  const appCss = read('../app.css')
+  const offHideRules = rules(appCss, "[data-menu-icons='off']").filter((r) => /display:\s*none/.test(r.body))
+  expect(offHideRules.some((r) => r.selector.includes('.ctx-menu .ctx-menu__label > svg'))).toBe(true)
+  expect(offHideRules.some((r) => r.selector.includes('.ctx-menu .ctx-menu__label > .file-icon'))).toBe(true)
+
+  const offPadRules = rules(appCss, "[data-menu-icons='off']").filter((r) => /padding-left:\s*10px/.test(r.body))
+  expect(offPadRules.length).toBeGreaterThan(0)
+  for (const r of offPadRules) {
+    for (const part of r.selector.split(',')) {
+      expect(part.trim()).toMatch(/\.ctx-menu(\.ctx-menu--editor)?\.ctx-menu--glyphs/)
+    }
+  }
+})

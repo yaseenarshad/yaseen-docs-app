@@ -4,7 +4,7 @@
  * relaunch starts with none. App prunes it to the tab strip and empties it on "One place for the window".
  */
 import { rootOfPath, type SidebarLens } from '@shared/types'
-import { filesOnlyAfterDelete, filesOnlyAfterRename } from './filesOnly'
+import { filesOnlyAfterDelete, filesOnlyAfterRename, isDiskFolderPath } from './filesOnly'
 
 export interface TabPlace {
   /** The sidebar tab, never Search: a tab on Search keeps the tab shown before it. */
@@ -123,36 +123,47 @@ export function prunePlaces(tabs: readonly string[]): void {
   for (const tab of [...widthByTab.keys()]) if (!live.has(tab)) widthByTab.delete(tab)
 }
 
-/** A folder renamed or moved (`file:renamed`, kind `dir`): update `filesOnly` in saved background tabs (YAZ-6064). */
+/** A folder renamed or moved (`file:renamed`, kind `dir`): update `filesOnly` and disk-path `focusOnly` in saved background tabs (YAZ-6064, YAZ-6574). */
 export function renamePlacesFilesOnly(oldDir: string, newDir: string): void {
   for (const [tab, place] of places) {
-    const next = filesOnlyAfterRename(place.filesOnly, oldDir, newDir)
-    if (next !== place.filesOnly) places.set(tab, { ...place, filesOnly: next })
+    const nextFiles = filesOnlyAfterRename(place.filesOnly, oldDir, newDir)
+    const nextFocus = filesOnlyAfterRename(place.focusOnly, oldDir, newDir)
+    if (nextFiles !== place.filesOnly || nextFocus !== place.focusOnly) places.set(tab, { ...place, filesOnly: nextFiles, focusOnly: nextFocus })
   }
   if (blank !== undefined) {
-    const next = filesOnlyAfterRename(blank.filesOnly, oldDir, newDir)
-    if (next !== blank.filesOnly) blank = { ...blank, filesOnly: next }
+    const nextFiles = filesOnlyAfterRename(blank.filesOnly, oldDir, newDir)
+    const nextFocus = filesOnlyAfterRename(blank.focusOnly, oldDir, newDir)
+    if (nextFiles !== blank.filesOnly || nextFocus !== blank.focusOnly) blank = { ...blank, filesOnly: nextFiles, focusOnly: nextFocus }
   }
 }
 
-/** A folder deleted (`file:deleted`, kind `dir`): clear `filesOnly` in saved background tabs when it is gone (YAZ-6064). */
+/** A folder deleted (`file:deleted`, kind `dir`): clear `filesOnly` and disk-path `focusOnly` in saved background tabs when it is gone (YAZ-6064, YAZ-6574). */
 export function deletePlacesFilesOnly(deleted: string): void {
   for (const [tab, place] of places) {
-    const next = filesOnlyAfterDelete(place.filesOnly, deleted)
-    if (next !== place.filesOnly) places.set(tab, { ...place, filesOnly: next })
+    const nextFiles = filesOnlyAfterDelete(place.filesOnly, deleted)
+    const nextFocus = filesOnlyAfterDelete(place.focusOnly, deleted)
+    if (nextFiles !== place.filesOnly || nextFocus !== place.focusOnly) places.set(tab, { ...place, filesOnly: nextFiles, focusOnly: nextFocus })
   }
   if (blank !== undefined) {
-    const next = filesOnlyAfterDelete(blank.filesOnly, deleted)
-    if (next !== blank.filesOnly) blank = { ...blank, filesOnly: next }
+    const nextFiles = filesOnlyAfterDelete(blank.filesOnly, deleted)
+    const nextFocus = filesOnlyAfterDelete(blank.focusOnly, deleted)
+    if (nextFiles !== blank.filesOnly || nextFocus !== blank.focusOnly) blank = { ...blank, filesOnly: nextFiles, focusOnly: nextFocus }
   }
 }
 
-/** A vault removed from the window: clear `filesOnly` in saved tabs that pointed into a vault no longer present (YAZ-6064). */
+/** A vault removed from the window: clear `filesOnly` and disk-path `focusOnly` in saved tabs that pointed into a vault no longer present (YAZ-6064, YAZ-6574, YAZ-6577). */
 export function prunePlacesFilesOnly(roots: readonly string[]): void {
+  const gonePath = (value: string | null) => isDiskFolderPath(value) && rootOfPath(roots, value) === null
   for (const [tab, place] of places) {
-    if (place.filesOnly !== null && rootOfPath(roots, place.filesOnly) === null) places.set(tab, { ...place, filesOnly: null })
+    const dropFiles = place.filesOnly !== null && rootOfPath(roots, place.filesOnly) === null
+    const dropFocus = gonePath(place.focusOnly)
+    if (dropFiles || dropFocus) places.set(tab, { ...place, ...(dropFiles ? { filesOnly: null } : {}), ...(dropFocus ? { focusOnly: null } : {}) })
   }
-  if (blank !== undefined && blank.filesOnly !== null && rootOfPath(roots, blank.filesOnly) === null) blank = { ...blank, filesOnly: null }
+  if (blank !== undefined) {
+    const dropFiles = blank.filesOnly !== null && rootOfPath(roots, blank.filesOnly) === null
+    const dropFocus = gonePath(blank.focusOnly)
+    if (dropFiles || dropFocus) blank = { ...blank, ...(dropFiles ? { filesOnly: null } : {}), ...(dropFocus ? { focusOnly: null } : {}) }
+  }
 }
 
 /**

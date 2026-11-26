@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import * as inlineDrawingLand from '../editor/drawing/inlineDrawingLand'
 import * as inlinePath from '../lib/inlinePath'
+import { applyMenuIcons, resetMenuIconsForTest } from '../views/view/menuIconsStore'
 import { TabMenu, type TabMenuAt, type TabMenuProps } from './TabMenu'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -12,6 +13,7 @@ let root: Root | null = null
 afterEach(() => {
   act(() => root?.unmount())
   root = null
+  resetMenuIconsForTest()
 })
 
 const at = (over: Partial<TabMenuAt> = {}): TabMenuAt => ({ x: 0, y: 0, id: 't1', path: '/v/a.md', named: false, ...over })
@@ -145,11 +147,39 @@ describe('TabMenu Focus and Favorites (YAZ-3264 D2)', () => {
     expect(flat.indexOf('Add to focus')).toBe(flat.indexOf('Add to favorites') - 1)
   })
 
-  it('D6: the two items carry their sidebar tab\'s glyph, the eye and the heart, "Show in sidebar" its sidebar glyph (YAZ-6535), and "Copy path" its copy glyph (YAZ-3487); "Set display name" has none (YAZ-5772); the other rows have none', () => {
+  it('D6 / YAZ-6567: customizable and fixed glyphs appear on their rows; "Set display name" and other rows have none', () => {
     const el = mount(lists())
     const withGlyph = [...el.querySelectorAll('.ctx-menu__item')].filter((b) => b.querySelector('svg') !== null).map((b) => b.textContent)
-    expect(withGlyph).toEqual(['Show in sidebar', 'Copy path', 'Add to focus', 'Add to favorites'])
+    expect(withGlyph).toEqual(['Move to new window', 'Duplicate tab', 'Show in sidebar', 'Copy path', 'Add to focus', 'Add to favorites'])
     expect(el.querySelector('.ctx-menu')?.classList.contains('ctx-menu--glyphs')).toBe(true)
+  })
+
+  it('YAZ-6567: TabMenu updates live on variant switch, per-action none, and global off without leaving empty .ctx-menu__label wrappers', () => {
+    const el = mount(lists())
+    const defaultWinSvg = item(el, 'Move to new window')?.querySelector('svg')?.innerHTML
+    const defaultDupSvg = item(el, 'Duplicate tab')?.querySelector('svg')?.innerHTML
+    const defaultSidebarSvg = item(el, 'Show in sidebar')?.querySelector('svg')?.innerHTML
+    expect(defaultWinSvg).toBeTruthy()
+    expect(defaultDupSvg).toBeTruthy()
+    expect(defaultSidebarSvg).toBeTruthy()
+
+    act(() => applyMenuIcons({ newWindow: 'win-plus', duplicateTab: 'two-tabs', showInSidebar: 'crosshair' }))
+    expect(item(el, 'Move to new window')?.querySelector('svg')?.innerHTML).not.toBe(defaultWinSvg)
+    expect(item(el, 'Duplicate tab')?.querySelector('svg')?.innerHTML).not.toBe(defaultDupSvg)
+    expect(item(el, 'Show in sidebar')?.querySelector('svg')?.innerHTML).not.toBe(defaultSidebarSvg)
+
+    act(() => applyMenuIcons({ newWindow: 'none', duplicateTab: 'none', showInSidebar: 'none' }))
+    for (const label of ['Move to new window', 'Duplicate tab', 'Show in sidebar']) {
+      expect(item(el, label)?.querySelector('svg')).toBeNull()
+      expect(item(el, label)?.querySelector('.ctx-menu__label')).toBeNull()
+    }
+
+    act(() => applyMenuIcons('off'))
+    expect(document.documentElement.dataset.menuIcons).toBe('off')
+    for (const label of ['Move to new window', 'Duplicate tab', 'Show in sidebar']) {
+      expect(item(el, label)?.querySelector('svg')).toBeNull()
+      expect(item(el, label)?.querySelector('.ctx-menu__label')).toBeNull()
+    }
   })
 
   it('S2, S14: a page in a list reads "Remove from …", and each item toggles the path with the state the menu read', () => {

@@ -145,7 +145,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
 const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'vaultOpensOn']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
-const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'tabWidth', 'inactiveTabWidth', 'exploreWidth', 'explorePageZoom', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'tabWidth', 'inactiveTabWidth', 'menuIcons', 'exploreWidth', 'explorePageZoom', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
 /** The icon colour rows (YAZ-3440 D4, YAZ-5100 round 2), by kind. */
 const colourRows = (...kinds: string[]) => kinds.map((kind) => `sidebarIconColors.${kind}`)
@@ -430,7 +430,8 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     // diagrams (YAZ-3037) is on "Drawings & diagrams" since YAZ-4748 D11. Text formatting needs a vault (YAZ-3068).
     // YAZ-5977: the Explore group (its own box, with its hint) after the first rows.
     // YAZ-6464: the Tabs group (Tab width) sits before Explore.
-    expect(groupTitles(el)).toEqual(['Tabs', 'Explore', 'Spacing', 'Comments'])
+    // YAZ-6571: the Menus group (Menu icons) sits right after Tabs.
+    expect(groupTitles(el)).toEqual(['Tabs', 'Menus', 'Explore', 'Spacing', 'Comments'])
     expect(hints()).toEqual(['The search and its windows, on this Mac'])
     expect(row(el, 'commentsOrder')?.querySelector('.setting__label')?.textContent).toBe('Order')
     expect(row(el, 'commentsOrder')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Comments')
@@ -1307,7 +1308,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
 
     it('one vault: the group "Text formatting" after Spacing, its hint, one bare row (no label on screen, no gap) and no dropdown; a Text line, then H1 to H6 at their rounded default sizes', () => {
       const { el } = mountTf([vaultOf('/pages', 'Pages')])
-      expect(groupTitles(el)).toEqual(['Tabs', 'Explore', 'Spacing', 'Text formatting', 'Comments'])
+      expect(groupTitles(el)).toEqual(['Tabs', 'Menus', 'Explore', 'Spacing', 'Text formatting', 'Comments'])
       const group = tf(el).closest('.settings-group') as HTMLElement
       expect(group.querySelector('.settings-group__hint')?.textContent).toBe(TEXT_FORMATTING_HINT)
       // No "Vault: name" line: the dropdown replaces it (D15), and with one vault there is none.
@@ -3070,6 +3071,21 @@ describe('SettingsDialog: Appearance › Tabs › Active & Inactive tab width (Y
     expect([...el.querySelectorAll('.settings-nav__sub')].map((b) => b.textContent)).toEqual(['Drawing aids', 'Modes', 'New elements', 'Fold arrows', 'Embeds in pages', 'draw.io diagrams'])
     clickNav(el, 'Code')
     expect(el.querySelectorAll('.settings-nav__sub').length).toBe(0)
+  })
+
+  it('YAZ-6571: Appearance › Menus › Menu icons renders under Menus after Tabs, updates menuIcons, and is found by searching "menu icons"', async () => {
+    const { el, onChange } = mountOn('Appearance', { ...DEFAULT_SETTINGS })
+    await act(async () => await import('./MenuIconsControl'))
+    expect(row(el, 'menuIcons')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Menus')
+    expect(row(el, 'menuIcons')?.querySelector('.setting__label')?.textContent).toBe('Menu icons')
+    expect(row(el, 'menuIcons')?.className).toContain('setting--wide')
+
+    const offBtn = rowButtons(el, 'menuIcons').find((b) => b.textContent === 'Off')!
+    act(() => offBtn.click())
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ menuIcons: 'off' }))
+
+    type(searchInput(el), 'menu icons')
+    expect(rowIds(el)).toContain('menuIcons')
   })
 })
 

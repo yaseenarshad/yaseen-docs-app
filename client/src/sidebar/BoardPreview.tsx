@@ -8,7 +8,9 @@
  */
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { basename, boardFolder, dirname } from '../lib/paths'
+import { usePageId } from '../search/showIds'
 import { PlaceName } from './PlaceName'
 import { boardPreviews } from './boardPreviewCache'
 import { portalTarget, usePlacement, type PreviewAnchor } from './previewPlacement'
@@ -22,12 +24,17 @@ interface BoardPreviewProps {
   cacheKey: string
   /** One quiet line under the header: how to open the board (a link's card, YAZ-3935). Absent → none. */
   hint?: string
+  /** The board's vault index, when `idInTitle` is on, to show its vault ID after the name. */
+  wikilinks?: WikilinkResolveSource
+  /** Show the board's vault ID after its name (follows Settings › Links & IDs › Show IDs in the title). */
+  idInTitle?: boolean
   /** What the panel sits beside: the `<aside className="sidebar">`, or a card of the tab board (YAZ-3343). */
   anchor: PreviewAnchor
 }
 
-export default function BoardPreview({ root, node, cacheKey, hint, anchor }: BoardPreviewProps) {
+export default function BoardPreview({ root, node, cacheKey, hint, wikilinks, idInTitle = false, anchor }: BoardPreviewProps) {
   const placement = usePlacement(anchor, 'board')
+  const pageId = usePageId(idInTitle ? wikilinks : undefined, node.path)
   // The last settled picture. Mounted `key={path}` by the Sidebar, so a stale one is always THIS board's —
   // shown while a new key (a save, a theme flip) draws, instead of flashing "Loading".
   // What the cache answered: undefined = still drawing, '' = an empty board, null = it could not be drawn.
@@ -51,6 +58,7 @@ export default function BoardPreview({ root, node, cacheKey, hint, anchor }: Boa
     <div className="board-preview" role="status" aria-live="polite" aria-label={`Preview of ${name}`} style={placement}>
       <div className="board-preview__header">
         <span className="board-preview__name">{name}</span>
+        {pageId !== undefined && <span className="board-preview__id">{pageId}</span>}
         <PlaceName className="board-preview__folder" path={dirname(node.path)} kind="folder" label={boardFolder(root, node.path)} />
       </div>
       {hint !== undefined && <div className="board-preview__hint">{hint}</div>}

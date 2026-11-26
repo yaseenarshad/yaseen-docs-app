@@ -4,7 +4,8 @@ import { useUnit } from '../../vault/unitWord'
 import { FlyoutParent, MenuFlyout, useFlyout } from '../../components/Flyout'
 import { resolveInlineCopyPath } from '../../lib/inlinePath'
 import { PageActions } from '../../lib/pageActions'
-import { CopyIcon, EyeIcon, HeartIcon } from './icons'
+import { CopyIcon, EyeIcon, HeartIcon, NewTabIcon, NewWindowIcon } from './icons'
+import { isMenuIconVisible, useMenuIcons } from './menuIconsStore'
 import { FileIcon } from '../../sidebar/FileIcon'
 import { api, BridgeRequestError } from '../../api'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
@@ -34,6 +35,7 @@ interface PageContextMenuProps {
 
 /** Page actions shared by folder views; positioning and dismissal stay action-free. */
 export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpenBackground, onNotice, onClose, extra, danger, onOpenWindow }: PageContextMenuProps) {
+  useMenuIcons()
   const unit = useUnit()
   // Inline card/drawing rows (`<page>#<id>` / `<page>#drawing-N`, YAZ-6469): OS verbs target the parent file on disk,
   // Copy path resolves `<page>:<line>`, and page-mutating/list actions are omitted so synthetic paths never corrupt lists.
@@ -111,8 +113,30 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
   const actions = (
     <>
       {onOpen !== undefined && item('Open', () => onOpen(path))}
-      {onOpenBackground !== undefined && item('Open in new tab', () => onOpenBackground(path))}
-      {doors?.openNewWindow !== undefined && item('Open in new window', () => doors.openNewWindow!(page))}
+      {onOpenBackground !== undefined &&
+        item(
+          isMenuIconVisible('openNewTab') ? (
+            <span className="ctx-menu__label">
+              <NewTabIcon />
+              Open in new tab
+            </span>
+          ) : (
+            'Open in new tab'
+          ),
+          () => onOpenBackground(path),
+        )}
+      {doors?.openNewWindow !== undefined &&
+        item(
+          isMenuIconVisible('newWindow') ? (
+            <span className="ctx-menu__label">
+              <NewWindowIcon />
+              Open in new window
+            </span>
+          ) : (
+            'Open in new window'
+          ),
+          () => doors.openNewWindow!(page),
+        )}
       {onOpenWindow !== undefined && item('Open in mini window', () => onOpenWindow(path), '⇧↩')}
       <FlyoutParent label="Open in" open={flyout.open === 'open-in'} onHover={() => flyout.hover('open-in')} onOpen={() => flyout.openNow('open-in')} onCloseFlyout={() => flyout.openNow(null)}>
         {[inApp, otherApps]
@@ -232,7 +256,7 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
   const groups = [...(extra ?? []), <Fragment key="page">{pageGroup.map((n, k) => <Fragment key={k}>{n}</Fragment>)}</Fragment>, ...(inlineRef !== null || danger === undefined || danger === null ? [] : [danger])]
 
   return (
-    <ContextMenuSurface x={x} y={y} onClose={onClose}>
+    <ContextMenuSurface x={x} y={y} className="ctx-menu--glyphs" onClose={onClose}>
       <MenuFlyout.Provider value={flyout}>
         {/* The groups' line between them is `.ctx-menu__group + .ctx-menu__group` (app.css). */}
         <div className="ctx-menu__group" role="group">

@@ -4,7 +4,8 @@ import { copyText } from '../lib/copyText'
 import { resolveInlineCopyPath } from '../lib/inlinePath'
 import { osVerbs } from '../lib/osVerbs'
 import { ContextMenu } from '../sidebar/ContextMenu'
-import { CopyIcon, EyeIcon, HeartIcon, PencilIcon, ShowInSidebarIcon } from '../views/view/icons'
+import { CopyIcon, DuplicateTabIcon, EyeIcon, HeartIcon, NewWindowIcon, PencilIcon, ShowInSidebarIcon } from '../views/view/icons'
+import { isMenuIconVisible, useMenuIcons } from '../views/view/menuIconsStore'
 import { focusPlaces, scopeGroup, type MenuAction, type MenuSection } from '../sidebar/menuSections'
 import type { ListState } from '../lists/useVaultListsHere'
 import { useUnit } from '../vault/unitWord'
@@ -81,6 +82,7 @@ export interface TabMenuProps {
  * `ContextMenu` (YAZ-2949 D6), so its groups have the same lines as every other menu of the app.
  */
 export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [], onMoveToWindow, onHighlightWindow, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onShowInPage, onRenameFile, onToggleFocus, onToggleFavorite, onNotice, leading = [], trailing = [] }: TabMenuProps) {
+  useMenuIcons()
   const unit = useUnit()
   /** The menu's OS actions (YAZ-963): the sidebar's verbs and notices (`lib/osVerbs.ts`), a stale tab named by its label. */
   const os = osVerbs((message) => onNotice?.(message), () => label)
@@ -105,9 +107,9 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
   const sections: MenuSection[] = [
     leading,
     [
-      ...(onMoveToNewWindow === undefined ? [] : [{ id: 'new-window', label: 'Move to new window', onSelect: () => onMoveToNewWindow(menu.path, menu.id) }]),
+      ...(onMoveToNewWindow === undefined ? [] : [{ id: 'new-window', label: 'Move to new window', ...(isMenuIconVisible('newWindow') ? { icon: <NewWindowIcon /> } : {}), onSelect: () => onMoveToNewWindow(menu.path, menu.id) }]),
       // Right after "Move to new window" (YAZ-2940 D5).
-      ...(onDuplicate === undefined ? [] : [{ id: 'duplicate', label: 'Duplicate tab', onSelect: () => onDuplicate(menu.id) }]),
+      ...(onDuplicate === undefined ? [] : [{ id: 'duplicate', label: 'Duplicate tab', ...(isMenuIconVisible('duplicateTab') ? { icon: <DuplicateTabIcon /> } : {}), onSelect: () => onDuplicate(menu.id) }]),
       ...(moveTo.length === 0 ? [] : [{ id: 'move-to', label: 'Move to', children: moveTo }]),
     ],
     [
@@ -123,7 +125,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
               },
             },
           ]),
-      { id: 'show-in-sidebar', label: 'Show in sidebar', icon: <ShowInSidebarIcon />, onSelect: () => onShowInSidebar?.(menu.path) },
+      { id: 'show-in-sidebar', label: 'Show in sidebar', ...(isMenuIconVisible('showInSidebar') ? { icon: <ShowInSidebarIcon /> } : {}), onSelect: () => onShowInSidebar?.(menu.path) },
       {
         id: 'copy-path',
         label: 'Copy path',
