@@ -1,4 +1,17 @@
 import { isRecord } from './guards'
+import {
+  LINK_HOVER_STYLES,
+  LINK_PALETTE_COLORS,
+  LINK_STRENGTHS,
+  isLinkHex,
+  linkHex,
+  type LinkHex,
+  type LinkHover,
+  type LinkHoverColor,
+  type LinkHoverStyle,
+  type LinkPaletteColor,
+  type LinkStrength,
+} from './linkStyle'
 
 /**
  * A vault's link pills look (YAZ-4924): how every link pill of ONE vault draws — in its pages, the explore stack, the
@@ -27,11 +40,11 @@ export const LINK_PILLS_FILE = 'link-pills.json'
 export const LINK_PILLS_VERSION = 2
 
 /** The table palette (`table.css` `--table-fill-solid-*` and `--table-text-*`), the cell toolbar's ten colours. */
-export const LINK_PILL_COLORS = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey', 'brown'] as const
-export type LinkPillColor = (typeof LINK_PILL_COLORS)[number]
+export const LINK_PILL_COLORS = LINK_PALETTE_COLORS
+export type LinkPillColor = LinkPaletteColor
 /** How strong a palette fill is: 15 %, 30 % and 50 % of the colour (`wikilink.css`), as a card's are. */
-export const LINK_PILL_STRENGTHS = ['light', 'medium', 'strong'] as const
-export type LinkPillStrength = (typeof LINK_PILL_STRENGTHS)[number]
+export const LINK_PILL_STRENGTHS = LINK_STRENGTHS
+export type LinkPillStrength = LinkStrength
 
 /** The tokens a format may hold, in the order the chips show them. */
 export const LINK_PILL_TOKENS = ['icon', 'name', 'id', 'number', 'vault', 'folder', 'path', 'mark'] as const
@@ -57,10 +70,10 @@ export const DEFAULT_LINK_PILL_FORMAT = '{icon} {name} ({vault})'
 const OLD_DEFAULT_LINK_PILL_FORMAT = '{icon}{name} ({vault})'
 
 /** A custom colour (YAZ-5972): `#rrggbb`, lowercase; used as is in light and dark. */
-export type LinkPillHex = `#${string}`
+export type LinkPillHex = LinkHex
 /** `v` as a custom colour, lowercase, or undefined: six hex digits after `#`, nothing else (no `#abc`, no alpha). */
-export const linkPillHex = (v: unknown): LinkPillHex | undefined => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? (v.toLowerCase() as LinkPillHex) : undefined)
-export const isLinkPillHex = (v: unknown): v is LinkPillHex => linkPillHex(v) !== undefined
+export const linkPillHex = linkHex
+export const isLinkPillHex = isLinkHex
 
 /**
  * A part's colour: the accent, the text around the pill, the muted grey, a palette colour's text colour, or a custom
@@ -98,17 +111,10 @@ export interface LinkPillBox {
 }
 
 /** The pill's hover look (YAZ-5991 / D5). Absent: wash, auto colour, subtle (8 %). */
-export const LINK_PILL_HOVER_STYLES = ['wash', 'underline', 'text', 'off'] as const
-export type LinkPillHoverStyle = (typeof LINK_PILL_HOVER_STYLES)[number]
-export type LinkPillHoverColor = 'accent' | LinkPillColor | LinkPillHex
-export interface LinkPillHover {
-  /** Wash (absent), underline, text colour, or off. */
-  style?: Exclude<LinkPillHoverStyle, 'wash'>
-  /** Auto (absent), accent, a palette colour, or a custom `#rrggbb`. */
-  color?: LinkPillHoverColor
-  /** Subtle (absent, `'light'` 8 %), medium (14 %), or strong (22 %). Wash only. */
-  strength?: Exclude<LinkPillStrength, 'light'>
-}
+export const LINK_PILL_HOVER_STYLES = LINK_HOVER_STYLES
+export type LinkPillHoverStyle = LinkHoverStyle
+export type LinkPillHoverColor = LinkHoverColor
+export type LinkPillHover = LinkHover
 
 /** What one vault changed. Every field absent is today's look; a default is never stored. */
 export interface LinkPills {

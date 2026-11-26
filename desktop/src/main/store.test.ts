@@ -616,6 +616,28 @@ describe('createStore: loading', () => {
     expect(mergeFolderSettings(here, { inlineCodeStyle: 'future-preset' }).inlineCodeStyle).toEqual(here.inlineCodeStyle)
   })
 
+  it('YAZ-6580: webLinks — defaults to empty, validates, sanitizes corrupt values, and merges atomically (WHOLE_FIELDS)', async () => {
+    const { webLinks: _omitted, ...legacy } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacy }))
+    expect(createStore(file).get().settings.webLinks).toEqual({})
+
+    const styled = { underline: false as const, mark: { place: 'after' as const, custom: '🔗' }, hover: { style: 'underline' as const } }
+    expect(isSettings({ ...DEFAULT_SETTINGS, webLinks: styled })).toBe(true)
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, webLinks: styled } }))
+    expect(createStore(file).get().settings.webLinks).toEqual(styled)
+
+    expect(isSettings({ ...DEFAULT_SETTINGS, webLinks: { underline: true } })).toBe(false)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, webLinks: { underline: false, color: 'bogus', mark: { place: 'after', custom: 'ok' } } }).webLinks).toEqual({
+      underline: false,
+      mark: { place: 'after', custom: 'ok' },
+    })
+
+    // WHOLE_FIELDS: resetting to `{}` replaces the previous Mac's custom object cleanly.
+    const here = { ...DEFAULT_SETTINGS, webLinks: styled }
+    expect(mergeFolderSettings(here, { webLinks: {} }).webLinks).toEqual({})
+    expect(mergeFolderSettings(here, { webLinks: { underline: false, box: { shape: 'round' } } }).webLinks).toEqual({ underline: false, box: { shape: 'round' } })
+  })
+
   it('YAZ-4450 D4, D7: workspaceLists and recentsByVault — a file without them loads them on; a value kept; junk falls back', () => {
     const { workspaceLists: _w, recentsByVault: _r, ...legacy } = DEFAULT_SETTINGS
     expect(sanitizeSettings(legacy)).toMatchObject({ workspaceLists: { focus: true, favorites: true }, recentsByVault: true })

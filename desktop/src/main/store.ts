@@ -1,5 +1,6 @@
 import { cleanIconRules, isIconRules } from '@shared/vaultIcons'
 import { isMenuIconsSetting, sanitizeMenuIcons } from '@shared/menuIcons'
+import { isWebLinksStyle, sanitizeWebLinks } from '@shared/webLinks'
 import { applyCoursePatch, cleanCourseState, type CoursePatch } from '@shared/courseState'
 import { isValidDailyPageFormat } from '@shared/dailyPage'
 import { isCalendarDayTime, isValidTimeFormat } from '@shared/timeFormat'
@@ -877,6 +878,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   // YAZ-4783: "Text column" (`null`) or whole px in range; anything else falls back to Text column, the look before.
   codeBlockWidth: (v): v is number | null => v === null || isBlockWidth(v),
   inlineCodeStyle: isInlineCodeStyle,
+  webLinks: isWebLinksStyle,
   tableWidth: (v): v is number | null => v === null || isBlockWidth(v),
   tableRowBand: (v): v is TableRowBand => typeof v === 'string' && (TABLE_ROW_BANDS as readonly string[]).includes(v),
   tableBandColour: isBandColour,
@@ -1015,6 +1017,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.sidebarIconRules = cleanIconRules(src.sidebarIconRules)
   out.codeOutlineHidden = sanitizeOutlineHidden(src.codeOutlineHidden)
   out.menuIcons = sanitizeMenuIcons(src.menuIcons)
+  out.webLinks = sanitizeWebLinks(src.webLinks)
   out.workspaceSettings = sanitizeWorkspaceSettings(src.workspaceSettings)
   out.workspaceLaunchers = sanitizeWorkspaceLaunchers(src.workspaceLaunchers)
   // YAZ-6490: clamp new-window defaults (50–200), and seed from retired global keys on upgrade when absent.
@@ -1033,7 +1036,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
 /** Object fields that travel as a whole (YAZ-3397): the incoming one replaces this Mac's, after its own repair. */
 // The icon colours too (YAZ-3440 D4): a colour another Mac reset to its default is a key gone, which a merge by part would bring back.
 // ⌘D's place too (YAZ-3556 D2): a tab and a folder have other parts, and a merge by part would mix them.
-const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside', 'sidebarIconColors', 'goTo', 'inlineCodeStyle', 'menuIcons', 'workspaceSettings', 'workspaceLaunchers']
+const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside', 'sidebarIconColors', 'goTo', 'inlineCodeStyle', 'webLinks', 'menuIcons', 'workspaceSettings', 'workspaceLaunchers']
 
 /**
  * Another Mac's travelling fields over this Mac's settings (YAZ-3276 D3). A value that this build can't read,
