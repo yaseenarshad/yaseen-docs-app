@@ -43,22 +43,25 @@ export function vaultCardVars(look: object, settings: SettingsState, resolve: ()
 }
 
 const cardSurfaceStyles = new WeakMap<LinkPills, WeakMap<CSSProperties, WeakMap<WebLinksStyle, CSSProperties>>>()
+const cardSurfaceResetStyles = new WeakMap<LinkPills, WeakMap<CSSProperties, WeakMap<WebLinksStyle, CSSProperties>>>()
 const NO_WEB_LINKS_SENTINEL: WebLinksStyle = Object.freeze({})
 /**
  * The style of a surface that shows a vault's cards outside a page layer — the Inbox, Preview a card, Explore's card
  * layer (YAZ-5792, YAZ-5822, YAZ-6589): its card look, its link pills look (`linkPillVars`), and its resolved external
- * web links look (`webLinkVars` with `resetDefaults: true` so portalled previews and multi-vault panes isolate cleanly).
- * Cached on all three objects, as App's `layerStyleOf`, so a surface's style keeps its identity between renders.
+ * web links look (`webLinkVars`; with `resetDefaults: true` when `resetWebLinks` is set so a vault override cleanly
+ * isolates from non-default Global `.app` variables, while emitting zero `--ext-link-*` variables when default).
+ * Cached on all inputs, as App's `layerStyleOf`, so a surface's style keeps its identity between renders.
  */
-export function cardSurfaceStyleOf(pills: LinkPills, cardVars: CSSProperties, webLinks?: WebLinksStyle): CSSProperties {
-  let byCard = cardSurfaceStyles.get(pills)
-  if (byCard === undefined) cardSurfaceStyles.set(pills, (byCard = new WeakMap()))
+export function cardSurfaceStyleOf(pills: LinkPills, cardVars: CSSProperties, webLinks?: WebLinksStyle, resetWebLinks = false): CSSProperties {
+  const root = resetWebLinks ? cardSurfaceResetStyles : cardSurfaceStyles
+  let byCard = root.get(pills)
+  if (byCard === undefined) root.set(pills, (byCard = new WeakMap()))
   let byWeb = byCard.get(cardVars)
   if (byWeb === undefined) byCard.set(cardVars, (byWeb = new WeakMap()))
   const key = webLinks ?? NO_WEB_LINKS_SENTINEL
   let style = byWeb.get(key)
   if (style === undefined) {
-    const ext = webLinks === undefined ? {} : webLinkVars(webLinks ?? DEFAULT_WEB_LINKS, { resetDefaults: true })
+    const ext = webLinks === undefined && !resetWebLinks ? {} : webLinkVars(webLinks ?? DEFAULT_WEB_LINKS, resetWebLinks ? { resetDefaults: true } : undefined)
     byWeb.set(key, (style = { ...linkPillVars(pills), ...cardVars, ...ext } as CSSProperties))
   }
   return style

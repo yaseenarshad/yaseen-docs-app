@@ -130,18 +130,21 @@ describe('a card surface wears the vault`s link pills look (YAZ-5822)', () => {
     expect(Object.keys(cardSurfaceStyleOf(NO_LINK_PILLS, cardVars)).some((key) => key.startsWith('--pill-'))).toBe(false)
   })
 
-  it('YAZ-6589: a card surface also carries the vault`s webLinks look and resets inherited global webLinks variables', () => {
+  it('YAZ-6589: a card surface also carries the vault`s webLinks look and resets inherited global webLinks variables only when overriding', () => {
     const cardVars = vaultCardVars({}, DEFAULT_SETTINGS, () => DEFAULT_SETTINGS)
     const clean = { underline: false as const, mark: { place: 'after' as const } }
     const style = cardSurfaceStyleOf(NO_LINK_PILLS, cardVars, clean) as Record<string, string>
     expect(style['--ext-link-decoration']).toBe('none')
     expect(style['--ext-link-mark-place']).toBe('after')
-    // Identity is cached for the same (pills, cardVars, webLinks) triple.
+    // Identity is cached for the same (pills, cardVars, webLinks, resetWebLinks) tuple.
     expect(cardSurfaceStyleOf(NO_LINK_PILLS, cardVars, clean)).toBe(style)
-    // A vault with default webLinks ({}) still emits resetDefaults so `.app` global webLinks never bleed in.
-    const defaultStyle = cardSurfaceStyleOf(NO_LINK_PILLS, cardVars, {}) as Record<string, string>
-    expect(defaultStyle['--ext-link-decoration']).toBe('initial')
-    expect(defaultStyle['--ext-link-mark-place']).toBe('initial')
-    expect(defaultStyle).not.toBe(style)
+    // Default webLinks with no vault override emits zero --ext-link-* variables so layers stay clean.
+    const defaultInherited = cardSurfaceStyleOf(NO_LINK_PILLS, cardVars, {}, false) as Record<string, string>
+    expect(Object.keys(defaultInherited).some((key) => key.startsWith('--ext-link-'))).toBe(false)
+    // A vault explicitly overriding back to default ({}) emits resetDefaults so `.app` global webLinks never bleed in.
+    const defaultOverride = cardSurfaceStyleOf(NO_LINK_PILLS, cardVars, {}, true) as Record<string, string>
+    expect(defaultOverride['--ext-link-decoration']).toBe('initial')
+    expect(defaultOverride['--ext-link-mark-place']).toBe('initial')
+    expect(defaultOverride).not.toBe(defaultInherited)
   })
 })

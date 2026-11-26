@@ -1144,9 +1144,9 @@ export function App() {
    * look too (YAZ-5792, `cardSurfaceStyleOf`): a card's links wear the vault's pill style on every one of those surfaces.
    */
   const cardVarsFor = (path: string): CSSProperties => {
-    const look = scopeOf(path).cardLook.look
+    const { cardLook: { look }, linkPills, vaultSettings } = scopeOf(path)
     const cardVars = look === null ? NO_CARD_VARS : vaultCardVars(look, settings, () => ({ ...settings, ...cardLookSettings(look) }))
-    return cardSurfaceStyleOf(scopeOf(path).linkPills.pills, cardVars, pageSettingsOf(path).webLinks)
+    return cardSurfaceStyleOf(linkPills.pills, cardVars, pageSettingsOf(path).webLinks, vaultSettings.overrides.webLinks !== undefined)
   }
   // YAZ-5904: Card sides in pages or in Explore changed (the app's, or a vault's card look): the shown cards fold again.
   const cardFoldKey = [settings.cardSidesFold, settings.cardSidesFoldCardPages, settings.cardSidesFoldExplore, ...vaults.map((v) => `${v?.cardLook.look?.sidesFold}/${v?.cardLook.look?.sidesFoldCardPages}/${v?.cardLook.look?.sidesFoldExplore}`)].join()
