@@ -7,14 +7,25 @@ import { workspaceLink } from '@shared/links'
 import {
   cleanVaultLauncher,
   cleanVaultName,
+  VAULT_CONFIG_DIR,
   type LauncherListItem,
   type VaultLauncherBadge,
   type VaultLauncherInfo,
   type VaultLauncherStatus,
   type VaultLauncherTarget,
 } from '@shared/types'
+import {
+  renderBadgeSvgDataUrl,
+  sanitizeVaultLauncherBadge,
+  sanitizeVaultLauncherPreset,
+  VAULT_ICON_FILE,
+  workspaceLauncherKey,
+  type VaultLauncherPreset,
+} from '@shared/vaultIcon'
+import { VAULT_SETTINGS_FILE, VAULT_SETTINGS_VERSION } from '@shared/vaultSettings'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import type { Store } from '../store'
+import { readConfigDetailed, withConfigLock, writeConfigUnlocked } from '../vaultConfig'
 import { isOwnLauncher, readLauncherPlist, scanInstalledLaunchers, type ScannedLauncher } from '../vaultLauncher'
 import { broadcastAll } from './broadcast'
 import { handle } from './envelope'
@@ -24,8 +35,9 @@ export const MAX_LAUNCHER_ICON_BYTES = 2 * 1024 * 1024
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const VALID_TARGETS = new Set<string>(['normal', 'inbox', 'today'])
-const VALID_BADGE_KINDS = new Set<string>(['emoji', 'letters', 'material'])
 const DATA_URL_PREFIX = /^data:image\/png;base64,/i
+const READ_ONLY_FILE = 'read-only.json'
+const LAUNCHER_SETTINGS_KEYS = ['version', 'launcher'] as const
 
 export interface VaultLauncherInstallParams {
   root: string
@@ -106,22 +118,100 @@ function parseOptionalTarget(raw: unknown): VaultLauncherTarget | undefined {
 
 function parseOptionalBadge(raw: unknown): VaultLauncherBadge | undefined {
   if (raw === undefined) return undefined
-  if (!isRecord(raw)) {
-    throw new BridgeFailure('BAD_REQUEST', "'badge' must be an object")
+  const clean = sanitizeVaultLauncherBadge(raw)
+  if (clean === undefined) {
+    throw new BridgeFailure('BAD_REQUEST', "'badge' must be a valid badge object with kind, value, and #rrggbb color")
   }
-  const kind = raw.kind
-  const value = typeof raw.value === 'string' ? raw.value.trim() : ''
-  const color = raw.color
-  if (typeof kind !== 'string' || !VALID_BADGE_KINDS.has(kind)) {
-    throw new BridgeFailure('BAD_REQUEST', "'badge.kind' must be 'emoji', 'letters', or 'material'")
+  return clean
+}
+
+async function isExistingDirectory(dir: string): Promise<boolean> {
+  return stat(dir).then(
+    (s) => s.isDirectory(),
+    () => false,
+  )
+}
+
+async function isReadOnlyVaultOnDisk(root: string): Promise<boolean> {
+  const ro = await readConfigDetailed(root, READ_ONLY_FILE)
+  return ro.state === 'ok' && isRecord(ro.value) && ro.value.on === true
+}
+
+async function isVaultWritableForSync(root: string, isReadOnlyRoot: (root: string) => boolean): Promise<boolean> {
+  if (isReadOnlyRoot(root)) return false
+  if (!(await isExistingDirectory(root))) return false
+  if (await isReadOnlyVaultOnDisk(root)) return false
+  return true
+}
+
+/** Read a synced vault launcher preset + preview icon from `<root>/.yaseendocs/settings.json` (and optional `vault-icon.png`). */
+async function readSyncedVaultLauncher(root: string): Promise<{ synced: VaultLauncherPreset; syncedIconDataUrl: string } | null> {
+  const res = await readConfigDetailed(root, VAULT_SETTINGS_FILE)
+  if (res.state !== 'ok' || !isRecord(res.value)) return null
+  const synced = sanitizeVaultLauncherPreset(res.value.launcher)
+  if (synced === null) return null
+  if (synced.badge !== undefined) {
+    return { synced, syncedIconDataUrl: renderBadgeSvgDataUrl(synced.badge) }
   }
-  if (value.length === 0 || value.length > 64) {
-    throw new BridgeFailure('BAD_REQUEST', "'badge.value' must be a non-empty string")
+  if (synced.iconFile === VAULT_ICON_FILE) {
+    try {
+      const buf = await readFile(join(root, VAULT_CONFIG_DIR, VAULT_ICON_FILE))
+      if (buf.length > MAX_LAUNCHER_ICON_BYTES || buf.length < PNG_MAGIC.length || !buf.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) {
+        return null
+      }
+      return { synced, syncedIconDataUrl: `data:image/png;base64,${buf.toString('base64')}` }
+    } catch {
+      return null
+    }
   }
-  if (typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color)) {
-    throw new BridgeFailure('BAD_REQUEST', "'badge.color' must be a #rrggbb hex colour")
+  return null
+}
+
+/** Save a portable launcher preset to `<root>/.yaseendocs/settings.json` (+ `vault-icon.png` for custom images) on writable vaults. */
+async function writeSyncedVaultLauncher(
+  root: string,
+  preset: VaultLauncherPreset,
+  customPng: Buffer | null,
+  isReadOnlyRoot: (root: string) => boolean,
+): Promise<void> {
+  if (!(await isVaultWritableForSync(root, isReadOnlyRoot))) return
+  await withConfigLock(root, VAULT_SETTINGS_FILE, async () => {
+    const onDisk = await readConfigDetailed(root, VAULT_SETTINGS_FILE)
+    if (onDisk.state === 'malformed') {
+      console.warn(`[vaultLauncher] skipping synced launcher write in ${root}: ${VAULT_SETTINGS_FILE} is malformed`)
+      return
+    }
+    await writeConfigUnlocked(root, VAULT_SETTINGS_FILE, { version: VAULT_SETTINGS_VERSION, launcher: preset }, LAUNCHER_SETTINGS_KEYS)
+  })
+  const iconFilePath = join(root, VAULT_CONFIG_DIR, VAULT_ICON_FILE)
+  if (customPng !== null && preset.iconFile === VAULT_ICON_FILE) {
+    await atomicWriteBuffer(iconFilePath, customPng)
+  } else {
+    await rm(iconFilePath, { force: true }).catch(() => undefined)
   }
-  return { kind: kind as VaultLauncherBadge['kind'], value, color }
+}
+
+/** Remove the synced launcher preset from `<root>/.yaseendocs/settings.json` and unlink `.yaseendocs/vault-icon.png`. */
+async function clearSyncedVaultLauncher(root: string, isReadOnlyRoot: (root: string) => boolean): Promise<void> {
+  if (isReadOnlyRoot(root) || (await isReadOnlyVaultOnDisk(root))) {
+    throw new BridgeFailure('FORBIDDEN', 'Cannot clear synced launcher icon in a read-only vault')
+  }
+  if (!(await isExistingDirectory(root))) return
+  await withConfigLock(root, VAULT_SETTINGS_FILE, async () => {
+    const onDisk = await readConfigDetailed(root, VAULT_SETTINGS_FILE)
+    if (onDisk.state === 'ok' && isRecord(onDisk.value) && Object.hasOwn(onDisk.value, 'launcher')) {
+      await writeConfigUnlocked(root, VAULT_SETTINGS_FILE, { version: VAULT_SETTINGS_VERSION }, LAUNCHER_SETTINGS_KEYS)
+    }
+  })
+  await rm(join(root, VAULT_CONFIG_DIR, VAULT_ICON_FILE), { force: true }).catch(() => undefined)
+}
+
+function readSyncedWorkspaceLauncher(store: Store, workspaceName: string): { synced: VaultLauncherPreset; syncedIconDataUrl: string } | null {
+  const key = workspaceLauncherKey(workspaceName)
+  if (key.length === 0) return null
+  const preset = store.get().settings.workspaceLaunchers[key]
+  if (preset === undefined || preset.badge === undefined) return null
+  return { synced: preset, syncedIconDataUrl: renderBadgeSvgDataUrl(preset.badge) }
 }
 
 async function atomicWriteBuffer(filePath: string, data: Buffer): Promise<void> {
@@ -194,17 +284,20 @@ export function registerVaultLauncherIpc(
   backend: VaultLauncherBackend,
   onIconChanged?: (iconPath: string) => void,
   onChanged: () => void = () => broadcastAll(CONTRACT.vaultLauncher.onChanged.channel),
+  isReadOnlyRoot: (root: string) => boolean = () => false,
 ): void {
   handle(CONTRACT.vaultLauncher.status, async (rawRoot: unknown): Promise<VaultLauncherStatus> => {
     const root = requireAbsPath(rawRoot, 'root')
     const launcher = store.get().folders[root]?.launcher ?? null
     const exists = launcher !== null && backend.exists(launcher.appPath)
     const iconDataUrl = launcher !== null ? await readIconDataUrl(launcher.iconPath) : null
+    const syncedRes = await readSyncedVaultLauncher(root)
     return {
       supported: backend.supported,
       launcher,
       exists,
       iconDataUrl,
+      ...(syncedRes !== null ? { synced: syncedRes.synced, syncedIconDataUrl: syncedRes.syncedIconDataUrl } : {}),
     }
   })
 
@@ -250,6 +343,19 @@ export function registerVaultLauncherIpc(
     }
 
     store.setFolder(root, { launcher })
+
+    // Best-effort sync of the portable launcher preset into `<root>/.yaseendocs/settings.json` (+ `vault-icon.png` for custom images).
+    const preset: VaultLauncherPreset = {
+      name: installedName,
+      ...(target !== undefined ? { target } : {}),
+      ...(badge !== undefined ? { badge } : { iconFile: VAULT_ICON_FILE }),
+    }
+    try {
+      await writeSyncedVaultLauncher(root, preset, badge === undefined ? png : null, isReadOnlyRoot)
+    } catch (err) {
+      console.warn(`[vaultLauncher] failed to persist synced launcher preset in ${root}: ${String(err)}`)
+    }
+
     onIconChanged?.(iconPath)
     onChanged()
 
@@ -275,6 +381,12 @@ export function registerVaultLauncherIpc(
     onChanged()
   })
 
+  handle(CONTRACT.vaultLauncher.clearSynced, async (rawRoot: unknown): Promise<void> => {
+    const root = requireAbsPath(rawRoot, 'root')
+    await clearSyncedVaultLauncher(root, isReadOnlyRoot)
+    onChanged()
+  })
+
   handle(CONTRACT.vaultLauncher.reveal, async (rawRoot: unknown): Promise<void> => {
     const root = requireAbsPath(rawRoot, 'root')
     const launcher = store.get().folders[root]?.launcher ?? null
@@ -295,14 +407,24 @@ export function registerVaultLauncherIpc(
 
   handle(CONTRACT.vaultLauncher.icons, async (): Promise<Record<string, string>> => {
     const out: Record<string, string> = {}
-    const entries = Object.entries(store.get().folders)
+    const state = store.get()
+    const knownRoots = new Set<string>(Object.keys(state.folders))
+    for (const r of state.recents) knownRoots.add(r.path)
+    for (const w of state.windows) {
+      for (const r of w.roots) knownRoots.add(r)
+    }
     await Promise.all(
-      entries.map(async ([root, folder]) => {
-        const launcher = folder.launcher
-        if (launcher === undefined) return
-        if (!backend.exists(launcher.appPath)) return
-        const dataUrl = await readIconDataUrl(launcher.iconPath)
-        if (dataUrl !== null) out[root] = dataUrl
+      [...knownRoots].map(async (root) => {
+        const launcher = state.folders[root]?.launcher
+        if (launcher !== undefined) {
+          if (!backend.exists(launcher.appPath)) return
+          const dataUrl = await readIconDataUrl(launcher.iconPath)
+          if (dataUrl !== null) out[root] = dataUrl
+          return
+        }
+        // Fallback to synced vault icon (badge SVG or `.yaseendocs/vault-icon.png`) when no local `.app` is installed.
+        const syncedRes = await readSyncedVaultLauncher(root)
+        if (syncedRes !== null) out[root] = syncedRes.syncedIconDataUrl
       }),
     )
     return out
@@ -310,14 +432,17 @@ export function registerVaultLauncherIpc(
 
   handle(CONTRACT.vaultLauncher.workspaceStatus, async (rawId: unknown): Promise<VaultLauncherStatus> => {
     const workspaceId = requireWorkspaceId(rawId)
-    const launcher = store.get().vaultSets.find((s) => s.id === workspaceId)?.launcher ?? null
+    const set = store.get().vaultSets.find((s) => s.id === workspaceId)
+    const launcher = set?.launcher ?? null
     const exists = launcher !== null && backend.exists(launcher.appPath)
     const iconDataUrl = launcher !== null ? await readIconDataUrl(launcher.iconPath) : null
+    const syncedRes = set !== undefined ? readSyncedWorkspaceLauncher(store, set.name) : null
     return {
       supported: backend.supported,
       launcher,
       exists,
       iconDataUrl,
+      ...(syncedRes !== null ? { synced: syncedRes.synced, syncedIconDataUrl: syncedRes.syncedIconDataUrl } : {}),
     }
   })
 
@@ -364,6 +489,21 @@ export function registerVaultLauncherIpc(
     }
 
     store.setVaultSetLauncher(workspaceId, launcher)
+
+    // Sync badge-based workspace launcher presets via SettingsState.workspaceLaunchers (travels across Macs).
+    const wsKey = workspaceLauncherKey(set.name)
+    if (wsKey.length > 0) {
+      const currentSettings = store.get().settings
+      const nextLaunchers = { ...currentSettings.workspaceLaunchers }
+      if (badge !== undefined) {
+        nextLaunchers[wsKey] = { name: installedName, badge }
+        store.setSettings({ ...currentSettings, workspaceLaunchers: nextLaunchers })
+      } else if (Object.hasOwn(nextLaunchers, wsKey)) {
+        delete nextLaunchers[wsKey]
+        store.setSettings({ ...currentSettings, workspaceLaunchers: nextLaunchers })
+      }
+    }
+
     onIconChanged?.(iconPath)
     onChanged()
 
@@ -386,6 +526,19 @@ export function registerVaultLauncherIpc(
     await rm(launcher.iconPath, { force: true }).catch(() => undefined)
     store.setVaultSetLauncher(workspaceId, null)
     onIconChanged?.(launcher.iconPath)
+    onChanged()
+  })
+
+  handle(CONTRACT.vaultLauncher.clearSyncedWorkspace, async (rawId: unknown): Promise<void> => {
+    const workspaceId = requireWorkspaceId(rawId)
+    const set = store.get().vaultSets.find((s) => s.id === workspaceId)
+    if (set === undefined) return
+    const wsKey = workspaceLauncherKey(set.name)
+    const currentSettings = store.get().settings
+    if (!Object.hasOwn(currentSettings.workspaceLaunchers, wsKey)) return
+    const nextLaunchers = { ...currentSettings.workspaceLaunchers }
+    delete nextLaunchers[wsKey]
+    store.setSettings({ ...currentSettings, workspaceLaunchers: nextLaunchers })
     onChanged()
   })
 
@@ -413,10 +566,15 @@ export function registerVaultLauncherIpc(
     await Promise.all(
       sets.map(async (set) => {
         const launcher = set.launcher
-        if (launcher === undefined) return
-        if (!backend.exists(launcher.appPath)) return
-        const dataUrl = await readIconDataUrl(launcher.iconPath)
-        if (dataUrl !== null) out[set.id] = dataUrl
+        if (launcher !== undefined) {
+          if (!backend.exists(launcher.appPath)) return
+          const dataUrl = await readIconDataUrl(launcher.iconPath)
+          if (dataUrl !== null) out[set.id] = dataUrl
+          return
+        }
+        // Fallback to synced workspace badge SVG when no local `.app` is installed on this Mac.
+        const syncedRes = readSyncedWorkspaceLauncher(store, set.name)
+        if (syncedRes !== null) out[set.id] = syncedRes.syncedIconDataUrl
       }),
     )
     return out

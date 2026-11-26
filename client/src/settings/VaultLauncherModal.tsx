@@ -7,10 +7,13 @@
  * - Image tab: PNG/JPEG/WebP file centre-cropped into a 512x512 squircle
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import type { VaultLauncherBadge, VaultLauncherInfo, VaultLauncherStatus, VaultLauncherTarget } from '@shared/types'
+import type { VaultLauncherBadge, VaultLauncherInfo, VaultLauncherPreset, VaultLauncherStatus, VaultLauncherTarget } from '@shared/types'
+import { sanitizeBadgeSvgPaths, sanitizeBadgeSvgViewBox, shadeHex, vaultInitials } from '@shared/vaultIcon'
 import { api } from '../api'
 import { iconUrl, pickableIcons, useMaterialIcons } from '../sidebar/materialIcons'
 import { Segmented } from './controls'
+
+export { vaultInitials }
 
 export const LAUNCHER_ICON_SIZE = 512
 
@@ -53,17 +56,6 @@ const BADGE_MODE_OPTIONS: readonly { label: string; value: VaultLauncherBadge['k
   { label: 'Icon', value: 'material' },
 ]
 
-/** Default 1–2 letter initials from a vault name (e.g. "Business Wiki" -> "BW", "Notes" -> "NO"). */
-export function vaultInitials(name: string): string {
-  const words = name
-    .trim()
-    .split(/[\s\-_/]+/)
-    .filter((w) => w.length > 0)
-  if (words.length === 0) return 'YD'
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
-  return `${words[0][0]}${words[1][0]}`.toUpperCase()
-}
-
 /** Trace a macOS-style rounded squircle path inset slightly for Dock breathing room. */
 function traceSquircle(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   ctx.beginPath()
@@ -79,17 +71,32 @@ function traceSquircle(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
   ctx.closePath()
 }
 
-/** Lighten or darken a `#rrggbb` hex colour by `amount` (-1..1). */
-function shadeHex(hex: string, amount: number): string {
-  const clean = hex.replace('#', '')
-  if (clean.length !== 6) return hex
-  const num = Number.parseInt(clean, 16)
-  if (!Number.isFinite(num)) return hex
-  const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)))
-  const r = clamp(((num >> 16) & 255) + 255 * amount)
-  const g = clamp(((num >> 8) & 255) + 255 * amount)
-  const b = clamp((num & 255) + 255 * amount)
-  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`
+/**
+ * Extract compact `<path d="...">` strings + optional non-default `viewBox` from a bundled Material SVG
+ * so Mobile and other Macs can render crisp vector icons with zero bundle overhead (YAZ-6560).
+ */
+export async function enrichBadgeForSync(badge: VaultLauncherBadge): Promise<VaultLauncherBadge> {
+  if (badge.kind !== 'material' || (badge.svgPaths !== undefined && badge.svgPaths.length > 0)) return badge
+  try {
+    const res = await fetch(iconUrl(badge.value))
+    if (!res.ok) return badge
+    const text = await res.text()
+    const vbMatch = /\bviewBox=["']([^"']+)["']/i.exec(text)
+    const rawPaths: string[] = []
+    const pathRe = /<path\b[^>]*\bd=["']([^"']+)["']/gi
+    let match: RegExpExecArray | null
+    while ((match = pathRe.exec(text)) !== null) rawPaths.push(match[1])
+    const svgPaths = sanitizeBadgeSvgPaths(rawPaths)
+    if (svgPaths === undefined) return badge
+    const svgViewBox = vbMatch ? sanitizeBadgeSvgViewBox(vbMatch[1]) : undefined
+    return {
+      ...badge,
+      svgPaths,
+      ...(svgViewBox !== undefined && svgViewBox !== '0 0 16 16' ? { svgViewBox } : {}),
+    }
+  } catch {
+    return badge
+  }
 }
 
 /** Load an image URL (SVG or raster) into an HTMLImageElement for canvas drawing. */
@@ -224,27 +231,30 @@ export interface VaultLauncherModalProps {
   workspaceId?: string
   defaultName: string
   initial?: VaultLauncherInfo | null
+  /** Optional synced cross-Mac preset to prefill when creating a launcher on a second Mac (YAZ-6560). */
+  preset?: VaultLauncherPreset | null
   initialIconDataUrl?: string | null
   recreating?: boolean
   onSaved: (status: VaultLauncherStatus) => void
   onClose: () => void
 }
 
-export function VaultLauncherModal({ root, workspaceId, defaultName, initial, initialIconDataUrl, recreating = false, onSaved, onClose }: VaultLauncherModalProps) {
+export function VaultLauncherModal({ root, workspaceId, defaultName, initial, preset, initialIconDataUrl, recreating = false, onSaved, onClose }: VaultLauncherModalProps) {
   const isWorkspace = workspaceId !== undefined
   const editing = initial !== null && initial !== undefined
-  const initialBadge = initial?.badge
-  const startOnImage = editing && initialBadge === undefined && Boolean(initialIconDataUrl)
+  const seed = initial ?? preset ?? null
+  const initialBadge = seed?.badge
+  const startOnImage = seed !== null && initialBadge === undefined && Boolean(initialIconDataUrl)
 
-  const [name, setName] = useState(initial?.name ?? defaultName)
-  const [target, setTarget] = useState<VaultLauncherTarget>(initial?.target ?? 'normal')
+  const [name, setName] = useState(seed?.name ?? defaultName)
+  const [target, setTarget] = useState<VaultLauncherTarget>(seed?.target ?? 'normal')
   const [tab, setTab] = useState<'badge' | 'image'>(startOnImage ? 'image' : 'badge')
 
   // Badge state
   const [color, setColor] = useState(initialBadge?.color ?? LAUNCHER_COLORS[0].hex)
   const [badgeKind, setBadgeKind] = useState<VaultLauncherBadge['kind']>(initialBadge?.kind ?? 'letters')
   const [emoji, setEmoji] = useState(initialBadge?.kind === 'emoji' ? initialBadge.value : QUICK_EMOJIS[0])
-  const [letters, setLetters] = useState(initialBadge?.kind === 'letters' ? initialBadge.value : vaultInitials(initial?.name ?? defaultName))
+  const [letters, setLetters] = useState(initialBadge?.kind === 'letters' ? initialBadge.value : vaultInitials(seed?.name ?? defaultName))
   const [materialId, setMaterialId] = useState(initialBadge?.kind === 'material' ? initialBadge.value : 'folder-docs')
   const [iconQuery, setIconQuery] = useState('')
 
@@ -305,21 +315,22 @@ export function VaultLauncherModal({ root, workspaceId, defaultName, initial, in
     setSaving(true)
     setError(null)
     try {
-      const dataUrl = tab === 'badge' ? await renderBadgeToPng(currentBadge) : imageDataUrl!
+      const badgeToSave = tab === 'badge' ? await enrichBadgeForSync(currentBadge) : undefined
+      const dataUrl = tab === 'badge' ? await renderBadgeToPng(badgeToSave!) : imageDataUrl!
       const pngBase64 = stripPngDataUrlPrefix(dataUrl)
       const next = isWorkspace
         ? await api.vaultLauncher.createWorkspace({
             workspaceId,
             name: trimmedName,
             pngBase64,
-            ...(tab === 'badge' ? { badge: currentBadge } : {}),
+            ...(badgeToSave !== undefined ? { badge: badgeToSave } : {}),
           })
         : await api.vaultLauncher.create({
             root: root!,
             name: trimmedName,
             pngBase64,
             target,
-            ...(tab === 'badge' ? { badge: currentBadge } : {}),
+            ...(badgeToSave !== undefined ? { badge: badgeToSave } : {}),
           })
       onSaved(next)
     } catch (err: unknown) {

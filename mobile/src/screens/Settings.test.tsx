@@ -106,12 +106,12 @@ describe('YAZ-5659: Settings starts with the vaults; each row a number, a name a
     expect(heads.at(-1)).toBe('This phone')
   })
 
-  it('a row: the number badge, the name in words over "owner/repo · branch", the Open pill on the open vault, the ⋯', async () => {
+  it('a row: the monogram badge, the name in words over "owner/repo · branch", the Open pill on the open vault, the ⋯', async () => {
     h = await twoVaults()
     await h.click('Settings')
     expect(rows(h)).toEqual([
-      { n: '1', hue: 'blue', name: 'Vault', path: 'yaseen/vault · main', open: null },
-      { n: '2', hue: 'amber', name: 'Second', path: 'yaseen/second · main', open: 'Open' },
+      { n: 'VA', hue: 'blue', name: 'Vault', path: 'yaseen/vault · main', open: null },
+      { n: 'SE', hue: 'amber', name: 'Second', path: 'yaseen/second · main', open: 'Open' },
     ])
     const row = h.host.querySelector('.vault-row')!
     expect(row.querySelector('.vault-badge')!.getAttribute('aria-hidden')).toBe('true')
@@ -120,26 +120,26 @@ describe('YAZ-5659: Settings starts with the vaults; each row a number, a name a
     expect(h.button('Open Vault, yaseen/vault')).not.toBeNull()
   })
 
-  it('the numbers follow the list; opening a vault keeps them; YAZ-5663: never a number in the top bar', async () => {
+  it('the monograms and hues follow the list; opening a vault keeps them; YAZ-5663: never a badge in the top bar', async () => {
     h = await twoVaults()
     expect(topBadge(h)).toBeNull()
     await h.click('Settings')
     await h.click('Open Vault, yaseen/vault')
     expect(topBadge(h)).toBeNull()
     await h.click('Settings')
-    expect(rows(h).map((r) => [r.n, r.name, r.open])).toEqual([
-      ['1', 'Vault', 'Open'],
-      ['2', 'Second', null],
+    expect(rows(h).map((r) => [r.n, r.hue, r.name, r.open])).toEqual([
+      ['VA', 'blue', 'Vault', 'Open'],
+      ['SE', 'amber', 'Second', null],
     ])
   })
 
-  it('removing a vault renumbers the rest (remove 1: the old 2 becomes 1)', async () => {
+  it('removing a vault shifts the hue of the rest (remove 1: Second takes blue)', async () => {
     h = await twoVaults()
     await h.click('Settings')
     await h.click('More for yaseen/vault')
     await h.click('Remove from this phone')
     await h.click('Remove')
-    expect(rows(h).map((r) => [r.n, r.hue, r.name])).toEqual([['1', 'blue', 'Second']])
+    expect(rows(h).map((r) => [r.n, r.hue, r.name])).toEqual([['SE', 'blue', 'Second']])
     await h.click('Back')
     expect(h.host.querySelector('.topbar__title')?.textContent).toBe('second')
   })

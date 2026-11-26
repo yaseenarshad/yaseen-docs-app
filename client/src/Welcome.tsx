@@ -291,7 +291,8 @@ export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, 
               workspaceId={launcherModal.kind === 'workspace' ? launcherModal.workspaceId : undefined}
               defaultName={launcherModal.defaultName}
               initial={launcherModal.status?.launcher}
-              initialIconDataUrl={launcherModal.status?.iconDataUrl}
+              preset={launcherModal.status?.synced}
+              initialIconDataUrl={launcherModal.status?.iconDataUrl ?? launcherModal.status?.syncedIconDataUrl}
               recreating={launcherModal.status?.launcher !== null && launcherModal.status?.launcher !== undefined && !launcherModal.status.exists}
               onSaved={() => {
                 setLauncherModal(null)
