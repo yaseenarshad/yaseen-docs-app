@@ -62,7 +62,7 @@ export async function setNewPlaces(root: string, places: unknown): Promise<void>
     const legacy = await readConfigDetailed(r, NEW_PLACES_FILE)
     if (unified.state === 'ok' && legacy.state === 'absent') {
       const prevSection = readVaultSection(unified.value, 'newPlaces')
-      const nextSection = { ...(prevSection ?? {}), ...value }
+      const nextSection = { ...prevSection, ...value }
       await writeConfig(r, VAULT_SETTINGS_FILE, patchVaultSettingsDoc(unified.value, { newPlaces: nextSection }), VAULT_SETTINGS_DOC_KEYS)
       return
     }
