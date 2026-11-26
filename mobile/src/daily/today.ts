@@ -1,10 +1,11 @@
 import { dailyPageDate, dailyPageName } from '@shared/dailyPage'
 import { DAILY_PAGES_FILE, sanitizeDailyPages, type VaultDailyPages } from '@shared/dailyPagesFile'
 import { dailyPages, findDailyPage } from '@shared/pageBirth'
-import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
+import { FOLDER_SETTINGS_FILE, type IndexRecord } from '@shared/types'
+import { readVaultSectionOrLegacy } from '../settings/readVaultSettings'
 import type { VaultStore } from '../store'
 import type { PhoneIndex } from '../sync/phoneIndex'
-import { INDEX_STATE_NAME, readJson } from '../search/vaultData'
+import { INDEX_STATE_NAME } from '../search/vaultData'
 
 /**
  * THE TODAY BUTTON'S PAGE, a chunk of its own: the first load holds only the button (`TodayTab.tsx`).
@@ -30,9 +31,9 @@ export function todayOrLatest(records: readonly IndexRecord[], daily: VaultDaily
   return best === null ? null : { path: best.path, today: false }
 }
 
-/** The vault's daily pages settings (`.yaseendocs/daily-pages.json`), or null when they are off. */
+/** The vault's daily pages settings (`settings.json` › `dailyPages`, fallback `.yaseendocs/daily-pages.json`), or null when off. */
 export async function dailyPagesOf(store: VaultStore, vault: string): Promise<VaultDailyPages | null> {
-  return sanitizeDailyPages(await readJson(store, vault, `${VAULT_CONFIG_DIR}/${DAILY_PAGES_FILE}`))
+  return sanitizeDailyPages(await readVaultSectionOrLegacy(store, vault, 'dailyPages', DAILY_PAGES_FILE))
 }
 
 /**

@@ -7,6 +7,7 @@ import { changeCardLine } from '../answers/cardLineWrite'
 import { UnsentChangeError } from '../answers/ops'
 import CardActionRows from './CardActionRows'
 import { REVIEW_FILE } from '../app/vaultTabs'
+import { VAULT_SETTINGS_PATH, parseVaultJson, sectionFromDoc } from '../settings/readVaultSettings'
 import { sanitizeReviewSettings } from '@shared/reviews'
 import type { CardTitleShow } from '@shared/cardTitleAt'
 import type { CardActionMarks } from './cardActions'
@@ -42,16 +43,11 @@ export default function CardMenuFor({ answers, path, id, upNext, onClose, onNoti
   useEffect(() => {
     if (answers === null) return
     let live = true
-    void answers.text(REVIEW_FILE).then((text) => {
-      if (!live) return
-      let raw: unknown = {}
-      try {
-        raw = text === null ? {} : JSON.parse(text)
-      } catch {
-        raw = {}
-      }
-      setTitleGlobal(sanitizeReviewSettings(raw).titleAt)
-    })
+    void (async () => {
+      const unified = sectionFromDoc(parseVaultJson(await answers.text(VAULT_SETTINGS_PATH)), 'review')
+      const raw = unified ?? parseVaultJson(await answers.text(REVIEW_FILE)) ?? {}
+      if (live) setTitleGlobal(sanitizeReviewSettings(raw).titleAt)
+    })()
     return () => {
       live = false
     }

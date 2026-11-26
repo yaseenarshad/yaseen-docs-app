@@ -3,6 +3,7 @@ import { IDS_FILE, idLettersOf } from '@shared/pageId'
 import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import { GithubError, SECONDARY_LIMIT_WAIT_MS } from '../github/client'
+import { readVaultSectionOrLegacy } from '../settings/readVaultSettings'
 import { StorageFullError, kindOnPhone, type Checkpoint, type VaultStore } from '../store'
 import { browserClock } from '../sync/clock'
 import type { Clock, SyncEngine } from '../sync/engine'
@@ -379,7 +380,8 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
     if (gen !== generation || checkpoint === null || index === null || index.commit !== checkpoint.commit) return
     resolverFor(checkpoint)
     const config = `${VAULT_CONFIG_DIR}/`
-    const reviewText = await readText(vault, `${config}${REVIEW_SETTINGS_FILE}`)
+    const reviewRaw = await readVaultSectionOrLegacy(store, vault, 'review', REVIEW_SETTINGS_FILE)
+    const reviewText = reviewRaw === undefined ? null : JSON.stringify(reviewRaw)
     const idsText = await readText(vault, `${config}${IDS_FILE}`)
     const numbers = (await options.dayNumbers?.(vault)) ?? {}
     const now = clock.now()
@@ -391,15 +393,10 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
     if (plan?.key !== key || !plan.sizesKnown) {
       const sizes = await sizesAt(vault, checkpoint.commit)
       await slice()
-      // The same settings object while `review.json` does not change: the shared due cache is keyed by it, so a new
+      // The same settings object while review settings do not change: the shared due cache is keyed by it, so a new
       // day or a new commit does not replay every card's reviews again.
       if (settingsOf?.text !== reviewText) {
-        let settings: ReviewSettings = DEFAULT_REVIEW_SETTINGS
-        try {
-          if (reviewText !== null) settings = sanitizeReviewSettings(JSON.parse(reviewText))
-        } catch {
-          // A broken review.json reads as the defaults, as on the Mac.
-        }
+        const settings: ReviewSettings = reviewRaw === undefined ? DEFAULT_REVIEW_SETTINGS : sanitizeReviewSettings(reviewRaw)
         settingsOf = { text: reviewText, settings }
       }
       const settings = settingsOf.settings

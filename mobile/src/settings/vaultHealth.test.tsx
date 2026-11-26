@@ -3,8 +3,10 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { act } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { TABLE_LOOK_FILE } from '@shared/tableLook'
-import { VAULT_SETTINGS_FILES } from '@shared/vaultSettingsFiles'
+import { LINK_CLICK_FILE } from '@shared/linkClick'
+import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
+import { VAULT_SETTINGS_FILE } from '@shared/vaultSettings'
+import { LEGACY_VAULT_SETTINGS_HEALTH_FILES, VAULT_SETTINGS_FILES } from '@shared/vaultSettingsFiles'
 import { ICONS_FILE } from '@shared/vaultIcons'
 import { GOOD, mount, newPhone, signInWithForm, type Harness } from '../screens/testing'
 import { healthLine, readVaultHealth, type HealthRow } from './healthRows'
@@ -12,7 +14,7 @@ import { healthLine, readVaultHealth, type HealthRow } from './healthRows'
 // YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
 vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
 
-/** YAZ-5559: Settings › Vault health, read only, from the shared list of the vault's settings files. Made-up vault. */
+/** YAZ-5559 / YAZ-6557: Settings › Vault health, read only, from the shared lists of the vault's settings files. Made-up vault. */
 const VAULT = 'yaseen/vault@main'
 const HERE = import.meta.dirname
 
@@ -22,29 +24,31 @@ afterEach(() => {
   h = null
 })
 
-/** Every settings file but the table look and the icons; the link clicks file is not JSON. */
+/** Unified settings.json present, icons.json missing, plus an unmigrated valid text-formatting.json and malformed link-click.json. */
 async function phoneWithFiles() {
   const phone = await newPhone()
-  for (const { file } of VAULT_SETTINGS_FILES) {
-    if (file === TABLE_LOOK_FILE || file === ICONS_FILE) continue
-    await phone.store.write(VAULT, `.yaseendocs/${file}`, file === 'link-click.json' ? '{ not json' : '{"version":1}')
-  }
+  await phone.store.write(VAULT, `.yaseendocs/${VAULT_SETTINGS_FILE}`, '{"version":1}')
+  await phone.store.write(VAULT, `.yaseendocs/${TEXT_FORMATTING_FILE}`, '{"version":1}')
+  await phone.store.write(VAULT, `.yaseendocs/${LINK_CLICK_FILE}`, '{ not json')
   return phone
 }
 
-describe('the list of settings files (YAZ-5559)', () => {
+describe('the list of settings files (YAZ-5559, unified in YAZ-6546 / YAZ-6557)', () => {
   it('is the shared one: each name from its own module, no name twice, each a plain <stem>.json', () => {
     const names = VAULT_SETTINGS_FILES.map((f) => f.file)
-    expect(new Set(names).size).toBe(names.length)
-    for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9-]*\.json$/)
-    expect(names).toEqual(expect.arrayContaining(['table-look.json', 'card-look.json', 'text-formatting.json', 'review.json', 'daily-pages.json', 'icons.json', 'folder-pages.json', 'new-places.json', 'link-click.json', 'link-pills.json', 'show-ids.json', 'mobile.json']))
+    const legacyNames = LEGACY_VAULT_SETTINGS_HEALTH_FILES.map((f) => f.file)
+    const allNames = [...names, ...legacyNames]
+    expect(new Set(allNames).size).toBe(allNames.length)
+    for (const n of allNames) expect(n).toMatch(/^[a-z][a-z0-9-]*\.json$/)
+    expect(names).toEqual([VAULT_SETTINGS_FILE, ICONS_FILE])
+    expect(legacyNames).toEqual(expect.arrayContaining(['table-look.json', 'card-look.json', 'text-formatting.json', 'review.json', 'daily-pages.json', 'folder-pages.json', 'new-places.json', 'link-click.json', 'link-pills.json', 'show-ids.json', 'unit-word.json', 'mobile.json']))
     // The phone spells no file name: its code reads the shared list.
     const code = readFileSync(join(HERE, 'healthRows.ts'), 'utf8') + readFileSync(join(HERE, 'VaultHealth.tsx'), 'utf8')
     expect(code).not.toMatch(/['"`][a-z-]+\.json['"`]/)
   })
 })
 
-describe('the words (YAZ-5559)', () => {
+describe('the words (YAZ-5559, YAZ-6557)', () => {
   const row = (label: string, state: HealthRow['state']): HealthRow => ({ file: `${label}.json`, label, state })
   it('names the settings that use the defaults, at most three, then a count', () => {
     expect(healthLine([row('text formatting', 'here'), row('table look', 'missing'), row('icons', 'missing')])).toBe('Using defaults: table look, icons')
@@ -53,26 +57,38 @@ describe('the words (YAZ-5559)', () => {
     expect(healthLine([row('a', 'missing'), row('b', 'missing')])).toBe('Using defaults: all settings (no settings files)')
   })
 
-  it("reads the phone's copy: here, missing, or not valid JSON; it writes nothing", async () => {
+  it('clean consolidated vault reports only settings.json and icons.json (missing legacy files are never listed)', async () => {
+    const { store } = await newPhone()
+    await store.write(VAULT, `.yaseendocs/${VAULT_SETTINGS_FILE}`, '{"version":1}')
+    await store.write(VAULT, `.yaseendocs/${ICONS_FILE}`, '{"version":2}')
+    const rows = await readVaultHealth(store, VAULT)
+    expect(rows).toEqual([
+      { file: VAULT_SETTINGS_FILE, label: 'vault settings', state: 'here' },
+      { file: ICONS_FILE, label: 'icons', state: 'here' },
+    ])
+    expect(healthLine(rows)).toBe('Every settings file is here')
+  })
+
+  it("reads the phone's copy: here, missing, or not valid JSON; only existing legacy files appear; writes nothing", async () => {
     const { store } = await phoneWithFiles()
     const write = vi.spyOn(store, 'write')
     const rows = await readVaultHealth(store, VAULT)
-    expect(rows.map((r) => r.file)).toEqual(VAULT_SETTINGS_FILES.map((f) => f.file))
-    expect(rows.filter((r) => r.state === 'missing').map((r) => r.label)).toEqual(['table look', 'icons'])
+    expect(rows.map((r) => r.file)).toEqual([VAULT_SETTINGS_FILE, ICONS_FILE, TEXT_FORMATTING_FILE, LINK_CLICK_FILE])
+    expect(rows.filter((r) => r.state === 'missing').map((r) => r.label)).toEqual(['icons'])
     expect(rows.filter((r) => r.state === 'unreadable').map((r) => r.label)).toEqual(['link clicks'])
-    expect(healthLine(rows)).toBe('Using defaults: link clicks, table look, icons')
+    expect(healthLine(rows)).toBe('Using defaults: icons, link clicks')
     expect(write).not.toHaveBeenCalled()
   })
 })
 
-describe('Settings › Vault health (YAZ-5559)', () => {
+describe('Settings › Vault health (YAZ-5559, YAZ-6557)', () => {
   it('one line for the open vault; a tap shows the list; a tap hides it', async () => {
     h = await mount({ phone: await phoneWithFiles() })
     await signInWithForm(h, 'yaseen/vault', GOOD)
     await h.click('Settings')
     await h.waitText('Using defaults')
     const toggle = h.host.querySelector<HTMLButtonElement>('.vault-health__toggle')!
-    expect(toggle.textContent).toContain('Vault health Using defaults: link clicks, table look, icons')
+    expect(toggle.textContent).toContain('Vault health Using defaults: icons, link clicks')
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(h.host.querySelector('#vault-health-list')).toBeNull()
     // Under the vaults, before Friends.
@@ -83,8 +99,9 @@ describe('Settings › Vault health (YAZ-5559)', () => {
     const list = h.host.querySelector('#vault-health-list')!
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     const rows = [...list.querySelectorAll('li.row')].map((li) => li.textContent)
-    expect(rows).toHaveLength(VAULT_SETTINGS_FILES.length)
-    expect(rows).toContain('Table looktable-look.jsonMac defaults')
+    expect(rows).toHaveLength(4)
+    expect(rows).toContain('Vault settingssettings.jsonIn the vault')
+    expect(rows).toContain('Iconsicons.jsonMac defaults')
     expect(rows).toContain('Text formattingtext-formatting.jsonIn the vault')
     expect(rows).toContain('Link clickslink-click.jsonNot valid JSON: Mac defaults')
     expect(list.textContent).toContain('Read only.')

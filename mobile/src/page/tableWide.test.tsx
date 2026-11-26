@@ -299,16 +299,16 @@ describe('YAZ-5658: Wide tables, the vault\'s (Settings) and the page\'s own (�
   const mode = (x: Harness) => x.host.querySelector('.reader__body')!.getAttribute('data-wide-tables')
   const choice = (x: Harness) => [...x.host.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].map((r) => `${r.textContent?.trim()}${r.getAttribute('aria-checked') === 'true' ? ' ✓' : ''}`)
 
-  it('the vault\'s default: Same as Desktop; mobile.json says Fit Screen: fit', async () => {
+  it('the vault\'s default: Same as Desktop; settings.json says Fit Screen: fit', async () => {
     h = await open('Day one', fakePort())
     await waitFor(h, () => mode(h!) === 'scroll')
     h.unmount()
-    h = await open('Day one', fakePort(), '{"version":1,"fitTables":true}')
+    h = await open('Day one', fakePort(), '{"version":1,"mobile":{"version":1,"fitTables":true}}')
     await waitFor(h, () => mode(h!) === 'fit')
   })
 
   it("a page's own `fit-tables: false` wins over the vault's Fit Screen", async () => {
-    h = await open('Day own', fakePort(), '{"version":1,"fitTables":true}')
+    h = await open('Day own', fakePort(), '{"version":1,"mobile":{"version":1,"fitTables":true}}')
     await waitFor(h, () => mode(h!) === 'scroll')
     await h.click('Page tools')
     expect(choice(h)).toEqual(['Mobile Vault Default', '✓ Same as Desktop ✓', 'Fit Screen'])
