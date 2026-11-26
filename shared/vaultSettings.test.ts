@@ -114,4 +114,20 @@ describe('shared/vaultSettings (YAZ-6546)', () => {
     const nestedNext = JSON.parse(withMobileSettingInVaultSettings(nestedStart, 'folding', false)) as Record<string, unknown>
     expect(nestedNext.mobile).toEqual({ version: 1, folding: false, futureMobileFlag: 'keep-me' })
   })
+
+  it('sanitizes partial or hand-edited nested overrides (sidebarTabs, rowDates) without crashing', () => {
+    const extracted = extractVaultOverrides({
+      version: 1,
+      sidebarTabs: { order: ['files', 'favorites'], hidden: ['files', 'recents'] },
+      rowDates: { files: true },
+      goTo: 'bad-not-an-object',
+    })
+    expect(extracted.sidebarTabs).toEqual({
+      order: ['files', 'favorites', 'search', 'focus', 'sessions', 'recents'],
+      hidden: ['recents'],
+      hiddenButtons: [],
+    })
+    expect(extracted.rowDates).toEqual({ files: true, focus: false, favorites: false, search: true })
+    expect(extracted.goTo).toBeUndefined()
+  })
 })
