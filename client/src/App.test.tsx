@@ -8610,6 +8610,7 @@ describe('App CLI navigation acknowledgement (YAZ-4502)', () => {
     const path = '/v/Mochi.md'
     const { bridge, emitAutomation } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true }, { [path]: { content: 'Mochi', mtime: 1 } })
     await act(async () => emitAutomation({ id: 'nav-1', action: 'navigate', target: { path, sidebar: 'favorites', reveal: false } }))
+    await vi.waitFor(() => expect(bridge.automation.reply).toHaveBeenCalledTimes(1))
     expect(captured.sidebar?.lens).toBe('favorites')
     expect(captured.sidebar?.activeFile).toBe(path)
     expect(bridge.automation.reply).toHaveBeenCalledExactlyOnceWith({ id: 'nav-1', ok: true, value: expect.objectContaining({ path, sidebar: 'favorites', sidebarCollapsed: false, acknowledged: true }) })

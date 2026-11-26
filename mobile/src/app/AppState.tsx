@@ -239,20 +239,14 @@ export function AppProvider({ services, children }: { services: AppServices; chi
       const start = await startState(store, tokens)
       const list = await loadVaultList(store)
       const accounts: Record<string, VaultAccount | undefined> = {}
-      const vaultIcons: Record<string, MobileVaultIcon | null> = {}
-      const iconLoader = list.vaults.length > 0 ? await loadIconReader().catch(() => null) : null
-      for (const v of list.vaults) {
-        const id = vaultId(v)
-        accounts[id] = await loadAccount(store, id)
-        vaultIcons[id] = iconLoader ? await iconLoader.readVaultIcon(store, id) : null
-      }
+      for (const v of list.vaults) accounts[vaultId(v)] = await loadAccount(store, vaultId(v))
       const open = openVaultOf(list)
       const key = open === null ? null : vaultId(open)
       const next: Loaded = {
         phase: start.kind === 'ready' ? 'ready' : start.kind,
         list,
         accounts,
-        vaultIcons,
+        vaultIcons: {},
         githubAccounts: await tokens.githubAccounts().catch(() => []),
         friendsAccount: await loadFriendsAccount(store),
         friendsSettings: await friends.settings(),
@@ -273,6 +267,24 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     },
     [store, tokens, sync, friends, tabsOfVault, keepTab],
   )
+
+  // YAZ-6560: load synced vault icons off the critical startup path so `phase: 'ready'` never waits on the lazy icon chunk.
+  const vaultIdsKey = useMemo(() => loaded.list.vaults.map((v) => vaultId(v)).join('\0'), [loaded.list.vaults])
+  useEffect(() => {
+    if (vaultIdsKey === '') return
+    let live = true
+    const ids = vaultIdsKey.split('\0')
+    void loadIconReader()
+      .then(async (m) => {
+        const entries = await Promise.all(ids.map(async (id) => [id, await m.readVaultIcon(store, id)] as const))
+        if (!live) return
+        setLoaded((l) => ({ ...l, vaultIcons: Object.fromEntries(entries) }))
+      })
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [vaultIdsKey, store])
 
   useEffect(() => {
     let live = true
