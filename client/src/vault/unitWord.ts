@@ -37,12 +37,13 @@ const helpers = new Map<string, UnitText>()
 const listeners = new Set<() => void>()
 let version = 0
 
-function setVaultUnit(root: string, helper: UnitText | null): void {
+export function publishVaultUnit(root: string, helper: UnitText | null): void {
   if (helper === null) helpers.delete(root)
   else helpers.set(root, helper)
   version++
   for (const listener of listeners) listener()
 }
+const setVaultUnit = publishVaultUnit
 
 /** The helper of the vault at `root`, read now: the identity for no vault, an unknown vault, or the default word. */
 export function vaultUnit(root: string | null | undefined): UnitText {

@@ -8,8 +8,9 @@
  * names the row (Text formatting, YAZ-3068 D16).
  */
 import type { ReactNode } from 'react'
+import type { SettingRowScopeMeta } from './settingsScope'
 
-interface SettingRowProps {
+interface SettingRowProps extends SettingRowScopeMeta {
   id: string
   label: string
   hint?: string
@@ -24,18 +25,39 @@ interface SettingRowProps {
   children: ReactNode
 }
 
-export function SettingRow({ id, label, hint, wide = false, bare = false, children }: SettingRowProps) {
+export function SettingRow({
+  id,
+  label,
+  hint,
+  wide = false,
+  bare = false,
+  overridden = false,
+  onReset,
+  overriddenIn,
+  scopeBadge,
+  children,
+}: SettingRowProps) {
   if (bare) {
     return (
-      <div className="setting setting--bare" data-setting={id} role="group" aria-label={label}>
+      <div className={`setting setting--bare${overridden ? ' setting--overridden' : ''}`} data-setting={id} role="group" aria-label={label}>
         {children}
       </div>
     )
   }
   return (
-    <div className={`setting${wide ? ' setting--wide' : ''}`} data-setting={id}>
+    <div className={`setting${wide ? ' setting--wide' : ''}${overridden ? ' setting--overridden' : ''}`} data-setting={id}>
       <div className="setting__text">
-        <p className="setting__label">{label}</p>
+        <div className="setting__label-row">
+          {overridden && <span className="setting__override-dot" title="Overridden from global default" aria-label="Overridden" />}
+          <p className="setting__label">{label}</p>
+          {scopeBadge !== undefined && <span className="setting__scope-badge">{scopeBadge}</span>}
+          {overridden && onReset !== undefined && (
+            <button type="button" className="setting__reset" onClick={onReset} aria-label={`Reset ${label} to global default`}>
+              Reset
+            </button>
+          )}
+        </div>
+        {overriddenIn !== undefined && <p className="setting__scope-note">Overridden in {overriddenIn}</p>}
         {hint !== undefined && <p className="setting__hint">{hint}</p>}
       </div>
       <div className="setting__control">{children}</div>

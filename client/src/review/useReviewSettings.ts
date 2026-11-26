@@ -25,11 +25,12 @@ export interface ReviewSettingsState {
  */
 const published = new Map<string, ReviewSettings>()
 const listeners = new Set<() => void>()
-function publish(root: string, settings: ReviewSettings | null): void {
+export function publishReviewSettings(root: string, settings: ReviewSettings | null): void {
   if (settings === null) published.delete(root)
   else published.set(root, settings)
   for (const listener of listeners) listener()
 }
+const publish = publishReviewSettings
 const subscribe = (listener: () => void): (() => void) => {
   listeners.add(listener)
   return () => listeners.delete(listener)
