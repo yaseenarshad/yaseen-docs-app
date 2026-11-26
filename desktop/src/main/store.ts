@@ -1,4 +1,5 @@
 import { cleanIconRules, isIconRules } from '@shared/vaultIcons'
+import { isMenuIconsSetting, sanitizeMenuIcons } from '@shared/menuIcons'
 import { applyCoursePatch, cleanCourseState, type CoursePatch } from '@shared/courseState'
 import { isValidDailyPageFormat } from '@shared/dailyPage'
 import { isCalendarDayTime, isValidTimeFormat } from '@shared/timeFormat'
@@ -885,6 +886,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   sidebarFileIcons: (v): v is SidebarFileIcons => typeof v === 'string' && (SIDEBAR_FILE_ICONS as readonly string[]).includes(v),
   sidebarFolderIcons: (v): v is SidebarFolderIcons => typeof v === 'string' && (SIDEBAR_FOLDER_ICONS as readonly string[]).includes(v),
   sidebarArrowMotion: (v): v is SidebarArrowMotion => typeof v === 'string' && (SIDEBAR_ARROW_MOTIONS as readonly string[]).includes(v),
+  menuIcons: isMenuIconsSetting,
   sidebarRevealActive: (v): v is boolean => typeof v === 'boolean',
   sidebarPlace: (v): v is SidebarPlace => typeof v === 'string' && (SIDEBAR_PLACES as readonly string[]).includes(v),
   sidebarPerTabWidth: (v): v is boolean => typeof v === 'boolean',
@@ -975,6 +977,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   // YAZ-3440 D9: a rule that does not read costs itself alone.
   out.sidebarIconRules = cleanIconRules(src.sidebarIconRules)
   out.codeOutlineHidden = sanitizeOutlineHidden(src.codeOutlineHidden)
+  out.menuIcons = sanitizeMenuIcons(src.menuIcons)
   out.workspaceSettings = sanitizeWorkspaceSettings(src.workspaceSettings)
   // YAZ-6490: clamp new-window defaults (50–200), and seed from retired global keys on upgrade when absent.
   if (isFiniteNumber(src.newWindowSidebarZoom)) out.newWindowSidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.newWindowSidebarZoom))
@@ -992,7 +995,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
 /** Object fields that travel as a whole (YAZ-3397): the incoming one replaces this Mac's, after its own repair. */
 // The icon colours too (YAZ-3440 D4): a colour another Mac reset to its default is a key gone, which a merge by part would bring back.
 // ⌘D's place too (YAZ-3556 D2): a tab and a folder have other parts, and a merge by part would mix them.
-const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside', 'sidebarIconColors', 'goTo', 'inlineCodeStyle', 'workspaceSettings']
+const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside', 'sidebarIconColors', 'goTo', 'inlineCodeStyle', 'menuIcons', 'workspaceSettings']
 
 /**
  * Another Mac's travelling fields over this Mac's settings (YAZ-3276 D3). A value that this build can't read,
