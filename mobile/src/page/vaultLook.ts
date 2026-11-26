@@ -6,10 +6,10 @@ import { LINK_PILLS_FILE, NO_LINK_PILLS, isDefaultLinkPills, sanitizeLinkPills, 
 import { TEXT_FORMATTING_FILE, sanitizeTextFormatting, spacingVars } from '@shared/textFormatting'
 import { TABLE_LOOK_FILE, sanitizeTableLook, tableLookSettings } from '@shared/tableLook'
 import { tableLookVars, type PhoneTableLook } from './tableLook'
-import { VAULT_CONFIG_DIR } from '@shared/types'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
 import { readCardLook } from '../media/ui/cardDraw'
+import { readVaultSectionOrLegacy, readVaultSettingsDoc } from '../settings/readVaultSettings'
 import { resolveSourceOf } from './pageLook'
 import './linkPills.css'
 
@@ -43,16 +43,6 @@ export interface VaultLook {
 
 export const NO_LOOK: VaultLook = { pills: NO_LINK_PILLS, click: PHONE_DEFAULT_LINK_CLICK, style: {}, table: null }
 
-async function readJson(store: VaultStore, vault: string, name: string): Promise<unknown> {
-  const file = await store.read(vault, `${VAULT_CONFIG_DIR}/${name}`)
-  if (file === null) return undefined
-  try {
-    return JSON.parse(typeof file.content === 'string' ? file.content : new TextDecoder().decode(file.content))
-  } catch {
-    return undefined
-  }
-}
-
 const looks = new WeakMap<VaultData, Promise<VaultLook>>()
 /** YAZ-5589: each look once read, so a page that mounts with data read before draws with its look at once. */
 const read = new WeakMap<VaultData, VaultLook>()
@@ -61,7 +51,14 @@ export function loadVaultLook(store: VaultStore, data: VaultData): Promise<Vault
   let held = looks.get(data)
   if (held === undefined) {
     held = (async () => {
-      const [rawPills, rawText, rawClick, card, rawTable] = await Promise.all([readJson(store, data.vault, LINK_PILLS_FILE), readJson(store, data.vault, TEXT_FORMATTING_FILE), readJson(store, data.vault, LINK_CLICK_FILE), readCardLook(store, data.vault), readJson(store, data.vault, TABLE_LOOK_FILE)])
+      const doc = await readVaultSettingsDoc(store, data.vault)
+      const [rawPills, rawText, rawClick, card, rawTable] = await Promise.all([
+        readVaultSectionOrLegacy(store, data.vault, 'linkPills', LINK_PILLS_FILE, doc),
+        readVaultSectionOrLegacy(store, data.vault, 'textFormatting', TEXT_FORMATTING_FILE, doc),
+        readVaultSectionOrLegacy(store, data.vault, 'linkClick', LINK_CLICK_FILE, doc),
+        readCardLook(store, data.vault, doc),
+        readVaultSectionOrLegacy(store, data.vault, 'tableLook', TABLE_LOOK_FILE, doc),
+      ])
       const clean = sanitizeLinkPills(rawPills)
       const pills = isDefaultLinkPills(clean) ? NO_LINK_PILLS : clean
       const text = sanitizeTextFormatting(rawText)

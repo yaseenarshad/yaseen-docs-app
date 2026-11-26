@@ -143,11 +143,12 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
     }
     await saveVaultList(store, { vaults, open: vaultId(VAULTS[name === 'repo-gone' || many ? 1 : 0]) })
   }
-  // YAZ-5559: the open vault's settings files, made up: all but the table look and the icons, and a link clicks file
-  // that is not JSON (Vault health then says "Using defaults: link clicks, table look, icons").
-  if (name === 'settings-health')
-    for (const { file, label } of (await import('@shared/vaultSettingsFiles')).VAULT_SETTINGS_FILES)
-      if (label !== 'table look' && label !== 'icons') await store.write(vaultId(VAULTS[0]), `.yaseendocs/${file}`, label === 'link clicks' ? '{ not json' : '{"version":1}')
+  // YAZ-5559 / YAZ-6557: the open vault's settings files, made up: settings.json valid, icons.json missing, and a
+  // legacy link-click.json that is not JSON (Vault health then says "Using defaults: icons, link clicks").
+  if (name === 'settings-health') {
+    await store.write(vaultId(VAULTS[0]), '.yaseendocs/settings.json', '{"version":1}')
+    await store.write(vaultId(VAULTS[0]), '.yaseendocs/link-click.json', '{ not json')
+  }
   const sync = fakeSync({ download: name === 'download' })
   const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, friends: fakeFriends(store, false), fetch: name.startsWith('repo-') ? repoFetch(name) : refuseAll }
   const check = /^settings-check-(newest|ready|unreachable|busy)$/.exec(name)?.[1] as CheckResult | 'busy' | undefined

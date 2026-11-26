@@ -3,6 +3,7 @@ import { IDS_FILE, idLettersOf, idsAnswer } from '@shared/pageId'
 import { REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { useApp } from '../app/AppState'
+import { readVaultSectionOrLegacy } from '../settings/readVaultSettings'
 import type { VaultStore } from '../store'
 import type { PhoneIndex } from '../sync/phoneIndex'
 
@@ -44,7 +45,6 @@ export interface VaultData {
 export const INDEX_STATE_NAME = 'index'
 
 const CONFIG = `${VAULT_CONFIG_DIR}/`
-const REVIEW_PATH = `${CONFIG}${REVIEW_SETTINGS_FILE}`
 export const IDS_PATH = `${CONFIG}${IDS_FILE}`
 
 /** A stored JSON file of the vault, parsed; undefined when it is not stored or not JSON. */
@@ -84,7 +84,7 @@ export async function loadVaultData(store: VaultStore, vault: string, repoName: 
     files: Object.keys(checkpoint?.shas ?? {}),
     letters: idLettersOf(idsConfig, repoName).letters,
     ids: idsAnswer(idsConfig) ?? records.some((r) => r.id !== undefined || r.cards?.some((c) => c.id !== null) === true),
-    review: sanitizeReviewSettings(await readJson(store, vault, REVIEW_PATH)),
+    review: sanitizeReviewSettings(await readVaultSectionOrLegacy(store, vault, 'review', REVIEW_SETTINGS_FILE)),
     version: ++versions,
   }
   if (held !== null) madeFrom.set(data, held)

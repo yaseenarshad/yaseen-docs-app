@@ -1,11 +1,13 @@
 import { VAULT_CONFIG_DIR } from '@shared/types'
-import { VAULT_SETTINGS_FILES } from '@shared/vaultSettingsFiles'
+import { LEGACY_VAULT_SETTINGS_HEALTH_FILES, VAULT_SETTINGS_FILES } from '@shared/vaultSettingsFiles'
 import type { VaultStore } from '../store'
 
 /**
- * Settings › Vault health (YAZ-5559), READ ONLY: which settings files of `.yaseendocs/` the open vault has (in the
- * phone's copy, which downloads the whole folder), and which settings use the Mac's defaults because the file is
- * missing or is not valid JSON. The list of files is the shared one (`@shared/vaultSettingsFiles`), never a second one.
+ * Settings › Vault health (YAZ-5559, updated for unified settings in YAZ-6557), READ ONLY: which settings files of
+ * `.yaseendocs/` the open vault has (in the phone's copy, which downloads the whole folder), and which settings use the
+ * Mac's defaults because the file is missing or is not valid JSON. The lists of files are the shared ones
+ * (`@shared/vaultSettingsFiles`), never a second copy. Legacy files are only included when they actually exist in the
+ * vault (so migrated vaults stay clean while unmigrated or malformed legacy files are still surfaced).
  */
 export type HealthState = 'here' | 'missing' | 'unreadable'
 
@@ -15,19 +17,28 @@ export interface HealthRow {
   state: HealthState
 }
 
+async function checkFile(store: VaultStore, vault: string, file: string): Promise<HealthState> {
+  const stored = await store.read(vault, `${VAULT_CONFIG_DIR}/${file}`).catch(() => null)
+  if (stored === null) return 'missing'
+  try {
+    JSON.parse(typeof stored.content === 'string' ? stored.content : new TextDecoder().decode(stored.content))
+    return 'here'
+  } catch {
+    return 'unreadable'
+  }
+}
+
 export async function readVaultHealth(store: VaultStore, vault: string): Promise<HealthRow[]> {
-  return Promise.all(
-    VAULT_SETTINGS_FILES.map(async ({ file, label }): Promise<HealthRow> => {
-      const stored = await store.read(vault, `${VAULT_CONFIG_DIR}/${file}`).catch(() => null)
-      if (stored === null) return { file, label, state: 'missing' }
-      try {
-        JSON.parse(typeof stored.content === 'string' ? stored.content : new TextDecoder().decode(stored.content))
-        return { file, label, state: 'here' }
-      } catch {
-        return { file, label, state: 'unreadable' }
-      }
-    }),
-  )
+  const [current, legacy] = await Promise.all([
+    Promise.all(VAULT_SETTINGS_FILES.map(async ({ file, label }): Promise<HealthRow> => ({ file, label, state: await checkFile(store, vault, file) }))),
+    Promise.all(
+      LEGACY_VAULT_SETTINGS_HEALTH_FILES.map(async ({ file, label }): Promise<HealthRow | null> => {
+        const state = await checkFile(store, vault, file)
+        return state === 'missing' ? null : { file, label, state }
+      }),
+    ),
+  ])
+  return [...current, ...legacy.filter((r): r is HealthRow => r !== null)]
 }
 
 /** The one line: "Using defaults: table look, icons" (at most 3 names, then "and 2 more"). */

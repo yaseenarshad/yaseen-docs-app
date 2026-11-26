@@ -144,7 +144,7 @@ export const STICKY_HEADINGS_FILES: Record<string, string> = {
 
 export const MOBILE_SETTINGS_FILES: Record<string, string> = {
   ...STICKY_HEADINGS_FILES,
-  '.yaseendocs/mobile.json': `${JSON.stringify({ version: 1, folding: false }, null, 2)}\n`,
+  '.yaseendocs/settings.json': `${JSON.stringify({ version: 1, mobile: { version: 1, folding: false } }, null, 2)}\n`,
 }
 
 /**

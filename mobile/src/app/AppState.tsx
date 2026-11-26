@@ -15,6 +15,7 @@ import { CALLBACK_PATH, GITHUB_CHOOSE_REPOS, INSTALLED_PATH } from '../auth/gith
 import type { SignInMode } from '../screens/SignIn'
 import { SAME_WORD, UNIT_WORD_PATH, readUnitWord, type UnitText } from './unitWord'
 import { readVaultTabs, sameTabs } from './vaultTabs'
+import { VAULT_SETTINGS_PATH } from '../settings/readVaultSettings'
 
 /**
  * The app's state and its actions: the one layer the screens (4A–4E) plug into. Every service is passed in, so
@@ -335,8 +336,8 @@ export function AppProvider({ services, children }: { services: AppServices; chi
         if (event.type === 'state') return setSyncState(event.state)
         if (event.vault !== openKey.current) return
         const vault = event.vault
-        // Round 15, item 5: a new `.yaseendocs/unit-word.json` from the Mac changes the words at once.
-        if (event.settings.includes(UNIT_WORD_PATH)) void readUnitWord(store, vault).then((unit) => setLoaded((l) => ({ ...l, unit })))
+        // Round 15, item 5 (unified YAZ-6557): a new `.yaseendocs/settings.json` (or legacy `unit-word.json`) changes the words at once.
+        if (event.settings.includes(VAULT_SETTINGS_PATH) || event.settings.includes(UNIT_WORD_PATH)) void readUnitWord(store, vault).then((unit) => setLoaded((l) => ({ ...l, unit })))
         // The vault's settings (or its first IDs) can bring a tab or take one away, at once.
         void tabsOfVault(store, vault, event.index).then((tabs) => {
           if (openKey.current !== vault) return

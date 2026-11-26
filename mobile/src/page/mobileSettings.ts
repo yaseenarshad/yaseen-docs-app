@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { MobileSettingKey, MobileSettings } from '@shared/mobileSettings'
+import { sanitizeMobileSettings, type MobileSettingKey, type MobileSettings } from '@shared/mobileSettings'
 import { useApp } from '../app/AppState'
 import type { CommentsPort } from '../comments/bridge'
-import { MOBILE_SETTINGS_PATH, isVaultSetting, readMobileText } from '../comments/mobileWrite'
+import { LEGACY_MOBILE_SETTINGS_PATH, MOBILE_SETTINGS_PATH, isVaultSetting } from '../comments/mobileWrite'
 import type { WaitingComment } from '../comments/outbox'
+import { readVaultSectionOrLegacy } from '../settings/readVaultSettings'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
 
@@ -26,18 +27,12 @@ export function withWaiting(file: MobileSettings, waiting: readonly WaitingComme
   return out
 }
 
-/** The settings the phone shows: the stored file with the waiting changes. */
+/** The settings the phone shows: `settings.json`'s `mobile` section (fallback `mobile.json`) with the waiting changes. */
 export async function readMobileSettings(store: VaultStore, vault: string, port: CommentsPort | null): Promise<MobileSettings> {
   // The list first: an entry that settles meanwhile was in the stored file before it left the list (the send's pass).
-  const waiting = port?.waiting(MOBILE_SETTINGS_PATH) ?? []
-  let text: string | null = null
-  try {
-    const file = await store.read(vault, MOBILE_SETTINGS_PATH)
-    text = file === null ? null : typeof file.content === 'string' ? file.content : new TextDecoder().decode(file.content)
-  } catch {
-    text = null
-  }
-  return withWaiting(readMobileText(text), waiting)
+  const waiting = [...(port?.waiting(LEGACY_MOBILE_SETTINGS_PATH) ?? []), ...(port?.waiting(MOBILE_SETTINGS_PATH) ?? [])]
+  const raw = await readVaultSectionOrLegacy(store, vault, 'mobile', 'mobile.json').catch(() => undefined)
+  return withWaiting(sanitizeMobileSettings(raw), waiting)
 }
 
 /** A page's own choice wins; none: the vault's. */

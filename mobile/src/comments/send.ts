@@ -8,7 +8,7 @@ import { INDEX_STATE, type PhoneIndex } from '../sync/phoneIndex'
 import type { CommentBox, WaitingComment } from './outbox'
 import { applyTask } from './taskWrite'
 import { applySetting } from './settingWrite'
-import { applyVaultSetting, isVaultSetting } from './mobileWrite'
+import { LEGACY_MOBILE_SETTINGS_PATH, MOBILE_SETTINGS_PATH, applyVaultSetting, isVaultSetting } from './mobileWrite'
 import { applyComment } from './write'
 
 export interface CommentSendOptions {
@@ -210,16 +210,18 @@ async function planComments(store: VaultStore, vault: string, list: readonly Wai
   }
   for (const [path, comments] of byPath) {
     const file = checkpoint.shas[path] === undefined ? null : await store.read(vault, path)
-    // YAZ-5592: a vault settings file (`.yaseendocs/mobile.json`): no file yet is made; its bytes are text.
+    // YAZ-5592 / YAZ-6557: unified vault settings file (`.yaseendocs/settings.json`): no file yet is made; its bytes are text.
     if (comments.every((c) => isVaultSetting(c.setting))) {
       if (file === null && checkpoint.shas[path] !== undefined) {
         for (const c of comments) plan.refused.push({ id: c.id, why: 'too-large' })
         continue
       }
       const was = file === null ? null : typeof file.content === 'string' ? file.content : new TextDecoder().decode(file.content)
+      const legacyFile = path === MOBILE_SETTINGS_PATH && checkpoint.shas[LEGACY_MOBILE_SETTINGS_PATH] !== undefined ? await store.read(vault, LEGACY_MOBILE_SETTINGS_PATH) : null
+      const legacy = legacyFile === null ? null : typeof legacyFile.content === 'string' ? legacyFile.content : new TextDecoder().decode(legacyFile.content)
       let next = was
       for (const c of comments) {
-        const out = applyVaultSetting(next, c.setting as Parameters<typeof applyVaultSetting>[1])
+        const out = applyVaultSetting(next, c.setting as Parameters<typeof applyVaultSetting>[1], legacy)
         if (out.kind === 'set') {
           next = out.content
           plan.added.push(c)

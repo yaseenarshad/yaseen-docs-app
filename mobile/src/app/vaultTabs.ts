@@ -1,4 +1,6 @@
+import { isRecord } from '@shared/guards'
 import { VAULT_CONFIG_DIR } from '@shared/types'
+import { readVaultSectionOrLegacy, readVaultSettingsDoc } from '../settings/readVaultSettings'
 import type { VaultStore } from '../store'
 import type { PhoneIndex } from '../sync/phoneIndex'
 import { PLAIN_VAULT, type VaultTabs } from './nav'
@@ -38,7 +40,13 @@ const anyId = (index: PhoneIndex | null | undefined): boolean =>
 /** The open vault's tabs. `index`: the index the caller has (3B's event); else the stored one, read only when `ids.json` gives no answer. */
 export async function readVaultTabs(store: Pick<VaultStore, 'read' | 'getState'>, vault: string | null, index?: PhoneIndex): Promise<VaultTabs> {
   if (vault === null) return PLAIN_VAULT
-  const [review, ids, daily] = await Promise.all([json(store, vault, REVIEW_FILE), json(store, vault, IDS_FILE), json(store, vault, DAILY_FILE)])
+  const [doc, ids] = await Promise.all([readVaultSettingsDoc(store, vault), json(store, vault, IDS_FILE)])
+  const [rawReview, rawDaily] = await Promise.all([
+    readVaultSectionOrLegacy(store, vault, 'review', 'review.json', doc),
+    readVaultSectionOrLegacy(store, vault, 'dailyPages', 'daily-pages.json', doc),
+  ])
+  const review = isRecord(rawReview) ? rawReview : null
+  const daily = isRecord(rawDaily) ? rawDaily : null
   const reviewOn = typeof review?.enabled === 'boolean' ? review.enabled : true
   const idsOn =
     typeof ids?.enabled === 'boolean' ? ids.enabled : reviewOn && anyId(index ?? (await store.getState<PhoneIndex>(vault, INDEX_NAME).catch(() => null)))

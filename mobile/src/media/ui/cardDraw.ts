@@ -7,7 +7,7 @@ import type { WikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
 import { makeAssetResolver } from '@shared/assetLookup'
 import { CARD_LOOK_FILE, cardLookStyle, sanitizeCardLook } from '@shared/cardLook'
 import { TEXT_FORMATTING_FILE, sanitizeTextFormatting } from '@shared/textFormatting'
-import { VAULT_CONFIG_DIR } from '@shared/types'
+import { readVaultSectionOrLegacy, readVaultSettingsDoc } from '../../settings/readVaultSettings'
 import type { VaultStore } from '../../store'
 import { vaultMediaPath, vaultMediaUrl } from './vaultMedia'
 
@@ -115,8 +115,14 @@ export function drawLocalCard(text: string, show: CardShow, place: { links: Wiki
  * on the phone). Worn by the reader (a card in a page, the card view: `vaultLook.ts`) and by Review's card. Here, with the
  * phone's one card drawing, so no new chunk joins the first load's list.
  */
-export async function readCardLook(store: VaultStore, vault: string): Promise<Record<string, string>> {
-  const [look, size] = await Promise.all([readVaultJson(store, vault, CARD_LOOK_FILE, (raw) => cardLookStyle(sanitizeCardLook(raw))), readVaultJson(store, vault, TEXT_FORMATTING_FILE, pageTextSize)])
+export async function readCardLook(store: VaultStore, vault: string, doc?: Record<string, unknown> | null): Promise<Record<string, string>> {
+  const unified = doc === undefined ? await readVaultSettingsDoc(store, vault) : doc
+  const [rawCard, rawText] = await Promise.all([
+    readVaultSectionOrLegacy(store, vault, 'cardLook', CARD_LOOK_FILE, unified),
+    readVaultSectionOrLegacy(store, vault, 'textFormatting', TEXT_FORMATTING_FILE, unified),
+  ])
+  const look = rawCard === undefined ? {} : cardLookStyle(sanitizeCardLook(rawCard))
+  const size = rawText === undefined ? {} : pageTextSize(rawText)
   return { ...size, ...look }
 }
 
@@ -128,15 +134,4 @@ export async function readCardLook(store: VaultStore, vault: string): Promise<Re
 const pageTextSize = (raw: unknown): Record<string, string> => {
   const size = sanitizeTextFormatting(raw).text?.size
   return size === undefined ? {} : { '--text-size': `${size}px` }
-}
-
-/** A vault file of `.yaseendocs/` read through `read`; no file, or one that is not JSON: none. */
-async function readVaultJson(store: VaultStore, vault: string, name: string, read: (raw: unknown) => Record<string, string>): Promise<Record<string, string>> {
-  const file = await store.read(vault, `${VAULT_CONFIG_DIR}/${name}`).catch(() => null)
-  if (file === null) return {}
-  try {
-    return read(JSON.parse(typeof file.content === 'string' ? file.content : new TextDecoder().decode(file.content)))
-  } catch {
-    return {}
-  }
 }
