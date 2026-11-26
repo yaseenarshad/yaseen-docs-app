@@ -1118,7 +1118,7 @@ export function App() {
     // a change rebuilds no editor; a page's own width on its editor's mount wins (app.css).
     ...(settings.codeBlockWidth != null ? { '--code-block-width': `${settings.codeBlockWidth}px` } : {}),
     ...inlineCodeVars(settings.inlineCodeStyle),
-    ...webLinkVars(settings.webLinks),
+    ...webLinkVars(appSettings.webLinks),
     // Absent → bulletThreading.css falls back to the app accent.
     ...(settings.threadColor !== null ? { '--thread-color': settings.threadColor } : {}),
     // Absent → app.css falls back to `--thread-color`, then the accent (YAZ-3309 D9).
@@ -1146,7 +1146,7 @@ export function App() {
   const cardVarsFor = (path: string): CSSProperties => {
     const look = scopeOf(path).cardLook.look
     const cardVars = look === null ? NO_CARD_VARS : vaultCardVars(look, settings, () => ({ ...settings, ...cardLookSettings(look) }))
-    return cardSurfaceStyleOf(scopeOf(path).linkPills.pills, cardVars)
+    return cardSurfaceStyleOf(scopeOf(path).linkPills.pills, cardVars, pageSettingsOf(path).webLinks)
   }
   // YAZ-5904: Card sides in pages or in Explore changed (the app's, or a vault's card look): the shown cards fold again.
   const cardFoldKey = [settings.cardSidesFold, settings.cardSidesFoldCardPages, settings.cardSidesFoldExplore, ...vaults.map((v) => `${v?.cardLook.look?.sidesFold}/${v?.cardLook.look?.sidesFoldCardPages}/${v?.cardLook.look?.sidesFoldExplore}`)].join()

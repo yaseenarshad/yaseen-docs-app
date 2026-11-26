@@ -132,7 +132,7 @@ export function WebLinksControl({ value, onChange }: { value: WebLinksStyle; onC
       <div
         className={`link-pills-preview web-links-preview${showHover ? ' web-links-preview--hover' : ''}`}
         aria-label="Web links preview"
-        style={webLinkVars(value)}
+        style={webLinkVars(value, { resetDefaults: true })}
       >
         <span className="link-pills-preview__samples">
           <span className="link-pills-preview__label">Preview</span>

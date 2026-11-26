@@ -16,6 +16,7 @@ import {
 } from '@shared/webLinks'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { NO_LINK_PILLS } from '@shared/linkPills'
+import { cardSurfaceStyleOf } from '../review/cardLook'
 import { WebLinksControl } from './WebLinksControl'
 import { SettingsDialog } from './SettingsDialog'
 import type { SettingsCtx } from './registry'
@@ -292,5 +293,21 @@ describe('WebLinksControl (YAZ-6584)', () => {
       ...DEFAULT_SETTINGS,
       webLinks: { underline: false, box: { shape: 'round' }, mark: { place: 'after' } },
     })
+  })
+
+  it('YAZ-6588 & YAZ-6589: preview isolates from .app vars with resetDefaults, and cardSurfaceStyleOf carries resolved webLinks', () => {
+    const { el } = mountControl(DEFAULT_WEB_LINKS)
+    const preview = el.querySelector<HTMLElement>('.web-links-preview')!
+    expect(preview.style.getPropertyValue('--ext-link-decoration')).toBe('initial')
+    expect(preview.style.getPropertyValue('--ext-link-mark-place')).toBe('initial')
+    expect(preview.style.getPropertyValue('--ext-link-hover-mode')).toBe('initial')
+
+    const styled = cardSurfaceStyleOf(NO_LINK_PILLS, {}, { underline: false, mark: { place: 'after', custom: '🔗' } }) as Record<string, string>
+    expect(styled['--ext-link-decoration']).toBe('none')
+    expect(styled['--ext-link-mark-text']).toBe('"🔗"')
+
+    const reset = cardSurfaceStyleOf(NO_LINK_PILLS, {}, DEFAULT_WEB_LINKS) as Record<string, string>
+    expect(reset['--ext-link-decoration']).toBe('initial')
+    expect(reset['--ext-link-mark-place']).toBe('initial')
   })
 })

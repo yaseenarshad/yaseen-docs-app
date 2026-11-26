@@ -15,6 +15,7 @@
 import { cardLookOf, cardLookStyle } from '@shared/cardLook'
 import type { LinkPills } from '@shared/linkPills'
 import type { SettingsState } from '@shared/types'
+import { DEFAULT_WEB_LINKS, webLinkVars, type WebLinksStyle } from '@shared/webLinks'
 import { linkPillVars } from '../editor/wikilink/linkPillLook'
 import { contentWidthVars } from '../lib/contentWidth'
 import type { CSSProperties } from 'react'
@@ -41,17 +42,24 @@ export function vaultCardVars(look: object, settings: SettingsState, resolve: ()
   return vars
 }
 
-const cardSurfaceStyles = new WeakMap<LinkPills, WeakMap<CSSProperties, CSSProperties>>()
+const cardSurfaceStyles = new WeakMap<LinkPills, WeakMap<CSSProperties, WeakMap<WebLinksStyle, CSSProperties>>>()
+const NO_WEB_LINKS_SENTINEL: WebLinksStyle = Object.freeze({})
 /**
  * The style of a surface that shows a vault's cards outside a page layer — the Inbox, Preview a card, Explore's card
- * layer (YAZ-5792, YAZ-5822): its card look and its link pills look (`linkPillVars`), since a card's text holds link
- * pills (`cardPill`). Cached on both objects, as App's `layerStyleOf`, so a surface's style keeps its identity between
- * renders.
+ * layer (YAZ-5792, YAZ-5822, YAZ-6589): its card look, its link pills look (`linkPillVars`), and its resolved external
+ * web links look (`webLinkVars` with `resetDefaults: true` so portalled previews and multi-vault panes isolate cleanly).
+ * Cached on all three objects, as App's `layerStyleOf`, so a surface's style keeps its identity between renders.
  */
-export function cardSurfaceStyleOf(pills: LinkPills, cardVars: CSSProperties): CSSProperties {
+export function cardSurfaceStyleOf(pills: LinkPills, cardVars: CSSProperties, webLinks?: WebLinksStyle): CSSProperties {
   let byCard = cardSurfaceStyles.get(pills)
   if (byCard === undefined) cardSurfaceStyles.set(pills, (byCard = new WeakMap()))
-  let style = byCard.get(cardVars)
-  if (style === undefined) byCard.set(cardVars, (style = { ...linkPillVars(pills), ...cardVars } as CSSProperties))
+  let byWeb = byCard.get(cardVars)
+  if (byWeb === undefined) byCard.set(cardVars, (byWeb = new WeakMap()))
+  const key = webLinks ?? NO_WEB_LINKS_SENTINEL
+  let style = byWeb.get(key)
+  if (style === undefined) {
+    const ext = webLinks === undefined ? {} : webLinkVars(webLinks ?? DEFAULT_WEB_LINKS, { resetDefaults: true })
+    byWeb.set(key, (style = { ...linkPillVars(pills), ...cardVars, ...ext } as CSSProperties))
+  }
   return style
 }

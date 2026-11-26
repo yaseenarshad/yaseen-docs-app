@@ -83,5 +83,12 @@ describe('shared/webLinks (YAZ-6580)', () => {
     expect(pill['--ext-link-bg']).toBe('color-mix(in srgb, var(--accent) 10%, transparent)')
     expect(pill['--ext-link-radius']).toBe('4px')
     expect(pill['--ext-link-hover-overhang']).toBe('0')
+
+    // YAZ-6590: boxed link with custom hover wash colour must still disable overhang
+    const squareCustomHover = webLinkVars({ box: { shape: 'square' }, hover: { color: 'blue' } })
+    expect(squareCustomHover['--ext-link-hover-overhang']).toBe('0')
+    expect(squareCustomHover['--ext-link-hover-bg']).toContain('--table-fill-solid-blue')
+    const unboxedCustomHover = webLinkVars({ hover: { color: 'blue' } })
+    expect(unboxedCustomHover['--ext-link-hover-overhang']).toBe('1')
   })
 })

@@ -129,4 +129,19 @@ describe('a card surface wears the vault`s link pills look (YAZ-5822)', () => {
     // A vault with the app's own pill look adds no pill variable.
     expect(Object.keys(cardSurfaceStyleOf(NO_LINK_PILLS, cardVars)).some((key) => key.startsWith('--pill-'))).toBe(false)
   })
+
+  it('YAZ-6589: a card surface also carries the vault`s webLinks look and resets inherited global webLinks variables', () => {
+    const cardVars = vaultCardVars({}, DEFAULT_SETTINGS, () => DEFAULT_SETTINGS)
+    const clean = { underline: false as const, mark: { place: 'after' as const } }
+    const style = cardSurfaceStyleOf(NO_LINK_PILLS, cardVars, clean) as Record<string, string>
+    expect(style['--ext-link-decoration']).toBe('none')
+    expect(style['--ext-link-mark-place']).toBe('after')
+    // Identity is cached for the same (pills, cardVars, webLinks) triple.
+    expect(cardSurfaceStyleOf(NO_LINK_PILLS, cardVars, clean)).toBe(style)
+    // A vault with default webLinks ({}) still emits resetDefaults so `.app` global webLinks never bleed in.
+    const defaultStyle = cardSurfaceStyleOf(NO_LINK_PILLS, cardVars, {}) as Record<string, string>
+    expect(defaultStyle['--ext-link-decoration']).toBe('initial')
+    expect(defaultStyle['--ext-link-mark-place']).toBe('initial')
+    expect(defaultStyle).not.toBe(style)
+  })
 })

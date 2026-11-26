@@ -312,7 +312,7 @@ export function webLinkVars(style: WebLinksStyle, opts?: { resetDefaults?: boole
     // Wash hover (default)
     if (hover?.color !== undefined) {
       vars['--ext-link-hover-bg'] = `color-mix(in srgb, ${linkHoverSolidCss(hover.color)} ${LINK_HOVER_WASH_PERCENT[hoverStrength]}%, transparent)`
-      if (!hasVisibleBox) vars['--ext-link-hover-overhang'] = '1'
+      vars['--ext-link-hover-overhang'] = hasVisibleBox ? '0' : '1'
     } else if (customFill) {
       vars['--ext-link-hover-bg'] = `color-mix(in srgb, var(--fg) ${LINK_HOVER_FILL_PERCENT[hoverStrength]}%, var(--ext-link-bg))`
       vars['--ext-link-hover-overhang'] = '0'
