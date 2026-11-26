@@ -111,6 +111,8 @@ export interface SidebarVault {
   idsInSearch?: () => IdsInSearch
   /** Saves this vault's "Show IDs in search" choice (YAZ-6502), used by the Search ↑↓ menu. */
   setIdsInSearch?: (next: IdsInSearch) => void
+  /** This vault's "Show IDs in the title" (YAZ-4940, YAZ-6567 1E): also shows the page/board ID in hover preview headers. Absent → off. */
+  idInTitle?: boolean
   /** This vault's "Show IDs in the files list" (YAZ-4940): each page row of Files, Focus and Favorites ends with its ID's number ("#12") or the full ID. Absent → off. */
   idsInFiles?: IdsInFiles
   /** This vault's "Show IDs in recents" (YAZ-6537) and its setter, used by the Recents ↑↓ menu. Absent → off. */
@@ -1008,11 +1010,21 @@ export function Sidebar({
     return null
   }, [focusOnly, onlyFolder, forest, lens, favoriteNodes, focusNodes, shownTab.folders, roots])
   const prevOnlyListDir = useRef<string | null>(null)
+  const activeListDirRef = useRef<{ lens: 'favorites' | 'focus'; only: string } | null>(null)
   useEffect(() => {
     const dir = onlyListDir?.path ?? null
     if (dir !== null && prevOnlyListDir.current !== dir) openTo(`${dir}/x`, dir)
     prevOnlyListDir.current = dir
-  }, [onlyListDir, openTo])
+    // YAZ-6577: if an isolated disk folder leaves this tab's Favorites/Focus list while staying on the same tab, clear `focusOnly`.
+    if (dir !== null && focusOnly !== null && (lens === 'favorites' || lens === 'focus')) {
+      activeListDirRef.current = { lens, only: focusOnly }
+    } else if (loaded && forest !== null && focusOnly !== null && activeListDirRef.current !== null && activeListDirRef.current.lens === lens && activeListDirRef.current.only === focusOnly) {
+      activeListDirRef.current = null
+      onFocusOnly?.(null)
+    } else if (focusOnly === null) {
+      activeListDirRef.current = null
+    }
+  }, [onlyListDir, openTo, loaded, forest, focusOnly, lens, onFocusOnly])
   const newFolder = (): void => {
     const id = shownTab.addTo([], null)
     if (id !== null) setEditingFolder(id)
@@ -1143,7 +1155,8 @@ export function Sidebar({
     return copyDirs(favoriteRoots(forest, paths))
   }, [forest, stackFolders, onlyFolder, roots])
   const tabDirs = lens === 'favorites' ? favoriteDirs : focusDirs
-  const listDirs = useMemo(() => (stackDirs.length === 0 ? tabDirs : [...new Set([...tabDirs, ...stackDirs])]), [tabDirs, stackDirs])
+  const onlyListDirs = useMemo(() => (onlyListDir === null ? NO_DIRS : copyDirs([onlyListDir])), [onlyListDir])
+  const listDirs = useMemo(() => (onlyListDir !== null ? onlyListDirs : stackDirs.length === 0 ? tabDirs : [...new Set([...tabDirs, ...stackDirs])]), [onlyListDir, onlyListDirs, tabDirs, stackDirs])
   // What the chevrons button unfolds on the active lens: the folders that tab shows (YAZ-2619 R10).
   // With a folder shown alone in Files (YAZ-5790), only the folders in it.
   const filesDirs = useMemo(() => (filesOnly === null ? dirs : dirs.filter((dir) => inFolder(filesOnly, dir))), [dirs, filesOnly])
@@ -1607,7 +1620,7 @@ export function Sidebar({
     reveal: async (target) => {
       flushSync(() => {
         setAutomationReveal(target)
-        if (onlyFolder !== undefined) onFocusOnly?.(null)
+        if (onlyFolder !== undefined || onlyListDir !== null) onFocusOnly?.(null)
         if (target.path !== undefined) {
           const path = target.path
           // A folder opens itself too, as a reveal in Files does.
@@ -1719,7 +1732,7 @@ export function Sidebar({
       const targetDir = node === null && aloneDir !== null ? aloneDir : node === null && multi ? (listLens === null ? null : vaultOfFolder(shownAlone, roots)) : targetDirFor(node, top)
       const place: CreatePlace | null =
         listLens === null ? null
-        : node === null ? { list: listLens, folder: shownAlone?.id ?? null, after: null }
+        : node === null ? (onlyListDir !== null ? null : { list: listLens, folder: shownAlone?.id ?? null, after: null })
         : node.type === 'file' && node.shortcutIn === undefined && node.pageOf === undefined && node.top === node.path ? { list: listLens, folder: listTab.folderOf(node.path)?.id ?? null, after: node.path }
         : null
       // The course's guided tour (YAZ-5123): a folder's menu opened (the tour checks which folder).
@@ -1736,7 +1749,7 @@ export function Sidebar({
         cardDir: targetDir !== null && vaultOf(targetDir).review && vaultOf(targetDir).index.ids ? targetDir : null,
         place,
         rowKind: node?.type ?? null,
-        top: asSearch ? null : (node?.top ?? null),
+        top: asSearch ? null : (node?.top ?? (node === null && onlyListDir !== null ? onlyListDir.path : null)),
         // ONE field per item, each resolved on its own (GRO-2296). Several are the same
         // expression TODAY and must stay independent anyway — `copyPath`'s root fallback
         // below is exactly the divergence the split exists for.
@@ -2155,7 +2168,7 @@ export function Sidebar({
 
   // Blank space is one vault's root only in a window with one vault, and only on a tab that has a tree of it (YAZ-3247 D12).
   // With a folder shown alone in Files (YAZ-5790), blank space is that folder, and its row lights.
-  const blankAlone = lens === 'files' && !searching ? filesOnly : null
+  const blankAlone = !searching ? (lens === 'files' ? filesOnly : (onlyListDir?.path ?? null)) : null
   const blankDrop = (blankAlone !== null || !multi) && !searching && lens !== 'sessions' && lens !== 'recents'
   const blankDir = blankAlone ?? top
   const blankLight = (): HTMLElement | null => (blankAlone === null ? headerRef.current : (bodyRef.current?.querySelector<HTMLElement>(`.tree__row[data-path="${CSS.escape(blankAlone)}"]`) ?? null))
@@ -2855,7 +2868,7 @@ export function Sidebar({
           </Suspense>
         </ContextMenuSurface>
       )}
-      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} wikilinksOf={(path) => vaultOf(path).index} nameOf={nameOf} textVarsOf={textVarsFor} enabled={hoverHere} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} float={previewFloat} onClose={closePreview} />
+      <HoverPreviewHost hover={hover} forest={forest} rootOf={rootOf} watchOf={watchOf} wikilinksOf={(path) => vaultOf(path).index} idInTitleOf={(path) => vaultOf(path).idInTitle === true} nameOf={nameOf} textVarsOf={textVarsFor} enabled={hoverHere} diagramDarkColors={settings.diagramDarkColors} anchor={asideEl} float={previewFloat} onClose={closePreview} />
       {confirmingDelete !== null && <ConfirmDelete target={confirmingDelete} titles={titles} unit={vaultUnit(rootOf(confirmingDelete.path))} onConfirm={confirmDelete} onCancel={() => setConfirmingDelete(null)} />}
       {pickingShortcut !== null && (
         <ShortcutPicker

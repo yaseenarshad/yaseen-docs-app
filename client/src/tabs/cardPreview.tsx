@@ -146,6 +146,8 @@ export function useCardPreview(hoverOn: boolean, find: (id: string) => HTMLEleme
 export interface PreviewScope {
   root: string | null
   wikilinks: WikilinkResolveSource
+  /** Whether this vault shows IDs in the title (and hover preview headers, YAZ-6567 1E). */
+  idInTitle?: boolean
   textVars: CSSProperties
   watch?: WatchSource
 }
@@ -160,5 +162,5 @@ export function CardPreviewHost({ store, cardOf, scopeOf, diagramDarkColors, sid
   // A card of another window may be of a vault this window does not show: its own window's vault names it.
   const root = card.root ?? scope.root
   if (root === null) return null
-  return <PreviewPanel key={`${id}\n${path}`} path={path} root={root} name={card.name} place={card.place} hint={card.hint} wikilinks={scope.wikilinks} textVars={scope.textVars} watch={scope.watch} diagramDarkColors={diagramDarkColors} anchor={{ rect, side }} />
+  return <PreviewPanel key={`${id}\n${path}`} path={path} root={root} name={card.name} place={card.place} hint={card.hint} wikilinks={scope.wikilinks} idInTitle={scope.idInTitle} textVars={scope.textVars} watch={scope.watch} diagramDarkColors={diagramDarkColors} anchor={{ rect, side }} />
 }

@@ -1,4 +1,3 @@
-import { runWindowCommand } from './automation/windowCommands'
 import { useAutomation } from './automation/useAutomation'
 import { useAutomationSurface } from './automation/surfaces'
 import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
@@ -104,7 +103,7 @@ import { linkPillVars } from './editor/wikilink/linkPillLook'
 import { DEFAULT_NEW_PAGE_TITLE, plainEntryName, renderTitleTemplate } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
-import { filesOnlyAfterDelete, filesOnlyAfterRename } from './sidebar/filesOnly'
+import { filesOnlyAfterDelete, filesOnlyAfterRename, isDiskFolderPath } from './sidebar/filesOnly'
 import { dailyPageName } from '@shared/dailyPage'
 import { dailyPagesOfSettings, sameDailyPages, windowDailyPages, withDailyPages, type DailyPagesSettings } from '@shared/dailyPagesFile'
 import { newPlacesOfSettings, vaultNewPlacesFields } from '@shared/newPlaces'
@@ -2381,6 +2380,11 @@ export function App() {
   // "Hide all others" on a focus folder (YAZ-4460 F8): the one folder the Focus tab shows, by the Recents filter's rule —
   // this window's session only, never written. A folder that goes ends it (the sidebar checks it is still there).
   const [focusOnly, setFocusOnly] = useState<string | null>(null)
+  // YAZ-6577: clear a disk-path `focusOnly` immediately when its vault leaves the window, matching `filesOnlyValid`.
+  const focusOnlyValid = focusOnly !== null && isDiskFolderPath(focusOnly) && rootOfPath(roots, focusOnly) === null ? null : focusOnly
+  useEffect(() => {
+    if (focusOnly !== null && focusOnlyValid === null) setFocusOnly(null)
+  }, [focusOnly, focusOnlyValid])
   // "Hide all others" in Files (YAZ-5790, YAZ-6064): the one folder (a path) the Files tab shows, by the same rule — this
   // window's session only, never written. Clears immediately when its vault leaves the window.
   const [filesOnly, setFilesOnly] = useState<string | null>(null)
@@ -2822,7 +2826,7 @@ export function App() {
 
   // CLI automation (YAZ-4502, YAZ-6539): navigate, inspect, and manage tabs; reply only once the window shows the result.
   useAutomationSurface('app', { ready: true, inspect: () => ({ path: pageOnShow, tab: activeTab, sidebar: sidebarLens, sidebarCollapsed }) })
-  useAutomation((command) => runWindowCommand(command, {
+  useAutomation(async (command) => (await import('./automation/windowCommands')).runWindowCommand(command, {
     getState: () => ({ path: activeFile.current, activeTab: now.current.active, tabs: now.current.tabs, sidebar: sidebarLens, sidebarCollapsed: sidebarCollapsedRef.current }),
     toggleSidebar, changeLens, openPage, openBatch, activateTab: activate, titleOf: (p, n) => n ?? nameOf(p),
     leaveChrome: () => { setOverview(OVERVIEW_CLOSED); setInboxFront(false) }, closeTabs: (ids, moved) => (now.current.phase === 'open' ? closeUnderOverview(ids, moved) : closeTabs(ids, moved)),
@@ -2836,7 +2840,7 @@ export function App() {
   /** What the board's preview panel needs of a page's vault (D18): the scope that holds it, or the first one. */
   const boardPreviewScope = useCallback((path: string) => {
     const scope = scopeOf(path)
-    return { root: scope.root, wikilinks: scope.wikilinks, textVars: textVarsFor(path), watch: scope.watch }
+    return { root: scope.root, wikilinks: scope.wikilinks, idInTitle: scope.showIds.settings.title, textVars: textVarsFor(path), watch: scope.watch }
   }, [scopeOf, textVarsFor])
   /**
    * The same door for the editors' hover panels (YAZ-3403: a page's [[links]], its linked mentions, a folder's views):
@@ -4388,7 +4392,7 @@ export function App() {
           // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
           vaults={[
-            ...vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, setIdsInSearch: (search: IdsInSearch) => vault.showIds.save({ ...vault.showIds.settings, search }), idsInFiles: vault.showIds.settings.files, idsInRecents: vault.showIds.settings.recents, setIdsInRecents: (recents: IdsInFiles) => vault.showIds.save({ ...vault.showIds.settings, recents }), index: vault.wikilinks, review: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null && inboxFront, tooLarge: vault.sync.status?.tooLarge, readOnly: vault.readOnlyVault.settings.on, unlockedUntil: vault.readOnlyVault.unlockedUntil })),
+            ...vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, setIdsInSearch: (search: IdsInSearch) => vault.showIds.save({ ...vault.showIds.settings, search }), idInTitle: vault.showIds.settings.title, idsInFiles: vault.showIds.settings.files, idsInRecents: vault.showIds.settings.recents, setIdsInRecents: (recents: IdsInFiles) => vault.showIds.save({ ...vault.showIds.settings, recents }), index: vault.wikilinks, review: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null && inboxFront, tooLarge: vault.sync.status?.tooLarge, readOnly: vault.readOnlyVault.settings.on, unlockedUntil: vault.readOnlyVault.unlockedUntil })),
             // The card skill (YAZ-5108): the app's own vault, last — one row at the bottom, read only, no Inbox.
             ...(skillShown && cardSkill !== null ? [{ root: cardSkill, name: CARD_SKILL_NAME, watch: skillScope.watch, index: skillScope.wikilinks, review: false, dueCount: 0, reviewing: false, readOnly: true, app: true as const }] : []),
           ]}
@@ -4396,7 +4400,7 @@ export function App() {
           icons={vaultIcons}
           recentVault={recentPick}
           onRecentVault={setRecentVault}
-          focusOnly={focusOnly}
+          focusOnly={focusOnlyValid}
           onFocusOnly={setFocusOnly}
           filesOnly={filesOnlyValid}
           onFilesOnly={setFilesOnly}
@@ -4527,7 +4531,7 @@ export function App() {
           )}
           {/* Space on a row (D9): the hover's panel, floating beside the window. */}
           {previewShown !== null && previewFloat !== undefined && (
-            <FloatingPreview key={previewShown} aside={sidebarRef} float={previewFloat} path={previewShown} root={scopeOf(previewShown).root ?? ''} name={nameOf(previewShown)} wikilinks={scopeOf(previewShown).wikilinks} textVars={textVarsFor(previewShown)} watch={scopeOf(previewShown).watch} diagramDarkColors={settings.diagramDarkColors} />
+            <FloatingPreview key={previewShown} aside={sidebarRef} float={previewFloat} path={previewShown} root={scopeOf(previewShown).root ?? ''} name={nameOf(previewShown)} wikilinks={scopeOf(previewShown).wikilinks} idInTitle={scopeOf(previewShown).showIds.settings.title} textVars={textVarsFor(previewShown)} watch={scopeOf(previewShown).watch} diagramDarkColors={settings.diagramDarkColors} />
           )}
         </>
       ) : root === null ? (

@@ -17,7 +17,9 @@ import { DEFAULT_DAILY_PAGE_FORMAT } from './dailyPageDefault'
 import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from './iconPacks'
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT } from './timeFormat'
 import { DEFAULT_MENU_ICONS, type MenuIconsSetting } from './menuIcons'
+import { sanitizeVaultLauncherBadge, type VaultLauncherPreset } from './vaultIcon'
 export { IDS_IN_TABS, TAB_ID_LAYOUTS, type IdsInTabs, type TabIdLayout } from './showIds'
+export type { VaultLauncherPreset } from './vaultIcon'
 export {
   DEFAULT_MENU_ICONS,
   DEFAULT_MENU_ICON_PICKS,
@@ -2818,6 +2820,12 @@ export interface SettingsState {
    * omitted keys inherit Global defaults. Travels across Macs via the Settings folder.
    */
   workspaceSettings: Record<string, Record<string, unknown>>
+  /**
+   * Synced workspace launcher badge presets (YAZ-6560): keyed by normalized lowercase workspace name
+   * (`workspaceLauncherKey(name)`), so workspace launcher icons travel across Macs via the Settings folder
+   * even when each Mac has a different local `VaultSet.id`. Travels whole (`WHOLE_FIELDS`).
+   */
+  workspaceLaunchers: Record<string, VaultLauncherPreset>
 }
 
 /** ⌘D's place (YAZ-3556 D2): a tab of the sidebar, a folder or a file by its path inside the vault ('' = the vault root), or today's daily page (YAZ-3607 D1). */
@@ -3462,6 +3470,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   memoryReload: true,
   folderPages: DEFAULT_FOLDER_PAGES,
   workspaceSettings: {},
+  workspaceLaunchers: {},
 }
 
 export interface WindowBounds {
@@ -3784,11 +3793,15 @@ export interface FolderState {
 /** Optional view opened when launching a vault via its macOS `.app` launcher (YAZ-5967). */
 export type VaultLauncherTarget = 'normal' | 'inbox' | 'today'
 
-/** Badge icon recipe saved alongside a vault launcher so the editor can prefill on edit (YAZ-5967). */
+/** Badge icon recipe saved alongside a vault launcher so the editor can prefill on edit and sync to Mobile/other Macs (YAZ-5967, YAZ-6560). */
 export interface VaultLauncherBadge {
   kind: 'emoji' | 'letters' | 'material'
   value: string
   color: string
+  /** Optional compact SVG `<path d="...">` strings extracted at save time for `material` icons so Mobile renders crisp vector icons with zero bundle weight. */
+  svgPaths?: string[]
+  /** Optional SVG `viewBox` for `svgPaths` (defaults to `'0 0 16 16'` when omitted). */
+  svgViewBox?: string
 }
 
 /** Per-Mac metadata for a vault's `.app` launcher (YAZ-5967, YAZ-6374). */
@@ -3800,12 +3813,16 @@ export interface VaultLauncherInfo {
   badge?: VaultLauncherBadge
 }
 
-/** Status returned by `vaultLauncher.status` and `vaultLauncher.create` (YAZ-6374). */
+/** Status returned by `vaultLauncher.status` and `vaultLauncher.create` (YAZ-6374, YAZ-6560). */
 export interface VaultLauncherStatus {
   supported: boolean
   launcher: VaultLauncherInfo | null
   exists: boolean
   iconDataUrl: string | null
+  /** Portable launcher preset synced from `.yaseendocs/settings.json` (vault) or `SettingsState.workspaceLaunchers` (workspace), when present. */
+  synced?: VaultLauncherPreset | null
+  /** Preview data URL for `synced` (SVG for badge presets, PNG for custom `.yaseendocs/vault-icon.png`). */
+  syncedIconDataUrl?: string | null
 }
 
 /** Request payload for `vaultLauncher.create` (YAZ-6374). */
@@ -3842,7 +3859,6 @@ export interface LauncherListItem {
 }
 
 const VAULT_LAUNCHER_TARGETS = ['normal', 'inbox', 'today'] as const
-const VAULT_LAUNCHER_BADGE_KINDS = ['emoji', 'letters', 'material'] as const
 
 /** Pure (the store and the bridge): a valid `VaultLauncherInfo`, or null. */
 export function cleanVaultLauncher(raw: unknown): VaultLauncherInfo | null {
@@ -3860,22 +3876,8 @@ export function cleanVaultLauncher(raw: unknown): VaultLauncherInfo | null {
   if (typeof r.target === 'string' && (VAULT_LAUNCHER_TARGETS as readonly string[]).includes(r.target)) {
     out.target = r.target as VaultLauncherTarget
   }
-  if (typeof r.badge === 'object' && r.badge !== null && !Array.isArray(r.badge)) {
-    const b = r.badge as Record<string, unknown>
-    const kind = b.kind
-    const value = typeof b.value === 'string' ? b.value.trim() : ''
-    const color = b.color
-    if (
-      typeof kind === 'string' &&
-      (VAULT_LAUNCHER_BADGE_KINDS as readonly string[]).includes(kind) &&
-      value.length > 0 &&
-      value.length <= 64 &&
-      typeof color === 'string' &&
-      /^#[0-9a-f]{6}$/i.test(color)
-    ) {
-      out.badge = { kind: kind as VaultLauncherBadge['kind'], value, color }
-    }
-  }
+  const badge = sanitizeVaultLauncherBadge(r.badge)
+  if (badge !== undefined) out.badge = badge
   return out
 }
 

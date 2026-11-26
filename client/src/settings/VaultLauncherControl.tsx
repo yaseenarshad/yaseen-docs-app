@@ -64,15 +64,77 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
 
   if (status === null || !status.supported) return null
 
-  const { launcher, exists, iconDataUrl } = status
+  const { launcher, exists, iconDataUrl, synced = null, syncedIconDataUrl = null } = status
   const targetLabel = isWorkspace ? null : targetBadgeLabel(launcher?.target)
+  const syncedTargetLabel = isWorkspace ? null : targetBadgeLabel(synced?.target)
 
   const handleRemove = async (): Promise<void> => {
     setBusy(true)
     setError(null)
     try {
       await (isWorkspace ? api.vaultLauncher.removeWorkspace(workspaceId) : api.vaultLauncher.remove(root!))
-      setStatus({ supported: true, launcher: null, exists: false, iconDataUrl: null })
+      setStatus((prev) => ({
+        supported: true,
+        launcher: null,
+        exists: false,
+        iconDataUrl: null,
+        ...(prev?.synced != null ? { synced: prev.synced, syncedIconDataUrl: prev.syncedIconDataUrl ?? null } : {}),
+      }))
+      onChanged?.()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleInstallSynced = async (): Promise<void> => {
+    if (synced === null) return
+    setBusy(true)
+    setError(null)
+    try {
+      let pngDataUrl: string
+      let badgeToSave = synced.badge
+      if (synced.badge !== undefined) {
+        const { enrichBadgeForSync, renderBadgeToPng } = await import('./VaultLauncherModal')
+        badgeToSave = await enrichBadgeForSync(synced.badge)
+        pngDataUrl = await renderBadgeToPng(badgeToSave)
+      } else if (syncedIconDataUrl !== null && syncedIconDataUrl.startsWith('data:image/png;base64,')) {
+        pngDataUrl = syncedIconDataUrl
+      } else {
+        throw new Error('Synced launcher icon image is unavailable.')
+      }
+      const pngBase64 = pngDataUrl.replace(/^data:image\/png;base64,/, '')
+      const next = isWorkspace
+        ? await api.vaultLauncher.createWorkspace({
+            workspaceId,
+            name: synced.name,
+            pngBase64,
+            ...(badgeToSave !== undefined ? { badge: badgeToSave } : {}),
+          })
+        : await api.vaultLauncher.create({
+            root: root!,
+            name: synced.name,
+            pngBase64,
+            ...(synced.target !== undefined ? { target: synced.target } : {}),
+            ...(badgeToSave !== undefined ? { badge: badgeToSave } : {}),
+          })
+      const nextSynced = badgeToSave !== undefined ? { ...synced, badge: badgeToSave } : synced
+      setStatus({ ...next, synced: nextSynced, syncedIconDataUrl })
+      onChanged?.()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleClearSynced = async (): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      await (isWorkspace ? api.vaultLauncher.clearSyncedWorkspace(workspaceId) : api.vaultLauncher.clearSynced(root!))
+      setStatus((prev) => (prev === null ? null : { ...prev, synced: null, syncedIconDataUrl: null }))
       onChanged?.()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err))
@@ -116,11 +178,41 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
     <div className="vault-launcher">
       <div className="vault-launcher__target-title">{isWorkspace ? `Workspace: ${defaultName}` : `Vault: ${defaultName}`}</div>
       {launcher === null ? (
-        <div className="vault-launcher__empty">
-          <button type="button" className="btn" onClick={() => setModalOpen(true)}>
-            Make a launcher…
-          </button>
-        </div>
+        synced !== null ? (
+          <div className="vault-launcher__card vault-launcher__card--synced">
+            <div className="vault-launcher__summary">
+              {syncedIconDataUrl !== null && (
+                <img className="vault-launcher__icon" src={syncedIconDataUrl} alt="" width={48} height={48} />
+              )}
+              <div className="vault-launcher__meta">
+                <div className="vault-launcher__name-line">
+                  <span className="vault-launcher__name">{synced.name}.app</span>
+                  {syncedTargetLabel !== null && <span className="vault-launcher__target">{syncedTargetLabel}</span>}
+                </div>
+                <span className="vault-launcher__path">
+                  Saved for this {isWorkspace ? 'workspace' : 'vault'} on another Mac — not installed on this Mac yet.
+                </span>
+              </div>
+            </div>
+            <div className="vault-launcher__actions">
+              <button type="button" className="btn btn--primary" disabled={busy} onClick={() => void handleInstallSynced()}>
+                Add launcher to this Mac
+              </button>
+              <button type="button" className="btn" disabled={busy} onClick={() => setModalOpen(true)}>
+                Customize…
+              </button>
+              <button type="button" className="btn" disabled={busy} onClick={() => void handleClearSynced()}>
+                Clear synced icon
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="vault-launcher__empty">
+            <button type="button" className="btn" onClick={() => setModalOpen(true)}>
+              Make a launcher…
+            </button>
+          </div>
+        )
       ) : exists ? (
         <div className="vault-launcher__card">
           <div className="vault-launcher__summary">
@@ -179,7 +271,8 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
             workspaceId={workspaceId}
             defaultName={defaultName}
             initial={launcher}
-            initialIconDataUrl={iconDataUrl}
+            preset={launcher === null ? synced : null}
+            initialIconDataUrl={launcher !== null ? iconDataUrl : syncedIconDataUrl}
             recreating={launcher !== null && !exists}
             onSaved={(next) => {
               setStatus(next)

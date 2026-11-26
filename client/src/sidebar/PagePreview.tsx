@@ -15,6 +15,7 @@ import { createPortal } from 'react-dom'
 import { ReadOnlyPage } from '../editor/ReadOnlyPage'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { boardFolder, dirname } from '../lib/paths'
+import { usePageId } from '../search/showIds'
 import { PlaceName } from './PlaceName'
 import { IconsContext } from './FileIcon'
 import { portalTarget, usePlacement, type PreviewAnchor } from './previewPlacement'
@@ -33,16 +34,19 @@ interface PagePreviewProps {
   hint?: string
   /** The link source of the page's vault: a `[[<id>]]` link shows its title (C21). */
   wikilinks: WikilinkResolveSource
+  /** Show the page's or card file's vault ID after its name (follows Settings › Links & IDs › Show IDs in the title). */
+  idInTitle?: boolean
   /** The text formatting of the page's vault (YAZ-3067 D12, C20): `--text-size` and the `--hN-*` variables. */
   textVars: CSSProperties
   /** What the panel sits beside: the `<aside className="sidebar">`, or a card of the tab board (YAZ-3343). */
   anchor: PreviewAnchor
 }
 
-export default function PagePreview({ root, node, name, hint, wikilinks, textVars, anchor }: PagePreviewProps) {
+export default function PagePreview({ root, node, name, hint, wikilinks, idInTitle = false, textVars, anchor }: PagePreviewProps) {
   const placement = usePlacement(anchor, 'page')
   // A card file (YAZ-5037): the card icon before its name, from the index.
   const card = useContext(IconsContext)?.cards?.has(node.path) === true
+  const pageId = usePageId(idInTitle ? wikilinks : undefined, node.path)
   if (placement === null) return null
   return createPortal(
     // No live region on the frame: it would read the whole page out on each rest. The header says which page.
@@ -50,6 +54,7 @@ export default function PagePreview({ root, node, name, hint, wikilinks, textVar
       <div className="board-preview__header" role="status">
         {card && <span className="card-file-icon" aria-hidden />}
         <span className="board-preview__name">{name}</span>
+        {pageId !== undefined && <span className="board-preview__id">{pageId}</span>}
         <PlaceName className="board-preview__folder" path={dirname(node.path)} kind="folder" label={boardFolder(root, node.path)} />
       </div>
       {hint !== undefined && <div className="board-preview__hint">{hint}</div>}

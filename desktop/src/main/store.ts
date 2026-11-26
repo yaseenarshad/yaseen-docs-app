@@ -255,6 +255,7 @@ import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, appKeyId, keyFor, 
 import { ASIDE_PLACES, asideId, gestureRow, isDefaultGesture, isGestureEntry, isUsableFor, keyRow, withAside, type HotkeyAside } from '@shared/keys'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import { travellingChanged, travels } from '@shared/settingsSync'
+import { MAX_WORKSPACE_LAUNCHERS, sanitizeVaultLauncherPreset, type VaultLauncherPreset } from '@shared/vaultIcon'
 import { isVaultChromeKey } from '@shared/vaultSettings'
 import { atomicWrite } from './fs/fsUtils'
 
@@ -764,6 +765,41 @@ export function sanitizeWorkspaceSettings(raw: unknown): Record<string, Record<s
   return out
 }
 
+/**
+ * Synced workspace launcher badge presets (`SettingsState.workspaceLaunchers`, YAZ-6560), strict at the IPC boundary:
+ * at most `MAX_WORKSPACE_LAUNCHERS` non-empty keys, each holding a valid badge preset.
+ */
+const FORBIDDEN_RECORD_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+const isWorkspaceLaunchers = (v: unknown): v is Record<string, VaultLauncherPreset> => {
+  if (!isRecord(v)) return false
+  const entries = Object.entries(v)
+  if (entries.length > MAX_WORKSPACE_LAUNCHERS) return false
+  return entries.every(([k, val]) => {
+    const trimmed = k.trim()
+    if (trimmed.length === 0 || FORBIDDEN_RECORD_KEYS.has(trimmed.toLowerCase())) return false
+    const clean = sanitizeVaultLauncherPreset(val)
+    return clean !== null && clean.badge !== undefined
+  })
+}
+
+/** Lenient repair of `SettingsState.workspaceLaunchers` on load / folder merge (YAZ-6560). */
+export function sanitizeWorkspaceLaunchers(raw: unknown): Record<string, VaultLauncherPreset> {
+  if (!isRecord(raw)) return {}
+  const out: Record<string, VaultLauncherPreset> = {}
+  let count = 0
+  for (const [k, val] of Object.entries(raw)) {
+    if (count >= MAX_WORKSPACE_LAUNCHERS) break
+    const key = k.trim().toLowerCase()
+    if (key.length === 0 || FORBIDDEN_RECORD_KEYS.has(key)) continue
+    const clean = sanitizeVaultLauncherPreset(val)
+    if (clean === null || clean.badge === undefined) continue
+    out[key] = { name: clean.name, badge: clean.badge }
+    count += 1
+  }
+  return out
+}
+
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
 const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is SettingsState[K] } = {
   lineSpacing: isFiniteNumber,
@@ -945,6 +981,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   memoryReload: (v): v is boolean => typeof v === 'boolean',
   folderPages: isFolderPages,
   workspaceSettings: isWorkspaceSettings,
+  workspaceLaunchers: isWorkspaceLaunchers,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -979,6 +1016,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.codeOutlineHidden = sanitizeOutlineHidden(src.codeOutlineHidden)
   out.menuIcons = sanitizeMenuIcons(src.menuIcons)
   out.workspaceSettings = sanitizeWorkspaceSettings(src.workspaceSettings)
+  out.workspaceLaunchers = sanitizeWorkspaceLaunchers(src.workspaceLaunchers)
   // YAZ-6490: clamp new-window defaults (50–200), and seed from retired global keys on upgrade when absent.
   if (isFiniteNumber(src.newWindowSidebarZoom)) out.newWindowSidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.newWindowSidebarZoom))
   else if (src.newWindowSidebarZoom === undefined && isFiniteNumber(src.sidebarZoom)) out.newWindowSidebarZoom = Math.min(SIDEBAR_ZOOM_MAX, Math.max(SIDEBAR_ZOOM_MIN, src.sidebarZoom))
@@ -995,7 +1033,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
 /** Object fields that travel as a whole (YAZ-3397): the incoming one replaces this Mac's, after its own repair. */
 // The icon colours too (YAZ-3440 D4): a colour another Mac reset to its default is a key gone, which a merge by part would bring back.
 // ⌘D's place too (YAZ-3556 D2): a tab and a folder have other parts, and a merge by part would mix them.
-const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside', 'sidebarIconColors', 'goTo', 'inlineCodeStyle', 'menuIcons', 'workspaceSettings']
+const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside', 'sidebarIconColors', 'goTo', 'inlineCodeStyle', 'menuIcons', 'workspaceSettings', 'workspaceLaunchers']
 
 /**
  * Another Mac's travelling fields over this Mac's settings (YAZ-3276 D3). A value that this build can't read,

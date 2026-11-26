@@ -157,5 +157,12 @@ describe('tabPlace', () => {
     expect(readPlace('disk')?.focusOnly).toBe('/v/Work')
     expect(readPlace('custom')?.focusOnly).toBe('stack-1')
     expect(readPlace(null)?.focusOnly).toBeNull()
+
+    // YAZ-6577: Windows absolute paths are also recognized as disk paths and pruned when their vault leaves.
+    savePlace('win-kept', place('favorites', 0, { focusOnly: 'C:/VaultA/Projects' }))
+    savePlace('win-gone', place('focus', 0, { focusOnly: 'D:\\VaultB\\Notes' }))
+    prunePlacesFilesOnly(['C:/VaultA'])
+    expect(readPlace('win-kept')?.focusOnly).toBe('C:/VaultA/Projects')
+    expect(readPlace('win-gone')?.focusOnly).toBeNull()
   })
 })

@@ -3,7 +3,7 @@ import { kindOnPhone, type FileContent, type VaultStore } from '../store'
 import { gitBlobSha } from './gitSha'
 import { MAX_BATCH_FILES, type GithubRemote } from './githubRemote'
 import { INDEX_RULES, INDEX_STATE, ofTheseRules, phoneRecord, type PhoneIndex } from './phoneIndex'
-import { diffTrees, isEager, isIndexed, type TreeDiff } from './plan'
+import { diffTrees, isEager, isIndexed, isTextEager, type TreeDiff } from './plan'
 import { uiSlicer, yieldToUi as defaultYield } from './yieldToUi'
 
 /** Files done of files to get in this pass (4A's progress bar, round 10 item 8). A resumed download starts above 0. */
@@ -166,7 +166,7 @@ export async function syncPass(options: PassOptions): Promise<PassResult> {
     if (text !== undefined) content = text
     else {
       const bytes = await remote.blob(sha)
-      content = isEager(path) ? decoder.decode(bytes) : bytes
+      content = isTextEager(path) ? decoder.decode(bytes) : bytes
     }
     fetched++
     await store.write(vault, path, content)
@@ -253,9 +253,11 @@ export async function syncPass(options: PassOptions): Promise<PassResult> {
     const alone = async (path: string) => finish(path, await download(path, tree.get(path)!))
     if (missing.length < batchFrom) await lanes(missing, parallel, alone)
     else {
-      const packed = packBatches(missing, (path) => tree.bytes.get(path) ?? 0)
+      const textMissing = missing.filter(isTextEager)
+      const binaryMissing = missing.filter((p) => !isTextEager(p))
+      const packed = packBatches(textMissing, (path) => tree.bytes.get(path) ?? 0)
       await lanes(packed.batches, Math.min(parallel, BATCH_LANES), getBatch)
-      await lanes(packed.alone, parallel, alone)
+      await lanes([...packed.alone, ...binaryMissing], parallel, alone)
     }
   }
 

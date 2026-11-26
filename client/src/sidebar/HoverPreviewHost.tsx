@@ -151,6 +151,8 @@ interface HoverPreviewHostProps {
   watchOf?: (path: string) => WatchSource | undefined
   /** The link source of the vault that holds a page (YAZ-3075 C21). */
   wikilinksOf: (path: string) => WikilinkResolveSource
+  /** Whether the vault that holds `path` shows IDs in the title (and hover preview headers, YAZ-6567 1E). */
+  idInTitleOf?: (path: string) => boolean
   /** A page's name as the tree shows it, its title (`pageName`): the page panel's header. */
   nameOf: (path: string) => string
   /** The text formatting of the vault that holds a page (YAZ-3067 D12; YAZ-3075 C20). */
@@ -186,7 +188,7 @@ function useFloatAnchor(anchor: RefObject<HTMLElement | null>, float: PreviewPop
   }, [anchor, float, path])
 }
 
-export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, nameOf, textVarsOf, enabled, diagramDarkColors, anchor, float, onClose }: HoverPreviewHostProps) {
+export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, idInTitleOf, nameOf, textVarsOf, enabled, diagramDarkColors, anchor, float, onClose }: HoverPreviewHostProps) {
   const { path, shown } = useSyncExternalStore(hover.subscribe, hover.getState)
   const inlineRef = useMemo(() => (path === null ? null : parseInlineRef(path)), [path])
   const node = useMemo(() => {
@@ -222,6 +224,7 @@ export function HoverPreviewHost({ hover, forest, rootOf, watchOf, wikilinksOf, 
       name={inlineRef === null ? nameOf(node.path) : ''}
       place={inlineRef === null ? undefined : nameOf(node.path)}
       wikilinks={wikilinksOf(node.path)}
+      idInTitle={idInTitleOf?.(node.path)}
       textVars={textVarsOf(node.path)}
       knownMtime={node.mtime}
       watch={watchOf?.(node.path)}
@@ -242,6 +245,8 @@ export interface PreviewPanelProps {
   /** One quiet line under the header: how to open it (a page's link, YAZ-3935: "⌘-click to open"). Absent → none. */
   hint?: string
   wikilinks: WikilinkResolveSource
+  /** Show the hovered page's, card file's, or board's vault ID after its name (follows Settings › Links & IDs › Show IDs in the title). */
+  idInTitle?: boolean
   textVars: CSSProperties
   /** The mtime the caller knows (the tree's); the board head's read can only make it newer. 0 = none. */
   knownMtime?: number
@@ -256,7 +261,7 @@ export interface PreviewPanelProps {
  * picture, the kind by its path; anything else shows nothing. The caller decides WHEN (a dwell, Space on the board)
  * and mounts it `key={path}`. A board reads its head once on open and follows the watch feed (see the module doc).
  */
-export function PreviewPanel({ path, root, name, place, hint, wikilinks, textVars, knownMtime = 0, watch, diagramDarkColors, anchor }: PreviewPanelProps) {
+export function PreviewPanel({ path, root, name, place, hint, wikilinks, idInTitle, textVars, knownMtime = 0, watch, diagramDarkColors, anchor }: PreviewPanelProps) {
   const theme = useAppliedTheme()
   // The board's mtime as its file says now (see the module doc); the tree's until the read answers.
   // A page has no head and no watch (C27): only a BOARD gets a `boardPath`.
@@ -320,7 +325,7 @@ export function PreviewPanel({ path, root, name, place, hint, wikilinks, textVar
     const PagePreview = pagePreviewModule?.default ?? LazyPagePreview
     return (
       <Suspense fallback={null}>
-        <PagePreview root={root} node={node} name={name} hint={hint} wikilinks={wikilinks} textVars={textVars} anchor={anchor} />
+        <PagePreview root={root} node={node} name={name} hint={hint} wikilinks={wikilinks} idInTitle={idInTitle} textVars={textVars} anchor={anchor} />
       </Suspense>
     )
   }
@@ -337,7 +342,7 @@ export function PreviewPanel({ path, root, name, place, hint, wikilinks, textVar
   const mtime = Math.max(knownMtime, head.mtime)
   return (
     <Suspense fallback={null}>
-      <BoardPreview root={root} node={node} hint={hint} cacheKey={boardPreviewKey(root, { path, mtime }, theme, diagramDarkColors)} anchor={anchor} />
+      <BoardPreview root={root} node={node} hint={hint} wikilinks={wikilinks} idInTitle={idInTitle} cacheKey={boardPreviewKey(root, { path, mtime }, theme, diagramDarkColors)} anchor={anchor} />
     </Suspense>
   )
 }

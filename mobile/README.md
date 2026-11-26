@@ -253,7 +253,12 @@ The phone app is at `https://docs.yaseenarshad.com` (YAZ-5579), a custom domain 
 `wrangler.jsonc`; the name stays from the preview days). The old preview addresses (`preview.docs.yaseenarshad.com`,
 `preview.notecard.yaseenarshad.com`) no longer serve the app; links made on them still paste. A phone keeps its token,
 vault copy and waiting answers per address, so an app installed from an old address must be added again from the new one.
-Publish only when Yaseen says so (round 15). From the repo root, signed in to Cloudflare (`npx wrangler whoami`):
+
+**Always publish when merging to `main`:** Merging a PR to `main` (or cutting a Mac release) does NOT update Cloudflare
+automatically, and `mobile/` shares `shared/` and `client/` code with Desktop. Every time you push or merge to `main`,
+publish the phone app from a clean checkout of that `origin/main` commit, after `npm ci && npm run engine:build && npm run drawio:pack`,
+while signed in to Cloudflare (`npx wrangler whoami`). Do not wait to be asked, and do not skip it by guessing whether a
+change touches `mobile/`. Then confirm `curl -s https://docs.yaseenarshad.com/version.txt` matches the merged commit:
 
 ```
 npm run mobile:publish:preview

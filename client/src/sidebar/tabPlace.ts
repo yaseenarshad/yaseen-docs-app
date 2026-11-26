@@ -4,7 +4,7 @@
  * relaunch starts with none. App prunes it to the tab strip and empties it on "One place for the window".
  */
 import { rootOfPath, type SidebarLens } from '@shared/types'
-import { filesOnlyAfterDelete, filesOnlyAfterRename } from './filesOnly'
+import { filesOnlyAfterDelete, filesOnlyAfterRename, isDiskFolderPath } from './filesOnly'
 
 export interface TabPlace {
   /** The sidebar tab, never Search: a tab on Search keeps the tab shown before it. */
@@ -151,9 +151,9 @@ export function deletePlacesFilesOnly(deleted: string): void {
   }
 }
 
-/** A vault removed from the window: clear `filesOnly` and disk-path `focusOnly` in saved tabs that pointed into a vault no longer present (YAZ-6064, YAZ-6574). */
+/** A vault removed from the window: clear `filesOnly` and disk-path `focusOnly` in saved tabs that pointed into a vault no longer present (YAZ-6064, YAZ-6574, YAZ-6577). */
 export function prunePlacesFilesOnly(roots: readonly string[]): void {
-  const gonePath = (value: string | null) => value !== null && value.startsWith('/') && rootOfPath(roots, value) === null
+  const gonePath = (value: string | null) => isDiskFolderPath(value) && rootOfPath(roots, value) === null
   for (const [tab, place] of places) {
     const dropFiles = place.filesOnly !== null && rootOfPath(roots, place.filesOnly) === null
     const dropFocus = gonePath(place.focusOnly)

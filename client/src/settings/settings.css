@@ -2726,6 +2726,13 @@ span.cards-wizard__pill {
   gap: 12px;
 }
 
+.vault-launcher__card--synced {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
 .vault-launcher__summary {
   display: flex;
   align-items: center;

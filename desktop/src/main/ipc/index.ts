@@ -114,7 +114,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerSoundIpc()
   registerHomeIpc()
   registerCardFormatsIpc(userData)
-  registerVaultLauncherIpc(store, userData, launcherBackend, places.onVaultLauncherIconChanged)
+  registerVaultLauncherIpc(store, userData, launcherBackend, places.onVaultLauncherIconChanged, undefined, isTransientReadOnly)
   // The code tabs' language helpers (YAZ-3454, YAZ-3455): the quit sequence stops them (`stopAllLanguageServers`).
   // They run only while Settings › Code › "Jump across files" is on, and are a download in `<userData>/lsp`
   // (YAZ-3500). A dev build also takes the `node_modules` copies, unless YASEEN_DOCS_LSP_DOWNLOAD_ONLY=1

@@ -45,7 +45,13 @@ afterEach(() => {
 })
 
 /** The panel as the host mounts it, beside a sidebar. */
-async function show(path = '/v/pages/Plan.md', textVars: CSSProperties = {}, hint?: string, cards?: ReadonlySet<string>) {
+async function show(
+  path = '/v/pages/Plan.md',
+  textVars: CSSProperties = {},
+  hint?: string,
+  cards?: ReadonlySet<string>,
+  opts?: { wikilinks?: ReturnType<typeof createWikilinkResolveSource>; idInTitle?: boolean },
+) {
   const aside = document.createElement('aside')
   document.body.appendChild(aside)
   const anchor = createRef<HTMLElement>() as { current: HTMLElement | null }
@@ -57,7 +63,7 @@ async function show(path = '/v/pages/Plan.md', textVars: CSSProperties = {}, hin
   await act(async () =>
     root?.render(
       <IconsContext.Provider value={here}>
-        <PagePreview root="/v" node={{ path }} name="Plan" hint={hint} wikilinks={createWikilinkResolveSource()} textVars={textVars} anchor={anchor} />
+        <PagePreview root="/v" node={{ path }} name="Plan" hint={hint} wikilinks={opts?.wikilinks ?? createWikilinkResolveSource()} idInTitle={opts?.idInTitle} textVars={textVars} anchor={anchor} />
       </IconsContext.Provider>,
     ),
   )
@@ -173,5 +179,40 @@ describe('PagePreview', () => {
     } finally {
       settings.mockRestore()
     }
+  })
+
+  it('YAZ-6567 1E: shows a page ID or card-file ID right after the name when idInTitle is on, and hides it when off or absent', async () => {
+    readFile.mockImplementation(file('body\n'))
+    const source = createWikilinkResolveSource()
+    source.update(
+      () => null,
+      [
+        { path: '/v/pages/Plan.md', title: 'Plan', id: 'EMB-46', aliases: [], links: [], properties: {} } as never,
+        { path: '/v/cards/card.md', title: 'DNS', kind: 'card', cards: [{ id: 'EMB-90', off: false, next: false, reviews: [] }], aliases: [], links: [], properties: {} } as never,
+        { path: '/v/pages/Plain.md', title: 'Plain', aliases: [], links: [], properties: {} } as never,
+      ],
+      [],
+      true,
+    )
+    const pageOn = await show('/v/pages/Plan.md', {}, undefined, undefined, { wikilinks: source, idInTitle: true })
+    expect(pageOn.querySelector('.board-preview__name + .board-preview__id')?.textContent).toBe('EMB-46')
+    act(() => root?.unmount())
+    root = null
+    document.body.replaceChildren()
+
+    const pageOff = await show('/v/pages/Plan.md', {}, undefined, undefined, { wikilinks: source, idInTitle: false })
+    expect(pageOff.querySelector('.board-preview__id')).toBeNull()
+    act(() => root?.unmount())
+    root = null
+    document.body.replaceChildren()
+
+    const cardOn = await show('/v/cards/card.md', {}, undefined, new Set(['/v/cards/card.md']), { wikilinks: source, idInTitle: true })
+    expect(cardOn.querySelector('.board-preview__name + .board-preview__id')?.textContent).toBe('EMB-90')
+    act(() => root?.unmount())
+    root = null
+    document.body.replaceChildren()
+
+    const plainOn = await show('/v/pages/Plain.md', {}, undefined, undefined, { wikilinks: source, idInTitle: true })
+    expect(plainOn.querySelector('.board-preview__id')).toBeNull()
   })
 })

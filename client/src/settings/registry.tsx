@@ -2592,7 +2592,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'showIds.title',
             label: 'Show IDs in the title',
-            hint: (ctx) => unit(ctx, 'The page\'s ID after its title, small and muted ("DNS basics  EMB-46"), in the page and in Explore. A click on it copies the ID. It is drawn, never part of the title, and never written to the page.'),
+            hint: (ctx) => unit(ctx, 'The page\'s ID after its title, small and muted ("DNS basics  EMB-46"), in the page, in Explore, and in hover previews. A click on it in the page copies the ID. It is drawn, never part of the title, and never written to the page.'),
             keywords: ['id', 'ids', 'title', 'heading', 'show', 'copy'],
             available: (ctx) => ctx.ids?.enabled === true && ctx.showIds !== undefined,
             render: ({ showIds }) => showIds && <Segmented options={ON_OFF_OPTIONS} value={showIds.settings.title} onChange={(title) => showIds.save({ ...showIds.settings, title })} ariaLabel="Show IDs in the title" />,

@@ -7645,6 +7645,58 @@ describe('favorites (YAZ-1766)', () => {
       await rerender({ focusOnly: null })
       expect(topLabels(el)).toEqual(['Projects', 'Pages', 'top'])
     })
+
+    it('YAZ-6576: blank-space New page in an isolated Favorites disk folder opens inline inside the folder and does not add a stray top-level favorite', async () => {
+      const { el, v, props, bridge, rerender } = await mountVault(
+        { lens: 'favorites', onFocusOnly: vi.fn() },
+        { favorites: ['/Projects', '/Pages'] },
+      )
+      await rerender({ focusOnly: `${v}/Projects` })
+      const callsBefore = bridge.favorites.set.mock.calls.length
+
+      rightClick(el.querySelector('.sidebar__body'))
+      await act(async () => itemByLabel(el, 'New page')?.click())
+      const field = el.querySelector<HTMLInputElement>('.create-inline__input')
+      expect(field?.closest('[role="treeitem"]')?.querySelector(':scope > .tree__row')).toBe(rowByPath(el, `${v}/Projects`))
+
+      await act(async () => {
+        field!.value = 'InsideOnly'
+        field!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      })
+      const made = vi.mocked(props.onOpenFile).mock.calls.at(-1)?.[0] ?? ''
+      expect(made.slice(0, made.lastIndexOf('/'))).toBe(`${v}/Projects`)
+      expect(bridge.favorites.set.mock.calls.length).toBe(callsBefore)
+    })
+
+    it('YAZ-6577: removing an isolated disk folder from Favorites clears focusOnly immediately', async () => {
+      const { el, v, props, rerender } = await mountVault(
+        { lens: 'favorites', onFocusOnly: vi.fn() },
+        { favorites: ['/Projects', '/Pages'] },
+      )
+      await rerender({ focusOnly: `${v}/Projects` })
+      expect(bar(el)?.querySelector('span')?.textContent).toBe('Only Projects')
+
+      rightClick(rowByPath(el, `${v}/Projects`))
+      await act(async () => itemByLabel(el, 'Remove from favorites')?.click())
+      expect(props.onFocusOnly).toHaveBeenLastCalledWith(null)
+    })
+
+    it('YAZ-6578: Expand all / Collapse all scopes to the isolated Favorites disk folder only', async () => {
+      const { el, v, rerender } = await mountVault(
+        { lens: 'favorites', onFocusOnly: vi.fn() },
+        { favorites: ['/Projects', '/Pages'] },
+      )
+      await rerender({ focusOnly: `${v}/Projects` })
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+      const collapseBtn = el.querySelector<HTMLButtonElement>('button[aria-label="Collapse all"]')
+      expect(collapseBtn).not.toBeNull()
+      await act(async () => collapseBtn?.click())
+      expect(isOpen(el, `${v}/Projects`)).toBe('false')
+      const expandBtn = el.querySelector<HTMLButtonElement>('button[aria-label="Expand all"]')
+      expect(expandBtn).not.toBeNull()
+      await act(async () => expandBtn?.click())
+      expect(isOpen(el, `${v}/Projects`)).toBe('true')
+    })
   })
   it('YAZ-5664: on Favorites too, Collapse all closes both stack folders and the real folder inside; Expand all opens them all again', async () => {
     const ids = ['yaz5664-fav-a', 'yaz5664-fav-b'] as const
