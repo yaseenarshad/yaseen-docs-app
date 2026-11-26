@@ -306,7 +306,10 @@ describe('WebLinksControl (YAZ-6584)', () => {
     expect(styled['--ext-link-decoration']).toBe('none')
     expect(styled['--ext-link-mark-text']).toBe('"🔗"')
 
-    const reset = cardSurfaceStyleOf(NO_LINK_PILLS, {}, DEFAULT_WEB_LINKS) as Record<string, string>
+    const inherited = cardSurfaceStyleOf(NO_LINK_PILLS, {}, DEFAULT_WEB_LINKS) as Record<string, string>
+    expect(inherited['--ext-link-decoration']).toBeUndefined()
+
+    const reset = cardSurfaceStyleOf(NO_LINK_PILLS, {}, DEFAULT_WEB_LINKS, true) as Record<string, string>
     expect(reset['--ext-link-decoration']).toBe('initial')
     expect(reset['--ext-link-mark-place']).toBe('initial')
   })
