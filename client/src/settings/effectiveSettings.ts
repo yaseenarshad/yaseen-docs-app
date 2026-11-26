@@ -85,7 +85,7 @@ export function patchWorkspaceChrome(
   }
   for (const k of unset) delete nextEntry[k]
 
-  const nextMap: Record<string, Record<string, unknown>> = { ...(global.workspaceSettings ?? {}) }
+  const nextMap: Record<string, Record<string, unknown>> = { ...global.workspaceSettings }
   if (Object.keys(nextEntry).length === 0) delete nextMap[wsKey]
   else nextMap[wsKey] = nextEntry
   return { ...global, workspaceSettings: nextMap }
