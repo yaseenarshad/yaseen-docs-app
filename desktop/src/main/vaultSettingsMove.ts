@@ -83,7 +83,8 @@ export async function seedVaultPart(
         await writeConfig(root, name, mergeIn(heldLegacy, part))
       } else {
         const existingSection = unified.state === 'ok' ? readVaultSection(unified.value, sectionKey) : null
-        const nextSection = existingSection !== null ? mergeIn(existingSection, part) : { ...fresh, ...part }
+        const baseSection = existingSection ?? heldLegacy
+        const nextSection = baseSection !== null ? mergeIn(baseSection, part) : { ...fresh, ...part }
         await writeConfigUnlocked(
           root,
           VAULT_SETTINGS_FILE,
