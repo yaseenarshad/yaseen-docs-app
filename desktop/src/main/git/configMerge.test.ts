@@ -99,7 +99,7 @@ describe('YAZ-5489: folder-pages.json merges key by key', () => {
 })
 
 describe('mergesByKey: the files AutoSync merges key by key, by rule', () => {
-  it.each(['text-formatting.json', 'link-pills.json', 'link-click.json', 'show-ids.json', 'review.json', 'new-places.json', 'daily-pages.json', 'unit-word.json', 'read-only.json', 'github.json', 'card-look.json', 'some-file-of-a-later-build.json'])('%s: yes', (name) => {
+  it.each(['settings.json', 'text-formatting.json', 'link-pills.json', 'link-click.json', 'show-ids.json', 'review.json', 'new-places.json', 'daily-pages.json', 'unit-word.json', 'read-only.json', 'github.json', 'card-look.json', 'some-file-of-a-later-build.json'])('%s: yes', (name) => {
     expect(mergesByKey(`.yaseendocs/${name}`)).toBe(true)
   })
 

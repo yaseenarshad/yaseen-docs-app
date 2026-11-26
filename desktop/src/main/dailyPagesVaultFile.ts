@@ -2,6 +2,7 @@ import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { DAILY_PAGES_FILE, DAILY_PAGES_KEYS, dailyPagesFile, dailyPagesOfSettings, readDailyPagesFile, windowDailyPages, type DailyPagesSettings } from '@shared/dailyPagesFile'
 import { placeVaults, type AppState, type SettingsState } from '@shared/types'
+import { readVaultSection, VAULT_SETTINGS_FILE } from '@shared/vaultSettings'
 import { readConfigDetailed, subscribeConfig } from './vaultConfig'
 import { seedVaultPart, type MoveStep, type SeedResult, type SeedStore } from './vaultSettingsMove'
 
@@ -33,8 +34,14 @@ export async function holdsDailyFolder(root: string, folder: string): Promise<bo
   )
 }
 
-/** A vault's file as the Mac reads it: null when there is none; one that is not valid JSON says off. */
+/** A vault's file as the Mac reads it: unified `settings.json`'s `dailyPages` section first, else `daily-pages.json`; null when neither has it; malformed says off. */
 export async function readDailyPages(root: string): Promise<DailyPagesSettings | null> {
+  const unified = await readConfigDetailed(root, VAULT_SETTINGS_FILE).catch(() => ({ state: 'absent' as const }))
+  if (unified.state === 'malformed') return readDailyPagesFile(null)
+  if (unified.state === 'ok') {
+    const section = readVaultSection(unified.value, 'dailyPages')
+    if (section !== null) return readDailyPagesFile(section)
+  }
   const read = await readConfigDetailed(root, DAILY_PAGES_FILE).catch(() => ({ state: 'absent' as const }))
   if (read.state === 'absent') return null
   return readDailyPagesFile(read.state === 'ok' ? read.value : null)
@@ -103,7 +110,7 @@ export function watchDailyPages(store: { get(): AppState; onChange(listener: (st
       subs.set(
         root,
         subscribe(root, (c) => {
-          if (c.name === DAILY_PAGES_FILE) load(root)
+          if (c.name === DAILY_PAGES_FILE || c.name === VAULT_SETTINGS_FILE) load(root)
         }),
       )
       load(root)

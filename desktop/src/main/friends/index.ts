@@ -9,6 +9,7 @@ import { emptyBudget } from '@shared/friendSend'
 import { isRecord } from '@shared/guards'
 import { cleanToken } from '@shared/githubInput'
 import { REVIEW_SETTINGS_FILE, sanitizeReviewSettings } from '@shared/reviews'
+import { readVaultSection, VAULT_SETTINGS_FILE } from '@shared/vaultSettings'
 import { GITHUB_TOKEN_SECRET, listVaults, type FriendsSendView } from '@shared/types'
 import { atomicWrite, createChain, readOrQuarantine } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
@@ -112,8 +113,14 @@ export function startFriendsSend(
       return out
     },
     async count(root) {
-      const [index, config] = await Promise.all([getIndex(root), readConfigDetailed(root, REVIEW_SETTINGS_FILE)])
-      return { pages: index.records, settings: sanitizeReviewSettings(config.state === 'ok' ? config.value : null) }
+      const [index, unified, legacy] = await Promise.all([
+        getIndex(root),
+        readConfigDetailed(root, VAULT_SETTINGS_FILE),
+        readConfigDetailed(root, REVIEW_SETTINGS_FILE),
+      ])
+      const reviewSection = unified.state === 'ok' ? readVaultSection(unified.value, 'review') : null
+      const raw = reviewSection ?? (legacy.state === 'ok' ? legacy.value : null)
+      return { pages: index.records, settings: sanitizeReviewSettings(raw) }
     },
     state,
     stats: (text, now, closed, zone) => counter(text, now, closed, zone),

@@ -1199,6 +1199,79 @@ describe('createStore: loading', () => {
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, folderPages: both }).folderPages).toEqual(both)
   })
 
+  it('workspaceSettings (YAZ-6546): sanitizes valid chrome keys, repairs sidebarTabs, clamps sidebarRowHeight, prunes empties, caps at 50, travels as a whole field', () => {
+    expect(DEFAULT_SETTINGS.workspaceSettings).toEqual({})
+    expect(LOCAL_SETTINGS).not.toContain('workspaceSettings')
+
+    // Valid sparse chrome overrides pass strict isSettings and survive sanitizeSettings.
+    const validWs = {
+      'ws:work': {
+        sidebarLines: 'always',
+        sidebarRowHeight: 28,
+        tabWidth: 'wide',
+        cardSkillInSidebar: false,
+        rowDates: { files: true, focus: false, favorites: true, search: false },
+      },
+      'roots:/a\0/b': {
+        sidebarTabs: DEFAULT_SIDEBAR_TABS,
+        searchIncludeInline: false,
+      },
+    }
+    expect(isSettings({ ...DEFAULT_SETTINGS, workspaceSettings: validWs })).toBe(true)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, workspaceSettings: validWs }).workspaceSettings).toEqual(validWs)
+
+    // Strict boundary rejects non-chrome keys, bad values, empty workspace keys, and > 50 entries.
+    expect(isSettings({ ...DEFAULT_SETTINGS, workspaceSettings: { 'ws:1': { theme: 'dark' } } })).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, workspaceSettings: { 'ws:1': { sidebarRowHeight: 99 } } })).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, workspaceSettings: { '': { sidebarLines: 'always' } } })).toBe(false)
+    const over50 = Object.fromEntries(Array.from({ length: 51 }, (_, i) => [`ws:${i}`, { sidebarLines: 'always' }]))
+    expect(isSettings({ ...DEFAULT_SETTINGS, workspaceSettings: over50 })).toBe(false)
+
+    // Lenient sanitizeSettings drops invalid/non-chrome keys individually while keeping valid siblings,
+    // repairs sidebarTabs, clamps sidebarRowHeight to 20–40, prunes empty workspace objects, and caps at 50.
+    const repaired = sanitizeSettings({
+      ...DEFAULT_SETTINGS,
+      workspaceSettings: {
+        '': { sidebarLines: 'always' },
+        'ws:mixed': {
+          sidebarLines: 'always',
+          theme: 'dark', // non-chrome -> dropped
+          sidebarRowHeight: 120, // clamped -> 40
+          tabWidth: 'bogus', // invalid -> dropped
+          sidebarTabs: { order: ['focus', 'unknown'], hidden: ['files', 'focus'], hiddenButtons: ['nope'] },
+        },
+        'ws:lowHeight': { sidebarRowHeight: 5 }, // clamped -> 20
+        'ws:emptyAfterClean': { theme: 'dark', sidebarRowHeight: 'tall', sidebarTabs: 'bad' },
+        'ws:notObj': 'nope',
+      },
+    }).workspaceSettings
+    expect(repaired).toEqual({
+      'ws:mixed': {
+        sidebarLines: 'always',
+        sidebarRowHeight: 40,
+        sidebarTabs: {
+          order: ['focus', ...DEFAULT_SIDEBAR_TABS.order.filter((t) => t !== 'focus')],
+          hidden: ['focus'],
+          hiddenButtons: [],
+        },
+      },
+      'ws:lowHeight': { sidebarRowHeight: 20 },
+    })
+    expect(Object.keys(sanitizeSettings({ ...DEFAULT_SETTINGS, workspaceSettings: over50 }).workspaceSettings)).toHaveLength(50)
+
+    // mergeFolderSettings treats workspaceSettings as a WHOLE_FIELD: resets on Mac B do not resurrect from Mac A,
+    // missing field keeps Mac A's value, and unknown keys from a newer build are dropped while valid siblings stay.
+    const macA = { ...DEFAULT_SETTINGS, workspaceSettings: { 'ws:1': { sidebarLines: 'always' }, 'ws:2': { tabWidth: 'wide' } } }
+    expect(mergeFolderSettings(macA, { workspaceSettings: { 'ws:1': { sidebarLines: 'off' } } }).workspaceSettings).toEqual({
+      'ws:1': { sidebarLines: 'off' },
+    })
+    expect(mergeFolderSettings(macA, { workspaceSettings: {} }).workspaceSettings).toEqual({})
+    expect(mergeFolderSettings(macA, { theme: 'dark' }).workspaceSettings).toEqual(macA.workspaceSettings)
+    expect(
+      mergeFolderSettings(macA, { workspaceSettings: { 'ws:1': { sidebarLines: 'off', futureChrome: true } } }).workspaceSettings,
+    ).toEqual({ 'ws:1': { sidebarLines: 'off' } })
+  })
+
   it('folderPages (YAZ-4798): sticky group headers on, group lines on hover, plain lines by default; each choice is kept, a broken or missing one reads its default', () => {
     const fp = DEFAULT_SETTINGS.folderPages
     expect([fp.stickyGroups, fp.groupLines, fp.groupLineStyle]).toEqual([true, 'hover', 'plain'])

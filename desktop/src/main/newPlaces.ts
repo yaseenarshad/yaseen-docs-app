@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import { NEW_PLACE_SLOTS, NEW_PLACES_FILE, NEW_PLACES_KEYS, newPlacesOfSettings, parseNewPlaces, type NewPlacesConfig, type NewPlacesFields } from '@shared/newPlaces'
+import { patchVaultSettingsDoc, readVaultSection, VAULT_SETTINGS_DOC_KEYS, VAULT_SETTINGS_FILE } from '@shared/vaultSettings'
 import { stat } from 'node:fs/promises'
 import { seedVaultPart, type MoveStep } from './vaultSettingsMove'
 import { BridgeFailure, createRootChain, requireAbsPath } from './fs/fsUtils'
@@ -20,6 +21,14 @@ import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
 type Raw = { state: 'absent' } | { state: 'ok'; places: Array<string | null> } | { state: 'bad'; file: string }
 
 async function readRaw(root: string): Promise<Raw> {
+  const unified = await readConfigDetailed(root, VAULT_SETTINGS_FILE)
+  if (unified.state === 'ok') {
+    const section = readVaultSection(unified.value, 'newPlaces')
+    if (section !== null) {
+      const places = parseNewPlaces(section)
+      return places === null ? { state: 'bad', file: path.join(root, VAULT_CONFIG_DIR, VAULT_SETTINGS_FILE) } : { state: 'ok', places }
+    }
+  }
   const res = await readConfigDetailed(root, NEW_PLACES_FILE)
   if (res.state === 'absent') return res
   const places = res.state === 'malformed' ? null : parseNewPlaces(res.value)
@@ -49,15 +58,23 @@ export async function setNewPlaces(root: string, places: unknown): Promise<void>
     const raw = await readRaw(r)
     if (raw.state === 'bad') throw new BridgeFailure('INVALID_CONFIG', 'new-places.json is malformed; fix or delete it', { path: raw.file })
     const value: NewPlacesConfig = { version: 1, places: (places as Array<string | null>).map((p) => (p === null ? null : toRel(r, p))) }
+    const unified = await readConfigDetailed(r, VAULT_SETTINGS_FILE)
+    const legacy = await readConfigDetailed(r, NEW_PLACES_FILE)
+    if (unified.state === 'ok' && legacy.state === 'absent') {
+      const prevSection = readVaultSection(unified.value, 'newPlaces')
+      const nextSection = { ...(prevSection ?? {}), ...value }
+      await writeConfig(r, VAULT_SETTINGS_FILE, patchVaultSettingsDoc(unified.value, { newPlaces: nextSection }), VAULT_SETTINGS_DOC_KEYS)
+      return
+    }
     await writeConfig(r, NEW_PLACES_FILE, value, NEW_PLACES_KEYS)
   })
 }
 
-/** Fires after any change to new-places.json, an own write or an external edit. Returns an unsubscribe. */
+/** Fires after any change to new-places.json or unified settings.json, an own write or an external edit. Returns an unsubscribe. */
 export function subscribeNewPlaces(root: string, listener: (change: { root: string }) => void): () => void {
   const r = requireAbsPath(root, 'root')
   return subscribeConfig(r, (c) => {
-    if (c.name === NEW_PLACES_FILE) listener({ root: r })
+    if (c.name === NEW_PLACES_FILE || c.name === VAULT_SETTINGS_FILE) listener({ root: r })
   })
 }
 

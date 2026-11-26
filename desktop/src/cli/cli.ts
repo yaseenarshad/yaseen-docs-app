@@ -59,7 +59,7 @@ import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { createFile } from '../main/fs/create'
 import { readFile } from '../main/fs/file'
 import { dailyPage, vaultDailySettings } from '../main/pages/daily'
-import { vaultNewPlacesSettings, vaultRootOf } from '../main/vaultSettingsRead'
+import { readVaultSettingsFile, vaultNewPlacesSettings, vaultRootOf } from '../main/vaultSettingsRead'
 import { newPage } from '../main/pages/page'
 import { otherMacFiles } from '../main/settingsFiles'
 import { mergeFolderSettings, parseState } from '../main/store'
@@ -106,6 +106,11 @@ export const USAGE = `usage:
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
   yaseendocs new      <folder> --title <title> [--body <text | ->] [--json]
   yaseendocs open     [--new-window] [--read-only] [--root <repo>] [--line <n>] [<file[:line]> | <dir>]
+  yaseendocs navigation open (--root <path> | --roots <JSON> | --workspace <id|name> | --window <id>) [--path <path> ...] [--mode reuse|new] [--tile <preset>] [--read-only]
+  yaseendocs window list | move | focus | minimize | close [flags]
+  yaseendocs tab activate | close | move [flags]
+  yaseendocs app status
+  yaseendocs capabilities --json
   yaseendocs --help`
 
 export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, the pages that link to it, its cards and the ones due for review, the app's list of vaults, and a new page or the day's daily page, from the shell.
@@ -262,6 +267,15 @@ Both print \`made <path>\` or \`found <path>\`. When another page has the same t
 on stderr (\`warning: also <path>\`). \`--json\` gives \`path\`, \`title\`, \`id\` (null in a vault
 without IDs), \`created\` and \`others\`. A page made while the app is open shows in it at once.
 
+Live app windows, tabs, and navigation: \`open\` and \`navigation open\` open files, folders, or
+workspaces in the running app (starting Docs when needed, with \`--read-only\`, \`--tile\`,
+\`--display\`, \`--new-window\`, \`--new-tab\`, and \`--no-focus\`). \`window list\`, \`window move\`,
+\`window focus\`, \`window minimize\`, and \`window close\` inspect and arrange live windows;
+\`tab activate\`, \`tab close\`, and \`tab move\` switch, close, or move tabs across windows;
+\`app status\` checks the live app. Run \`yaseendocs <command> --help\` (for example
+\`yaseendocs open --help\`, \`yaseendocs window --help\`, \`yaseendocs navigation open --help\`) or
+\`yaseendocs capabilities --json\` for the complete flags and JSON schemas.
+
 Exit codes: 0 done · 1 refused or failed (the reason is on stderr) · 2 usage.
 
 Example:
@@ -399,9 +413,9 @@ async function bodyOf(flags: Map<string, string | true>, io: Io): Promise<string
   return body === '-' ? io.stdin() : body
 }
 
-/** The card settings of the vault at `root` (`.yaseendocs/review.json`), or the defaults. */
+/** The card settings of the vault at `root` (`.yaseendocs/settings.json`'s `review` section, else `review.json`), or the defaults. */
 async function reviewSettings(root: string): Promise<ReviewSettings> {
-  return sanitizeReviewSettings(await readRaw(join(root, VAULT_CONFIG_DIR, REVIEW_SETTINGS_FILE), 'utf8').then(JSON.parse).catch(() => null))
+  return sanitizeReviewSettings(await readVaultSettingsFile(root, REVIEW_SETTINGS_FILE).catch(() => null))
 }
 
 /** The ID vault of `dir` (YAZ-4946 D8: only a vault that gives IDs has cards), or the refusal. */

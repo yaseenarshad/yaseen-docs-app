@@ -94,8 +94,9 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerDialogIpc(undefined, (folder) => store.approvePictureFolder(folder), (folder) => rememberPick(pickedPictureFolders, folder))
   registerWatchIpc()
   registerExternalEdits(store)
+  const isTransientReadOnly = (root: string): boolean => windows.isTransientReadOnlyRoot?.(root) === true
   registerStateIpc(store, settingsFolder)
-  registerVaultConfigIpc(store)
+  registerVaultConfigIpc(store, isTransientReadOnly)
   registerFavoritesIpc(store)
   registerIconsIpc(store)
   registerFilesOrderIpc(store)
@@ -171,7 +172,6 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
     },
     { auth: githubAuth, openExternal: places.openExternal, openPath: places.openPath },
   )
-  const isTransientReadOnly = (root: string): boolean => windows.isTransientReadOnlyRoot?.(root) === true
   setReadOnlyRootChecker(isTransientReadOnly)
   moves = moveSettingsIntoVaults(store, [DAILY_PAGES_MOVE, PAGE_SPACING_MOVE, NEW_PLACES_MOVE, ICON_LOOK_MOVE, CARD_LOOK_MOVE, ...tableLookMoves(store.slotTimeToMove()), FOLDER_PAGES_MOVE], async (root) => {
     if (isTransientReadOnly(root)) return false

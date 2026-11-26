@@ -1575,4 +1575,36 @@ describe('YAZ-6151: card lifecycle and board CLI wiring', () => {
       expect(help).toContain(cmd)
     }
   })
+
+  it('HELP summarizes live-app navigation, window, and tab commands alongside comment (YAZ-6546)', () => {
+    const help = HELP.replace(/\s+/g, ' ')
+    for (const phrase of [
+      'comment',
+      'navigation open',
+      'window list',
+      'window move',
+      'window focus',
+      'window minimize',
+      'window close',
+      'tab activate',
+      'tab close',
+      'tab move',
+      'app status',
+      'capabilities --json',
+      '<command> --help',
+    ]) {
+      expect(help).toContain(phrase)
+    }
+  })
+
+  it('due reads review settings from unified .yaseendocs/settings.json (YAZ-6546)', async () => {
+    const root = await vault('unified-review', {
+      'deck.md': '---\nid: YAZ-1\n---\n```card\nQ\n---\nA\n```\n<!-- card: YAZ-2, title "Unified" -->\n',
+    })
+    await mkdir(path.join(root, '.yaseendocs'), { recursive: true })
+    await writeFile(path.join(root, '.yaseendocs', 'settings.json'), JSON.stringify({ version: 1, review: { version: 1, enabled: false } }))
+    const res = await run(['due', root])
+    expect(res.code).toBe(0)
+    expect(res.out).toContain('cards are off for this vault')
+  })
 })
