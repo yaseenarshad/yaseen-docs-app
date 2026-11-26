@@ -689,6 +689,7 @@ const CardTitleHelp = lazy(() => import('../components/CardTitleHelp').then((m) 
 const CardSpacingPreview = lazy(() => import('./SpacingPreview').then((m) => ({ default: m.CardSpacingPreview })))
 const PageSpacingPreview = lazy(() => import('./SpacingPreview').then((m) => ({ default: m.PageSpacingPreview })))
 const InlineCodeStyleControl = lazy(() => import('./InlineCodeStyleControl').then((m) => ({ default: m.InlineCodeStyleControl })))
+const MenuIconsControl = lazy(() => import('./MenuIconsControl').then((m) => ({ default: m.MenuIconsControl })))
 /** A preview row: bare (the preview is its own label), found by "preview" and the spacing words. */
 const previewRow = (id: string, label: string, keywords: readonly string[], Preview: typeof CardSpacingPreview, available?: (ctx: SettingsCtx) => boolean, varsOf?: (ctx: SettingsCtx) => Record<string, string>): SettingDef => ({
   id,
@@ -1213,6 +1214,24 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             hint: 'How wide unselected tabs stay. Auto shrinks to fit before scrolling. Compact (150px), Medium (200px), Wide (270px), or Custom (80–400 px) holds that width and scrolls instead.',
             keywords: ['tab', 'tabs', 'tab bar', 'inactive', 'unselected', 'background', 'width', 'auto', 'compact', 'medium', 'wide', 'custom', 'px', 'pixels'],
             render: ({ settings, onChange }) => <TabWidthSetting name="Inactive tab width" value={settings.inactiveTabWidth} onSet={(inactiveTabWidth) => onChange({ ...settings, inactiveTabWidth })} />,
+          },
+        ],
+      },
+      {
+        // YAZ-6567, YAZ-6571: global context-menu action icons toggle & per-action glyph picker.
+        title: 'Menus',
+        items: [
+          {
+            id: 'menuIcons',
+            label: 'Menu icons',
+            hint: 'Show icons in right-click menus and pick the glyph for each action.',
+            keywords: ['menu', 'menus', 'context menu', 'right click', 'icon', 'icons', 'glyph', 'new window', 'new tab', 'clone', 'hide all others', 'reveal'],
+            wide: true,
+            render: ({ settings, onChange }) => (
+              <Suspense fallback={null}>
+                <MenuIconsControl value={settings.menuIcons ?? 'on'} onChange={(menuIcons) => onChange({ ...settings, menuIcons })} />
+              </Suspense>
+            ),
           },
         ],
       },

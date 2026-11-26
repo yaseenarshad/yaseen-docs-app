@@ -50,6 +50,7 @@ describe('settingCandidates', () => {
       'contentPosition',
       'tabWidth',
       'inactiveTabWidth',
+      'menuIcons',
       // YAZ-5976, YAZ-5977: Appearance › Explore (Search size is a pointer row, found by search only).
       'exploreWidth',
       'explorePageZoom',
@@ -355,6 +356,12 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'inline code'))[0]).toBe('inlineCodeStyle')
     expect(ids(searchSettings(settingCandidates(ctx()), 'backtick'))).toContain('inlineCodeStyle')
     expect(ids(searchSettings(settingCandidates(ctx()), 'red'))).toContain('inlineCodeStyle')
+  })
+
+  it('YAZ-6571: "menu icons", "context menu", and "right click" find menuIcons', () => {
+    expect(ids(searchSettings(settingCandidates(ctx()), 'menu icons'))[0]).toBe('menuIcons')
+    expect(ids(searchSettings(settingCandidates(ctx()), 'context menu'))).toContain('menuIcons')
+    expect(ids(searchSettings(settingCandidates(ctx()), 'right click'))).toContain('menuIcons')
   })
 
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {
