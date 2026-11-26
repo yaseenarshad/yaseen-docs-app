@@ -768,12 +768,15 @@ export function sanitizeWorkspaceSettings(raw: unknown): Record<string, Record<s
  * Synced workspace launcher badge presets (`SettingsState.workspaceLaunchers`, YAZ-6560), strict at the IPC boundary:
  * at most `MAX_WORKSPACE_LAUNCHERS` non-empty keys, each holding a valid badge preset.
  */
+const FORBIDDEN_RECORD_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
 const isWorkspaceLaunchers = (v: unknown): v is Record<string, VaultLauncherPreset> => {
   if (!isRecord(v)) return false
   const entries = Object.entries(v)
   if (entries.length > MAX_WORKSPACE_LAUNCHERS) return false
   return entries.every(([k, val]) => {
-    if (k.trim().length === 0) return false
+    const trimmed = k.trim()
+    if (trimmed.length === 0 || FORBIDDEN_RECORD_KEYS.has(trimmed.toLowerCase())) return false
     const clean = sanitizeVaultLauncherPreset(val)
     return clean !== null && clean.badge !== undefined
   })
@@ -787,7 +790,7 @@ export function sanitizeWorkspaceLaunchers(raw: unknown): Record<string, VaultLa
   for (const [k, val] of Object.entries(raw)) {
     if (count >= MAX_WORKSPACE_LAUNCHERS) break
     const key = k.trim().toLowerCase()
-    if (key.length === 0) continue
+    if (key.length === 0 || FORBIDDEN_RECORD_KEYS.has(key)) continue
     const clean = sanitizeVaultLauncherPreset(val)
     if (clean === null || clean.badge === undefined) continue
     out[key] = { name: clean.name, badge: clean.badge }

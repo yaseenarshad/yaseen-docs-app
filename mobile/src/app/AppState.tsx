@@ -240,7 +240,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
       const list = await loadVaultList(store)
       const accounts: Record<string, VaultAccount | undefined> = {}
       const vaultIcons: Record<string, MobileVaultIcon | null> = {}
-      const iconLoader = list.vaults.length > 0 ? await loadIconReader() : null
+      const iconLoader = list.vaults.length > 0 ? await loadIconReader().catch(() => null) : null
       for (const v of list.vaults) {
         const id = vaultId(v)
         accounts[id] = await loadAccount(store, id)
@@ -357,7 +357,11 @@ export function AppProvider({ services, children }: { services: AppServices; chi
         if (event.settings.includes(VAULT_SETTINGS_PATH) || event.settings.includes(VAULT_ICON_PATH)) {
           void loadIconReader()
             .then((m) => m.readVaultIcon(store, vault))
-            .then((icon) => setLoaded((l) => ({ ...l, vaultIcons: { ...l.vaultIcons, [vault]: icon } })))
+            .then((icon) => {
+              if (openKey.current !== vault) return
+              setLoaded((l) => ({ ...l, vaultIcons: { ...l.vaultIcons, [vault]: icon } }))
+            })
+            .catch(() => undefined)
         }
         // The vault's settings (or its first IDs) can bring a tab or take one away, at once.
         void tabsOfVault(store, vault, event.index).then((tabs) => {

@@ -2816,14 +2816,11 @@ export function App() {
 
   // CLI automation (YAZ-4502, YAZ-6539): navigate, inspect, and manage tabs; reply only once the window shows the result.
   useAutomationSurface('app', { ready: true, inspect: () => ({ path: pageOnShow, tab: activeTab, sidebar: sidebarLens, sidebarCollapsed }) })
-  useAutomation(async (command) => {
-    const { runWindowCommand } = await import('./automation/windowCommands')
-    return runWindowCommand(command, {
+  useAutomation(async (command) => (await import('./automation/windowCommands')).runWindowCommand(command, {
     getState: () => ({ path: activeFile.current, activeTab: now.current.active, tabs: now.current.tabs, sidebar: sidebarLens, sidebarCollapsed: sidebarCollapsedRef.current }),
     toggleSidebar, changeLens, openPage, openBatch, activateTab: activate, titleOf: (p, n) => n ?? nameOf(p),
     leaveChrome: () => { setOverview(OVERVIEW_CLOSED); setInboxFront(false) }, closeTabs: (ids, moved) => (now.current.phase === 'open' ? closeUnderOverview(ids, moved) : closeTabs(ids, moved)),
-    })
-  })
+  }))
   useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles, onTakeInbox: takeInbox, onOpenTarget: openTarget })
   /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
   const moveBoardCardToSlot = useCallback((id: string, slot: number) => {

@@ -45,8 +45,8 @@ export function vaultInitials(name: string): string {
     .split(/[\s\-_/]+/)
     .filter((w) => w.length > 0)
   if (words.length === 0) return 'YD'
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
-  return `${words[0][0]}${words[1][0]}`.toUpperCase()
+  if (words.length === 1) return [...words[0]].slice(0, 2).join('').toUpperCase()
+  return `${[...words[0]][0] ?? ''}${[...words[1]][0] ?? ''}`.toUpperCase()
 }
 
 /** Case-insensitive lookup key for synced workspace launcher presets (`SettingsState.workspaceLaunchers`). */
@@ -158,8 +158,9 @@ function escapeXml(text: string): string {
  * without requiring a local `.app` or `<canvas>`.
  */
 export function renderBadgeSvgDataUrl(badge: VaultLauncherBadge): string {
-  const top = shadeHex(badge.color, 0.1)
-  const bottom = shadeHex(badge.color, -0.08)
+  const safeColor = HEX_COLOR_RE.test(badge.color) ? badge.color : '#007AFF'
+  const top = shadeHex(safeColor, 0.1)
+  const bottom = shadeHex(safeColor, -0.08)
   let inner: string
   if (badge.kind === 'material' && badge.svgPaths !== undefined && badge.svgPaths.length > 0) {
     const vb = badge.svgViewBox ?? '0 0 16 16'

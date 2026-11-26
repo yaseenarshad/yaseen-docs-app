@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useApp } from '../app/AppState'
+import { vaultTitle } from '../settings/vaultTitle'
 import { vaultId } from '../store'
 import { vaultName } from './Frame'
 import { VaultBadge, vaultNumber } from './VaultBadge'
@@ -8,7 +9,6 @@ import { VaultBadge, vaultNumber } from './VaultBadge'
 export function VaultSwitcherMenu({ onClose }: { onClose: () => void }) {
   const app = useApp()
   const [query, setQuery] = useState('')
-  const searchRef = useRef<HTMLInputElement>(null)
   const vaults = app.list.vaults
 
   const q = query.trim().toLowerCase()
@@ -21,7 +21,6 @@ export function VaultSwitcherMenu({ onClose }: { onClose: () => void }) {
         {vaults.length > 4 && (
           <div className="vault-switcher__search-wrap">
             <input
-              ref={searchRef}
               type="search"
               className="vault-switcher__search"
               placeholder="Switch vault…"
@@ -55,7 +54,7 @@ export function VaultSwitcherMenu({ onClose }: { onClose: () => void }) {
                   {num !== null && (
                     <VaultBadge
                       n={num}
-                      name={vaultName(v.repo)}
+                      name={vaultTitle(v.repo)}
                       icon={app.vaultIcons[id]}
                       className="vault-switcher__item-badge"
                     />

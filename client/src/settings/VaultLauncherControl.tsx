@@ -119,7 +119,8 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
             ...(synced.target !== undefined ? { target: synced.target } : {}),
             ...(badgeToSave !== undefined ? { badge: badgeToSave } : {}),
           })
-      setStatus({ ...next, synced, syncedIconDataUrl })
+      const nextSynced = badgeToSave !== undefined ? { ...synced, badge: badgeToSave } : synced
+      setStatus({ ...next, synced: nextSynced, syncedIconDataUrl })
       onChanged?.()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err))

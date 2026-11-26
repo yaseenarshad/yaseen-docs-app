@@ -146,7 +146,12 @@ async function isVaultWritableForSync(root: string, isReadOnlyRoot: (root: strin
 
 /** Read a synced vault launcher preset + preview icon from `<root>/.yaseendocs/settings.json` (and optional `vault-icon.png`). */
 async function readSyncedVaultLauncher(root: string): Promise<{ synced: VaultLauncherPreset; syncedIconDataUrl: string } | null> {
-  const res = await readConfigDetailed(root, VAULT_SETTINGS_FILE)
+  let res: Awaited<ReturnType<typeof readConfigDetailed>>
+  try {
+    res = await readConfigDetailed(root, VAULT_SETTINGS_FILE)
+  } catch {
+    return null
+  }
   if (res.state !== 'ok' || !isRecord(res.value)) return null
   const synced = sanitizeVaultLauncherPreset(res.value.launcher)
   if (synced === null) return null
@@ -155,7 +160,12 @@ async function readSyncedVaultLauncher(root: string): Promise<{ synced: VaultLau
   }
   if (synced.iconFile === VAULT_ICON_FILE) {
     try {
-      const buf = await readFile(join(root, VAULT_CONFIG_DIR, VAULT_ICON_FILE))
+      const iconFilePath = join(root, VAULT_CONFIG_DIR, VAULT_ICON_FILE)
+      const info = await stat(iconFilePath)
+      if (!info.isFile() || info.size < PNG_MAGIC.length || info.size > MAX_LAUNCHER_ICON_BYTES) {
+        return null
+      }
+      const buf = await readFile(iconFilePath)
       if (buf.length > MAX_LAUNCHER_ICON_BYTES || buf.length < PNG_MAGIC.length || !buf.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) {
         return null
       }
@@ -177,18 +187,22 @@ async function writeSyncedVaultLauncher(
   if (!(await isVaultWritableForSync(root, isReadOnlyRoot))) return
   await withConfigLock(root, VAULT_SETTINGS_FILE, async () => {
     const onDisk = await readConfigDetailed(root, VAULT_SETTINGS_FILE)
-    if (onDisk.state === 'malformed') {
-      console.warn(`[vaultLauncher] skipping synced launcher write in ${root}: ${VAULT_SETTINGS_FILE} is malformed`)
+    if (onDisk.state === 'malformed' || (onDisk.state === 'ok' && !isRecord(onDisk.value))) {
+      console.warn(`[vaultLauncher] skipping synced launcher write in ${root}: ${VAULT_SETTINGS_FILE} is malformed or not a JSON object`)
       return
     }
-    await writeConfigUnlocked(root, VAULT_SETTINGS_FILE, { version: VAULT_SETTINGS_VERSION, launcher: preset }, LAUNCHER_SETTINGS_KEYS)
+    const existingVersion =
+      onDisk.state === 'ok' && isRecord(onDisk.value) && typeof onDisk.value.version === 'number' && Number.isFinite(onDisk.value.version)
+        ? Math.max(VAULT_SETTINGS_VERSION, onDisk.value.version)
+        : VAULT_SETTINGS_VERSION
+    await writeConfigUnlocked(root, VAULT_SETTINGS_FILE, { version: existingVersion, launcher: preset }, LAUNCHER_SETTINGS_KEYS)
+    const iconFilePath = join(root, VAULT_CONFIG_DIR, VAULT_ICON_FILE)
+    if (customPng !== null && preset.iconFile === VAULT_ICON_FILE) {
+      await atomicWriteBuffer(iconFilePath, customPng)
+    } else {
+      await rm(iconFilePath, { force: true }).catch(() => undefined)
+    }
   })
-  const iconFilePath = join(root, VAULT_CONFIG_DIR, VAULT_ICON_FILE)
-  if (customPng !== null && preset.iconFile === VAULT_ICON_FILE) {
-    await atomicWriteBuffer(iconFilePath, customPng)
-  } else {
-    await rm(iconFilePath, { force: true }).catch(() => undefined)
-  }
 }
 
 /** Remove the synced launcher preset from `<root>/.yaseendocs/settings.json` and unlink `.yaseendocs/vault-icon.png`. */
@@ -200,16 +214,22 @@ async function clearSyncedVaultLauncher(root: string, isReadOnlyRoot: (root: str
   await withConfigLock(root, VAULT_SETTINGS_FILE, async () => {
     const onDisk = await readConfigDetailed(root, VAULT_SETTINGS_FILE)
     if (onDisk.state === 'ok' && isRecord(onDisk.value) && Object.hasOwn(onDisk.value, 'launcher')) {
-      await writeConfigUnlocked(root, VAULT_SETTINGS_FILE, { version: VAULT_SETTINGS_VERSION }, LAUNCHER_SETTINGS_KEYS)
+      const existingVersion =
+        typeof onDisk.value.version === 'number' && Number.isFinite(onDisk.value.version)
+          ? Math.max(VAULT_SETTINGS_VERSION, onDisk.value.version)
+          : VAULT_SETTINGS_VERSION
+      await writeConfigUnlocked(root, VAULT_SETTINGS_FILE, { version: existingVersion }, LAUNCHER_SETTINGS_KEYS)
     }
+    await rm(join(root, VAULT_CONFIG_DIR, VAULT_ICON_FILE), { force: true }).catch(() => undefined)
   })
-  await rm(join(root, VAULT_CONFIG_DIR, VAULT_ICON_FILE), { force: true }).catch(() => undefined)
 }
 
 function readSyncedWorkspaceLauncher(store: Store, workspaceName: string): { synced: VaultLauncherPreset; syncedIconDataUrl: string } | null {
   const key = workspaceLauncherKey(workspaceName)
   if (key.length === 0) return null
-  const preset = store.get().settings.workspaceLaunchers[key]
+  const launchers = store.get().settings.workspaceLaunchers
+  if (!Object.hasOwn(launchers, key)) return null
+  const preset = launchers[key]
   if (preset === undefined || preset.badge === undefined) return null
   return { synced: preset, syncedIconDataUrl: renderBadgeSvgDataUrl(preset.badge) }
 }

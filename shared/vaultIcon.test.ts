@@ -19,6 +19,9 @@ describe('vaultIcon (YAZ-6560)', () => {
     expect(vaultInitials('a')).toBe('A')
     expect(vaultInitials('   ')).toBe('YD')
     expect(vaultInitials('grow_profit/eng')).toBe('GP')
+    // Non-BMP emoji/code points must not split surrogate pairs.
+    expect(vaultInitials('🚀 Rocket')).toBe('🚀R')
+    expect(vaultInitials('🧠⚡')).toBe('🧠⚡')
   })
 
   it('workspaceLauncherKey normalizes case and whitespace', () => {

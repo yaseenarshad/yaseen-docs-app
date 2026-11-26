@@ -10,7 +10,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import type { VaultLauncherBadge, VaultLauncherInfo, VaultLauncherPreset, VaultLauncherStatus, VaultLauncherTarget } from '@shared/types'
 import { sanitizeBadgeSvgPaths, sanitizeBadgeSvgViewBox, shadeHex, vaultInitials } from '@shared/vaultIcon'
 import { api } from '../api'
-import { iconUrl, pickableIcons, useMaterialIcons } from '../sidebar/materialIcons'
+import { iconUrl, loadMaterialIcons, pickableIcons, useMaterialIcons } from '../sidebar/materialIcons'
 import { Segmented } from './controls'
 
 export { vaultInitials }
@@ -78,6 +78,7 @@ function traceSquircle(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
 export async function enrichBadgeForSync(badge: VaultLauncherBadge): Promise<VaultLauncherBadge> {
   if (badge.kind !== 'material' || (badge.svgPaths !== undefined && badge.svgPaths.length > 0)) return badge
   try {
+    await loadMaterialIcons()
     const res = await fetch(iconUrl(badge.value))
     if (!res.ok) return badge
     const text = await res.text()
@@ -151,6 +152,7 @@ export async function renderBadgeToPng(badge: VaultLauncherBadge): Promise<strin
 
   if (badge.kind === 'material') {
     try {
+      await loadMaterialIcons()
       const img = await loadImage(iconUrl(badge.value))
       const iconBox = Math.round(side * 0.56)
       const off = document.createElement('canvas')
@@ -244,7 +246,8 @@ export function VaultLauncherModal({ root, workspaceId, defaultName, initial, pr
   const editing = initial !== null && initial !== undefined
   const seed = initial ?? preset ?? null
   const initialBadge = seed?.badge
-  const startOnImage = seed !== null && initialBadge === undefined && Boolean(initialIconDataUrl)
+  const hasInitialPng = typeof initialIconDataUrl === 'string' && initialIconDataUrl.startsWith('data:image/png;base64,')
+  const startOnImage = seed !== null && initialBadge === undefined && hasInitialPng
 
   const [name, setName] = useState(seed?.name ?? defaultName)
   const [target, setTarget] = useState<VaultLauncherTarget>(seed?.target ?? 'normal')

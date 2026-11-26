@@ -761,4 +761,22 @@ describe('synced vault & workspace launcher presets (YAZ-6560)', () => {
     await registered(CONTRACT.vaultLauncher.clearSyncedWorkspace)(undefined, ws.id)
     expect(store.get().settings.workspaceLaunchers['all folders']).toBeUndefined()
   })
+
+  it('malformed settings.json skips synced write without clobbering existing vault-icon.png (YAZ-6565)', async () => {
+    const vaultRoot = path.join(dir, 'corrupt-settings-vault')
+    await mkdir(path.join(vaultRoot, '.yaseendocs'), { recursive: true })
+    await writeFile(path.join(vaultRoot, '.yaseendocs', 'settings.json'), '{not-valid-json', 'utf8')
+    await writeFile(path.join(vaultRoot, '.yaseendocs', 'vault-icon.png'), VALID_PNG)
+
+    await registered(CONTRACT.vaultLauncher.create)(undefined, {
+      root: vaultRoot,
+      name: 'Corrupt Vault',
+      pngBase64: VALID_PNG_B64,
+      badge: { kind: 'emoji', value: '🧪', color: '#007AFF' },
+    })
+
+    // Must not overwrite corrupt settings.json or unlink vault-icon.png.
+    expect(await readFile(path.join(vaultRoot, '.yaseendocs', 'settings.json'), 'utf8')).toBe('{not-valid-json')
+    expect(existsSync(path.join(vaultRoot, '.yaseendocs', 'vault-icon.png'))).toBe(true)
+  })
 })
