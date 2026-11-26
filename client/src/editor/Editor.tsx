@@ -94,6 +94,7 @@ import { isAnnouncedWrite, onTwinSave } from '../lib/twinEditors'
 import { registerPageView } from '../lib/pageView'
 import { holdPagePlace, keepPlace, readPagePlace, showPagePlace } from './pagePlace'
 import { appliedTheme } from '../lib/theme'
+import { newPageDrawingOf } from '../settings/effectiveSettings'
 import { storage } from '../lib/storage'
 import { transformFile } from '../views/writeProperty'
 import { PdfViewer } from '../viewers/PdfViewer'
@@ -1197,7 +1198,7 @@ function CrepeHost({
             kind,
           ),
         createInline: (view) => {
-          if (storage.getSettings()?.newPageDrawing === 'file') return false
+          if (newPageDrawingOf(root) === 'file') return false
           inlineDrawing.createInline(view)
         },
         onNotice,

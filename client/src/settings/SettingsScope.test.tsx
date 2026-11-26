@@ -1,0 +1,230 @@
+/**
+ * Tests for the Top-of-Settings Scope Switcher (YAZ-6546, YAZ-6556):
+ * - Hidden with 0 vaults open
+ * - Single-vault segmented pill (`Global defaults` | `This vault (<name>)`)
+ * - Multi-vault segmented pill (`Global defaults` | `This workspace (<name>)` | `Vault: <Select>`)
+ * - Override dot + 1-click Reset + Reset all in Vault and Workspace modes
+ * - "Overridden in <name>" note in Global defaults mode
+ * - Global / Per-vault badges on non-applicable rows (never hidden from search!)
+ * - Legacy per-vault sections targeting the selected vault in Vault mode
+ */
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
+import { DEFAULT_LINK_CLICK } from '@shared/linkClick'
+import { DEFAULT_SHOW_IDS } from '@shared/showIds'
+import { NO_LINK_PILLS } from '@shared/linkPills'
+import { DEFAULT_UNIT_WORD, PAGE_WORD, SAME_WORD } from '@shared/unitWord'
+import { DEFAULT_SETTINGS, type SettingsState } from '@shared/types'
+import type { VaultOverrideKey, VaultSettingsOverrides, WorkspaceChromeOverrides } from '@shared/vaultSettings'
+import { NO_TEXT_FORMATTING } from './useTextFormatting'
+import { NO_NEW_PLACES } from './useVaultNewPlaces'
+import type { SettingsScopeCtx, SettingsScopeVault } from './settingsScope'
+import { SettingsDialog } from './SettingsDialog'
+
+;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+let root: Root | null = null
+let container: HTMLElement | null = null
+
+afterEach(() => {
+  act(() => root?.unmount())
+  root = null
+  container?.remove()
+  container = null
+})
+
+function makeScopeVault(rootPath: string, name: string, overrides: VaultSettingsOverrides = {}): SettingsScopeVault {
+  return {
+    root: rootPath,
+    name,
+    vaultSettings: {
+      doc: Object.keys(overrides).length > 0 ? { version: 1, ...overrides } : null,
+      overrides,
+      ready: true,
+      malformed: false,
+      setOverrides: vi.fn(async () => undefined),
+      setSection: vi.fn(async () => undefined),
+      resetAll: vi.fn(async () => undefined),
+    },
+    review: { settings: DEFAULT_REVIEW_SETTINGS, save: vi.fn(), ready: true },
+    linkClick: { settings: DEFAULT_LINK_CLICK, save: vi.fn(), isExplore: () => true },
+    showIds: { settings: DEFAULT_SHOW_IDS, save: vi.fn(), inSearch: () => 'number', inTitle: () => true },
+    unitWord: { settings: DEFAULT_UNIT_WORD, word: PAGE_WORD, unit: SAME_WORD, save: vi.fn() },
+    hasCards: false,
+    readOnlyVault: {
+      settings: { on: false },
+      save: vi.fn(),
+      locked: false,
+      fileActionsAllowed: () => true,
+      unlock: vi.fn(),
+      lock: vi.fn(),
+      unlockedUntil: null,
+      beforeLock: () => () => undefined,
+    },
+    ids: undefined,
+    sync: { status: { root: rootPath, state: 'off' }, setEnabled: vi.fn() },
+    textFormatting: { formatting: NO_TEXT_FORMATTING, save: vi.fn() },
+    cardLook: { look: null, save: vi.fn() },
+    tableLook: { look: null, settings: null, save: vi.fn() },
+    folderPages: { file: null, vault: null, save: vi.fn() },
+    linkPills: { pills: NO_LINK_PILLS, save: vi.fn() },
+    dailyPages: { file: null, save: vi.fn() },
+    iconLook: { rules: [], colors: {}, save: vi.fn() },
+    newPlaces: { value: NO_NEW_PLACES, save: vi.fn() },
+  }
+}
+
+function mountScoped(opts: {
+  globalSettings?: SettingsState
+  vaults?: SettingsScopeVault[]
+  wsOverrides?: WorkspaceChromeOverrides
+  wsName?: string
+}) {
+  const globalSettings = opts.globalSettings ?? { ...DEFAULT_SETTINGS }
+  const vaults = opts.vaults ?? []
+  const onChangeGlobal = vi.fn()
+  const onChange = vi.fn()
+  const wsSetOverrides = vi.fn()
+  const wsResetAll = vi.fn()
+  const scope: SettingsScopeCtx | undefined =
+    vaults.length === 0
+      ? undefined
+      : {
+          vaults,
+          activeVaultRoot: vaults[0].root,
+          workspace:
+            vaults.length >= 2
+              ? {
+                  key: 'ws:test',
+                  name: opts.wsName ?? 'Work',
+                  overrides: opts.wsOverrides ?? {},
+                  setOverrides: wsSetOverrides,
+                  resetAll: wsResetAll,
+                }
+              : undefined,
+          globalSettings,
+          onChangeGlobal,
+        }
+
+  container = document.createElement('div')
+  document.body.appendChild(container)
+  root = createRoot(container)
+  act(() => {
+    root?.render(<SettingsDialog ctx={{ settings: globalSettings, onChange, scope }} onClose={vi.fn()} />)
+  })
+  return { el: container, onChange, onChangeGlobal, wsSetOverrides, wsResetAll, vaults }
+}
+
+const clickNav = (el: HTMLElement, title: string) => {
+  const btn = [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === title)
+  act(() => btn?.click())
+}
+
+const clickScopeTab = (el: HTMLElement, textIncludes: string) => {
+  const btn = [...el.querySelectorAll<HTMLButtonElement>('.settings-scope__tab, .settings-scope__vault-btn')].find((b) =>
+    b.textContent?.includes(textIncludes),
+  )
+  act(() => btn?.click())
+}
+
+describe('SettingsDialog scope switcher (YAZ-6546, YAZ-6556)', () => {
+  it('hides the scope bar when 0 vaults are open', () => {
+    const { el } = mountScoped({ vaults: [] })
+    expect(el.querySelector('.settings-scope-bar')).toBeNull()
+  })
+
+  it('single-vault window shows Global defaults | This vault (<name>), writes sparse vault overrides, and supports 1-click Reset', () => {
+    const vault = makeScopeVault('/v', 'Personal', { contentWidth: 'medium' })
+    const { el, onChangeGlobal } = mountScoped({ vaults: [vault] })
+
+    const bar = el.querySelector('.settings-scope-bar')
+    expect(bar).not.toBeNull()
+    expect(bar?.textContent).toContain('Global defaults')
+    expect(bar?.textContent).toContain('This vault (Personal)')
+
+    // Global defaults mode shows "Overridden in Personal" on Content width
+    clickNav(el, 'Appearance')
+    const widthRow = el.querySelector('[data-setting="contentWidth"]')
+    expect(widthRow?.querySelector('.setting__scope-note')?.textContent).toBe('Overridden in Personal')
+
+    // Switch to This vault mode
+    clickScopeTab(el, 'This vault')
+    const vaultWidthRow = el.querySelector('[data-setting="contentWidth"]')!
+    expect(vaultWidthRow.querySelector('.setting__override-dot')).not.toBeNull()
+    const resetBtn = vaultWidthRow.querySelector<HTMLButtonElement>('.setting__reset')
+    expect(resetBtn).not.toBeNull()
+
+    // Global-only row (Theme) stays visible with "Global" badge
+    const themeRow = el.querySelector('[data-setting="theme"]')
+    expect(themeRow?.querySelector('.setting__scope-badge')?.textContent).toBe('Global')
+
+    // Clicking Content position writes sparsely to vault.vaultSettings.setOverrides (not global)
+    const posRow = el.querySelector('[data-setting="contentPosition"]')!
+    const leftBtn = [...posRow.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Left')
+    act(() => leftBtn?.click())
+    expect(vault.vaultSettings.setOverrides).toHaveBeenCalledWith({ contentPosition: 'left' })
+    expect(onChangeGlobal).not.toHaveBeenCalled()
+
+    // Clicking 1-click Reset unsets contentWidth from vault settings.json
+    act(() => resetBtn?.click())
+    expect(vault.vaultSettings.setOverrides).toHaveBeenCalledWith({}, ['contentWidth' satisfies VaultOverrideKey])
+
+    // Clicking Reset all calls vault.vaultSettings.resetAll
+    const resetAllBtn = el.querySelector<HTMLButtonElement>('.settings-scope__reset-all')
+    expect(resetAllBtn?.textContent).toBe('Reset all (1)')
+    act(() => resetAllBtn?.click())
+    expect(vault.vaultSettings.resetAll).toHaveBeenCalledTimes(1)
+  })
+
+  it('multi-vault window shows Global defaults | This workspace (<name>) | Vault selector and routes chrome vs per-vault writes', () => {
+    const v1 = makeScopeVault('/v1', 'Notes', { contentWidth: 'full' })
+    const v2 = makeScopeVault('/v2', 'Work', { contentWidth: 'medium' })
+    const { el, wsSetOverrides, wsResetAll } = mountScoped({
+      vaults: [v1, v2],
+      wsName: 'Daily Focus',
+      wsOverrides: { tabWidth: 'wide' },
+    })
+
+    const bar = el.querySelector('.settings-scope-bar')!
+    expect(bar.textContent).toContain('Global defaults')
+    expect(bar.textContent).toContain('This workspace (Daily Focus)')
+    expect(bar.querySelector<HTMLSelectElement>('.settings-scope__select')).not.toBeNull()
+
+    // Global defaults mode hints "Overridden in Daily Focus" for workspace chrome key tabWidth
+    clickNav(el, 'Appearance')
+    expect(el.querySelector('[data-setting="tabWidth"] .setting__scope-note')?.textContent).toBe('Overridden in Daily Focus')
+
+    // Switch to This workspace mode
+    clickScopeTab(el, 'This workspace')
+    const tabWidthRow = el.querySelector('[data-setting="tabWidth"]')!
+    expect(tabWidthRow.querySelector('.setting__override-dot')).not.toBeNull()
+    expect(el.querySelector('[data-setting="contentWidth"] .setting__scope-badge')?.textContent).toBe('Per-vault')
+    expect(el.querySelector('[data-setting="theme"] .setting__scope-badge')?.textContent).toBe('Global')
+
+    // Changing inactiveTabWidth writes to workspace chrome overrides
+    const inactiveRow = el.querySelector('[data-setting="inactiveTabWidth"]')!
+    const compactBtn = [...inactiveRow.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Compact')
+    act(() => compactBtn?.click())
+    expect(wsSetOverrides).toHaveBeenCalledWith({ inactiveTabWidth: 'compact' })
+
+    // Reset all in workspace mode calls wsResetAll
+    act(() => el.querySelector<HTMLButtonElement>('.settings-scope__reset-all')?.click())
+    expect(wsResetAll).toHaveBeenCalledTimes(1)
+
+    // Picking second vault from Vault dropdown switches to Vault mode targeting v2
+    const select = el.querySelector<HTMLSelectElement>('.settings-scope__select')!
+    act(() => {
+      select.value = '/v2'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(el.querySelector('.settings-scope-bar')?.getAttribute('data-scope-mode')).toBe('vault')
+    expect(el.querySelector('[data-setting="contentWidth"] .setting__override-dot')).not.toBeNull()
+    const posRow = el.querySelector('[data-setting="contentPosition"]')!
+    const leftBtn = [...posRow.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Left')
+    act(() => leftBtn?.click())
+    expect(v2.vaultSettings.setOverrides).toHaveBeenCalledWith({ contentPosition: 'left' })
+    expect(v1.vaultSettings.setOverrides).not.toHaveBeenCalled()
+  })
+})

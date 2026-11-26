@@ -22,10 +22,8 @@ import { TitleIsName } from './lib/titleRule'
 import { createRoot, type Root } from 'react-dom/client'
 import { dailyPageName } from '@shared/dailyPage'
 import { IDS_FILE } from '@shared/pageId'
-import { TEXT_FORMATTING_FILE, TEXT_FORMATTING_KEYS } from '@shared/textFormatting'
-import { REVIEW_SETTINGS_KEYS } from '@shared/reviews'
+import { VAULT_SETTINGS_DOC_KEYS, VAULT_SETTINGS_FILE, workspaceSettingsKey } from '@shared/vaultSettings'
 import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type FolderPagesSettings, type FocusFolder, type InboxCarry, type ListScope, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
-import { FOLDER_PAGES_VAULT_PARTS } from '@shared/folderPages'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -1770,13 +1768,13 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, contentWidth: 'medium', tocOnByDefault: false } }))
     expect([editor()?.tocOnByDefault, editor()?.tableOfContents]).toEqual([false, 'auto'])
     expect(bridge.state.setSettings).not.toHaveBeenCalled()
-    // "Pin" in the card: the whole settings object with the one field changed, and the editor follows; the default stays Off (S11).
-    act(() => door?.('pinned'))
-    expect(bridge.state.setSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, contentWidth: 'medium', tocOnByDefault: false, tableOfContents: 'pinned' })
+    // "Pin" in the card: writes sparse tableOfContents to the vault's settings.json, and the editor follows; the default stays Off (S11).
+    await act(async () => door?.('pinned'))
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, tableOfContents: 'pinned' }), VAULT_SETTINGS_DOC_KEYS)
     expect(editor()?.tableOfContents).toBe('pinned')
     // "Unpin".
-    act(() => door?.('auto'))
-    expect(bridge.state.setSettings).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, contentWidth: 'medium', tocOnByDefault: false, tableOfContents: 'auto' })
+    await act(async () => door?.('auto'))
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, tableOfContents: 'auto' }), VAULT_SETTINGS_DOC_KEYS)
     expect(editor()?.tableOfContents).toBe('auto')
     // The retained editors are memo: a door that changed with the settings would render each of them.
     expect(editor()?.onChangeTableOfContents).toBe(door)
@@ -1792,9 +1790,9 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, tableOfContents: 'pinned', tableOfContentsWidth: 320 } }))
     expect(editor()?.tableOfContentsWidth).toBe(320)
     expect(bridge.state.setSettings).not.toHaveBeenCalled()
-    // The release of a drag here: the whole settings object as it is NOW, with the one field changed.
-    act(() => door?.(260))
-    expect(bridge.state.setSettings).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, tableOfContents: 'pinned', tableOfContentsWidth: 260 })
+    // The release of a drag here: writes sparse tableOfContentsWidth to the vault's settings.json.
+    await act(async () => door?.(260))
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, tableOfContentsWidth: 260 }), VAULT_SETTINGS_DOC_KEYS)
     expect(editor()?.tableOfContentsWidth).toBe(260)
     expect(editor()?.onChangeTableOfContentsWidth).toBe(door)
   })
@@ -2789,7 +2787,7 @@ describe('App ⌘N New… box and ⌘D Show in sidebar (YAZ-3556)', () => {
     const vaultPlaces = newPageLocation === undefined ? null : { version: 1, places: [null, null, null], newPage: { location: newPageLocation, folder: newPageFolder ?? '' } }
     const m = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, ...app } }, { id: 'w1', root: v, file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'favorites' }, {}, (b) => {
       b.bridge.tree.mockImplementation(async (root: string) => ({ root, tree: [folder(`${v}/Projects`, [page(`${v}/Projects/plan.md`)])], generatedAt: 1 }))
-      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'new-places.json' ? vaultPlaces : null))
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === VAULT_SETTINGS_FILE && vaultPlaces !== null ? { version: 1, newPlaces: vaultPlaces } : null))
     })
     return { ...m, v }
   }
@@ -6269,7 +6267,7 @@ describe('App card review (YAZ-4967)', () => {
 
   it('review off in review.json: no Inbox, nothing due, no session', async () => {
     await mount(defaultAppState(), TABS, {}, (b) => {
-      b.bridge.vaultConfig.read.mockImplementation(async (_root, name) => (name === 'review.json' ? { enabled: false } : null))
+      b.bridge.vaultConfig.read.mockImplementation(async (_root, name) => (name === VAULT_SETTINGS_FILE ? { version: 1, review: { enabled: false } } : null))
       withIndex(RECORDS())(b)
     })
     expect(captured.sidebar?.review).toBe(false)
@@ -6905,7 +6903,7 @@ describe('App "Give this vault\u2019s pages IDs" in Settings (YAZ-2523 V4, YAZ-2
   it('an ID vault with no page holding one yet, Cards off: Off saves no at once', async () => {
     const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, (b) => {
       feed(true, [], { enabled: true })(b)
-      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'review.json' ? { enabled: false } : null))
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === VAULT_SETTINGS_FILE ? { version: 1, review: { enabled: false } } : null))
     })
     act(() => emitSettings())
     settingsPage(el, 'Links & IDs')
@@ -6922,7 +6920,7 @@ describe('App "Give this vault\u2019s pages IDs" in Settings (YAZ-2523 V4, YAZ-2
     expect(el.querySelector('.confirm__text')?.textContent).toBe('Cards will turn off. Your cards and reviews stay in the files.')
     await act(async () => sheetBtn(el, 'Turn off')?.click())
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
-    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', 'review.json', expect.objectContaining({ enabled: false }), REVIEW_SETTINGS_KEYS)
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, review: expect.objectContaining({ enabled: false }) }), VAULT_SETTINGS_DOC_KEYS)
   })
 
   it('`ids.json` that is not valid JSON: On and Off save nothing, the front end never reads the file, and a notice says why', async () => {
@@ -7016,13 +7014,11 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       watch: ['/v', '/v'],
       properties: [['/v'], ['/v']],
       sync: [['/v'], ['/v']],
-      // The vault's review settings, its "Clicking a link" (YAZ-4936), its "Show IDs in search" (YAZ-4940), its word for a page (YAZ-4938), its "Read only" (YAZ-4939), its text formatting (YAZ-3066) and its link pills look (YAZ-4924), each read once for each mount effect.
-      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'card-look.json'], ['/v', 'table-look.json'], ['/v', 'folder-pages.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'new-places.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'card-look.json'], ['/v', 'table-look.json'], ['/v', 'folder-pages.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'new-places.json']],
+      // Unified vault settings (YAZ-6546): read-only.json + settings.json (2 reads × 2 StrictMode mount effects = 4).
+      config: [['/v', 'read-only.json'], ['/v', VAULT_SETTINGS_FILE], ['/v', 'read-only.json'], ['/v', VAULT_SETTINGS_FILE]],
       coldDiff: [['/v']],
-      // vaultConfig: review, link click (YAZ-4936), show IDs (YAZ-4940), the word for a page (YAZ-4938), read only (YAZ-4939), text formatting and link pills (YAZ-4924), each subscribed
-      // once for each mount effect (7 × 2), plus the WikilinkIndexBridge's `useIndex`, which hears the vault's config too (2 since YAZ-2602: the count was [2, 2, 4] with review.json alone).
-      // YAZ-5484: card-look.json too; YAZ-5487: table-look.json too; YAZ-5489: folder-pages.json too.
-      subscriptions: [2, 2, 26],
+      // vaultConfig: read-only.json + settings.json (2 × 2) plus WikilinkIndexBridge's `useIndex` (2) = 6.
+      subscriptions: [2, 2, 6],
     }
     expect(asked()).toEqual(boot)
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
@@ -7050,8 +7046,8 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   /** Each vault's own index answer. */
   const feed = (byRoot: Record<string, Partial<IndexResponse>>) => (b: Bridge) =>
     void b.bridge.index.mockImplementation(async (vault) => ({ root: vault, records: [], folders: [], generatedAt: 1, ids: true, ...byRoot[vault] }))
-  /** Each vault's own `review.json`: card review on, or off (YAZ-4967; no file would be on). */
-  const cardReview = (on: Record<string, boolean>) => (b: Bridge) => void b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === 'review.json' ? { enabled: vault !== undefined && on[vault] === true } : null))
+  /** Each vault's own `review` section in `settings.json`: card review on, or off (YAZ-4967, YAZ-6546; no file would be on). */
+  const cardReview = (on: Record<string, boolean>) => (b: Bridge) => void b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === VAULT_SETTINGS_FILE ? { version: 1, review: { enabled: vault !== undefined && on[vault] === true } } : null))
   const PAGES = feed({ '/v': { records: [page('/v/a.md', { title: 'Ay' })] }, '/w': { records: [page('/w/b.md', { title: 'Bee' })] } })
   const callsFor = (spy: { mock: { calls: unknown[][] } }, vault: string) => spy.mock.calls.filter(([first]) => first === vault).length
   const editor = (path: string) => captured.editors.filter((e) => e.path === path).at(-1)
@@ -7101,7 +7097,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     const FILES: Record<string, unknown> = { '/v': { version: 1, rowHeight: 'tall', showFolderPageFiles: true } }
     const withFiles = (b: Bridge) => {
       PAGES(b)
-      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === 'folder-pages.json' && vault !== undefined ? (FILES[vault] ?? null) : null))
+      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === VAULT_SETTINGS_FILE && vault !== undefined && FILES[vault] !== undefined ? { version: 1, folderPages: FILES[vault] } : null))
     }
     const pagesOf = (path: string) => captured.editors.filter((e) => e.path === path).at(-1)?.folderPages
 
@@ -7122,7 +7118,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       const height = () => [...el.querySelectorAll<HTMLButtonElement>('[data-setting="folderPages.rowHeight"] button')]
       expect(height().find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('Tall')
       act(() => height().find((b) => b.textContent === 'Short')!.click())
-      expect(bridge.vaultConfig.write.mock.calls).toEqual([['/v', 'folder-pages.json', { version: 1, showFolderPageFiles: true }, ['version', ...FOLDER_PAGES_VAULT_PARTS]]])
+      expect(bridge.vaultConfig.write.mock.calls).toEqual([['/v', VAULT_SETTINGS_FILE, { version: 1, folderPages: { version: 1, showFolderPageFiles: true } }, VAULT_SETTINGS_DOC_KEYS]])
     })
   })
 
@@ -7130,7 +7126,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     const LOOKS: Record<string, unknown> = { '/v': { version: 1, look: { rowBand: 'calendar', dimPast: 'text', headerRow: { color: 'blue', align: 'center' } } }, '/w': { version: 1, look: { rowBand: 'off', nowMark: 'both', textInCells: 'clip', width: 900 } } }
     const withLooks = (looks: Record<string, unknown>) => (b: Bridge) => {
       PAGES(b)
-      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === 'table-look.json' && vault !== undefined ? (looks[vault] ?? null) : null))
+      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === VAULT_SETTINGS_FILE && vault !== undefined && looks[vault] != null ? { version: 1, tableLook: looks[vault] } : null))
     }
     const look = (el: HTMLElement | null | undefined) => ['--table-row-band', '--table-dim-past', '--table-now-mark', '--table-text', '--table-width-set', '--table-header-hue', '--table-header-aligned'].map((name) => el?.style.getPropertyValue(name))
     const layer = (el: HTMLElement, path: string) => el.querySelector(`.tabstack__layer [data-editor][data-path="${path}"]`)?.closest<HTMLElement>('.tabstack__layer')
@@ -7149,7 +7145,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       // The file of /w goes: its layers carry only its name, and read `.app`'s; /v keeps its style.
       const before = layer(el, '/v/a.md')!.style.cssText
       looks['/w'] = null
-      await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: 'table-look.json' }))
+      await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: VAULT_SETTINGS_FILE }))
       expect(look(layer(el, '/w/b.md'))).toEqual(['', '', '', '', '', '', ''])
       expect(layer(el, '/w/b.md')!.style.getPropertyValue('--table-look')).not.toBe('')
       expect(layer(el, '/v/a.md')!.style.cssText).toBe(before)
@@ -7164,10 +7160,10 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       const band = () => [...el.querySelectorAll<HTMLButtonElement>('[data-setting="tableRowBand"] button')]
       expect(band().find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('Off')
       act(() => band().find((b) => b.textContent === 'All tables')!.click())
-      expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', 'table-look.json', { version: 1, look: { nowMark: 'both', textInCells: 'clip', width: 900 } }, ['version', 'look', 'newTables']]])
+      expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', VAULT_SETTINGS_FILE, { version: 1, tableLook: { version: 1, look: { nowMark: 'both', textInCells: 'clip', width: 900 } } }, VAULT_SETTINGS_DOC_KEYS]])
       // YAZ-5602 round 2: Time in slot writes the vault's file too (`look.slotTime`), never the app's settings.
       act(() => [...el.querySelectorAll<HTMLButtonElement>('[data-setting="tableSlotTime"] button')].find((b) => b.textContent === 'Count down')!.click())
-      expect(bridge.vaultConfig.write.mock.calls.at(-1)).toEqual(['/w', 'table-look.json', { version: 1, look: { nowMark: 'both', textInCells: 'clip', width: 900, slotTime: 'down' } }, ['version', 'look', 'newTables']])
+      expect(bridge.vaultConfig.write.mock.calls.at(-1)).toEqual(['/w', VAULT_SETTINGS_FILE, { version: 1, tableLook: { version: 1, look: { nowMark: 'both', textInCells: 'clip', width: 900, slotTime: 'down' } } }, VAULT_SETTINGS_DOC_KEYS])
       expect(JSON.stringify(bridge.state.setSettings.mock.calls)).not.toContain('tableSlotTime')
     })
   })
@@ -7183,7 +7179,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     const LOOKS: Record<string, unknown> = { '/v': { version: 1, hiddenWords: 'box', textSize: 20, spacing: 'clean' }, '/w': { version: 1, hiddenWords: 'underline', markNext: false, nextColour: '#aa3399', tables: 'center' } }
     const withLooks = (looks: Record<string, unknown>) => (b: Bridge) => {
       PAGES(b)
-      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === 'card-look.json' && vault !== undefined ? (looks[vault] ?? null) : null))
+      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === VAULT_SETTINGS_FILE && vault !== undefined && looks[vault] != null ? { version: 1, cardLook: looks[vault] } : null))
     }
     const look = (el: HTMLElement | null | undefined) => ['--shown-hidden-words', '--mark-next-hidden', '--card-clean', '--card-text-size', '--card-next-hidden', '--card-table-inline', '--inbox-card-pad'].map((name) => el?.style.getPropertyValue(name))
     const V_LOOK = ['box', 'on', 'on', '20px', 'initial', 'initial', '44px']
@@ -7218,7 +7214,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       await act(async () => {})
       const before = layer(el, '/v/a.md')!.style.cssText
       looks['/w'] = { version: 1, hiddenWords: 'box' }
-      await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: 'card-look.json' }))
+      await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: VAULT_SETTINGS_FILE }))
       expect(layer(el, '/w/b.md')!.style.getPropertyValue('--shown-hidden-words')).toBe('box')
       expect(layer(el, '/v/a.md')!.style.cssText).toBe(before)
     })
@@ -7261,7 +7257,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     const files: Record<string, unknown> = { '/v': { version: 2, spacing: { line: 2, blockGap: 8 } } }
     const { el } = await mount(defaultAppState(), TWO, {}, (b) => {
       PAGES(b)
-      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === TEXT_FORMATTING_FILE && vault !== undefined ? (files[vault] ?? null) : null))
+      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === VAULT_SETTINGS_FILE && vault !== undefined && files[vault] != null ? { version: 1, textFormatting: files[vault] } : null))
     })
     show('/w/b.md')
     await act(async () => {})
@@ -7277,7 +7273,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     const files: Record<string, unknown> = { '/v': { version: 1, text: { size: 18 }, h2: { size: 21 } }, '/w': { version: 1, h2: { size: 30, underline: true } } }
     const { bridge, el } = await mount(defaultAppState(), { ...TWO, rightPanel: { open: true, width: 440, items: ['/w/c.md'], expanded: '/w/c.md' } }, {}, (b) => {
       PAGES(b)
-      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === TEXT_FORMATTING_FILE && vault !== undefined ? (files[vault] ?? null) : null))
+      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === VAULT_SETTINGS_FILE && vault !== undefined && files[vault] != null ? { version: 1, textFormatting: files[vault] } : null))
     })
     show('/w/b.md')
     await act(async () => {})
@@ -7295,14 +7291,14 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     const styleOfV = layer('/v/a.md').getAttribute('style')
     // Sync brings a new file into /w: its layers change, the /v layer keeps its style, and no editor renders again.
     files['/w'] = { version: 1, text: { size: 14 } }
-    await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: TEXT_FORMATTING_FILE }))
+    await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: VAULT_SETTINGS_FILE }))
     expect(vars(layer('/w/b.md'))).toEqual({ '--text-size': '14px' })
     expect(vars(right())).toEqual({ '--text-size': '14px' })
     expect(layer('/v/a.md').getAttribute('style')).toBe(styleOfV)
     expect({ v: renders('/v/a.md'), w: renders('/w/b.md'), c: renders('/w/c.md') }).toEqual(before)
     // The file is removed: the app's look, no variable at all.
     files['/w'] = null
-    await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: TEXT_FORMATTING_FILE }))
+    await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: VAULT_SETTINGS_FILE }))
     expect(vars(layer('/w/b.md'))).toEqual({})
   })
 
@@ -7315,7 +7311,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect([...select.options].map((o) => o.textContent)).toEqual(['v', 'w'])
     expect(select.value).toBe('1')
     act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Text larger"]')?.click())
-    expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', TEXT_FORMATTING_FILE, { version: 2, text: { size: 17 } }, TEXT_FORMATTING_KEYS]])
+    expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', VAULT_SETTINGS_FILE, { version: 1, textFormatting: { version: 2, text: { size: 17 } } }, VAULT_SETTINGS_DOC_KEYS]])
     // The page layer of /w takes the new size at once; nothing reaches the layer of /v.
     await act(async () => {})
     expect(el.querySelector<HTMLElement>('.tabstack__layer [data-path="/w/b.md"]')?.closest<HTMLElement>('.tabstack__layer')?.style.getPropertyValue('--text-size')).toBe('17px')
@@ -7343,7 +7339,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       expect(callsFor(bridge.tree, vault)).toBe(1)
       expect(callsFor(bridge.properties.get, vault)).toBe(2)
       expect(callsFor(bridge.github.status, vault)).toBe(2)
-      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(24) // folder-pages.json (YAZ-5489), table-look.json (YAZ-5487), card-look.json (YAZ-5484), review.json, link-click.json (YAZ-4936), show-ids.json (YAZ-4940), unit-word.json (YAZ-4938), read-only.json (YAZ-4939), text-formatting.json (YAZ-3066), link-pills.json (YAZ-4924), daily-pages.json (YAZ-5491) and new-places.json (YAZ-5486)
+      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(4) // Unified YAZ-6546: read-only.json + settings.json (2 × 2 StrictMode mount effects)
       expect(callsFor(bridge.coldDiff, vault)).toBe(1)
     }
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
@@ -7402,7 +7398,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   it('YAZ-5486: a new [[link]] page goes to ITS vault\'s place (new-places.json); the app\'s folder is no vault\'s', async () => {
     const places: Record<string, unknown> = { '/v': { version: 1, places: [null, null, null], newPage: { location: 'folder', folder: 'Inbox' } } }
     await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, newPageLocation: 'folder', newPageFolder: 'Elsewhere' } }, TWO, {}, (b) =>
-      b.bridge.vaultConfig.read.mockImplementation(async (vault?: string, name?: string) => (name === 'new-places.json' ? (places[vault ?? ""] ?? null) : null)),
+      b.bridge.vaultConfig.read.mockImplementation(async (vault?: string, name?: string) => (name === VAULT_SETTINGS_FILE && places[vault ?? ''] !== undefined ? { version: 1, newPlaces: places[vault ?? ''] } : null)),
     )
     show('/w/b.md')
     await act(async () => {})
@@ -7514,7 +7510,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       field.dispatchEvent(new Event('input', { bubbles: true }))
     })
     await act(async () => sheetBtn(el, 'Turn on both')?.click())
-    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/w', 'review.json', expect.objectContaining({ enabled: true }), REVIEW_SETTINGS_KEYS)
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/w', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, review: expect.objectContaining({ enabled: true }) }), VAULT_SETTINGS_DOC_KEYS)
     settingsPage(el, PAGE.githubSync)
     await act(async () => turnOn('githubSync'))
     expect(bridge.github.setEnabled).toHaveBeenCalledExactlyOnceWith('/w', true)
@@ -8705,7 +8701,7 @@ describe('App: the card skill in the sidebar (YAZ-5108)', () => {
   const SKILL = '/demo-profile/card-skill'
   const START = `${SKILL}/Start here.md`
   const skillOn = (settings: Partial<AppState['settings']> = {}): AppState => ({ ...defaultAppState(), settings: { ...defaultAppState().settings, cardSkillInSidebar: true, ...settings } })
-  const reviews = (on: boolean) => (b: ReturnType<typeof installBridge>) => b.bridge.vaultConfig.read.mockImplementation(async (root?: string, name?: string) => (name === 'review.json' ? { enabled: root === SKILL ? false : on } : name === 'read-only.json' && root === SKILL ? { on: true } : null))
+  const reviews = (on: boolean) => (b: ReturnType<typeof installBridge>) => b.bridge.vaultConfig.read.mockImplementation(async (root?: string, name?: string) => (name === VAULT_SETTINGS_FILE ? { version: 1, review: { enabled: root === SKILL ? false : on } } : name === 'read-only.json' && root === SKILL ? { on: true } : null))
   const shown = () => captured.sidebar?.vaults.map((vault) => [vault.root, vault.app === true]) ?? []
   const rootsWritten = (bridge: ReturnType<typeof installBridge>['bridge']) => (bridge.window.setIdentity.mock.calls as unknown as [{ roots?: string[] }][]).flatMap(([patch]) => patch.roots ?? [])
 
@@ -8738,13 +8734,14 @@ describe('App: the card skill in the sidebar (YAZ-5108)', () => {
     expect(captured.editors.some((e) => e.path === START && e.root === SKILL)).toBe(true)
     await act(async () => captured.sidebar?.onHideCardSkill?.())
     expect(shown()).toEqual([['/v', false]])
-    expect(storage.getSettings().cardSkillInSidebar).toBe(false)
-    expect(bridge.state.setSettings).toHaveBeenCalledWith(expect.objectContaining({ cardSkillInSidebar: false }))
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, cardSkillInSidebar: false }), VAULT_SETTINGS_DOC_KEYS)
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ tabs: ['/v/a.md'] }))
     expect(el.querySelector('.link-notice__text')?.textContent).toBe('Card skill hidden. Turn it on again in Settings › Cards.')
     expect(el.querySelector('.link-notice__action')?.textContent).toBe('Open Settings')
     await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
     expect(el.querySelector('.settings-nav__item[aria-current="page"]')?.textContent).toBe('Cards')
+    const vaultTab = [...el.querySelectorAll<HTMLButtonElement>('.settings-scope__tab')].find((b) => b.textContent?.includes('This vault'))
+    act(() => vaultTab?.click())
     const toggle = el.querySelector('[role="group"][aria-label="Card skill in the sidebar"]')
     expect([...(toggle?.querySelectorAll('button') ?? [])].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Show', 'false'], ['Hide', 'true']])
   })
@@ -8790,7 +8787,7 @@ describe('App: the card skill in the sidebar (YAZ-5108)', () => {
 
   it('YAZ-5204: "Duplicate into <vault>…" into a read-only vault writes nothing and says why in one line; a writable vault of the window still takes it', async () => {
     const readOnlyV = (b: ReturnType<typeof installBridge>) =>
-      b.bridge.vaultConfig.read.mockImplementation(async (root?: string, name?: string) => (name === 'review.json' ? { enabled: root !== SKILL } : name === 'read-only.json' ? { on: root === SKILL || root === '/v' } : null))
+      b.bridge.vaultConfig.read.mockImplementation(async (root?: string, name?: string) => (name === VAULT_SETTINGS_FILE ? { version: 1, review: { enabled: root !== SKILL } } : name === 'read-only.json' ? { on: root === SKILL || root === '/v' } : null))
     const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', roots: ['/v', '/w'], file: null, tabs: [], cardSkill: SKILL }, {}, readOnlyV)
     await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
     expect(bridge.cardSkill.duplicate).not.toHaveBeenCalled()
@@ -8859,7 +8856,7 @@ describe('App: the card course (YAZ-5120)', () => {
   it('YAZ-5201: in a window with vaults A and B, the course stays in the vault it was opened from: B in front during the run makes nothing in B', async () => {
     const files = { '/a/x.md': { content: '# x', mtime: 1 }, '/b/y.md': { content: '# y', mtime: 1 } }
     const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'] }, files, (b) => {
-      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'review.json' ? { enabled: true } : null))
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === VAULT_SETTINGS_FILE ? { version: 1, review: { enabled: true } } : null))
       Object.assign(b.bridge, { createDir: vi.fn(async (req: { path: string }) => ({ path: req.path })), mintPageId: vi.fn(async () => 'TST-1') })
     })
     act(() => requestCourse('first-card'))
@@ -8955,5 +8952,90 @@ describe('App: auto-open sidebar when all tabs close (YAZ-6533)', () => {
     const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'focus' })
     expect(visibleSidebar(el)).toBeNull()
     expect(bridge.window.setIdentity).not.toHaveBeenCalledWith({ sidebarCollapsed: false })
+  })
+})
+
+describe('App: unified per-vault & multi-vault workspace settings (YAZ-6546, YAZ-6555)', () => {
+  it('single-vault window reads chrome & page overrides from settings.json and routes sidebar chrome tweaks to settings.json', async () => {
+    const { bridge, el } = await mount(
+      defaultAppState(),
+      { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] },
+      {},
+      (b) => {
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) =>
+          name === VAULT_SETTINGS_FILE ? { version: 1, sidebarLines: 'always', contentWidth: 'full', tabWidth: 'wide' } : null,
+        )
+      },
+    )
+    await act(async () => {})
+    const app = el.querySelector<HTMLElement>('.app')!
+    expect(app.getAttribute('data-sidebar-lines')).toBe('always')
+    expect(app.getAttribute('data-content-width')).toBe('full')
+    expect(captured.editors.filter((e) => e.path === '/v/a.md').at(-1)?.contentWidth).toBe('full')
+
+    const sidebarProps = captured.sidebar as unknown as {
+      settings: AppState['settings']
+      onChangeRowDates?: (next: AppState['settings']['rowDates']) => void
+    }
+    bridge.state.setSettings.mockClear()
+    await act(async () => sidebarProps.onChangeRowDates?.({ ...sidebarProps.settings.rowDates, files: true }))
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith(
+      '/v',
+      VAULT_SETTINGS_FILE,
+      expect.objectContaining({ version: 1, rowDates: expect.objectContaining({ files: true }) }),
+      VAULT_SETTINGS_DOC_KEYS,
+    )
+    expect(bridge.state.setSettings).not.toHaveBeenCalled()
+  })
+
+  it('multi-vault window keeps workspace chrome stable across tab switches while each page follows its own vault overrides', async () => {
+    const wsKey = workspaceSettingsKey(['/v', '/w'], 'ws-1')
+    const state: AppState = {
+      ...defaultAppState(),
+      vaultSets: [{ id: 'ws-1', name: 'Work', roots: ['/v', '/w'], lastUsed: 1 }],
+      settings: {
+        ...DEFAULT_SETTINGS,
+        workspaceSettings: { [wsKey]: { sidebarLines: 'off', tabWidth: 'compact' } },
+      },
+    }
+    const { bridge, el } = await mount(
+      state,
+      { id: 'w1', root: '/v', roots: ['/v', '/w'], file: '/v/a.md', tabs: ['/v/a.md', '/w/b.md'] },
+      {},
+      (b) => {
+        b.bridge.vaultConfig.read.mockImplementation(async (vault?: string, name?: string) => {
+          if (name !== VAULT_SETTINGS_FILE) return null
+          if (vault === '/v') return { version: 1, sidebarLines: 'always', contentWidth: 'full' }
+          if (vault === '/w') return { version: 1, sidebarLines: 'hover', contentWidth: 'medium' }
+          return null
+        })
+      },
+    )
+    await act(async () => {})
+    const app = el.querySelector<HTMLElement>('.app')!
+    expect(app.getAttribute('data-sidebar-lines')).toBe('off')
+    expect(app.getAttribute('data-content-width')).toBe('full')
+
+    act(() => captured.sidebar?.onOpenFile('/w/b.md'))
+    await act(async () => {})
+    expect(app.getAttribute('data-sidebar-lines')).toBe('off')
+    expect(app.getAttribute('data-content-width')).toBe('medium')
+    expect(captured.editors.filter((e) => e.path === '/v/a.md').at(-1)?.contentWidth).toBe('full')
+    expect(captured.editors.filter((e) => e.path === '/w/b.md').at(-1)?.contentWidth).toBe('medium')
+
+    const sidebarProps = captured.sidebar as unknown as {
+      settings: AppState['settings']
+      onChangeRowDates?: (next: AppState['settings']['rowDates']) => void
+    }
+    bridge.vaultConfig.write.mockClear()
+    await act(async () => sidebarProps.onChangeRowDates?.({ ...sidebarProps.settings.rowDates, files: true }))
+    expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+    expect(bridge.state.setSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        workspaceSettings: expect.objectContaining({
+          [wsKey]: expect.objectContaining({ rowDates: expect.objectContaining({ files: true }) }),
+        }),
+      }),
+    )
   })
 })

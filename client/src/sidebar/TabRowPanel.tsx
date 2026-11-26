@@ -43,6 +43,8 @@ interface TabRowPanelProps {
   autoFocus: boolean
   /** One write per change (D5: a drag writes once, on release). */
   onChange: (next: SidebarTabsPrefs) => void
+  /** Shown when `sidebarTabs` is overridden for this vault/workspace (YAZ-6546): clears the override to inherit Global defaults. */
+  onResetToGlobal?: () => void
   onClose: () => void
 }
 
@@ -61,7 +63,7 @@ interface TabRowPanelProps {
  * It closes on Esc, a press outside it and the window losing focus (S26); it stays open while the
  * boxes tick and the rows move.
  */
-export function TabRowPanel({ x, y, prefs, focus, autoFocus, onChange, onClose }: TabRowPanelProps) {
+export function TabRowPanel({ x, y, prefs, focus, autoFocus, onChange, onResetToGlobal, onClose }: TabRowPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ left: x, top: y })
@@ -262,6 +264,11 @@ export function TabRowPanel({ x, y, prefs, focus, autoFocus, onChange, onClose }
       <button type="button" className="tab-row-panel__reset" onClick={() => write(DEFAULT_SIDEBAR_TABS)}>
         Reset tab row
       </button>
+      {onResetToGlobal !== undefined && (
+        <button type="button" className="tab-row-panel__reset tab-row-panel__reset--global" onClick={onResetToGlobal}>
+          Reset to global
+        </button>
+      )}
     </div>
   )
 }

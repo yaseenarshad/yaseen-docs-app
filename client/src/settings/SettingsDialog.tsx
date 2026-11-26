@@ -37,6 +37,7 @@ import { SAME_WORD, UnitContext } from '../vault/unitWord'
 import { availableSections, groupsOf, isAvailable, resolveGroupTitle, resolveHint, resolveLabel, resolveWide, subheadingOf, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
 import { searchSettings, settingCandidates, type SettingHit } from './searchSettings'
 import { SettingRow } from './SettingRow'
+import { buildScopedSettings, type SettingsScopeMode } from './settingsScope'
 import { createSectionFinder } from './sectionFind'
 import { createFindChannel } from '../editor/find/findChannel'
 import { FindBar } from '../editor/find/FindBar'
@@ -57,7 +58,20 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   const [systemHotkeys, setSystemHotkeys] = useState<SystemHotkey[] | undefined>(undefined)
   /** Settings › Hotkeys' filters (YAZ-3564 K7): the rows read them through `ctx`; a page swap clears them. */
   const [hotkeyFilter, setHotkeyFilter] = useState<HotkeyFilter>(NO_FILTER)
-  const ctx = useMemo<SettingsCtx>(() => ({ ...given, ...(systemHotkeys === undefined ? {} : { systemHotkeys }), hotkeyFilter }), [given, systemHotkeys, hotkeyFilter])
+  /** Top-of-Settings scope switcher (YAZ-6546, YAZ-6556): Global defaults | This vault | This workspace. */
+  const [scopeMode, setScopeMode] = useState<SettingsScopeMode>('global')
+  const [selectedVaultRoot, setSelectedVaultRoot] = useState<string | null>(() => given.scope?.activeVaultRoot ?? null)
+  const effectiveScopeMode: SettingsScopeMode =
+    given.scope === undefined || given.scope.vaults.length === 0
+      ? 'global'
+      : scopeMode === 'workspace' && given.scope.workspace === undefined
+        ? 'global'
+        : scopeMode
+  const scoped = useMemo(() => buildScopedSettings(given, effectiveScopeMode, selectedVaultRoot), [given, effectiveScopeMode, selectedVaultRoot])
+  const ctx = useMemo<SettingsCtx>(
+    () => ({ ...scoped.ctx, ...(systemHotkeys === undefined ? {} : { systemHotkeys }), hotkeyFilter }),
+    [scoped.ctx, systemHotkeys, hotkeyFilter],
+  )
   const sections = availableSections(ctx)
   const settingsPages = sections.filter((s) => s.standalone !== true)
   const referencePages = sections.filter((s) => s.standalone === true)
@@ -215,11 +229,14 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   const revealTimer = useRef<number | undefined>(undefined)
   useEffect(() => () => window.clearTimeout(revealTimer.current), [])
 
-  const row = (item: SettingDef) => (
-    <SettingRow key={item.id} id={item.id} label={resolveLabel(item, ctx)} hint={resolveHint(item, ctx)} wide={resolveWide(item, ctx)} bare={item.bare === true}>
-      {item.render(ctx)}
-    </SettingRow>
-  )
+  const row = (item: SettingDef, s: SettingsSection, g: SettingsGroup) => {
+    const meta = scoped.rowMeta(item, s, g)
+    return (
+      <SettingRow key={item.id} id={item.id} label={resolveLabel(item, ctx)} hint={resolveHint(item, ctx)} wide={resolveWide(item, ctx)} bare={item.bare === true} {...meta}>
+        {item.render(ctx)}
+      </SettingRow>
+    )
+  }
   /**
    * The rows in runs, one per sub-heading (YAZ-5969): a run of rows with no sub-heading first (if any), then each
    * sub-heading's rows, in the order they show. Each run is its own card (YAZ-5969 Q4, Yaseen: "Box per sub-group").
@@ -237,7 +254,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   /** A per-vault page says which vault it acts on (YAZ-2602 R10), where App names one: a window with two or more. */
   const vaultLine = (className: string, of?: (ctx: SettingsCtx) => string | undefined) => ctx.vaultName !== undefined && <p className={className}>Vault: {of?.(ctx) ?? ctx.vaultName}</p>
   /** `titled` is false under a search breadcrumb, which already names the group. A group with no row to show is not there. */
-  const group = (g: SettingsGroup, items: readonly SettingDef[], key: number | string, titled = true, index?: number) => items.length > 0 && (
+  const group = (s: SettingsSection, g: SettingsGroup, items: readonly SettingDef[], key: number | string, titled = true, index?: number) => items.length > 0 && (
     <div key={key} className="settings-group" {...(g.anchor === undefined ? {} : { id: g.anchor })} data-group-index={index} data-group-title={resolveGroupTitle(g, ctx)}>
       {g.header !== undefined ? g.header(ctx) : titled && g.title !== undefined && <h3 className="settings-group__title">{resolveGroupTitle(g, ctx)}</h3>}
       {g.vault === true && vaultLine('settings-group__hint', g.vaultOf)}
@@ -246,7 +263,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
         <Fragment key={run.sub ?? `run:${i}`}>
           {/* A sub-heading over its own card (YAZ-5969 Q4): the label in the text's colour, outside the card. */}
           {run.sub !== undefined && <h4 className="settings-subheading">{unit(ctx, run.sub)}</h4>}
-          <div className={`settings-group__card${run.sub === undefined ? '' : ' settings-group__card--sub'}${g.cardClass === undefined ? '' : ` ${g.cardClass}`}`}>{run.items.map(row)}</div>
+          <div className={`settings-group__card${run.sub === undefined ? '' : ' settings-group__card--sub'}${g.cardClass === undefined ? '' : ` ${g.cardClass}`}`}>{run.items.map((item) => row(item, s, g))}</div>
         </Fragment>
       ))}
     </div>
@@ -256,7 +273,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
       <h2 className="settings-section__title">{s.title}</h2>
       {s.vault === true && vaultLine('settings-section__note')}
       {s.page !== undefined && <p className="settings-section__note">{s.page}</p>}
-      {groupsOf(s, ctx).map((g, i) => group(g, g.items.filter((item) => isAvailable(item, ctx) && item.searchOnly !== true), g.anchor ?? i, true, i))}
+      {groupsOf(s, ctx).map((g, i) => group(s, g, g.items.filter((item) => isAvailable(item, ctx) && item.searchOnly !== true), g.anchor ?? i, true, i))}
     </section>
   )
 
@@ -288,7 +305,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
               <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </button>
           </h2>
-          {group(entry.group, entry.items, 0, false)}
+          {group(entry.section, entry.group, entry.items, 0, false)}
         </section>
       ))
     )
@@ -351,6 +368,80 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
           ✕
         </button>
         <div ref={paneRef} className="settings-pane" onScroll={onPaneScroll}>
+          {given.scope !== undefined && given.scope.vaults.length > 0 && (
+            <div className="settings-scope-bar" data-scope-mode={effectiveScopeMode}>
+              <div className="settings-scope__tabs" role="tablist" aria-label="Settings scope">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={effectiveScopeMode === 'global'}
+                  className={`settings-scope__tab${effectiveScopeMode === 'global' ? ' settings-scope__tab--active' : ''}`}
+                  onClick={() => setScopeMode('global')}
+                >
+                  Global defaults
+                </button>
+                {given.scope.vaults.length === 1 ? (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={effectiveScopeMode === 'vault'}
+                    className={`settings-scope__tab${effectiveScopeMode === 'vault' ? ' settings-scope__tab--active' : ''}`}
+                    onClick={() => {
+                      setSelectedVaultRoot(given.scope!.vaults[0].root)
+                      setScopeMode('vault')
+                    }}
+                  >
+                    This vault ({given.scope.vaults[0].name})
+                  </button>
+                ) : (
+                  <>
+                    {given.scope.workspace !== undefined && (
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={effectiveScopeMode === 'workspace'}
+                        className={`settings-scope__tab${effectiveScopeMode === 'workspace' ? ' settings-scope__tab--active' : ''}`}
+                        onClick={() => setScopeMode('workspace')}
+                      >
+                        This workspace ({given.scope.workspace.name})
+                      </button>
+                    )}
+                    <div className={`settings-scope__vault-pick${effectiveScopeMode === 'vault' ? ' settings-scope__tab--active' : ''}`}>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={effectiveScopeMode === 'vault'}
+                        className="settings-scope__vault-btn"
+                        onClick={() => setScopeMode('vault')}
+                      >
+                        Vault:
+                      </button>
+                      <select
+                        className="settings-scope__select"
+                        aria-label="Select vault scope"
+                        value={scoped.activeVault?.root ?? given.scope.vaults[0].root}
+                        onChange={(e) => {
+                          setSelectedVaultRoot(e.target.value)
+                          setScopeMode('vault')
+                        }}
+                      >
+                        {given.scope.vaults.map((v) => (
+                          <option key={v.root} value={v.root}>
+                            {v.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
+              </div>
+              {scoped.onResetAll !== undefined && (
+                <button type="button" className="settings-scope__reset-all" onClick={scoped.onResetAll}>
+                  Reset all ({scoped.overrideCount})
+                </button>
+              )}
+            </div>
+          )}
           <FindBar channel={findChannel} scope="settings" hostRef={dialogRef} />
           {onHotkeys && !searching && (
             <KeySearch

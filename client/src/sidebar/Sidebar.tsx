@@ -264,6 +264,7 @@ interface SidebarProps {
   /** Show folder page files of each vault (YAZ-5489: its folder-pages.json, else the app's); absent, the app's. */
   pageFilesIn?: (root: string) => boolean
   onChangeSettings: (next: SettingsState) => void
+  onChangeRowDates?: (next: SettingsState['rowDates']) => void; onResetTabsToGlobal?: () => void
   /** The footer cog: App mounts the settings dialog, so the cog only asks for it (YAZ-1679). */
   onOpenSettings: () => void
   /** The footer's "Open today's daily page" (YAZ-3607 D7), a background tab on ⌘-click (YAZ-3776); absent while Daily pages is off. */
@@ -770,7 +771,7 @@ export function Sidebar({
   createRequest = null,
   onCreateConsumed,
   settings,
-  onChangeSettings,
+  onChangeSettings, onChangeRowDates, onResetTabsToGlobal,
   onOpenSettings,
   onOpenDailyPage,
   update,
@@ -837,7 +838,7 @@ export function Sidebar({
   const [searchFilter, setSearchFilter] = useState<SearchFilter>(NO_FILTER)
   // The file times stay live (D2) while something reads them: the tab's Last updated sort, any tab's dates (D10), or a
   // time filter (D14). Any tab's, not the shown one's: a tab change then reads no vault again (6 µs a save, not 42 ms a switch).
-  const [rowDates, setTabDate] = useVaultRowDates(vaults, settings.rowDates)
+  const [rowDates, setTabDate] = useVaultRowDates(vaults, settings.rowDates, onChangeRowDates)
   const liveTimes = sort?.by === 'updated' || rowDates.files || rowDates.focus || rowDates.favorites || rowDates.search || searchFilter.time !== 'any'
   // A place for each page tab (YAZ-5701): the window keeps its open folders to itself, and starts from the place of
   // the tab on show (a New tab's own, YAZ-5757); with none, from the open folders the sidebar last showed. Only the
@@ -2241,7 +2242,7 @@ export function Sidebar({
         foldDisabled={foldDisabled}
         foldLabel={allLabel}
         foldOpen={foldOpen}
-        onFold={foldAll} onRefresh={onRefreshFiles}
+        onFold={foldAll} onRefresh={onRefreshFiles} onResetTabsToGlobal={onResetTabsToGlobal}
       />
       {/* The search bar (YAZ-739 A-, chrome v2 row 2), on the Search tab only (YAZ-2638 D2): the
           tab carries the magnifier, so the bar has none. With text typed the body below is the

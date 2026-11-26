@@ -13,6 +13,7 @@ import { relTo, dirname } from '../lib/paths'
 import { idNeedle, marked } from '../search/marked'
 import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
 import { filterOn, filterTest, NO_FILTER, type SearchFilter, type SearchType } from '../search/searchType'
+import { windowSearchIncludeInline } from '../settings/effectiveSettings'
 import { storage } from '../lib/storage'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
 import { PlaceName } from '../sidebar/PlaceName'
@@ -74,7 +75,7 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<SearchFilter>(() => ({
     ...NO_FILTER,
-    includeInline: storage.getSettings()?.searchIncludeInline !== false,
+    includeInline: windowSearchIncludeInline(),
   }))
   const [filterOpen, setFilterOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)

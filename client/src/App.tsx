@@ -6,7 +6,10 @@ import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
 import type { IdsInFiles, IdsInSearch } from '@shared/showIds'
-import { sanitizeSpacing, spacingOf, spacingVars, type PageSpacing, type TextFormatting } from '@shared/textFormatting'
+import { spacingVars, type TextFormatting } from '@shared/textFormatting'
+import { VAULT_CHROME_KEYS, type VaultChromeKey, type WorkspaceChromeOverrides } from '@shared/vaultSettings'
+import { buildSettingsDialogCtx } from './settings/buildSettingsCtx'
+import { NO_PAGE_OVERRIDE_VARS, pageOverrideVars, patchWorkspaceChrome, resolvePageSettings, resolveWindowChrome, setVaultNewPageDrawing, setWindowSearchIncludeInline, splitChromeDiff } from './settings/effectiveSettings'
 import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
@@ -15,7 +18,7 @@ import { Editor } from './editor/Editor'
 import { keepOutsideChangesOfTabs } from './editor/external/outsideChangesMemory'
 import { newPageBase } from './editor/wikilink/createFromLink'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
-import { useVaultLauncherIcons, workspaceLauncherCtx } from './hooks/useVaultLauncherIcons'
+import { useVaultLauncherIcons } from './hooks/useVaultLauncherIcons'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { onKeySheetRequest, placeOverTab } from './keys/keySheetRequest'
 import { useMenuEvents } from './hooks/useMenuEvents'
@@ -90,7 +93,7 @@ import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import type { CardReviewResume, CardReviewScope, CardReviewSession } from './review/useCardReview'
 import { cardLookVars, cardSurfaceStyleOf, vaultCardVars } from './review/cardLook'
-import { appCardLook, cardLookSettings } from '@shared/cardLook'
+import { cardLookSettings } from '@shared/cardLook'
 import { tellCardFoldChange } from './editor/card/cardFold'
 import { useReviewOnRoots } from './review/useReviewSettings'
 import { contentWidthVars, tablePositionVars } from './lib/contentWidth'
@@ -322,12 +325,7 @@ const RetainedEditor = memo(Editor)
  * layers of that vault only.
  */
 const layerStyles = new WeakMap<TextFormatting, WeakMap<LinkPills, WeakMap<CSSProperties, WeakMap<CSSProperties, CSSProperties>>>>()
-/**
- * The vault's link pills look rides the same style (YAZ-4924): the `--pill-*` variables; and (YAZ-5484) its card look
- * (`cardVars`, `review/cardLook.ts`; `NO_CARD_VARS` for a vault with no card-look.json, whose layers read `.app`'s),
- * cached by the three objects.
- */
-function layerStyleOf(formatting: TextFormatting, pills: LinkPills, cardVars: CSSProperties = NO_CARD_VARS, tableVars: CSSProperties = NO_TABLE_VARS): CSSProperties {
+function layerStyleOf(formatting: TextFormatting, pills: LinkPills, cardVars: CSSProperties = NO_CARD_VARS, tableVars: CSSProperties = NO_TABLE_VARS, extraVars: CSSProperties = NO_PAGE_OVERRIDE_VARS): CSSProperties {
   let byPills = layerStyles.get(formatting)
   if (byPills === undefined) layerStyles.set(formatting, (byPills = new WeakMap()))
   let byCard = byPills.get(pills)
@@ -336,12 +334,10 @@ function layerStyleOf(formatting: TextFormatting, pills: LinkPills, cardVars: CS
   if (byTable === undefined) byCard.set(cardVars, (byTable = new WeakMap()))
   let style = byTable.get(tableVars)
   if (style === undefined) {
-    // YAZ-5485: the vault's page spacing too; a vault with no `spacing` sets none, and its layers read `.app`'s app values.
-    // YAZ-5487: and its table look (`tableVars`).
     style = { ...textVars(formatting), ...spacingVars(formatting.spacing), ...linkPillVars(pills), ...cardVars, ...tableVars } as CSSProperties
     byTable.set(tableVars, style)
   }
-  return style
+  return extraVars === NO_PAGE_OVERRIDE_VARS ? style : ({ ...style, ...extraVars } as CSSProperties)
 }
 /**
  * A vault's table look as its surfaces' variables (YAZ-5487): `--table-look` names the vault (the editor's script reads
@@ -600,8 +596,15 @@ export function App() {
    * the window also has reviews on. It ships with IDs off and read only on (`.yaseendocs/`), so its pages open read only
    * and the app writes nothing into it. Settings never shows it as "this vault": `active` is a vault of the person.
    */
+  const matchedVaultSet = roots.length >= 2 ? (storage.getVaultSets().find((set) => sameVaults(set.roots, roots)) ?? null) : null
+  const legacyRowDates = roots.length > 0 ? storage.getFolderRowDates(roots[0]) : null
+  const windowChrome = useMemo(
+    () => resolveWindowChrome(appSettings, roots, matchedVaultSet?.id ?? null, roots.length === 1 ? first.vaultSettings.overrides : null, legacyRowDates),
+    [appSettings, roots, matchedVaultSet?.id, first.vaultSettings.overrides, legacyRowDates],
+  )
+  const chromeSettings = windowChrome.settings
   const [cardSkill] = useState(storage.getCardSkill)
-  const skillLoads = cardSkill !== null && appSettings.cardSkillInSidebar && root !== null
+  const skillLoads = cardSkill !== null && chromeSettings.cardSkillInSidebar && root !== null
   const skillScope = useVaultScope(skillLoads ? cardSkill : null, notify, askFileAction)
   const skillShown = skillLoads && vaults.some((vault) => vault?.reviewSettings.settings.enabled === true && vault.ids?.enabled !== false)
   const live = useRef({ roots, vaults, first, skill: skillLoads ? skillScope : null })
@@ -777,7 +780,15 @@ export function App() {
   // YAZ-5486: where new pages and boards go are the ACTIVE tab's vault's (`new-places.json`) in `settings` (Settings, ⌘N);
   // a new [[link]] page and a new board ask their own vault's (`newPlacesOf`).
   const activeNewPlaces = active.newPlaces.value
-  const settings = useMemo(() => withDailyPages(vaultNewPlacesFields(appSettings, activeNewPlaces), dailyHere.settings), [appSettings, activeNewPlaces, dailyKey])
+  const activeVaultOverrides = active.vaultSettings.overrides
+  const activeEffective = useMemo(
+    () => resolvePageSettings(appSettings, activeVaultOverrides, windowChrome.isMultiVault, windowChrome.chromeOverrides),
+    [appSettings, activeVaultOverrides, windowChrome.isMultiVault, windowChrome.chromeOverrides],
+  )
+  const settings = useMemo(() => withDailyPages(vaultNewPlacesFields(activeEffective, activeNewPlaces), dailyHere.settings), [activeEffective, activeNewPlaces, dailyKey])
+  const sidebarSettings = useMemo(() => withDailyPages(vaultNewPlacesFields(chromeSettings, activeNewPlaces), dailyHere.settings), [chromeSettings, activeNewPlaces, dailyKey])
+  const pageSettingsOf = (path: string): SettingsState =>
+    resolvePageSettings(appSettings, scopeOf(path).vaultSettings.overrides, windowChrome.isMultiVault, windowChrome.chromeOverrides)
   /** Where new things go in the vault that holds `path` (YAZ-5486): its file's keys over the app's values. */
   const newPlacesOf = (path: string) => vaultNewPlacesFields(appSettings, scopeOf(path).newPlaces.value)
   const newPlacesOfRef = useRef(newPlacesOf)
@@ -797,7 +808,7 @@ export function App() {
   useEffect(() => api.window.onFlush(flushWindow), [])
   // Every page of the window by its title (YAZ-2420 🔒 D14), off the index of each vault.
   const titles = useAllPathTitles(useMemo(() => roots.map((vault) => scopes[slots.current.indexOf(vault)].wikilinks), [roots]))
-  const tabIdProps = useTabIds(roots, vaults, settings.tabWidth, settings.inactiveTabWidth)
+  const tabIdProps = useTabIds(roots, vaults, chromeSettings.tabWidth, chromeSettings.inactiveTabWidth)
   /** A page as a notice names it — its title (YAZ-2420 🔒 D14) — off its vault's index snapshot as it stands. */
   const nameOf = useCallback((path: string) => {
     const { root: vault, wikilinks } = scopeOf(path)
@@ -880,6 +891,36 @@ export function App() {
     storage.setSettings(app)
     setSettings(app)
   }, [])
+  const changeGlobalSettings = useCallback((next: SettingsState) => {
+    storage.setSettings(next)
+    setSettings(next)
+  }, [])
+  const chromeWriteRef = useRef({ roots, first, wsKey: windowChrome.wsKey, sidebarSettings })
+  chromeWriteRef.current = { roots, first, wsKey: windowChrome.wsKey, sidebarSettings }
+  const writeChromeOverrides = useCallback((patch: Partial<WorkspaceChromeOverrides>, unset: readonly VaultChromeKey[] = []) => {
+    const cur = chromeWriteRef.current
+    if (cur.roots.length === 0) return changeGlobalSettings({ ...storage.getSettings(), ...patch })
+    if (cur.roots.length === 1) return void cur.first.vaultSettings.setOverrides(patch, unset)
+    if (cur.wsKey !== null) changeGlobalSettings(patchWorkspaceChrome(storage.getSettings(), cur.wsKey, patch, unset))
+  }, [changeGlobalSettings])
+  const resetWorkspaceChrome = useCallback(() => {
+    const { wsKey } = chromeWriteRef.current
+    if (wsKey !== null) changeGlobalSettings(patchWorkspaceChrome(storage.getSettings(), wsKey, {}, VAULT_CHROME_KEYS))
+  }, [changeGlobalSettings])
+  const changeSidebarSettings = useCallback((next: SettingsState) => {
+    const { chrome, other } = splitChromeDiff(chromeWriteRef.current.sidebarSettings, next)
+    if (Object.keys(chrome).length > 0) writeChromeOverrides(chrome)
+    if (Object.keys(other).length > 0) changeSettings({ ...storage.getSettings(), ...other })
+  }, [writeChromeOverrides, changeSettings])
+  const changeRowDates = useCallback((rowDates: SettingsState['rowDates']) => writeChromeOverrides({ rowDates }), [writeChromeOverrides])
+  const resetSidebarTabsToGlobal = useCallback(() => writeChromeOverrides({}, ['sidebarTabs']), [writeChromeOverrides])
+  useEffect(() => {
+    roots.forEach((at, i) => setVaultNewPageDrawing(at, vaults[i]?.vaultSettings.overrides.newPageDrawing))
+  }, [roots, vaults])
+  useEffect(() => {
+    setWindowSearchIncludeInline(chromeSettings.searchIncludeInline)
+    return () => setWindowSearchIncludeInline(null)
+  }, [chromeSettings.searchIncludeInline])
   // "Jump across files" (YAZ-3500): every code tab of this page follows the switch (`code/languageHelpers.ts`).
   useEffect(() => setLanguageHelpers(settings.codeLanguageHelpers === true), [settings.codeLanguageHelpers])
   // YAZ-5487: the 21 table settings (the look and the new-table defaults) as the APP's look, the fallback for a vault
@@ -970,12 +1011,17 @@ export function App() {
     },
     [changeSettings],
   )
-  // The table of contents' "Pin" / "Unpin" (YAZ-2700): the same stable door.
-  const changeTableOfContents = useCallback((mode: TableOfContents) => changeSettings({ ...newPageFolderInputs.current.settings, tableOfContents: mode }), [changeSettings])
-  // A drag of the names column's edge (YAZ-2752), on its release: the same stable door.
-  // The outside changes list's Pin and Unpin (YAZ-3704 demo): the same stable door.
+  const changeTableOfContents = useCallback((mode: TableOfContents) => {
+    const scope = live.current.roots.length > 0 ? live.current.vaults[live.current.roots.indexOf(placeInputs.current.vault ?? '')] ?? live.current.first : null
+    if (scope !== null && scope.root !== null) void scope.vaultSettings.setOverrides({ tableOfContents: mode })
+    else changeSettings({ ...newPageFolderInputs.current.settings, tableOfContents: mode })
+  }, [changeSettings])
   const changeOutsideListPinned = useCallback((pinned: boolean) => changeSettings({ ...newPageFolderInputs.current.settings, outsideListPinned: pinned }), [changeSettings])
-  const changeTableOfContentsWidth = useCallback((width: number) => changeSettings({ ...newPageFolderInputs.current.settings, tableOfContentsWidth: width }), [changeSettings])
+  const changeTableOfContentsWidth = useCallback((width: number) => {
+    const scope = live.current.roots.length > 0 ? live.current.vaults[live.current.roots.indexOf(placeInputs.current.vault ?? '')] ?? live.current.first : null
+    if (scope !== null && scope.root !== null) void scope.vaultSettings.setOverrides({ tableOfContentsWidth: width })
+    else changeSettings({ ...newPageFolderInputs.current.settings, tableOfContentsWidth: width })
+  }, [changeSettings])
   // A custom pick in a page's highlight panel (YAZ-4348 demo round 2): the same stable door.
   useEffect(() => setUsedHighlightColorsSaver((next) => changeSettings({ ...newPageFolderInputs.current.settings, highlightCustomColors: next })), [changeSettings])
   // A drawing's engine moved a canvas pref (YAZ-3028, Draw's 🔒 YAZ-1775 D9): the same stable door.
@@ -1062,7 +1108,7 @@ export function App() {
     // Absent → bulletThreading.css falls back to the app accent.
     ...(settings.threadColor !== null ? { '--thread-color': settings.threadColor } : {}),
     // Absent → app.css falls back to `--thread-color`, then the accent (YAZ-3309 D9).
-    ...(settings.sidebarThreadColor !== null ? { '--sidebar-thread-color': settings.sidebarThreadColor } : {}),
+    ...(chromeSettings.sidebarThreadColor !== null ? { '--sidebar-thread-color': chromeSettings.sidebarThreadColor } : {}),
     // Each icon colour of the sidebar tree that is set (YAZ-3440 D4) over app.css's own `--kind-<kind>`: a CSS var, so no tree level renders.
     ...Object.fromEntries(Object.entries(iconColors).map(([kind, colour]) => [`--kind-${kind}`, colour])),
   } as CSSProperties
@@ -1101,63 +1147,15 @@ export function App() {
     const scope = scopeOf(path)
     return scope.root === null ? NO_TABLE_VARS : tableVarsOf(scope.root, scope.tableLook.settings)
   }
-  const textVarsFor = (path: string): CSSProperties => layerStyleOf(scopeOf(path).textFormatting.formatting, scopeOf(path).linkPills.pills, cardVarsFor(path), tableVarsFor(path))
-  /**
-   * Settings › Text formatting (YAZ-3068 D15): every vault of the window, in its order, and the active
-   * tab's vault, where the "Vault" dropdown starts. None in the Welcome window, so the group is not there.
-   */
-  /**
-   * Settings' page spacing (YAZ-5485): the picked vault's `spacing` in text-formatting.json; until it has one, the app's
-   * values (what its pages draw, from `.app`), and the first change writes them all into the vault.
-   */
-  const spacingScope = (spacingRoot !== null && roots.includes(spacingRoot) ? vaults[roots.indexOf(spacingRoot)] : null) ?? active
-  const settingsPageSpacing =
-    root === null || spacingScope.root === null
-      ? undefined
-      : {
-          vaults: placeVaults,
-          root: spacingScope.root,
-          choose: setSpacingRoot,
-          value:
-            spacingScope.textFormatting.formatting.spacing !== undefined
-              ? spacingOf(spacingScope.textFormatting.formatting.spacing)
-              : { line: appSettings.lineSpacing, blockGap: appSettings.blockGap, bulletIndent: appSettings.pageBulletIndent ?? DEFAULT_SETTINGS.pageBulletIndent, bulletGap: appSettings.pageBulletGap ?? DEFAULT_SETTINGS.pageBulletGap },
-          save: (next: Required<PageSpacing>) => spacingScope.textFormatting.save({ ...spacingScope.textFormatting.formatting, spacing: sanitizeSpacing(next) ?? {} }),
-        }
-  /** Settings' Card look (YAZ-5484): the picked vault's card-look.json, the app's look until it has one (the first change writes it). */
-  const cardLookScope = (cardLookRoot !== null && roots.includes(cardLookRoot) ? vaults[roots.indexOf(cardLookRoot)] : null) ?? active
-  const settingsCardLook =
-    root === null || cardLookScope.root === null
-      ? undefined
-      : { vaults: placeVaults, root: cardLookScope.root, choose: setCardLookRoot, value: cardLookScope.cardLook.look === null ? appCardLook(appSettings) : cardLookSettings(cardLookScope.cardLook.look), save: cardLookScope.cardLook.save }
-  /** Settings › Tables (YAZ-5487): the picked vault's table-look.json, the app's look until it has one (the first change writes it). */
-  const tableLookScope = (tableLookRoot !== null && roots.includes(tableLookRoot) ? vaults[roots.indexOf(tableLookRoot)] : null) ?? active
-  const settingsTableLook =
-    root === null || tableLookScope.root === null
-      ? undefined
-      : { vaults: placeVaults, root: tableLookScope.root, choose: setTableLookRoot, value: tableLookScope.tableLook.settings ?? appTable, save: tableLookScope.tableLook.save }
-  /** Show folder page files of each vault (YAZ-5489): its folder-pages.json's, else the app's. */
-  // One function while no vault's switch changes (the Sidebar is memoised).
+  const textVarsFor = (path: string): CSSProperties => {
+    const scope = scopeOf(path)
+    return layerStyleOf(scope.textFormatting.formatting, scope.linkPills.pills, cardVarsFor(path), tableVarsFor(path), pageOverrideVars(pageSettingsOf(path), scope.vaultSettings.overrides))
+  }
   const pageFilesKey = roots.map((at, i) => `${at}\n${folderPagesOfVault(settings.folderPages, vaults[i]?.folderPages.vault ?? null).showFolderPageFiles ? 1 : 0}`).join('\n')
   const pageFilesIn = useMemo(() => {
     const on = new Map(pageFilesKey.split('\n').reduce<[string, boolean][]>((out, part, i, all) => (i % 2 === 0 ? [...out, [part, all[i + 1] === '1']] : out), []))
     return (at: string): boolean => on.get(at) ?? false
   }, [pageFilesKey])
-  /** Settings › Folder pages (YAZ-5489): the picked vault's folder-pages.json, the app's parts until it has one. */
-  const folderPagesScope = (folderPagesRoot !== null && roots.includes(folderPagesRoot) ? vaults[roots.indexOf(folderPagesRoot)] : null) ?? active
-  const settingsFolderPages =
-    root === null || folderPagesScope.root === null
-      ? undefined
-      : { vaults: placeVaults, root: folderPagesScope.root, choose: setFolderPagesRoot, value: folderPagesOfVault(appSettings.folderPages, folderPagesScope.folderPages.vault), save: folderPagesScope.folderPages.save }
-  /** Settings' icon colours and rules (YAZ-5488): the picked vault's icons.json `colors` / `rules`, each the app's until it has its own. */
-  const iconLookScope = iconLookRoot !== null && roots.includes(iconLookRoot) ? iconLookRoot : active.root
-  const iconLookOwn = vaultIcons.lookOf(iconLookScope)
-  const settingsIconLook =
-    root === null || iconLookScope === null
-      ? undefined
-      : { vaults: placeVaults, root: iconLookScope, choose: setIconLookRoot, rules: iconLookOwn.rules ?? appSettings.sidebarIconRules, colors: iconLookOwn.colors ?? appSettings.sidebarIconColors, save: (look: IconLook) => vaultIcons.saveLook(iconLookScope, look) }
-  const settingsTextFormatting =
-    root === null ? undefined : { vaults: vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? storage.vaultName(roots[i]), state: vault.textFormatting })), activeRoot: active.root ?? roots[0] }
 
   // The URL hash mirrors the ACTIVE tab (GRO-2069; rule 17: on boot the hash already won as
   // the active tab in bootTabs, so this first run is a no-op re-write of the same hash).
@@ -1226,8 +1224,8 @@ export function App() {
     setFocusOnly(null)
     bumpVaultEpoch()
     setRoots(storage.getRoots()) // that ONE vault: every other vault of the window leaves (YAZ-2602 S61)
-    // A vault opens blank (YAZ-3487 D7) — or on its last page, as Settings › Open on says (D15); reset mirrors it down. A Files window has no tab (YAZ-3357 D1).
-    resetTabs(path, filesWindow || storage.getSettings().vaultOpensOn !== 'last' ? null : storage.getLastFile(path))
+    const opensOn = (live.current.roots.includes(path) ? live.current.vaults[live.current.roots.indexOf(path)]?.vaultSettings.overrides.vaultOpensOn : undefined) ?? storage.getSettings().vaultOpensOn
+    resetTabs(path, filesWindow || opensOn !== 'last' ? null : storage.getLastFile(path))
     return true
   }, [resetTabs, filesWindow])
 
@@ -2757,8 +2755,8 @@ export function App() {
     storage.setSidebarLens(DEFAULT_SIDEBAR_LENS)
     lastNonSearchLens.current = DEFAULT_SIDEBAR_LENS
     setSidebarLens(DEFAULT_SIDEBAR_LENS)
-    // "Open on: Its last page" (YAZ-3487 D15): the first vault's last page, as a new window would. A Files window has no tab.
-    const last = filesWindow || storage.getSettings().vaultOpensOn !== 'last' ? null : storage.getLastFile(next[0])
+    const opensOn = (live.current.roots.includes(next[0]) ? live.current.vaults[live.current.roots.indexOf(next[0])]?.vaultSettings.overrides.vaultOpensOn : undefined) ?? storage.getSettings().vaultOpensOn
+    const last = filesWindow || opensOn !== 'last' ? null : storage.getLastFile(next[0])
     if (last !== null) resetTabs(next[0], last)
   }, [openRoot, filesWindow, resetTabs])
   /** Another window's board: "Move to new window" on a card of THIS window (YAZ-3343) — moved quietly, its text saved first. */
@@ -3889,9 +3887,9 @@ export function App() {
     if (skillShown && cardSkill !== null) setVaultOpen(cardSkill, false)
   }, [skillShown, cardSkill, setVaultOpen])
   const hideCardSkill = useCallback(() => {
-    changeSettings({ ...storage.getSettings(), cardSkillInSidebar: false })
+    writeChromeOverrides({ cardSkillInSidebar: false })
     notify(CARD_SKILL_HIDDEN, 'info', undefined, { label: 'Open Settings', run: openReviewSettings })
-  }, [changeSettings, notify, openReviewSettings])
+  }, [writeChromeOverrides, notify, openReviewSettings])
   /**
    * "Duplicate into <vault>…" (YAZ-5109; decision 5): main copies the app's skill into the top of the vault as `Card
    * skill`, writable, and from then on `cardSkillFolder` picks it (the command, the format hint, the prompt). With
@@ -3955,6 +3953,7 @@ export function App() {
    */
   const editorPropsFor = (path: string) => {
     const scope = scopeOf(path)
+    const ps = pageSettingsOf(path)
     return {
       root: scope.root ?? '',
       watch: scope.watch,
@@ -3993,20 +3992,16 @@ export function App() {
       // YAZ-1515: the comment stream's order is a SETTING, threaded down like every other one.
       commentsOrder: settings.commentsOrder,
       onChangeCommentsOrder: changeCommentsOrder,
-      // YAZ-2700: the table of contents is a SETTING too, and whether its names fit depends on the content width.
-      tableOfContents: settings.tableOfContents,
-      tocOnByDefault: settings.tocOnByDefault,
-      // YAZ-4094, YAZ-4432: the defaults of the page cog's "Guide lines", "Folding" and "Bullet threading" — a page with no choice follows them.
-      guideLinesOnByDefault: settings.guideLinesOnByDefault,
-      foldingOnByDefault: settings.foldingOnByDefault,
-      bulletThreadingOnByDefault: settings.bulletThreading,
-      contentWidth: settings.contentWidth,
-      // YAZ-5871: the pages' position, and Card width for a card file's Default.
-      contentPosition: settings.contentPosition,
+      tableOfContents: ps.tableOfContents,
+      tocOnByDefault: ps.tocOnByDefault,
+      guideLinesOnByDefault: ps.guideLinesOnByDefault,
+      foldingOnByDefault: ps.foldingOnByDefault,
+      bulletThreadingOnByDefault: ps.bulletThreading,
+      contentWidth: ps.contentWidth,
+      contentPosition: ps.contentPosition,
       cardWidth: settings.cardWidth,
       onChangeTableOfContents: changeTableOfContents,
-      // YAZ-2752: the width of its names column is a SETTING as well.
-      tableOfContentsWidth: settings.tableOfContentsWidth,
+      tableOfContentsWidth: ps.tableOfContentsWidth,
       onChangeTableOfContentsWidth: changeTableOfContentsWidth,
       // YAZ-3939 D9, YAZ-6490: per-window table of contents zoom.
       tocZoom,
@@ -4253,7 +4248,7 @@ export function App() {
     <PageActions.Provider value={linkActions}>
     <CommentPrefsContext.Provider value={commentPrefs}>
     <TitleIsName.Provider value={titleIsName}>
-    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-code-block-width={settings.codeBlockWidth != null ? '' : undefined} data-inline-code-style={inlineCodeAttr(settings.inlineCodeStyle)} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-icon-colors={iconColorKinds} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
+    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-code-block-width={settings.codeBlockWidth != null ? '' : undefined} data-inline-code-style={inlineCodeAttr(settings.inlineCodeStyle)} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} data-sidebar-lines={chromeSettings.sidebarLines} data-sidebar-line-style={chromeSettings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-icon-colors={iconColorKinds} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
         // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands
@@ -4289,7 +4284,7 @@ export function App() {
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
       {settingsOpen && (
         <Suspense fallback={null}>
-          <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled, autoSync: active.sync.autoSync, addToAutoSync: active.sync.addToAutoSync, openAutoSync: active.sync.openAutoSync, refreshAutoSync: active.sync.refreshAutoSync }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, iconLook: settingsIconLook, cardLook: settingsCardLook, tableLook: settingsTableLook, folderPages: settingsFolderPages, places: root === null ? undefined : placeVaults, vaultLauncher: active.root !== null && /Mac/i.test(navigator.platform) && typeof window.yaseenDocs?.vaultLauncher?.status === 'function' ? { root: active.root, defaultName: active.name ?? basename(active.root), onChanged: refreshLauncherIcons } : undefined, workspaceLauncher: workspaceLauncherCtx(roots, refreshLauncherIcons) }} initialPage={settingsPage} onClose={closeSettings} />
+          <SettingsDialog ctx={buildSettingsDialogCtx({ roots, vaults, active, appSettings, settings, onChange: changeSettings, onChangeGlobal: changeGlobalSettings, matchedWorkspaceName: matchedVaultSet?.name ?? null, wsKey: windowChrome.wsKey, wsChromeOverrides: windowChrome.chromeOverrides, onWriteWorkspaceChrome: writeChromeOverrides, onResetWorkspaceChrome: resetWorkspaceChrome, dailyHereRoot: dailyHere.root, saveDaily, openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder, vaultStorage, sharing, vaultIcons, placeVaults, refreshLauncherIcons, pickers: { spacingRoot, setSpacingRoot, cardLookRoot, setCardLookRoot, tableLookRoot, setTableLookRoot, folderPagesRoot, setFolderPagesRoot, iconLookRoot, setIconLookRoot } })} initialPage={settingsPage} onClose={closeSettings} />
         </Suspense>
       )}
       {courseOpen !== null && (
@@ -4431,9 +4426,11 @@ export function App() {
           onLensChange={changeLens}
           onRestoreLens={restoreLens}
           onRestoreClosedVaults={setClosedVaults}
-          settings={settings}
+          settings={sidebarSettings}
           pageFilesIn={pageFilesIn}
-          onChangeSettings={changeSettings}
+          onChangeSettings={changeSidebarSettings}
+          onChangeRowDates={changeRowDates}
+          onResetTabsToGlobal={Object.hasOwn(windowChrome.chromeOverrides, 'sidebarTabs') ? resetSidebarTabsToGlobal : undefined}
           onOpenSettings={openSettings}
           onOpenDailyPage={settings.dailyPages ? openDailyPage : undefined}
           update={update}
