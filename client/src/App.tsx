@@ -103,7 +103,8 @@ import { linkPillVars } from './editor/wikilink/linkPillLook'
 import { DEFAULT_NEW_PAGE_TITLE, plainEntryName, renderTitleTemplate } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
-import { filesOnlyAfterDelete, filesOnlyAfterRename, isDiskFolderPath } from './sidebar/filesOnly'
+import { filesOnlyAfterDelete, filesOnlyAfterRename } from './sidebar/filesOnly'
+import { useOnlyFolderPair } from './sidebar/useListOnlyDir'
 import { dailyPageName } from '@shared/dailyPage'
 import { dailyPagesOfSettings, sameDailyPages, windowDailyPages, withDailyPages, type DailyPagesSettings } from '@shared/dailyPagesFile'
 import { newPlacesOfSettings, vaultNewPlacesFields } from '@shared/newPlaces'
@@ -2377,21 +2378,8 @@ export function App() {
   // when it is hidden — and never written: a new window starts on All vaults. null is All vaults. A vault that leaves drops it,
   // and so does a window left with one vault, so a vault that joins later never brings back a filter nobody sees.
   const [recentVault, setRecentVault] = useState<string | null>(null)
-  // "Hide all others" on a focus folder (YAZ-4460 F8): the one folder the Focus tab shows, by the Recents filter's rule —
-  // this window's session only, never written. A folder that goes ends it (the sidebar checks it is still there).
-  const [focusOnly, setFocusOnly] = useState<string | null>(null)
-  // YAZ-6577: clear a disk-path `focusOnly` immediately when its vault leaves the window, matching `filesOnlyValid`.
-  const focusOnlyValid = focusOnly !== null && isDiskFolderPath(focusOnly) && rootOfPath(roots, focusOnly) === null ? null : focusOnly
-  useEffect(() => {
-    if (focusOnly !== null && focusOnlyValid === null) setFocusOnly(null)
-  }, [focusOnly, focusOnlyValid])
-  // "Hide all others" in Files (YAZ-5790, YAZ-6064): the one folder (a path) the Files tab shows, by the same rule — this
-  // window's session only, never written. Clears immediately when its vault leaves the window.
-  const [filesOnly, setFilesOnly] = useState<string | null>(null)
-  const filesOnlyValid = filesOnly !== null && rootOfPath(roots, filesOnly) !== null ? filesOnly : null
-  useEffect(() => {
-    if (filesOnly !== null && filesOnlyValid === null) setFilesOnly(null)
-  }, [filesOnly, filesOnlyValid])
+  // "Hide all others" in Focus/Favorites (YAZ-4460 F8, YAZ-6574, YAZ-6577) and Files (YAZ-5790, YAZ-6064): session-only.
+  const { focusOnlyValid, setFocusOnly, filesOnlyValid, setFilesOnly } = useOnlyFolderPair(roots)
   // The Recents Type filter (YAZ-4450 demo), Search's types: the window's session only, as the vault pick.
   const [recentType, setRecentType] = useState<SearchType>('all')
   const recentPick = recentVault !== null && roots.length > 1 && roots.includes(recentVault) ? recentVault : null

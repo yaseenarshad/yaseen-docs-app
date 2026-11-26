@@ -52,6 +52,7 @@ import { folderPageRows, showFolderPageFiles } from './folderPageRows'
 import { askPageTab } from '../views/pageTabRequest'
 import { datedSeed, targetDirFor, type EntryKind, type MenuRow } from './createEntry'
 import { FILES_ONLY_GRACE_MS, inFolder } from './filesOnly'
+import { useListOnlyDir } from './useListOnlyDir'
 import { SettingsButton } from '../settings/SettingsButton'
 import { UpdatePill } from '../update/UpdatePill'
 import { ZoomMenu } from './ZoomMenu'
@@ -996,35 +997,8 @@ export function Sidebar({
   const shownTab = lens === 'favorites' ? lists.favoritesTab : lists.focusTab
   // "Hide all others" (F8): the folder shown alone, while it still exists in the tab that shows (folder ids are unique).
   const onlyFolder = focusOnly === null ? undefined : shownTab.folders.find((folder) => folder.id === focusOnly)
-  // "Hide all others" on a disk folder in Favorites or Focus (YAZ-6574): `focusOnly` holds the folder path when it is not a custom `+ Folder` id.
-  const onlyListDir = useMemo(() => {
-    if (focusOnly === null || onlyFolder !== undefined || forest === null || (lens !== 'favorites' && lens !== 'focus')) return null
-    const listNodes = lens === 'favorites' ? favoriteNodes : focusNodes
-    const topHit = findDirNode(listNodes, focusOnly)
-    if (topHit !== null) return topHit
-    for (const folder of shownTab.folders) {
-      const paths = folder.items.map((item) => resolveItem(item, roots)).flatMap((r) => ('path' in r ? [r.path] : []))
-      const subHit = findDirNode(favoriteRoots(forest, paths), focusOnly)
-      if (subHit !== null) return subHit
-    }
-    return null
-  }, [focusOnly, onlyFolder, forest, lens, favoriteNodes, focusNodes, shownTab.folders, roots])
-  const prevOnlyListDir = useRef<string | null>(null)
-  const activeListDirRef = useRef<{ lens: 'favorites' | 'focus'; only: string } | null>(null)
-  useEffect(() => {
-    const dir = onlyListDir?.path ?? null
-    if (dir !== null && prevOnlyListDir.current !== dir) openTo(`${dir}/x`, dir)
-    prevOnlyListDir.current = dir
-    // YAZ-6577: if an isolated disk folder leaves this tab's Favorites/Focus list while staying on the same tab, clear `focusOnly`.
-    if (dir !== null && focusOnly !== null && (lens === 'favorites' || lens === 'focus')) {
-      activeListDirRef.current = { lens, only: focusOnly }
-    } else if (loaded && forest !== null && focusOnly !== null && activeListDirRef.current !== null && activeListDirRef.current.lens === lens && activeListDirRef.current.only === focusOnly) {
-      activeListDirRef.current = null
-      onFocusOnly?.(null)
-    } else if (focusOnly === null) {
-      activeListDirRef.current = null
-    }
-  }, [onlyListDir, openTo, loaded, forest, focusOnly, lens, onFocusOnly])
+  // "Hide all others" on a disk folder in Favorites or Focus (YAZ-6574, YAZ-6577).
+  const onlyListDir = useListOnlyDir({ focusOnly, onlyFolder, forest, lens, favoriteNodes, focusNodes, folders: shownTab.folders, roots, loaded, openTo, onFocusOnly })
   const newFolder = (): void => {
     const id = shownTab.addTo([], null)
     if (id !== null) setEditingFolder(id)
@@ -1984,6 +1958,20 @@ export function Sidebar({
     const folder = (list === 'focus' ? lists.focusTab : lists.favoritesTab).folders.find((f) => f.id === id)
     startCreateAt(kind, '', { targetDir: vaultOfFolder(folder, roots), lens: list, top: null, place: { list, folder: id, after: null } })
   }
+  const focusFolderList = (kind: 'focus' | 'favorites') => {
+    const tab = kind === 'favorites' ? lists.favoritesTab : lists.focusTab
+    return (
+      <FocusFolderList
+        kind={kind} onFold={setStackFold} folders={onlyFolder === undefined ? tab.folders : [onlyFolder]} only={onlyFolder?.id ?? null}
+        onHideOthers={(id) => onFocusOnly?.(id)} roots={roots} editing={editingFolder} onEdit={setEditingFolder}
+        renderItems={(_folder, paths) => <Tree {...treeProps} nodes={favoriteRoots(forest!, paths)} move={fileMove} reorder={reorder} sort={sort} copies shift={1} />}
+        onRename={tab.rename} onDelete={tab.remove} scopesOf={tab.scopesOfFolder} onSetScope={tab.setFolderScope}
+        onReorderFolders={tab.reorderFolders} scope={kind === 'favorites' ? lists.favoritesScope : lists.focusScope}
+        onNew={newInFolder(kind)} pending={pending} openableOf={(paths) => paths.filter((path) => findNode(forest ?? [], path) !== null)}
+        onOpenAll={(paths) => paths.forEach((path) => (onOpenFileTab ?? onOpenFileBackground)(path))} onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
+      />
+    )
+  }
   /** A New … on blank space of the tab (YAZ-4782), with no folder shown alone: the field after the top level's last row, where the item goes. */
   const listEndField = (list: 'focus' | 'favorites') =>
     pending?.place?.list === list && pending.place.folder === null && pending.place.after === null && (
@@ -2508,30 +2496,7 @@ export function Sidebar({
               </div>
             )}
             {loaded && onlyFolder === undefined && onlyListDir === null && favoriteNodes.length === 0 && lists.favoritesTab.folders.length === 0 && <p className="sidebar__msg">{lists.favoritesScope === 'workspace' ? 'No favorites in this workspace yet.' : 'No favorites yet.'} Right-click a file or folder → Add to favorites.</p>}
-            {onlyListDir === null && lists.favoritesTab.folders.length > 0 && forest !== null && (
-              <FocusFolderList
-                kind="favorites"
-                onFold={setStackFold}
-                folders={onlyFolder === undefined ? lists.favoritesTab.folders : [onlyFolder]}
-                only={onlyFolder?.id ?? null}
-                onHideOthers={(id) => onFocusOnly?.(id)}
-                roots={roots}
-                renderItems={(_folder, paths) => <Tree {...treeProps} nodes={favoriteRoots(forest, paths)} move={fileMove} reorder={reorder} sort={sort} copies shift={1} />}
-                editing={editingFolder}
-                onEdit={setEditingFolder}
-                onRename={lists.favoritesTab.rename}
-                onDelete={lists.favoritesTab.remove}
-                scopesOf={lists.favoritesTab.scopesOfFolder}
-                onSetScope={lists.favoritesTab.setFolderScope}
-                onReorderFolders={lists.favoritesTab.reorderFolders}
-                scope={lists.favoritesScope}
-                onNew={newInFolder('favorites')}
-                pending={pending}
-                openableOf={(paths) => paths.filter((path) => findNode(forest ?? [], path) !== null)}
-                onOpenAll={(paths) => paths.forEach((path) => (onOpenFileTab ?? onOpenFileBackground)(path))}
-                onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
-              />
-            )}
+            {onlyListDir === null && lists.favoritesTab.folders.length > 0 && forest !== null && focusFolderList('favorites')}
             {onlyListDir !== null && <Tree {...treeProps} nodes={[onlyListDir]} move={fileMove} sort={sort} copies />}
             {onlyFolder === undefined && onlyListDir === null && favoriteNodes.length > 0 && <Tree {...treeProps} nodes={favoriteNodes} move={fileMove} reorder={sort?.by === 'manual' ? reorder : undefined} sort={sort} copies />}
             {listEndField('favorites')}
@@ -2572,30 +2537,7 @@ export function Sidebar({
               </div>
             )}
             {loaded && onlyFolder === undefined && onlyListDir === null && focusNodes.length === 0 && lists.focusTab.folders.length === 0 && <p className="sidebar__msg">{lists.focusScope === 'workspace' ? 'Nothing in focus in this workspace.' : 'Nothing in focus.'} Right-click a file or folder → Add to focus.</p>}
-            {onlyListDir === null && lists.focusTab.folders.length > 0 && forest !== null && (
-              <FocusFolderList
-                kind="focus"
-                onFold={setStackFold}
-                folders={onlyFolder === undefined ? lists.focusTab.folders : [onlyFolder]}
-                only={onlyFolder?.id ?? null}
-                onHideOthers={(id) => onFocusOnly?.(id)}
-                roots={roots}
-                renderItems={(_folder, paths) => <Tree {...treeProps} nodes={favoriteRoots(forest, paths)} move={fileMove} reorder={reorder} sort={sort} copies shift={1} />}
-                editing={editingFolder}
-                onEdit={setEditingFolder}
-                onRename={lists.focusTab.rename}
-                onDelete={lists.focusTab.remove}
-                scopesOf={lists.focusTab.scopesOfFolder}
-                onSetScope={lists.focusTab.setFolderScope}
-                onReorderFolders={lists.focusTab.reorderFolders}
-                scope={lists.focusScope}
-                onNew={newInFolder('focus')}
-                pending={pending}
-                openableOf={(paths) => paths.filter((path) => findNode(forest ?? [], path) !== null)}
-                onOpenAll={(paths) => paths.forEach((path) => (onOpenFileTab ?? onOpenFileBackground)(path))}
-                onGhost={(vault, rel) => onAddVaultFor?.(vault, rel)}
-              />
-            )}
+            {onlyListDir === null && lists.focusTab.folders.length > 0 && forest !== null && focusFolderList('focus')}
             {onlyListDir !== null && <Tree {...treeProps} nodes={[onlyListDir]} move={fileMove} sort={sort} copies />}
             {confirmClear &&
               createPortal(
