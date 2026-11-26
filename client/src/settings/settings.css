@@ -2175,14 +2175,6 @@
   padding: 0 2px;
   border-radius: 3px;
 }
-.link-pills-preview__ext {
-  color: var(--accent);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  text-underline-offset: 2px;
-  border-radius: 4px;
-  cursor: pointer;
-}
 .link-pills-preview__hover-toggle {
   display: inline-flex;
   align-items: center;
@@ -2285,13 +2277,15 @@
   min-width: 0;
 }
 .pill-toolbar .pill-toolbar__item,
-.link-pills-hover .pill-toolbar__item {
+.link-pills-hover .pill-toolbar__item,
+.web-links-control .pill-toolbar__item {
   min-width: 32px;
   padding: 5px 8px;
   font-size: 13px;
 }
 /* The mark's Icon row (YAZ-4924 round 5): each button is the small icon itself, centred, a little bigger than the words. */
-.pill-toolbar .pill-toolbar__mark {
+.pill-toolbar .pill-toolbar__mark,
+.web-links-control .pill-toolbar__mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2391,8 +2385,71 @@
 /* "Custom colour…" (YAZ-5972) at the end of a pill colour row: the words until a custom colour is picked, then its
    swatch. Its colour box opens on a line of its own under the swatches, the width of the table's. */
 .pill-toolbar .pill-toolbar__custom,
-.link-pills-hover .pill-toolbar__custom {
+.link-pills-hover .pill-toolbar__custom,
+.web-links-control .pill-toolbar__custom {
   white-space: nowrap;
+}
+
+/* Settings › Links & IDs › Web links (YAZ-6584, WebLinksControl.tsx) */
+.web-links-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.web-links-presets__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.web-links-presets {
+  flex-wrap: wrap;
+}
+.web-links-preview {
+  width: 100%;
+  max-width: 600px;
+  background: var(--bg);
+}
+.web-links-preview__line {
+  color: var(--fg);
+}
+.web-links-preview__link {
+  cursor: pointer;
+}
+.web-links-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 600px;
+}
+.web-links-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.web-links-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.web-links-mark-row {
+  gap: 6px 10px;
+}
+.web-links-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.web-links-custom-input {
+  width: 72px;
+  margin-top: 0;
+  padding: 4px 8px;
+  font-size: 13px;
 }
 /* Settings › Files & Links › Link pills › Hover (YAZ-5991 / D5): visible right under Preview so hovering the sample pills tests it immediately. */
 .link-pills-hover {

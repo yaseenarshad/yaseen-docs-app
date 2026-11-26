@@ -17,7 +17,23 @@ import { DEFAULT_DAILY_PAGE_FORMAT } from './dailyPageDefault'
 import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from './iconPacks'
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT } from './timeFormat'
 import { DEFAULT_MENU_ICONS, type MenuIconsSetting } from './menuIcons'
+import { DEFAULT_WEB_LINKS } from './webLinksDefault'
+import type { WebLinksStyle } from './webLinks'
 import { sanitizeVaultLauncherBadge, type VaultLauncherPreset } from './vaultIcon'
+export { DEFAULT_WEB_LINKS } from './webLinksDefault'
+export type {
+  WebLinkBox,
+  WebLinkBoxFill,
+  WebLinkBoxShape,
+  WebLinkColor,
+  WebLinkMark,
+  WebLinkMarkColor,
+  WebLinkMarkIcon,
+  WebLinkMarkPlace,
+  WebLinkMarkSize,
+  WebLinkPreset,
+  WebLinksStyle,
+} from './webLinks'
 export { IDS_IN_TABS, TAB_ID_LAYOUTS, type IdsInTabs, type TabIdLayout } from './showIds'
 export type { VaultLauncherPreset } from './vaultIcon'
 export {
@@ -2507,6 +2523,11 @@ export interface SettingsState {
    */
   inlineCodeStyle: InlineCodeStyle
   /**
+   * Settings › Links & IDs › Web links (YAZ-6580): how external hyperlinks render (underline, colour, box,
+   * before/after SVG or custom mark, hover). Global default with sparse per-vault override in `settings.json`.
+   */
+  webLinks: WebLinksStyle
+  /**
    * Settings › Tables › All tables › Width (YAZ-4783 layer 3): every page table's width in px at 100% zoom
    * (`isBlockWidth`), its columns shared evenly, or `null`, "Text column" (the look before). `--table-width` on `.app`.
    * A page's `table-width` key wins over it; a table whose every column has a width keeps its own.
@@ -3375,6 +3396,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   outsideListPinned: false,
   codeBlockWidth: null,
   inlineCodeStyle: 'default',
+  webLinks: DEFAULT_WEB_LINKS,
   tableWidth: null,
   tableRowBand: 'all',
   tableBandColour: 'accent',

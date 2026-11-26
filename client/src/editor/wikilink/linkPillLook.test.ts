@@ -84,27 +84,48 @@ describe('linkPillVars (YAZ-4924)', () => {
     expect(linkPillVars({ hover: { color: 'purple', strength: 'medium' } })).toEqual({
       '--pill-hover-bg': 'color-mix(in srgb, var(--table-fill-solid-purple) 14%, transparent)',
       '--pill-mark-hover-bg': 'color-mix(in srgb, var(--table-fill-solid-purple) 14%, transparent)',
-      '--pill-ext-hover-bg': 'color-mix(in srgb, var(--table-fill-solid-purple) 14%, transparent)',
     })
+    expect(linkPillVars({ hover: { color: 'purple', strength: 'medium' } })['--pill-ext-hover-bg']).toBeUndefined()
     expect(linkPillVars({ hover: { color: '#ff00aa', strength: 'strong' }, box: { fill: 'none' } })).toMatchObject({
       '--pill-hover-bg': 'color-mix(in srgb, #ff00aa 22%, transparent)',
-      '--pill-ext-hover-bg': 'color-mix(in srgb, #ff00aa 22%, transparent)',
       '--pill-hover-overhang': '1',
     })
+    expect(linkPillVars({ hover: { color: '#ff00aa', strength: 'strong' }, box: { fill: 'none' } })['--pill-ext-hover-bg']).toBeUndefined()
     expect(linkPillVars({ box: { fill: 'blue' }, hover: { strength: 'strong' } })['--pill-hover-bg']).toBe('color-mix(in srgb, var(--fg) 18%, var(--pill-bg))')
     const css = readFileSync(join(__dirname, 'wikilink.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
     const hoverIdx = css.indexOf('@media (hover: hover)')
+    const extHoverIdx = css.indexOf('@media (hover: hover)', hoverIdx + 1)
     const iconIdx = css.indexOf('@container style(--pill-icon-on: 1)')
     expect(hoverIdx).toBeGreaterThan(-1)
-    expect(hoverIdx).toBeLessThan(iconIdx)
-    const hoverBlock = css.slice(hoverIdx, iconIdx)
-    expect(hoverBlock).toContain('@container not (style(--pill-hover-off: 1) or style(--pill-hover-mode: underline) or style(--pill-hover-mode: text))')
-    expect(hoverBlock).not.toMatch(/@container\s+not\s+style\([^)]+\)\s+and\b/)
-    expect(hoverBlock).toContain('@container style(--pill-hover-overhang: 1)')
-    expect(hoverBlock).toContain('padding-left: 3px;')
-    expect(hoverBlock).toContain('margin-left: -3px;')
-    expect(hoverBlock).toContain('.milkdown .ProseMirror a:not(:has(> .link-pill)):hover')
-    expect(hoverBlock).toContain('.card__sides a[href]:hover')
+    expect(extHoverIdx).toBeGreaterThan(hoverIdx)
+    expect(extHoverIdx).toBeLessThan(iconIdx)
+    const pillHoverBlock = css.slice(hoverIdx, extHoverIdx)
+    expect(pillHoverBlock).toContain('@container not (style(--pill-hover-off: 1) or style(--pill-hover-mode: underline) or style(--pill-hover-mode: text))')
+    expect(pillHoverBlock).not.toMatch(/@container\s+not\s+style\([^)]+\)\s+and\b/)
+    expect(pillHoverBlock).toContain('@container style(--pill-hover-overhang: 1)')
+    expect(pillHoverBlock).toContain('padding-left: 3px;')
+    expect(pillHoverBlock).toContain('margin-left: -3px;')
+    // External links are decoupled from Link pills hover blocks (YAZ-6580).
+    expect(pillHoverBlock).not.toContain('--pill-ext-hover-bg')
+    expect(pillHoverBlock).not.toContain('.milkdown .ProseMirror a:not(:has(> .link-pill))')
+    expect(pillHoverBlock).not.toContain('.card__sides a[href]')
+    expect(pillHoverBlock).not.toContain('.link-pills-preview__ext')
+
+    // External web links use independent `--ext-link-*` vars for resting styles, marks, and hover (YAZ-6580).
+    expect(css).toMatch(/\.milkdown \.ProseMirror a:not\(:has\(> \.link-pill\)\),[\s\S]*?color: var\(--ext-link-fg, var\(--accent\)\);[\s\S]*?font-weight: var\(--ext-link-weight, inherit\);[\s\S]*?font-style: var\(--ext-link-style, inherit\);[\s\S]*?text-decoration-line: var\(--ext-link-decoration, underline\);[\s\S]*?background: var\(--ext-link-bg, transparent\);[\s\S]*?padding: var\(--ext-link-pad-y, 0\) var\(--ext-link-pad-x, 0\);[\s\S]*?border-radius: var\(--ext-link-radius, 0\);/)
+    expect(css).toContain('@container style(--ext-link-mark-place: after) and style(--ext-link-mark-kind: svg)')
+    expect(css).toContain('@container style(--ext-link-mark-place: before) and style(--ext-link-mark-kind: svg)')
+    expect(css).toContain('@container style(--ext-link-mark-place: after) and style(--ext-link-mark-kind: text)')
+    expect(css).toContain('@container style(--ext-link-mark-place: before) and style(--ext-link-mark-kind: text)')
+    const extHoverBlock = css.slice(extHoverIdx, iconIdx)
+    expect(extHoverBlock).toContain('@container not (style(--ext-link-hover-mode: off) or style(--ext-link-hover-mode: underline) or style(--ext-link-hover-mode: text))')
+    expect(extHoverBlock).toContain('var(--ext-link-hover-bg, color-mix(in srgb, var(--fg) 8%, transparent))')
+    expect(extHoverBlock).toContain('style(--ext-link-hover-overhang: 0)')
+    expect(extHoverBlock).toContain('@container style(--ext-link-hover-mode: underline)')
+    expect(extHoverBlock).toContain('@container style(--ext-link-hover-mode: text)')
+    expect(extHoverBlock).toContain('.milkdown .ProseMirror a:not(:has(> .link-pill)):hover')
+    expect(extHoverBlock).toContain('.card__sides a[href]:not(:has(> .link-pill)):hover')
+    expect(extHoverBlock).toContain('.web-links-preview--hover .web-links-preview__link')
   })
 
   it("the CSS: pages and files under --pill-icon-on, never a card's icon; cards (the title's, a piece, a card file's) under --pill-card-icon-on (YAZ-5972)", () => {
@@ -309,8 +330,11 @@ describe("a pill's size follows its line: a pill in a heading is as big as the h
   const strip = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '')
   const wikilinkCss = strip(readFileSync(join(__dirname, 'wikilink.css'), 'utf8'))
   const viewsCss = strip(readFileSync(join(__dirname, '../../views/views.css'), 'utf8'))
-  /** Each rule of `css` whose selector names a pill: `[selector, body]`. */
-  const pillRules = (css: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => [m[1].trim(), m[2]] as const).filter(([sel]) => /link-pill|wikilink/.test(sel))
+  /** Each rule of `css` whose selector names a pill: `[selector, body]` (excluding `:not(:has(> .link-pill))`, which targets external links). */
+  const pillRules = (css: string) =>
+    [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .map((m) => [m[1].trim(), m[2]] as const)
+      .filter(([sel]) => /link-pill|wikilink/.test(sel.replace(/:not\(:has\(>\s*\.link-pill\)\)/g, '')))
 
   it('no pill rule sets a fixed font size: each part is the line\'s size (inherit) or a share of it (em)', () => {
     // The file icon's `::before` is app.css's fixed 14px glyph, no text: its own 14px font only places it (YAZ-4991).

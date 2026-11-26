@@ -15,17 +15,17 @@ import type { SettingsCtx } from './registry'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-let root: Root | null = null
-let container: HTMLElement | null = null
+const mounted: Array<{ root: Root; container: HTMLElement }> = []
 
 function mount(pills: LinkPills | undefined, ids = false, word = UNIT_WORDS.page) {
   const save = vi.fn()
   const ctx: SettingsCtx = { unitWord: { settings: { unit: 'page', own: { one: '', many: '' } }, word, unit: unitTextOf(word), save: vi.fn() }, settings: { ...DEFAULT_SETTINGS }, onChange: vi.fn(), linkPills: pills === undefined ? undefined : { pills, save }, textFormatting: { vaults: [{ root: '/v', name: 'Mine', state: { formatting: {}, save: vi.fn() } }], activeRoot: '/v' } }
   if (ids) ctx.ids = { enabled: true, held: true, ask: undefined, set: vi.fn(), check: vi.fn(async () => ''), old: 0, unfinished: false, state: () => new Promise<IdsState>(() => undefined), reletter: vi.fn(), backfill: vi.fn() }
-  container = document.createElement('div')
+  const container = document.createElement('div')
   document.body.appendChild(container)
-  root = createRoot(container)
-  act(() => root?.render(<SettingsDialog ctx={ctx} onClose={vi.fn()} initialPage="linksIds" />))
+  const root = createRoot(container)
+  mounted.push({ root, container })
+  act(() => root.render(<SettingsDialog ctx={ctx} onClose={vi.fn()} initialPage="linksIds" />))
   return { el: container, save, row: container.querySelector<HTMLElement>('[data-setting="linkPills"]') as HTMLElement }
 }
 
@@ -58,10 +58,11 @@ const rowOf = (bar: HTMLElement, label: string) => [...bar.querySelectorAll<HTML
 const title = (bar: HTMLElement) => `${bar.querySelector('.pill-toolbar__title')?.firstChild?.textContent} ${select(bar, 'What to style')?.selectedOptions[0]?.textContent}`
 
 afterEach(() => {
-  act(() => root?.unmount())
-  root = null
-  container?.remove()
-  container = null
+  while (mounted.length > 0) {
+    const entry = mounted.pop()!
+    act(() => entry.root.unmount())
+    entry.container.remove()
+  }
 })
 
 describe('Settings › Link pills (YAZ-4924)', () => {
@@ -72,7 +73,7 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     expect(formatBox(row).maxLength).toBe(60)
     expect(select(row, 'Vault name on a link pill')?.selectedOptions[0]?.textContent).toBe('Vault name: other vaults only')
     expect([...row.querySelectorAll<HTMLButtonElement>('.link-pills-chip')].map((b) => b.textContent)).toEqual(['{icon}', '{name}', '{id}', '{number}', '{vault}', '{folder}', '{path}', '{mark}'])
-    // The unified preview (YAZ-5919, YAZ-5991): page pill, card pill, highlighted pill, external link, and Show hover toggle.
+    // The unified preview (YAZ-5919, YAZ-5991): page pill, card pill, highlighted pill, and Show hover toggle (external links moved to Web links in YAZ-6584).
     expect(preview(row).querySelector('.link-pills-preview__label')?.textContent).toBe('Preview')
     expect([...preview(row).querySelectorAll('.wikilink')].map((p) => [p.textContent, p.querySelector('.file-icon')?.getAttribute('data-kind') ?? null, p.querySelector('.card-icon') !== null])).toEqual([
       ['Roadmap (Mine)', 'markdown', false],
@@ -80,7 +81,7 @@ describe('Settings › Link pills (YAZ-4924)', () => {
       ['Notes', 'markdown', false],
     ])
     expect(preview(row).querySelector('.link-pills-preview__mark .link-pills-preview__highlight')?.textContent).toBe('Notes')
-    expect(preview(row).querySelector('.link-pills-preview__ext')?.textContent).toBe('docs.example.com')
+    expect(preview(row).querySelector('.link-pills-preview__ext')).toBeNull()
     const showHoverBtn = preview(row).querySelector<HTMLButtonElement>('.link-pills-preview__hover-toggle')!
     expect(showHoverBtn.textContent).toBe('Show hover')
     expect(showHoverBtn.getAttribute('aria-pressed')).toBe('false')
@@ -464,8 +465,6 @@ describe('Settings › Link pills (YAZ-4924)', () => {
 
   it("the hint under the chips says the vault's word (YAZ-4950): a Doc vault reads \"doc\"", () => {
     expect(mount(NO_LINK_PILLS).row.querySelector('.settings__tokens')?.textContent).toBe('Other text shows as you type it. An empty part, like the ID of a page without one, takes its text with it.')
-    act(() => root?.unmount())
-    container?.remove()
     expect(mount(NO_LINK_PILLS, false, UNIT_WORDS.doc).row.querySelector('.settings__tokens')?.textContent).toBe('Other text shows as you type it. An empty part, like the ID of a doc without one, takes its text with it.')
   })
 

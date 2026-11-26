@@ -85,6 +85,7 @@ import { NEW_PER_DAY_FIELD, RETENTION_FIELD, ReviewNumberControl, UP_NEXT_PER_DA
 import { ReviewHowCardsComeBack } from './ReviewHowCardsComeBack'
 import { LinkPillsControl } from './LinkPillsControl'
 import type { LinkPillsState } from './useLinkPills'
+import { DEFAULT_WEB_LINKS } from '@shared/webLinks'
 import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
@@ -690,6 +691,7 @@ const CardSpacingPreview = lazy(() => import('./SpacingPreview').then((m) => ({ 
 const PageSpacingPreview = lazy(() => import('./SpacingPreview').then((m) => ({ default: m.PageSpacingPreview })))
 const InlineCodeStyleControl = lazy(() => import('./InlineCodeStyleControl').then((m) => ({ default: m.InlineCodeStyleControl })))
 const MenuIconsControl = lazy(() => import('./MenuIconsControl').then((m) => ({ default: m.MenuIconsControl })))
+const WebLinksControl = lazy(() => import('./WebLinksControl'))
 /** A preview row: bare (the preview is its own label), found by "preview" and the spacing words. */
 const previewRow = (id: string, label: string, keywords: readonly string[], Preview: typeof CardSpacingPreview, available?: (ctx: SettingsCtx) => boolean, varsOf?: (ctx: SettingsCtx) => Record<string, string>): SettingDef => ({
   id,
@@ -2710,6 +2712,19 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             wide: true,
             available: (ctx) => ctx.linkPills !== undefined,
             render: ({ linkPills, textFormatting }) => linkPills && <LinkPillsControl look={linkPills} vault={textFormatting?.vaults.find((v) => v.root === textFormatting.activeRoot)?.name ?? null} />,
+          },
+          // YAZ-6580 / YAZ-6584: how external hyperlinks look (Global default, sparsely overridden per vault in settings.json).
+          {
+            id: 'webLinks',
+            label: 'Web links',
+            hint: 'How external hyperlinks (https://, mailto:, app URLs) look in pages and cards. Strip underlines, add a trailing or leading icon or emoji, or style hover feedback separately from internal link pills.',
+            keywords: ['web', 'external', 'hyperlink', 'hyperlinks', 'url', 'urls', 'underline', 'link', 'links', 'icon', 'emoji'],
+            wide: true,
+            render: ({ settings, onChange }) => (
+              <Suspense fallback={null}>
+                <WebLinksControl value={settings.webLinks ?? DEFAULT_WEB_LINKS} onChange={(webLinks) => onChange({ ...settings, webLinks })} />
+              </Suspense>
+            ),
           },
         ],
       },

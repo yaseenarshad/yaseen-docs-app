@@ -301,11 +301,92 @@
   display: contents;
 }
 
-/* Hover feedback on resolved pills, `<mark>` pills, and external web links (YAZ-5991 / D5).
+/* Web / External links (YAZ-6580, Settings › Appearance › Web links, `shared/webLinks.ts` `webLinkVars`).
+   Independent from Link pills: targets non-vault hyperlinks in the editor, rendered cards, and the Settings preview.
+   Marks use `display: inline-block` so ancestor `text-decoration: underline` never bleeds under the icon/emoji, and
+   SVG marks carry a word joiner (`\2060`) so the icon never wraps onto a line alone. */
+.milkdown .ProseMirror a:not(:has(> .link-pill)),
+.card__sides a[href]:not(:has(> .link-pill)),
+.web-links-preview .web-links-preview__link {
+  color: var(--ext-link-fg, var(--accent));
+  font-weight: var(--ext-link-weight, inherit);
+  font-style: var(--ext-link-style, inherit);
+  text-decoration-line: var(--ext-link-decoration, underline);
+  background: var(--ext-link-bg, transparent);
+  padding: var(--ext-link-pad-y, 0) var(--ext-link-pad-x, 0);
+  border-radius: var(--ext-link-radius, 0);
+}
+/* Inside a `<mark>` highlight, step the resting box fill aside so the highlight shows through (matching pills). */
+.milkdown .ProseMirror mark a:not(:has(> .link-pill)),
+.card__sides mark a[href]:not(:has(> .link-pill)),
+.web-links-preview mark .web-links-preview__link {
+  background: transparent;
+}
+
+@container style(--ext-link-mark-place: after) and style(--ext-link-mark-kind: svg) {
+  .milkdown .ProseMirror a:not(:has(> .link-pill))::after,
+  .card__sides a[href]:not(:has(> .link-pill))::after,
+  .web-links-preview .web-links-preview__link::after {
+    content: '\2060';
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.15em;
+    margin-left: 0.25em;
+    font-size: var(--ext-link-mark-size, 0.85em);
+    background-color: var(--ext-link-mark-fg, currentColor);
+    mask: var(--ext-link-mark-icon) center / 1em 1em no-repeat;
+    text-decoration: none;
+  }
+}
+@container style(--ext-link-mark-place: before) and style(--ext-link-mark-kind: svg) {
+  .milkdown .ProseMirror a:not(:has(> .link-pill))::before,
+  .card__sides a[href]:not(:has(> .link-pill))::before,
+  .web-links-preview .web-links-preview__link::before {
+    content: '\2060';
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.15em;
+    margin-right: 0.25em;
+    font-size: var(--ext-link-mark-size, 0.85em);
+    background-color: var(--ext-link-mark-fg, currentColor);
+    mask: var(--ext-link-mark-icon) center / 1em 1em no-repeat;
+    text-decoration: none;
+  }
+}
+@container style(--ext-link-mark-place: after) and style(--ext-link-mark-kind: text) {
+  .milkdown .ProseMirror a:not(:has(> .link-pill))::after,
+  .card__sides a[href]:not(:has(> .link-pill))::after,
+  .web-links-preview .web-links-preview__link::after {
+    content: var(--ext-link-mark-text);
+    display: inline-block;
+    margin-left: 0.22em;
+    font-size: var(--ext-link-mark-size, 0.85em);
+    color: var(--ext-link-mark-fg, currentColor);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+}
+@container style(--ext-link-mark-place: before) and style(--ext-link-mark-kind: text) {
+  .milkdown .ProseMirror a:not(:has(> .link-pill))::before,
+  .card__sides a[href]:not(:has(> .link-pill))::before,
+  .web-links-preview .web-links-preview__link::before {
+    content: var(--ext-link-mark-text);
+    display: inline-block;
+    margin-right: 0.22em;
+    font-size: var(--ext-link-mark-size, 0.85em);
+    color: var(--ext-link-mark-fg, currentColor);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+}
+
+/* Hover feedback on resolved pills and `<mark>` pills (YAZ-5991 / D5).
    Pure CSS inside `@media (hover: hover)` so touch devices never get stuck hover. Adjacent sibling `.wikilink` pieces
    (head, name, name-ending, tail) light up as one box; unresolved, selected, find-match, and heading-sub spans stay
-   untouched. Zero layout shift: unpadded pills (`--pill-hover-overhang: 1`) and external links use paired padding and
-   negative margin on outer edges only. Placed before the icon `@container` blocks below (`linkPillLook.test.ts`). */
+   untouched. Zero layout shift: unpadded pills (`--pill-hover-overhang: 1`) use paired padding and negative margin on
+   outer edges only. Placed before the icon `@container` blocks below (`linkPillLook.test.ts`). */
 @media (hover: hover) {
   @container not (style(--pill-hover-off: 1) or style(--pill-hover-mode: underline) or style(--pill-hover-mode: text)) {
     .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover,
@@ -334,17 +415,6 @@
     .link-pills-preview mark .wikilink:hover,
     .link-pills-preview--hover mark .wikilink {
       background: var(--pill-mark-hover-bg, color-mix(in srgb, var(--fg) 8%, transparent));
-    }
-
-    .milkdown .ProseMirror a:not(:has(> .link-pill)):hover,
-    .card__sides a[href]:hover,
-    .link-pills-preview .link-pills-preview__ext:hover,
-    .link-pills-preview--hover .link-pills-preview__ext {
-      background: var(--pill-ext-hover-bg, color-mix(in srgb, var(--fg) 8%, transparent));
-      padding-inline: 3px;
-      margin-inline: -3px;
-      padding-block: 1px;
-      border-radius: 4px;
     }
   }
 
@@ -401,11 +471,7 @@
     .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):has(+ .wikilink + .wikilink + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover),
     .wikilink-group:hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
     a:has(> .link-pill):hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
-    .milkdown .ProseMirror a:not(:has(> .link-pill)):hover,
-    .card__sides a[href]:hover,
-    .link-pills-preview--hover .wikilink,
-    .link-pills-preview .link-pills-preview__ext:hover,
-    .link-pills-preview--hover .link-pills-preview__ext {
+    .link-pills-preview--hover .wikilink {
       text-decoration-line: var(--pill-hover-decoration, underline);
     }
   }
@@ -420,12 +486,51 @@
     .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):has(+ .wikilink + .wikilink + .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub):hover),
     .wikilink-group:hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
     a:has(> .link-pill):hover > .wikilink:not(.wikilink--unresolved, .wikilink--selected, .find-match, .find-match--active, .wikilink__sub),
-    .milkdown .ProseMirror a:not(:has(> .link-pill)):hover,
-    .card__sides a[href]:hover,
-    .link-pills-preview--hover .wikilink,
-    .link-pills-preview .link-pills-preview__ext:hover,
-    .link-pills-preview--hover .link-pills-preview__ext {
+    .link-pills-preview--hover .wikilink {
       color: var(--pill-hover-fg, var(--accent));
+    }
+  }
+}
+
+/* Independent hover feedback for Web / External links (YAZ-6580, `--ext-link-hover-*`). */
+@media (hover: hover) {
+  @container not (style(--ext-link-hover-mode: off) or style(--ext-link-hover-mode: underline) or style(--ext-link-hover-mode: text)) {
+    .milkdown .ProseMirror a:not(:has(> .link-pill)):hover,
+    .card__sides a[href]:not(:has(> .link-pill)):hover,
+    .web-links-preview .web-links-preview__link:hover,
+    .web-links-preview--hover .web-links-preview__link,
+    .web-links-preview--hover mark .web-links-preview__link {
+      background: var(--ext-link-hover-bg, color-mix(in srgb, var(--fg) 8%, transparent));
+    }
+
+    @container not (style(--ext-link-hover-overhang: 0) or style(--ext-link-pad-x: 4px)) {
+      .milkdown .ProseMirror a:not(:has(> .link-pill)):hover,
+      .card__sides a[href]:not(:has(> .link-pill)):hover,
+      .web-links-preview .web-links-preview__link:hover,
+      .web-links-preview--hover .web-links-preview__link {
+        padding-inline: 3px;
+        margin-inline: -3px;
+        padding-block: 1px;
+        border-radius: 4px;
+      }
+    }
+  }
+
+  @container style(--ext-link-hover-mode: underline) {
+    .milkdown .ProseMirror a:not(:has(> .link-pill)):hover,
+    .card__sides a[href]:not(:has(> .link-pill)):hover,
+    .web-links-preview .web-links-preview__link:hover,
+    .web-links-preview--hover .web-links-preview__link {
+      text-decoration-line: underline;
+    }
+  }
+
+  @container style(--ext-link-hover-mode: text) {
+    .milkdown .ProseMirror a:not(:has(> .link-pill)):hover,
+    .card__sides a[href]:not(:has(> .link-pill)):hover,
+    .web-links-preview .web-links-preview__link:hover,
+    .web-links-preview--hover .web-links-preview__link {
+      color: var(--ext-link-hover-fg, var(--accent));
     }
   }
 }

@@ -139,6 +139,65 @@ describe('YAZ-5455: the vault look and the link door', () => {
     await waitFor(h, () => document.querySelectorAll('.explore-sheet').length === 2)
   })
 
+  it('YAZ-6585: settings.json webLinks populates --ext-link-* vars for custom emoji and SVG mask marks', async () => {
+    h = await openSpanish({
+      '.yaseendocs/settings.json': JSON.stringify({
+        webLinks: { underline: false, mark: { place: 'after', custom: '🔗' } },
+      }),
+    })
+    const reader = h.host.querySelector<HTMLElement>('.reader')!
+    expect(reader.style.getPropertyValue('--ext-link-decoration')).toBe('none')
+    expect(reader.style.getPropertyValue('--ext-link-mark-place')).toBe('after')
+    expect(reader.style.getPropertyValue('--ext-link-mark-kind')).toBe('text')
+    expect(reader.style.getPropertyValue('--ext-link-mark-text')).toBe('"🔗"')
+    expect(reader.style.getPropertyValue('--ext-link-mark-icon')).toBe('')
+    const ext = h.host.querySelector<HTMLAnchorElement>('.reader__body a[href="https://example.com/madrid"]')
+    expect(ext).not.toBeNull()
+    expect(ext!.className).toBe('')
+    expect(ext!.hasAttribute('data-open')).toBe(false)
+
+    h.unmount()
+    forgetSearch()
+
+    h = await openSpanish({
+      '.yaseendocs/settings.json': JSON.stringify({
+        webLinks: { underline: false, box: { shape: 'round' }, mark: { place: 'before', icon: 'globe' } },
+      }),
+    })
+    const reader2 = h.host.querySelector<HTMLElement>('.reader')!
+    expect(reader2.style.getPropertyValue('--ext-link-decoration')).toBe('none')
+    expect(reader2.style.getPropertyValue('--ext-link-bg')).toBe('color-mix(in srgb, var(--accent) 10%, transparent)')
+    expect(reader2.style.getPropertyValue('--ext-link-pad-x')).toBe('4px')
+    expect(reader2.style.getPropertyValue('--ext-link-pad-y')).toBe('0px')
+    expect(reader2.style.getPropertyValue('--ext-link-radius')).toBe('4px')
+    expect(reader2.style.getPropertyValue('--ext-link-mark-place')).toBe('before')
+    expect(reader2.style.getPropertyValue('--ext-link-mark-kind')).toBe('svg')
+    expect(reader2.style.getPropertyValue('--ext-link-mark-icon')).toContain('data:image/svg+xml')
+    expect(reader2.style.getPropertyValue('--ext-link-mark-text')).toBe('')
+    expect(reader2.style.getPropertyValue('--ext-link-hover-overhang')).toBe('0')
+  })
+
+  it('YAZ-6585: corrupt or absent webLinks falls back cleanly with no --ext-link-* vars', async () => {
+    h = await openSpanish({
+      '.yaseendocs/settings.json': JSON.stringify({
+        webLinks: { underline: 'bad', box: { shape: 'oval' }, mark: { place: 'middle', custom: 'x'.repeat(20) } },
+      }),
+    })
+    expect(h.host.querySelector<HTMLElement>('.reader')!.getAttribute('style') ?? '').not.toContain('--ext-link-')
+
+    h.unmount()
+    forgetSearch()
+
+    h = await openSpanish({ '.yaseendocs/settings.json': JSON.stringify({ webLinks: 'corrupt' }) })
+    expect(h.host.querySelector<HTMLElement>('.reader')!.getAttribute('style') ?? '').not.toContain('--ext-link-')
+
+    h.unmount()
+    forgetSearch()
+
+    h = await openSpanish({})
+    expect(h.host.querySelector<HTMLElement>('.reader')!.getAttribute('style') ?? '').not.toContain('--ext-link-')
+  })
+
   it('with no link-click.json a link opens full screen (the Mac\'s default), through the same door', async () => {
     h = await openSpanish({})
     const trip = [...h.host.querySelectorAll<HTMLElement>('.reader__body a')].find((a) => a.textContent === 'Trip plan')!

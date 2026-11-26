@@ -18,14 +18,15 @@ import {
 } from './vaultSettings'
 
 describe('shared/vaultSettings (YAZ-6546)', () => {
-  it('registers all 36 per-vault override keys (13 chrome + 2 nav + 13 outline + 8 layout) without duplicates', () => {
+  it('registers all 37 per-vault override keys (13 chrome + 2 nav + 13 outline + 9 layout) without duplicates', () => {
     expect(VAULT_CHROME_KEYS).toHaveLength(13)
-    expect(VAULT_OVERRIDE_KEYS).toHaveLength(36)
-    expect(new Set(VAULT_OVERRIDE_KEYS).size).toBe(36)
+    expect(VAULT_OVERRIDE_KEYS).toHaveLength(37)
+    expect(new Set(VAULT_OVERRIDE_KEYS).size).toBe(37)
     expect(isVaultChromeKey('sidebarTabs')).toBe(true)
     expect(isVaultChromeKey('tabWidth')).toBe(true)
     expect(isVaultChromeKey('bulletThreading')).toBe(false)
     expect(isVaultOverrideKey('bulletThreading')).toBe(true)
+    expect(isVaultOverrideKey('webLinks')).toBe(true)
     expect(isVaultOverrideKey('theme')).toBe(false)
   })
 

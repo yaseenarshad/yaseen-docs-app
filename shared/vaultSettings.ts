@@ -26,6 +26,7 @@ import { TABLE_LOOK_FILE } from './tableLook'
 import { TEXT_FORMATTING_FILE } from './textFormatting'
 import { UNIT_WORD_FILE } from './unitWord'
 import { sanitizeVaultLauncherPreset, type VaultLauncherPreset } from './vaultIcon'
+import { sanitizeWebLinks } from './webLinks'
 import {
   DEFAULT_ROW_DATES,
   SIDEBAR_BUTTONS,
@@ -82,7 +83,7 @@ export const VAULT_OUTLINE_KEYS = [
   'tocLines',
 ] as const
 
-/** Page, embed, and new-item layout defaults (8 keys). */
+/** Page, embed, and new-item layout defaults (9 keys). */
 export const VAULT_LAYOUT_KEYS = [
   'contentWidth',
   'contentPosition',
@@ -90,11 +91,12 @@ export const VAULT_LAYOUT_KEYS = [
   'imagePosition',
   'codeBlockWidth',
   'inlineCodeStyle',
+  'webLinks',
   'newPageTitleTemplate',
   'newPageDrawing',
 ] as const
 
-/** All 36 newly per-vault `SettingsState` override keys (Bundles A + B + C). */
+/** All 37 newly per-vault `SettingsState` override keys (Bundles A + B + C). */
 export const VAULT_OVERRIDE_KEYS = [
   ...VAULT_CHROME_KEYS,
   ...VAULT_NAV_KEYS,
@@ -234,6 +236,7 @@ function sanitizeRowDatesOverride(raw: unknown): RowDates | undefined {
 function sanitizeOverrideEntry(key: VaultOverrideKey, value: unknown): unknown {
   if (key === 'sidebarTabs') return sanitizeSidebarTabsOverride(value)
   if (key === 'rowDates') return sanitizeRowDatesOverride(value)
+  if (key === 'webLinks') return isRecord(value) ? sanitizeWebLinks(value) : undefined
   if (key === 'sidebarSort' || key === 'searchSort' || key === 'goTo' || key === 'inlineCodeStyle') {
     return isRecord(value) ? value : undefined
   }

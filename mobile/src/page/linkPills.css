@@ -45,4 +45,114 @@
   text-decoration: none;
 }
 
+/* External web links (YAZ-6585, `.yaseendocs/settings.json` › `webLinks`, `--ext-link-*` from `shared/webLinks.ts`):
+   resting text & box, optional leading/trailing SVG mask or custom text/emoji mark, and pointer hover feedback.
+   Excludes internal wikilinks, formatted pills, vault/in-page `[data-open]` links, footnotes, and `.page-media` cards. */
+.reader__body a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill)),
+.card__sides a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill)) {
+  color: var(--ext-link-fg, var(--accent));
+  font-weight: var(--ext-link-weight, inherit);
+  font-style: var(--ext-link-style, inherit);
+  text-decoration-line: var(--ext-link-decoration, underline);
+  background: var(--ext-link-bg, transparent);
+  padding: var(--ext-link-pad-y, 0) var(--ext-link-pad-x, 0);
+  border-radius: var(--ext-link-radius, 0);
+}
+
+.reader__body mark a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill)),
+.card__sides mark a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill)) {
+  background: transparent;
+}
+
+@container style(--ext-link-mark-place: after) and style(--ext-link-mark-kind: svg) {
+  .reader__body a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill))::after,
+  .card__sides a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill))::after {
+    content: '\2060';
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    margin-left: 0.25em;
+    vertical-align: -0.15em;
+    font-size: var(--ext-link-mark-size, 0.85em);
+    background-color: var(--ext-link-mark-fg, currentColor);
+    mask: var(--ext-link-mark-icon) center / 1em 1em no-repeat;
+    text-decoration: none;
+  }
+}
+
+@container style(--ext-link-mark-place: before) and style(--ext-link-mark-kind: svg) {
+  .reader__body a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill))::before,
+  .card__sides a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill))::before {
+    content: '\2060';
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    margin-right: 0.25em;
+    vertical-align: -0.15em;
+    font-size: var(--ext-link-mark-size, 0.85em);
+    background-color: var(--ext-link-mark-fg, currentColor);
+    mask: var(--ext-link-mark-icon) center / 1em 1em no-repeat;
+    text-decoration: none;
+  }
+}
+
+@container style(--ext-link-mark-place: after) and style(--ext-link-mark-kind: text) {
+  .reader__body a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill))::after,
+  .card__sides a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill))::after {
+    content: var(--ext-link-mark-text);
+    display: inline-block;
+    margin-left: 0.22em;
+    font-size: var(--ext-link-mark-size, 0.85em);
+    color: var(--ext-link-mark-fg, currentColor);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+}
+
+@container style(--ext-link-mark-place: before) and style(--ext-link-mark-kind: text) {
+  .reader__body a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill))::before,
+  .card__sides a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill))::before {
+    content: var(--ext-link-mark-text);
+    display: inline-block;
+    margin-right: 0.22em;
+    font-size: var(--ext-link-mark-size, 0.85em);
+    color: var(--ext-link-mark-fg, currentColor);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+}
+
+@media (hover: hover) {
+  @container not (style(--ext-link-hover-mode: off) or style(--ext-link-hover-mode: underline) or style(--ext-link-hover-mode: text)) {
+    .reader__body a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill)):hover,
+    .card__sides a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill)):hover {
+      background: var(--ext-link-hover-bg, color-mix(in srgb, var(--fg) 8%, transparent));
+    }
+  }
+
+  @container not (style(--ext-link-hover-mode: off) or style(--ext-link-hover-mode: underline) or style(--ext-link-hover-mode: text) or style(--ext-link-hover-overhang: 0)) {
+    .reader__body a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill)):hover,
+    .card__sides a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill)):hover {
+      padding-inline: 3px;
+      margin-inline: -3px;
+      padding-block: 1px;
+      border-radius: 4px;
+    }
+  }
+
+  @container style(--ext-link-hover-mode: underline) {
+    .reader__body a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill)):hover,
+    .card__sides a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill)):hover {
+      text-decoration-line: underline;
+    }
+  }
+
+  @container style(--ext-link-hover-mode: text) {
+    .reader__body a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill)):hover,
+    .card__sides a[href]:not(.wikilink, .page-pill, .page-media, [data-open]):not(:has(> .link-pill)):hover {
+      color: var(--ext-link-hover-fg, var(--accent));
+    }
+  }
+}
+
 /* The vault's heading sizes, weight and underline (`text-formatting.json`, the Mac's `--hN-*`): `reader.css`. */

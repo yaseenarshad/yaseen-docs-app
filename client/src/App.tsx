@@ -7,6 +7,7 @@ import type { LinkPills } from '@shared/linkPills'
 import type { IdsInFiles, IdsInSearch } from '@shared/showIds'
 import { spacingVars, type TextFormatting } from '@shared/textFormatting'
 import { VAULT_CHROME_KEYS, VAULT_OVERRIDE_KEYS, type VaultChromeKey, type WorkspaceChromeOverrides } from '@shared/vaultSettings'
+import { webLinkVars } from '@shared/webLinks'
 import { NO_PAGE_OVERRIDE_VARS, pageOverrideVars, patchWorkspaceChrome, resolvePageSettings, resolveWindowChrome, setVaultNewPageDrawing, setWindowSearchIncludeInline, splitChromeDiff } from './settings/effectiveSettings'
 import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
@@ -1117,6 +1118,7 @@ export function App() {
     // a change rebuilds no editor; a page's own width on its editor's mount wins (app.css).
     ...(settings.codeBlockWidth != null ? { '--code-block-width': `${settings.codeBlockWidth}px` } : {}),
     ...inlineCodeVars(settings.inlineCodeStyle),
+    ...webLinkVars(appSettings.webLinks),
     // Absent → bulletThreading.css falls back to the app accent.
     ...(settings.threadColor !== null ? { '--thread-color': settings.threadColor } : {}),
     // Absent → app.css falls back to `--thread-color`, then the accent (YAZ-3309 D9).
@@ -1142,9 +1144,9 @@ export function App() {
    * look too (YAZ-5792, `cardSurfaceStyleOf`): a card's links wear the vault's pill style on every one of those surfaces.
    */
   const cardVarsFor = (path: string): CSSProperties => {
-    const look = scopeOf(path).cardLook.look
+    const { cardLook: { look }, linkPills, vaultSettings } = scopeOf(path)
     const cardVars = look === null ? NO_CARD_VARS : vaultCardVars(look, settings, () => ({ ...settings, ...cardLookSettings(look) }))
-    return cardSurfaceStyleOf(scopeOf(path).linkPills.pills, cardVars)
+    return cardSurfaceStyleOf(linkPills.pills, cardVars, pageSettingsOf(path).webLinks, vaultSettings.overrides.webLinks !== undefined)
   }
   // YAZ-5904: Card sides in pages or in Explore changed (the app's, or a vault's card look): the shown cards fold again.
   const cardFoldKey = [settings.cardSidesFold, settings.cardSidesFoldCardPages, settings.cardSidesFoldExplore, ...vaults.map((v) => `${v?.cardLook.look?.sidesFold}/${v?.cardLook.look?.sidesFoldCardPages}/${v?.cardLook.look?.sidesFoldExplore}`)].join()
