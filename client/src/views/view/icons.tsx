@@ -40,10 +40,10 @@ export function SidebarPanelIcon() {
   )
 }
 
-/** Renders a 14px stroked `<svg>` from `menuIconShapes.ts` shape specs so React menus and Settings share one geometry table (YAZ-6567). */
-export function MenuIconSvg({ shapes, className }: { shapes: readonly SvgShapeSpec[]; className?: string }) {
+/** Renders a stroked `<svg>` from `menuIconShapes.ts` shape specs so React menus and Settings share one geometry table (YAZ-6567). */
+export function MenuIconSvg({ shapes, size = 14, className }: { shapes: readonly SvgShapeSpec[]; size?: number; className?: string }) {
   return (
-    <svg {...svg} className={className}>
+    <svg {...svg} width={size} height={size} className={className}>
       {shapes.map(([tag, attrs], idx) => {
         if (tag === 'path') return <path key={idx} {...attrs} />
         if (tag === 'rect') return <rect key={idx} {...attrs} />

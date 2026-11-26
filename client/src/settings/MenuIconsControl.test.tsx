@@ -166,7 +166,7 @@ describe('MenuIconsControl (YAZ-6571)', () => {
     expect(previewMenu()!.dataset.hasIcons).toBe('true')
     expect(previewItem('showInSidebar')?.querySelector('.menu-icons-preview__slot')).not.toBeNull()
 
-    // Turn every single action to 'none': preview renders clean text with no empty gutter.
+    // Turn every customizable action to 'none': those 5 rows have no SVG, while fixed Copy path and Add to focus keep theirs.
     const allNone: MenuIconsSetting = {
       newWindow: 'none',
       duplicateTab: 'none',
@@ -175,9 +175,11 @@ describe('MenuIconsControl (YAZ-6571)', () => {
       showInSidebar: 'none',
     }
     render(allNone)
-    expect(previewMenu()!.dataset.hasIcons).toBe('false')
-    expect(previewMenu()!.querySelectorAll('.menu-icons-preview__slot')).toHaveLength(0)
-    expect(previewMenu()!.querySelectorAll('svg')).toHaveLength(0)
+    expect(previewMenu()!.dataset.hasIcons).toBe('true')
+    for (const action of MENU_ICON_ACTIONS) {
+      expect(previewItem(action)?.querySelector('svg')).toBeNull()
+    }
+    expect(previewMenu()!.querySelectorAll('svg')).toHaveLength(2)
   })
 
   it('Reset to defaults restores "on" and hides the Reset button', () => {

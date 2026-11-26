@@ -15,7 +15,8 @@ import {
   type MenuIconsSetting,
   type ResolvedMenuIconPicks,
 } from '@shared/menuIcons'
-import { MENU_ICON_CHOICES, menuIconShapesOf, type SvgShapeSpec } from '../views/view/menuIconShapes'
+import { MENU_ICON_CHOICES, menuIconShapesOf } from '../views/view/menuIconShapes'
+import { CopyIcon, EyeIcon, MenuIconSvg } from '../views/view/icons'
 
 const ACTION_LABELS: Readonly<Record<MenuIconAction, string>> = {
   newWindow: 'New window',
@@ -25,7 +26,10 @@ const ACTION_LABELS: Readonly<Record<MenuIconAction, string>> = {
   showInSidebar: 'Show in sidebar',
 }
 
-type PreviewRow = { readonly label: string; readonly action: MenuIconAction | null } | 'divider'
+type PreviewRow =
+  | { readonly label: string; readonly action: MenuIconAction; readonly fixedIcon?: undefined }
+  | { readonly label: string; readonly action: null; readonly fixedIcon: 'copy' | 'eye' }
+  | 'divider'
 
 const PREVIEW_ROWS: readonly PreviewRow[] = [
   { label: 'Open in new tab', action: 'openNewTab' },
@@ -33,46 +37,11 @@ const PREVIEW_ROWS: readonly PreviewRow[] = [
   { label: 'Duplicate tab', action: 'duplicateTab' },
   'divider',
   { label: 'Show in sidebar', action: 'showInSidebar' },
-  { label: 'Copy path', action: null },
+  { label: 'Copy path', action: null, fixedIcon: 'copy' },
   'divider',
-  { label: 'Add to focus', action: null },
+  { label: 'Add to focus', action: null, fixedIcon: 'eye' },
   { label: 'Hide all others', action: 'hideOthers' },
 ]
-
-function renderShape([tag, attrs]: SvgShapeSpec, key: number) {
-  switch (tag) {
-    case 'path':
-      return <path key={key} {...attrs} />
-    case 'rect':
-      return <rect key={key} {...attrs} />
-    case 'line':
-      return <line key={key} {...attrs} />
-    case 'circle':
-      return <circle key={key} {...attrs} />
-  }
-}
-
-function shapesForPick<K extends MenuIconAction>(action: K, variant: ResolvedMenuIconPicks[K]): readonly SvgShapeSpec[] | null {
-  return variant === 'none' ? null : menuIconShapesOf(action, variant)
-}
-
-function MenuIconGlyph({ shapes, size = 14 }: { shapes: readonly SvgShapeSpec[]; size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {shapes.map(renderShape)}
-    </svg>
-  )
-}
 
 export interface MenuIconsControlProps {
   value: MenuIconsSetting
@@ -112,11 +81,7 @@ export function MenuIconsControl({ value, onChange }: MenuIconsControlProps) {
     onChange('on')
   }
 
-  const hasAnyPreviewIcon =
-    enabled &&
-    PREVIEW_ROWS.some(
-      (row) => row !== 'divider' && row.action !== null && shapesForPick(row.action, picks[row.action]) !== null,
-    )
+  const hasAnyPreviewIcon = enabled
 
   return (
     <div className="menu-icons-control">
@@ -191,7 +156,7 @@ export function MenuIconsControl({ value, onChange }: MenuIconsControlProps) {
                           data-variant={choice.id}
                           onClick={() => selectVariant(action, choice.id as never)}
                         >
-                          {choice.shapes !== null ? <MenuIconGlyph shapes={choice.shapes} size={15} /> : 'Off'}
+                          {choice.shapes !== null ? <MenuIconSvg shapes={choice.shapes} size={15} /> : 'Off'}
                         </button>
                       )
                     })}
@@ -225,7 +190,7 @@ export function MenuIconsControl({ value, onChange }: MenuIconsControlProps) {
                 if (row === 'divider') {
                   return <div key={`div-${index}`} className="menu-icons-preview__divider" role="separator" />
                 }
-                const shapes = row.action !== null ? shapesForPick(row.action, picks[row.action]) : null
+                const shapes = row.action !== null ? menuIconShapesOf(row.action, picks[row.action]) : null
                 return (
                   <div
                     key={row.label}
@@ -235,7 +200,9 @@ export function MenuIconsControl({ value, onChange }: MenuIconsControlProps) {
                   >
                     {hasAnyPreviewIcon && (
                       <span className="menu-icons-preview__slot" aria-hidden="true">
-                        {shapes !== null && <MenuIconGlyph shapes={shapes} size={14} />}
+                        {shapes !== null && <MenuIconSvg shapes={shapes} size={14} />}
+                        {row.fixedIcon === 'copy' && <CopyIcon />}
+                        {row.fixedIcon === 'eye' && <EyeIcon />}
                       </span>
                     )}
                     <span className="menu-icons-preview__text">{row.label}</span>
