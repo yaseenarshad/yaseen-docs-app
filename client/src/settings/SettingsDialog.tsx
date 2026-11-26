@@ -34,6 +34,7 @@ import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
 import { KeySearch, NO_FILTER, type HotkeyFilter } from './hotkeysSection'
 import { SAME_WORD, UnitContext } from '../vault/unitWord'
+import { buildSettingsDialogCtx, type BuildSettingsCtxInput } from './buildSettingsCtx'
 import { availableSections, groupsOf, isAvailable, resolveGroupTitle, resolveHint, resolveLabel, resolveWide, subheadingOf, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
 import { searchSettings, settingCandidates, type SettingHit } from './searchSettings'
 import { SettingRow } from './SettingRow'
@@ -46,14 +47,17 @@ import { revealInScroller } from '../editor/find/leastScroll'
 import { unit } from './unitLabel'
 import './settings.css'
 
-interface SettingsDialogProps {
-  ctx: SettingsCtx
+type SettingsDialogProps = (
+  | { ctx: SettingsCtx; input?: undefined }
+  | { input: BuildSettingsCtxInput; ctx?: undefined }
+) & {
   onClose: () => void
   /** Open straight onto a page (the Share dialog's "Open Settings › Sharing", YAZ-3040); absent = the first. */
   initialPage?: SettingsSectionId
 }
 
-export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDialogProps) {
+export function SettingsDialog({ ctx: givenCtx, input, onClose, initialPage }: SettingsDialogProps) {
+  const given = givenCtx ?? buildSettingsDialogCtx(input)
   /** The Mac's own keys (YAZ-3397 D3): asked of main once per open, when the Hotkeys page or a search first shows. */
   const [systemHotkeys, setSystemHotkeys] = useState<SystemHotkey[] | undefined>(undefined)
   /** Settings › Hotkeys' filters (YAZ-3564 K7): the rows read them through `ctx`; a page swap clears them. */

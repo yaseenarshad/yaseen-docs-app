@@ -8,7 +8,6 @@ import type { LinkPills } from '@shared/linkPills'
 import type { IdsInFiles, IdsInSearch } from '@shared/showIds'
 import { spacingVars, type TextFormatting } from '@shared/textFormatting'
 import { VAULT_CHROME_KEYS, type VaultChromeKey, type WorkspaceChromeOverrides } from '@shared/vaultSettings'
-import { buildSettingsDialogCtx } from './settings/buildSettingsCtx'
 import { NO_PAGE_OVERRIDE_VARS, pageOverrideVars, patchWorkspaceChrome, resolvePageSettings, resolveWindowChrome, setVaultNewPageDrawing, setWindowSearchIncludeInline, splitChromeDiff } from './settings/effectiveSettings'
 import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
@@ -4284,7 +4283,7 @@ export function App() {
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
       {settingsOpen && (
         <Suspense fallback={null}>
-          <SettingsDialog ctx={buildSettingsDialogCtx({ roots, vaults, active, appSettings, settings, onChange: changeSettings, onChangeGlobal: changeGlobalSettings, matchedWorkspaceName: matchedVaultSet?.name ?? null, wsKey: windowChrome.wsKey, wsChromeOverrides: windowChrome.chromeOverrides, onWriteWorkspaceChrome: writeChromeOverrides, onResetWorkspaceChrome: resetWorkspaceChrome, dailyHereRoot: dailyHere.root, saveDaily, openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder, vaultStorage, sharing, vaultIcons, placeVaults, refreshLauncherIcons, pickers: { spacingRoot, setSpacingRoot, cardLookRoot, setCardLookRoot, tableLookRoot, setTableLookRoot, folderPagesRoot, setFolderPagesRoot, iconLookRoot, setIconLookRoot } })} initialPage={settingsPage} onClose={closeSettings} />
+          <SettingsDialog input={{ roots, vaults, active, appSettings, settings, onChange: changeSettings, onChangeGlobal: changeGlobalSettings, matchedWorkspaceName: matchedVaultSet?.name ?? null, wsKey: windowChrome.wsKey, wsChromeOverrides: windowChrome.chromeOverrides, onWriteWorkspaceChrome: writeChromeOverrides, onResetWorkspaceChrome: resetWorkspaceChrome, dailyHereRoot: dailyHere.root, saveDaily, openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder, vaultStorage, sharing, vaultIcons, placeVaults, refreshLauncherIcons, pickers: { spacingRoot, setSpacingRoot, cardLookRoot, setCardLookRoot, tableLookRoot, setTableLookRoot, folderPagesRoot, setFolderPagesRoot, iconLookRoot, setIconLookRoot } }} initialPage={settingsPage} onClose={closeSettings} />
         </Suspense>
       )}
       {courseOpen !== null && (
