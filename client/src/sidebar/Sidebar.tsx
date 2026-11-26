@@ -10,7 +10,8 @@ import { isReadOnlyProperties } from '@shared/readOnly'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api } from '../api'
 import { osVerbs } from '../lib/osVerbs'
-import { CalendarIcon, GridIcon, InboxIcon, SidebarPanelIcon } from '../views/view/icons'
+import { CalendarIcon, GridIcon, InboxIcon, NewTabIcon, NewWindowIcon, SidebarPanelIcon } from '../views/view/icons'
+import { isMenuIconVisible, useMenuIcons } from '../views/view/menuIconsStore'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { embeddedCards, makeCardResolver } from '@shared/cardLinks'
 import type { WatchSource } from '../hooks/useWatch'
@@ -826,6 +827,7 @@ export function Sidebar({
   onHistoryFile,
   onShareFile,
 }: SidebarProps) {
+  useMenuIcons()
   // The tab the sort button serves (YAZ-3227 D5): Files, Focus, Favorites and Search, whose sort is its own (YAZ-3511 D3). Sessions and Recents have none.
   const sortedTab: SortMenuTab | null = lens === 'files' || lens === 'focus' || lens === 'favorites' || lens === 'search' ? lens : null
   const stored = sortedTab === null ? undefined : sortedTab === 'search' ? settings.searchSort : settings.sidebarSort[sortedTab]
@@ -2649,7 +2651,10 @@ export function Sidebar({
         <ContextMenu
           x={inboxMenu.x}
           y={inboxMenu.y}
-          sections={[[{ id: 'open-tabs', label: 'Open in new tab', onSelect: () => onInbox(inboxMenu.root) }, ...(onInboxNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', onSelect: () => onInboxNewWindow(inboxMenu.root) }])]]}
+          sections={[[
+            { id: 'open-tabs', label: 'Open in new tab', ...(isMenuIconVisible('openNewTab') ? { icon: <NewTabIcon /> } : {}), onSelect: () => onInbox(inboxMenu.root) },
+            ...(onInboxNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', ...(isMenuIconVisible('newWindow') ? { icon: <NewWindowIcon /> } : {}), onSelect: () => onInboxNewWindow(inboxMenu.root) }]),
+          ]]}
           onClose={() => setInboxMenu(null)}
         />
       )}

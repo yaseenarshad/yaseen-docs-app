@@ -1,4 +1,7 @@
 import type { ReactElement } from 'react'
+import type { MenuIconAction, ResolvedMenuIconPicks } from '@shared/menuIcons'
+import { menuIconShapesOf, type SvgShapeSpec } from './menuIconShapes'
+import { useMenuIcons } from './menuIconsStore'
 
 /** 14px stroked glyphs for the Bases toolbar, in the sidebar's style (GRO-2135). */
 
@@ -37,17 +40,55 @@ export function SidebarPanelIcon() {
   )
 }
 
-/** "Show in sidebar" menu glyph (YAZ-6535): sidebar panel with a highlighted row in the left rail. */
-export function ShowInSidebarIcon() {
+/** Renders a 14px stroked `<svg>` from `menuIconShapes.ts` shape specs so React menus and Settings share one geometry table (YAZ-6567). */
+export function MenuIconSvg({ shapes, className }: { shapes: readonly SvgShapeSpec[]; className?: string }) {
   return (
-    <svg {...svg}>
-      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
-      <line x1="6.25" y1="2.5" x2="6.25" y2="13.5" />
-      <line x1="3.1" y1="5.5" x2="4.6" y2="5.5" />
-      <rect x="2.9" y="7.2" width="2.1" height="1.6" rx="0.5" fill="currentColor" stroke="none" />
-      <line x1="3.1" y1="10.5" x2="4.6" y2="10.5" />
+    <svg {...svg} className={className}>
+      {shapes.map(([tag, attrs], idx) => {
+        if (tag === 'path') return <path key={idx} {...attrs} />
+        if (tag === 'rect') return <rect key={idx} {...attrs} />
+        if (tag === 'line') return <line key={idx} {...attrs} />
+        return <circle key={idx} {...attrs} />
+      })}
     </svg>
   )
+}
+
+function useMenuActionShapes<K extends MenuIconAction>(action: K, variant?: ResolvedMenuIconPicks[K]): readonly SvgShapeSpec[] | null {
+  const resolved = useMenuIcons()
+  if (variant !== undefined) return menuIconShapesOf(action, variant)
+  if (!resolved.enabled) return null
+  return menuIconShapesOf(action, resolved.picks[action])
+}
+
+/** "Show in sidebar" menu glyph (YAZ-6535 / YAZ-6567): customizable via Settings › Appearance › Menus. */
+export function ShowInSidebarIcon({ variant }: { variant?: ResolvedMenuIconPicks['showInSidebar'] } = {}) {
+  const shapes = useMenuActionShapes('showInSidebar', variant)
+  return shapes === null ? null : <MenuIconSvg shapes={shapes} />
+}
+
+/** "Open in new window" / "Move to new window" menu glyph (YAZ-6567). */
+export function NewWindowIcon({ variant }: { variant?: ResolvedMenuIconPicks['newWindow'] } = {}) {
+  const shapes = useMenuActionShapes('newWindow', variant)
+  return shapes === null ? null : <MenuIconSvg shapes={shapes} />
+}
+
+/** "Duplicate tab" menu glyph (YAZ-6567). */
+export function DuplicateTabIcon({ variant }: { variant?: ResolvedMenuIconPicks['duplicateTab'] } = {}) {
+  const shapes = useMenuActionShapes('duplicateTab', variant)
+  return shapes === null ? null : <MenuIconSvg shapes={shapes} />
+}
+
+/** "Open in new tab" / "Open N in new tabs" menu glyph (YAZ-6567). */
+export function NewTabIcon({ variant }: { variant?: ResolvedMenuIconPicks['openNewTab'] } = {}) {
+  const shapes = useMenuActionShapes('openNewTab', variant)
+  return shapes === null ? null : <MenuIconSvg shapes={shapes} />
+}
+
+/** "Hide all others" / "Show all" menu glyph (YAZ-6567). */
+export function IsolateIcon({ variant }: { variant?: ResolvedMenuIconPicks['hideOthers'] } = {}) {
+  const shapes = useMenuActionShapes('hideOthers', variant)
+  return shapes === null ? null : <MenuIconSvg shapes={shapes} />
 }
 
 /** A calendar page, for the sidebar footer's "Open today's daily page" (YAZ-3607 D7). The cog's size and line. */

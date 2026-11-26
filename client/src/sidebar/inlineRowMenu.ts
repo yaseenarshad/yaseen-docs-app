@@ -8,7 +8,8 @@ import { copyText } from '../lib/copyText'
 import { resolveInlineCopyPath } from '../lib/inlinePath'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import type { SearchCandidate } from '../search/searchCandidates'
-import { CopyIcon, ShowInSidebarIcon } from '../views/view/icons'
+import { CopyIcon, NewTabIcon, NewWindowIcon, ShowInSidebarIcon } from '../views/view/icons'
+import { isMenuIconVisible } from '../views/view/menuIconsStore'
 import { errorText, type MenuAction, type MenuSection } from './menuSections'
 
 export interface InlineRowMenuHandlers {
@@ -109,12 +110,12 @@ export function inlineRowMenuSections(
           onOpenFile(page)
         },
       },
-      { id: 'open-drawing-tab', label: 'Open in new tab', onSelect: () => openSearchCard(card, true) },
-      ...(onOpenNewWindow !== undefined ? [{ id: 'open-window', label: 'Open in new window', onSelect: () => onOpenNewWindow(page) }] : []),
+      { id: 'open-drawing-tab', label: 'Open in new tab', ...(isMenuIconVisible('openNewTab') ? { icon: createElement(NewTabIcon) } : {}), onSelect: () => openSearchCard(card, true) },
+      ...(onOpenNewWindow !== undefined ? [{ id: 'open-window', label: 'Open in new window', ...(isMenuIconVisible('newWindow') ? { icon: createElement(NewWindowIcon) } : {}), onSelect: () => onOpenNewWindow(page) }] : []),
       ...(onOpenInlineDrawingExplore !== undefined && card.index !== undefined
         ? [{ id: 'open-in-explore', label: 'Open in Explore', onSelect: () => onOpenInlineDrawingExplore(page, card.index!) }]
         : []),
-      { id: 'show-in-sidebar', label: 'Show in sidebar', icon: createElement(ShowInSidebarIcon), onSelect: () => onRevealInFiles(page) },
+      { id: 'show-in-sidebar', label: 'Show in sidebar', ...(isMenuIconVisible('showInSidebar') ? { icon: createElement(ShowInSidebarIcon) } : {}), onSelect: () => onRevealInFiles(page) },
     ]
     return [openGroup, [copyPathItem], openInGroup]
   }
@@ -131,12 +132,13 @@ export function inlineRowMenuSections(
     {
       id: 'open-card-tab',
       label: 'Open in new tab',
+      ...(isMenuIconVisible('openNewTab') ? { icon: createElement(NewTabIcon) } : {}),
       onSelect: () => {
         if (card.id !== undefined) landOnCard(page, card.id)
         onOpenFileBackground(page)
       },
     },
-    ...(onOpenNewWindow !== undefined ? [{ id: 'open-window', label: 'Open in new window', onSelect: () => onOpenNewWindow(page) }] : []),
+    ...(onOpenNewWindow !== undefined ? [{ id: 'open-window', label: 'Open in new window', ...(isMenuIconVisible('newWindow') ? { icon: createElement(NewWindowIcon) } : {}), onSelect: () => onOpenNewWindow(page) }] : []),
     ...(card.id !== undefined
       ? [
           {
@@ -149,7 +151,7 @@ export function inlineRowMenuSections(
           },
         ]
       : []),
-    { id: 'show-in-sidebar', label: 'Show in sidebar', icon: createElement(ShowInSidebarIcon), onSelect: () => onRevealInFiles(page) },
+    { id: 'show-in-sidebar', label: 'Show in sidebar', ...(isMenuIconVisible('showInSidebar') ? { icon: createElement(ShowInSidebarIcon) } : {}), onSelect: () => onRevealInFiles(page) },
   ]
   const copyGroup: MenuSection = [
     copyPathItem,

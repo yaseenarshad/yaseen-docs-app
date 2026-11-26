@@ -3,7 +3,8 @@ import { SAME_WORD, type UnitText } from '../vault/unitWord'
 import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { FileClipState } from '@shared/types'
 import { countItems, countKinds, type NoticeKind, type NoticeType } from '../lib/notice'
-import { CopyIcon, EyeIcon, FolderIcon, HeartIcon, PencilIcon, ShowInSidebarIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, FolderIcon, HeartIcon, IsolateIcon, NewTabIcon, NewWindowIcon, PencilIcon, ShowInSidebarIcon } from '../views/view/icons'
+import { isMenuIconVisible } from '../views/view/menuIconsStore'
 import type { CreateKind } from './createEntry'
 import { NewKindIcon } from './FileIcon'
 import type { MenuTargets } from './Sidebar'
@@ -274,7 +275,12 @@ const open: Leaf = (t, h) => {
 const openInNewTabs: Leaf = (t, h) => {
   const paths = t.openTabPaths
   if (paths === null) return null
-  return { id: 'open-tabs', label: paths.length === 1 ? 'Open in new tab' : `Open ${paths.length} in new tabs`, onSelect: () => h.onOpenInNewTabs(paths) }
+  return {
+    id: 'open-tabs',
+    label: paths.length === 1 ? 'Open in new tab' : `Open ${paths.length} in new tabs`,
+    ...(isMenuIconVisible('openNewTab') ? { icon: createElement(NewTabIcon) } : {}),
+    onSelect: () => h.onOpenInNewTabs(paths),
+  }
 }
 
 /**
@@ -285,7 +291,12 @@ const openInNewTabs: Leaf = (t, h) => {
 const showInSidebar: Leaf = (t, h) => {
   const path = t.showPath
   if (path === null) return null
-  return { id: 'show-in-sidebar', label: 'Show in sidebar', icon: createElement(ShowInSidebarIcon), onSelect: () => h.onShowInSidebar(path) }
+  return {
+    id: 'show-in-sidebar',
+    label: 'Show in sidebar',
+    ...(isMenuIconVisible('showInSidebar') ? { icon: createElement(ShowInSidebarIcon) } : {}),
+    onSelect: () => h.onShowInSidebar(path),
+  }
 }
 
 /**
@@ -578,7 +589,8 @@ const hideOthers: Leaf = (t, h) => {
   const row = t.hideOthers
   const set = h.onHideOthers
   if (row == null || set === undefined) return null
-  return row.on ? { id: 'files-show-all', label: 'Show all', onSelect: () => set(null) } : { id: 'files-hide-others', label: 'Hide all others', onSelect: () => set(row.dir) }
+  const icon = isMenuIconVisible('hideOthers') ? { icon: createElement(IsolateIcon) } : {}
+  return row.on ? { id: 'files-show-all', label: 'Show all', ...icon, onSelect: () => set(null) } : { id: 'files-hide-others', label: 'Hide all others', ...icon, onSelect: () => set(row.dir) }
 }
 
 /**
@@ -612,7 +624,12 @@ const openAlone: Leaf = (t, h) => {
 const openInNewWindow: Leaf = (t, h) => {
   const path = t.newWindowPath
   if (path === null) return null
-  return { id: 'open-window', label: 'Open in new window', onSelect: () => h.onOpenNewWindow(path) }
+  return {
+    id: 'open-window',
+    label: 'Open in new window',
+    ...(isMenuIconVisible('newWindow') ? { icon: createElement(NewWindowIcon) } : {}),
+    onSelect: () => h.onOpenNewWindow(path),
+  }
 }
 
 /**

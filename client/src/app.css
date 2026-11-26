@@ -3422,6 +3422,18 @@ body.drag-held iframe {
   padding-left: 33px;
 }
 
+/* Settings › Appearance › Menus › Menu icons = Off (YAZ-6567): hide every menu glyph and collapse the 33 px icon gutter. */
+[data-menu-icons='off'] .ctx-menu__label > svg {
+  display: none;
+}
+
+[data-menu-icons='off'] .ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__item:not(:has(> .ctx-menu__label)),
+[data-menu-icons='off'] .ctx-menu--glyphs > .ctx-menu__group > .ctx-menu__parent > .ctx-menu__item:not(:has(> .ctx-menu__label)),
+[data-menu-icons='off'] .ctx-menu--editor.ctx-menu--glyphs > .ctx-menu__item:not(:has(> .ctx-menu__label)),
+[data-menu-icons='off'] .ctx-menu--editor.ctx-menu--glyphs > .ctx-menu__parent > .ctx-menu__item:not(:has(> .ctx-menu__label)) {
+  padding-left: 10px;
+}
+
 /* The link menu's top line, the page's name (YAZ-3747 demo): a long one ends in "…" and never widens the menu. */
 .ctx-menu--editor > .ctx-menu__item:disabled:first-child {
   display: block;

@@ -180,7 +180,8 @@ export const MENU_ICON_CHOICES: { readonly [K in MenuIconAction]: readonly MenuI
 
 export function menuIconShapesOf<K extends MenuIconAction>(action: K, variant: ResolvedMenuIconPicks[K]): readonly SvgShapeSpec[] | null {
   const list = MENU_ICON_CHOICES[action] as readonly MenuIconChoiceMeta[]
-  return list.find((c) => c.id === variant)?.shapes ?? list[0]!.shapes
+  const found = list.find((c) => c.id === variant)
+  return found !== undefined ? found.shapes : list[0]!.shapes
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg'

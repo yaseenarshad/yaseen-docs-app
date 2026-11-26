@@ -22,6 +22,7 @@ import { useHiddenWindows, useMinimizedWindows } from './hiddenWindows'
 import { TabSearchPanel, type SearchPlace } from './TabSearchPanel'
 import { autoWindowLabel, windowLabel } from './windowLabel'
 import { AsleepIcon, ShowInSidebarIcon } from '../views/view/icons'
+import { isMenuIconVisible, useMenuIcons } from '../views/view/menuIconsStore'
 import './tabs.css'
 import { useUnit } from '../vault/unitWord'
 import { FileIcon } from '../sidebar/FileIcon'
@@ -398,6 +399,7 @@ type Gesture =
  * App owns the sheet and the close.
  */
 export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId, asleep = NONE_ASLEEP, darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveTargets, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onMoveToSlot, onTakeAt, onAskVault, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onOpenPage, onNotice, listState, onToggleFocus, onToggleFavorite, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere, onOpenInlineDrawingHere, filesWindow = false }: TabOverviewProps) {
+  useMenuIcons()
   const unit = useUnit()
   const [query, setQuery] = useState('')
   const [inlineTitles, setInlineTitles] = useState<ReadonlyMap<string, string>>(() => new Map())
@@ -1792,12 +1794,12 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       )}
       {/* An island is a folder: its row in the sidebar (this window's only), its path, and its tabs as one. */}
       {islandMenu !== null && menuGroup !== undefined && (
-        <ContextMenuSurface x={islandMenu.x} y={islandMenu.y} className={onShowInSidebar !== undefined && menuRow !== null ? 'ctx-menu--glyphs' : undefined} onClose={() => setIslandMenu(null)}>
+        <ContextMenuSurface x={islandMenu.x} y={islandMenu.y} className={onShowInSidebar !== undefined && menuRow !== null && isMenuIconVisible('showInSidebar') ? 'ctx-menu--glyphs' : undefined} onClose={() => setIslandMenu(null)}>
           <div className="ctx-menu__group" role="group">
             {onShowInSidebar !== undefined && menuRow !== null && (
               <MenuItem
                 label="Show in sidebar"
-                icon={<ShowInSidebarIcon />}
+                icon={isMenuIconVisible('showInSidebar') ? <ShowInSidebarIcon /> : undefined}
                 onSelect={() => {
                   onShowInSidebar(menuRow)
                   setIslandMenu(null)

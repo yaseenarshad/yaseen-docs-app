@@ -78,6 +78,7 @@ import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setAllNotesOpensAt, setCellNotePinnedAtStart } from './editor/table/cellNoteCard'
 import { setCellNotePreviewLines } from './editor/table/cellNotePreview'
 import { dropPageWindowsAt, renamePageWindows } from './views/view/pageWindowMemory'
+import { applyMenuIcons } from './views/view/menuIconsStore'
 import { moveExploreRecent, rememberExploreRecent } from './explore/exploreRecents'
 import type { ExploreRequest } from './explore/layers'
 import { CARD_FORMATS_OPEN, cardFormatsOpenIn, setCardFormatHints, type CardFormatsOpenRequest } from './editor/card/cardFormatHint'
@@ -1055,6 +1056,10 @@ export function App() {
     document.documentElement.dataset.theme = theme
     applyCrepeTheme(theme)
   }, [theme])
+
+  useLayoutEffect(() => {
+    applyMenuIcons(settings.menuIcons)
+  }, [settings.menuIcons])
 
   // Guide lines, folding and bullet threading (YAZ-4094 D2, G2, G3, F1; YAZ-4432): the defaults, the show choice and the darkness go on <html>,
   // as `data-theme` does, so they reach every editor of this page — also a hover preview, which is portalled to
