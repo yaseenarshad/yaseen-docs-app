@@ -108,5 +108,10 @@ describe('shared/vaultSettings (YAZ-6546)', () => {
     const back = JSON.parse(backText) as Record<string, unknown>
     expect(back.mobile).toBeUndefined()
     expect(back.bulletThreading).toBe(true)
+
+    // Unknown nested keys inside `mobile` are preserved across writes
+    const nestedStart = JSON.stringify({ version: 1, mobile: { version: 1, futureMobileFlag: 'keep-me' } }, null, 2)
+    const nestedNext = JSON.parse(withMobileSettingInVaultSettings(nestedStart, 'folding', false)) as Record<string, unknown>
+    expect(nestedNext.mobile).toEqual({ version: 1, folding: false, futureMobileFlag: 'keep-me' })
   })
 })

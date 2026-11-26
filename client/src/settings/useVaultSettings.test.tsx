@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { VAULT_SETTINGS_DOC_KEYS, VAULT_SETTINGS_FILE } from '@shared/vaultSettings'
+import { VAULT_OVERRIDE_KEYS, VAULT_SETTINGS_FILE } from '@shared/vaultSettings'
 import { BridgeRequestError } from '../api'
 
 type ChangeListener = (change: { root: string; name: string }) => void
@@ -103,10 +103,11 @@ describe('useVaultSettings (YAZ-6546, YAZ-6555)', () => {
     expect(write).toHaveBeenCalledWith(
       '/v',
       VAULT_SETTINGS_FILE,
-      { version: 1, tabWidth: 'compact', review: { enabled: true }, unknownKey: 42 },
-      VAULT_SETTINGS_DOC_KEYS,
+      { version: 1, tabWidth: 'compact' },
+      ['version', 'tabWidth', 'contentWidth'],
     )
     expect(state.overrides).toEqual({ tabWidth: 'compact' })
+    expect(state.doc?.review).toEqual({ enabled: true })
   })
 
   it('setSection writes and clears consolidated legacy sections in settings.json', async () => {
@@ -121,8 +122,8 @@ describe('useVaultSettings (YAZ-6546, YAZ-6555)', () => {
     expect(write).toHaveBeenLastCalledWith(
       '/v',
       VAULT_SETTINGS_FILE,
-      { version: 1, contentWidth: 'medium', linkClick: { click: 'open' } },
-      VAULT_SETTINGS_DOC_KEYS,
+      { version: 1, linkClick: { click: 'open' } },
+      ['version', 'linkClick'],
     )
 
     await act(async () => {
@@ -131,8 +132,8 @@ describe('useVaultSettings (YAZ-6546, YAZ-6555)', () => {
     expect(write).toHaveBeenLastCalledWith(
       '/v',
       VAULT_SETTINGS_FILE,
-      { version: 1, contentWidth: 'medium' },
-      VAULT_SETTINGS_DOC_KEYS,
+      { version: 1 },
+      ['version', 'linkClick'],
     )
   })
 
@@ -155,14 +156,14 @@ describe('useVaultSettings (YAZ-6546, YAZ-6555)', () => {
     expect(write).toHaveBeenLastCalledWith(
       '/v',
       VAULT_SETTINGS_FILE,
-      { version: 1, review: { enabled: true }, textFormatting: { version: 1, text: 18 } },
-      VAULT_SETTINGS_DOC_KEYS,
+      { version: 1 },
+      ['version', ...VAULT_OVERRIDE_KEYS],
     )
     expect(state.overrides).toEqual({})
     expect(state.doc?.review).toEqual({ enabled: true })
   })
 
-  it('holds overrides in memory when readOnly is true and never writes to disk', async () => {
+  it('holds overrides, unsets, and sections in memory when readOnly is true and never writes to disk', async () => {
     read.mockResolvedValue({ version: 1, contentWidth: 'medium' })
     await act(async () => {
       root?.render(<Probe vault="/v" readOnly />)
@@ -175,10 +176,22 @@ describe('useVaultSettings (YAZ-6546, YAZ-6555)', () => {
     expect(state.overrides).toEqual({ contentWidth: 'medium', tabWidth: 'wide', sidebarRowHeight: 24 })
 
     await act(async () => {
+      await state.setOverrides({}, ['contentWidth'])
+    })
+    expect(write).not.toHaveBeenCalled()
+    expect(state.overrides).toEqual({ tabWidth: 'wide', sidebarRowHeight: 24 })
+
+    await act(async () => {
+      await state.setSection('linkClick', { click: 'open' })
+    })
+    expect(write).not.toHaveBeenCalled()
+    expect(state.doc?.linkClick).toEqual({ click: 'open' })
+
+    await act(async () => {
       await state.resetAll()
     })
     expect(write).not.toHaveBeenCalled()
-    expect(state.overrides).toEqual({ contentWidth: 'medium' })
+    expect(state.overrides).toEqual({})
   })
 
   it('reloads on external settings.json onChange and ignores other files/roots', async () => {

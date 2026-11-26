@@ -64,7 +64,8 @@ describe('moveSettingsIntoVaults: transient read-only roots (YAZ-4502)', () => {
 
     // Transient read-only root has ZERO .yaseendocs/ directory created.
     await expect(stat(path.join(roRoot, VAULT_CONFIG_DIR))).rejects.toMatchObject({ code: 'ENOENT' })
-    // Writable root received the seeded config as expected.
-    expect((await stat(path.join(rwRoot, VAULT_CONFIG_DIR, 'text-formatting.json'))).isFile()).toBe(true)
+    // Writable root received the seeded config inside unified settings.json (never recreating retired legacy files).
+    expect((await stat(path.join(rwRoot, VAULT_CONFIG_DIR, 'settings.json'))).isFile()).toBe(true)
+    await expect(stat(path.join(rwRoot, VAULT_CONFIG_DIR, 'text-formatting.json'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })

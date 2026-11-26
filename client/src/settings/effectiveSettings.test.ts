@@ -93,6 +93,16 @@ describe('effectiveSettings (YAZ-6546, YAZ-6555)', () => {
       '--thread-width': '3px',
       '--code-block-width': '720px',
     })
+
+    // Side-by-side null overrides emit `initial` so a vault overriding Global's color/width back to null resets it
+    const resetNull = pageOverrideVars(
+      { ...DEFAULT_SETTINGS, threadColor: null, codeBlockWidth: null },
+      { threadColor: null, codeBlockWidth: null },
+    )
+    expect(resetNull).toMatchObject({
+      '--thread-color': 'initial',
+      '--code-block-width': 'initial',
+    })
   })
 
   it('runtime helpers track per-vault newPageDrawing and window searchIncludeInline', () => {

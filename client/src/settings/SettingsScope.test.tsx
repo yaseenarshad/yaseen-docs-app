@@ -227,4 +227,26 @@ describe('SettingsDialog scope switcher (YAZ-6546, YAZ-6556)', () => {
     expect(v2.vaultSettings.setOverrides).toHaveBeenCalledWith({ contentPosition: 'left' })
     expect(v1.vaultSettings.setOverrides).not.toHaveBeenCalled()
   })
+
+  it('editing a global setting in Workspace mode never leaks workspace/vault overrides into Global defaults', () => {
+    const v1 = makeScopeVault('/v1', 'Notes', { contentWidth: 'full' })
+    const v2 = makeScopeVault('/v2', 'Work', {})
+    const { el, onChangeGlobal } = mountScoped({
+      vaults: [v1, v2],
+      wsName: 'Daily Focus',
+      wsOverrides: { tabWidth: 'wide' },
+    })
+
+    clickNav(el, 'Appearance')
+    clickScopeTab(el, 'This workspace')
+    const themeRow = el.querySelector('[data-setting="theme"]')!
+    const darkBtn = [...themeRow.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Dark')
+    act(() => darkBtn?.click())
+    expect(onChangeGlobal).toHaveBeenCalledTimes(1)
+    const saved = onChangeGlobal.mock.calls[0][0] as SettingsState
+    expect(saved.theme).toBe('dark')
+    // Must keep Global defaults for tabWidth and contentWidth (never leaking workspace/vault overrides)
+    expect(saved.tabWidth).toBe(DEFAULT_SETTINGS.tabWidth)
+    expect(saved.contentWidth).toBe(DEFAULT_SETTINGS.contentWidth)
+  })
 })

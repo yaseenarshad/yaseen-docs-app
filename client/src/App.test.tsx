@@ -22,7 +22,7 @@ import { TitleIsName } from './lib/titleRule'
 import { createRoot, type Root } from 'react-dom/client'
 import { dailyPageName } from '@shared/dailyPage'
 import { IDS_FILE } from '@shared/pageId'
-import { VAULT_SETTINGS_DOC_KEYS, VAULT_SETTINGS_FILE, workspaceSettingsKey } from '@shared/vaultSettings'
+import { VAULT_SETTINGS_FILE, workspaceSettingsKey } from '@shared/vaultSettings'
 import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type FolderPagesSettings, type FocusFolder, type InboxCarry, type ListScope, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
@@ -194,7 +194,7 @@ const captured = vi.hoisted(() => ({
   realEditor: false,
   crepes: [] as import('@milkdown/crepe').Crepe[],
   jumpedLines: [] as { path: string | null; line: number }[],
-  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; vaultReadOnly?: boolean; onVaultLock?: (step: () => Promise<unknown> | void) => () => void; folderPages?: FolderPagesSettings }[],
+  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; onChangeCommentsOrder?: (order: 'newest' | 'oldest') => void; startView?: PageView; vaultReadOnly?: boolean; onVaultLock?: (step: () => Promise<unknown> | void) => () => void; folderPages?: FolderPagesSettings }[],
 }))
 
 vi.mock('./code/codeOpener', () => ({
@@ -220,8 +220,8 @@ vi.mock('./editor/createCrepe', async (importOriginal) => {
     },
   }
 })
-const EditorStub = ({ folderPages, vaultReadOnly, onVaultLock, root, path, onOpenFile, onOpenFileBackground, onOpenLink, viewOnlyLinks, onRetitle, wikilinks, sync, newPageFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; onOpenLink?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; vaultReadOnly?: boolean; onVaultLock?: (step: () => Promise<unknown> | void) => () => void; folderPages?: FolderPagesSettings }) => {
-    captured.editors.push({ vaultReadOnly, onVaultLock, path, root, wikilinks, sync, newPageFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, folderPages })
+const EditorStub = ({ folderPages, vaultReadOnly, onVaultLock, root, path, onOpenFile, onOpenFileBackground, onOpenLink, viewOnlyLinks, onRetitle, wikilinks, sync, newPageFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, onChangeCommentsOrder, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; onOpenLink?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; onChangeCommentsOrder?: (order: 'newest' | 'oldest') => void; startView?: PageView; vaultReadOnly?: boolean; onVaultLock?: (step: () => Promise<unknown> | void) => () => void; folderPages?: FolderPagesSettings }) => {
+    captured.editors.push({ vaultReadOnly, onVaultLock, path, root, wikilinks, sync, newPageFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, onChangeCommentsOrder, startView, folderPages })
     if (tabId !== undefined && onZoom !== undefined) captured.zoomDoors.set(tabId, onZoom)
     captured.editorOpeners.push({ path, open: onOpenFile })
     captured.linkOpeners.push({ path, open: onOpenLink })
@@ -1770,11 +1770,11 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     expect(bridge.state.setSettings).not.toHaveBeenCalled()
     // "Pin" in the card: writes sparse tableOfContents to the vault's settings.json, and the editor follows; the default stays Off (S11).
     await act(async () => door?.('pinned'))
-    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, tableOfContents: 'pinned' }), VAULT_SETTINGS_DOC_KEYS)
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, tableOfContents: 'pinned' }), ['version', 'tableOfContents'])
     expect(editor()?.tableOfContents).toBe('pinned')
     // "Unpin".
     await act(async () => door?.('auto'))
-    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, tableOfContents: 'auto' }), VAULT_SETTINGS_DOC_KEYS)
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, tableOfContents: 'auto' }), ['version', 'tableOfContents'])
     expect(editor()?.tableOfContents).toBe('auto')
     // The retained editors are memo: a door that changed with the settings would render each of them.
     expect(editor()?.onChangeTableOfContents).toBe(door)
@@ -1792,7 +1792,7 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     expect(bridge.state.setSettings).not.toHaveBeenCalled()
     // The release of a drag here: writes sparse tableOfContentsWidth to the vault's settings.json.
     await act(async () => door?.(260))
-    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, tableOfContentsWidth: 260 }), VAULT_SETTINGS_DOC_KEYS)
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, tableOfContentsWidth: 260 }), ['version', 'tableOfContentsWidth'])
     expect(editor()?.tableOfContentsWidth).toBe(260)
     expect(editor()?.onChangeTableOfContentsWidth).toBe(door)
   })
@@ -6920,7 +6920,7 @@ describe('App "Give this vault\u2019s pages IDs" in Settings (YAZ-2523 V4, YAZ-2
     expect(el.querySelector('.confirm__text')?.textContent).toBe('Cards will turn off. Your cards and reviews stay in the files.')
     await act(async () => sheetBtn(el, 'Turn off')?.click())
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
-    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, review: expect.objectContaining({ enabled: false }) }), VAULT_SETTINGS_DOC_KEYS)
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, review: expect.objectContaining({ enabled: false }) }), ['version', 'review'])
   })
 
   it('`ids.json` that is not valid JSON: On and Off save nothing, the front end never reads the file, and a notice says why', async () => {
@@ -7118,7 +7118,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       const height = () => [...el.querySelectorAll<HTMLButtonElement>('[data-setting="folderPages.rowHeight"] button')]
       expect(height().find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('Tall')
       act(() => height().find((b) => b.textContent === 'Short')!.click())
-      expect(bridge.vaultConfig.write.mock.calls).toEqual([['/v', VAULT_SETTINGS_FILE, { version: 1, folderPages: { version: 1, showFolderPageFiles: true } }, VAULT_SETTINGS_DOC_KEYS]])
+      expect(bridge.vaultConfig.write.mock.calls).toEqual([['/v', VAULT_SETTINGS_FILE, { version: 1, folderPages: { version: 1, showFolderPageFiles: true } }, ['version', 'folderPages']]])
     })
   })
 
@@ -7160,10 +7160,10 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       const band = () => [...el.querySelectorAll<HTMLButtonElement>('[data-setting="tableRowBand"] button')]
       expect(band().find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('Off')
       act(() => band().find((b) => b.textContent === 'All tables')!.click())
-      expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', VAULT_SETTINGS_FILE, { version: 1, tableLook: { version: 1, look: { nowMark: 'both', textInCells: 'clip', width: 900 } } }, VAULT_SETTINGS_DOC_KEYS]])
+      expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', VAULT_SETTINGS_FILE, { version: 1, tableLook: { version: 1, look: { nowMark: 'both', textInCells: 'clip', width: 900 } } }, ['version', 'tableLook']]])
       // YAZ-5602 round 2: Time in slot writes the vault's file too (`look.slotTime`), never the app's settings.
       act(() => [...el.querySelectorAll<HTMLButtonElement>('[data-setting="tableSlotTime"] button')].find((b) => b.textContent === 'Count down')!.click())
-      expect(bridge.vaultConfig.write.mock.calls.at(-1)).toEqual(['/w', VAULT_SETTINGS_FILE, { version: 1, tableLook: { version: 1, look: { nowMark: 'both', textInCells: 'clip', width: 900, slotTime: 'down' } } }, VAULT_SETTINGS_DOC_KEYS])
+      expect(bridge.vaultConfig.write.mock.calls.at(-1)).toEqual(['/w', VAULT_SETTINGS_FILE, { version: 1, tableLook: { version: 1, look: { nowMark: 'both', textInCells: 'clip', width: 900, slotTime: 'down' } } }, ['version', 'tableLook']])
       expect(JSON.stringify(bridge.state.setSettings.mock.calls)).not.toContain('tableSlotTime')
     })
   })
@@ -7311,7 +7311,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect([...select.options].map((o) => o.textContent)).toEqual(['v', 'w'])
     expect(select.value).toBe('1')
     act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Text larger"]')?.click())
-    expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', VAULT_SETTINGS_FILE, { version: 1, textFormatting: { version: 2, text: { size: 17 } } }, VAULT_SETTINGS_DOC_KEYS]])
+    expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', VAULT_SETTINGS_FILE, { version: 1, textFormatting: { version: 2, text: { size: 17 } } }, ['version', 'textFormatting']]])
     // The page layer of /w takes the new size at once; nothing reaches the layer of /v.
     await act(async () => {})
     expect(el.querySelector<HTMLElement>('.tabstack__layer [data-path="/w/b.md"]')?.closest<HTMLElement>('.tabstack__layer')?.style.getPropertyValue('--text-size')).toBe('17px')
@@ -7510,7 +7510,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       field.dispatchEvent(new Event('input', { bubbles: true }))
     })
     await act(async () => sheetBtn(el, 'Turn on both')?.click())
-    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/w', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, review: expect.objectContaining({ enabled: true }) }), VAULT_SETTINGS_DOC_KEYS)
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/w', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, review: expect.objectContaining({ enabled: true }) }), ['version', 'review'])
     settingsPage(el, PAGE.githubSync)
     await act(async () => turnOn('githubSync'))
     expect(bridge.github.setEnabled).toHaveBeenCalledExactlyOnceWith('/w', true)
@@ -8734,7 +8734,7 @@ describe('App: the card skill in the sidebar (YAZ-5108)', () => {
     expect(captured.editors.some((e) => e.path === START && e.root === SKILL)).toBe(true)
     await act(async () => captured.sidebar?.onHideCardSkill?.())
     expect(shown()).toEqual([['/v', false]])
-    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, cardSkillInSidebar: false }), VAULT_SETTINGS_DOC_KEYS)
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', VAULT_SETTINGS_FILE, expect.objectContaining({ version: 1, cardSkillInSidebar: false }), ['version', 'cardSkillInSidebar'])
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ tabs: ['/v/a.md'] }))
     expect(el.querySelector('.link-notice__text')?.textContent).toBe('Card skill hidden. Turn it on again in Settings › Cards.')
     expect(el.querySelector('.link-notice__action')?.textContent).toBe('Open Settings')
@@ -8983,9 +8983,17 @@ describe('App: unified per-vault & multi-vault workspace settings (YAZ-6546, YAZ
       '/v',
       VAULT_SETTINGS_FILE,
       expect.objectContaining({ version: 1, rowDates: expect.objectContaining({ files: true }) }),
-      VAULT_SETTINGS_DOC_KEYS,
+      ['version', 'rowDates'],
     )
     expect(bridge.state.setSettings).not.toHaveBeenCalled()
+
+    // Editing an unrelated global setting (commentsOrder) while a vault override is active must NOT leak vault overrides into Global defaults
+    await act(async () => captured.editors.find((e) => e.path === '/v/a.md')?.onChangeCommentsOrder?.('oldest'))
+    expect(bridge.state.setSettings).toHaveBeenCalledTimes(1)
+    const savedGlobal = (bridge.state.setSettings.mock.calls as unknown[][])[0]?.[0] as typeof DEFAULT_SETTINGS
+    expect(savedGlobal.commentsOrder).toBe('oldest')
+    expect(savedGlobal.contentWidth).toBe(DEFAULT_SETTINGS.contentWidth)
+    expect(savedGlobal.tabWidth).toBe(DEFAULT_SETTINGS.tabWidth)
   })
 
   it('multi-vault window keeps workspace chrome stable across tab switches while each page follows its own vault overrides', async () => {

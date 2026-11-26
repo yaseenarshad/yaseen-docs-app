@@ -170,7 +170,7 @@ function withVaultContext(given: SettingsCtx, scope: SettingsScopeCtx, vault: Se
 
     const overrideSet = new Set<string>(VAULT_OVERRIDE_KEYS)
     const dailyKeys = new Set(['dailyPages', 'dailyPageFolder', 'dailyPageFormat', 'dailyPageDayFolder', 'dailyPageOpens'])
-    const placeKeys = new Set(['newPageLocation', 'newPageFolder', 'newBoardFolder'])
+    const placeKeys = new Set(['newPageLocation', 'newPageFolder', 'newBoardFolder', 'newBoardPictures', 'newBoardPicturesFolder', 'commentsHint'])
     const globalPatch: Record<string, unknown> = {}
     for (const k of Object.keys(next) as (keyof SettingsState)[]) {
       if (overrideSet.has(k) || dailyKeys.has(k) || placeKeys.has(k)) continue
@@ -294,13 +294,25 @@ export function buildScopedSettings(
       const chromePatch = diffSettingsKeys(wsSettings, next, VAULT_CHROME_KEYS)
       if (Object.keys(chromePatch).length > 0) ws.setOverrides(chromePatch)
 
+      const nextDaily = dailyPagesOfSettings(next)
+      if (!sameDailyPages(nextDaily, dailyPagesOfSettings(wsSettings))) {
+        if (scope.saveDailyFor !== undefined) scope.saveDailyFor(nextDaily, activeVault.root)
+        else activeVault.dailyPages.save(nextDaily)
+      }
+      const nextPlaces = newPlacesOfSettings(next)
+      if (JSON.stringify(nextPlaces) !== JSON.stringify(newPlacesOfSettings(wsSettings))) {
+        activeVault.newPlaces.save(nextPlaces)
+      }
+
       const chromeSet = new Set<string>(VAULT_CHROME_KEYS)
+      const dailyKeys = new Set(['dailyPages', 'dailyPageFolder', 'dailyPageFormat', 'dailyPageDayFolder', 'dailyPageOpens'])
+      const placeKeys = new Set(['newPageLocation', 'newPageFolder', 'newBoardFolder', 'newBoardPictures', 'newBoardPicturesFolder', 'commentsHint'])
       const rest: Record<string, unknown> = {}
       for (const k of Object.keys(next) as (keyof SettingsState)[]) {
-        if (chromeSet.has(k)) continue
+        if (chromeSet.has(k) || dailyKeys.has(k) || placeKeys.has(k)) continue
         if (wsSettings[k] !== next[k] && JSON.stringify(wsSettings[k]) !== JSON.stringify(next[k])) rest[k] = next[k]
       }
-      if (Object.keys(rest).length > 0) given.onChange({ ...given.settings, ...rest })
+      if (Object.keys(rest).length > 0) scope.onChangeGlobal({ ...scope.globalSettings, ...rest })
     }
     const overrideCount = Object.keys(ws.overrides).length
     return {

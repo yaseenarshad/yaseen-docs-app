@@ -193,7 +193,8 @@ async function planComments(store: VaultStore, vault: string, list: readonly Wai
   // Comments whose page's `id` is on two or more pages now (copied on the Mac): not "gone".
   const copied = new Set<string>()
   for (const c of list) {
-    let path = c.path
+    // Remap any pre-upgrade outbox entry queued for legacy `.yaseendocs/mobile.json` to unified `.yaseendocs/settings.json` (YAZ-6557).
+    let path = isVaultSetting(c.setting) && c.path === LEGACY_MOBILE_SETTINGS_PATH ? MOBILE_SETTINGS_PATH : c.path
     if (checkpoint.shas[path] === undefined && c.was !== undefined) {
       if (index === undefined) {
         const held = heldIndex?.() ?? null

@@ -150,26 +150,39 @@ function configText(value: unknown): string {
 /** Per-(root, config-file) write serialization so concurrent `writeConfig(..., known)` calls never clobber keys (YAZ-6024). */
 const writeChain = createRootChain()
 
+/** Serialize any read-modify-write operation on `<root>/.yaseendocs/<name>` using the shared per-file lock (YAZ-6546). */
+export async function withConfigLock<T>(root: string, name: string, fn: () => Promise<T>): Promise<T> {
+  const r = requireAbsPath(root, 'root')
+  const n = requireConfigName(name)
+  return writeChain(`${r}\0${n}`, fn)
+}
+
+/** Internal writer for callers that ALREADY hold `withConfigLock(root, name, ...)`. */
+export async function writeConfigUnlocked(root: string, name: string, value: unknown, known?: readonly string[] | null): Promise<void> {
+  const r = requireAbsPath(root, 'root')
+  const n = requireConfigName(name)
+  if (known != null && !(Array.isArray(known) && known.every((k) => typeof k === 'string'))) throw new BridgeFailure('BAD_REQUEST', "'known' must be a list of key names")
+  let kept = value
+  if (known != null) {
+    const onDisk = await readConfigDetailed(r, n)
+    if (onDisk.state === 'ok') kept = keepUnknownKeys(onDisk.value, value, known)
+  }
+  const content = configText(kept)
+  const dir = path.join(r, VAULT_CONFIG_DIR)
+  const file = path.join(dir, n)
+  const { mtime } = await fsCall(file, async () => {
+    await mkdir(dir, { recursive: true })
+    return atomicWrite(file, content)
+  })
+  announce(r, n, mtime)
+}
+
 export async function writeConfig(root: string, name: string, value: unknown, known?: readonly string[] | null): Promise<void> {
   const r = requireAbsPath(root, 'root')
   const n = requireConfigName(name)
   // The bridge sends an omitted argument as null (or undefined): both mean "no `known`".
   if (known != null && !(Array.isArray(known) && known.every((k) => typeof k === 'string'))) throw new BridgeFailure('BAD_REQUEST', "'known' must be a list of key names")
-  return writeChain(`${r}\0${n}`, async () => {
-    let kept = value
-    if (known != null) {
-      const onDisk = await readConfigDetailed(r, n)
-      if (onDisk.state === 'ok') kept = keepUnknownKeys(onDisk.value, value, known)
-    }
-    const content = configText(kept)
-    const dir = path.join(r, VAULT_CONFIG_DIR)
-    const file = path.join(dir, n)
-    const { mtime } = await fsCall(file, async () => {
-      await mkdir(dir, { recursive: true })
-      return atomicWrite(file, content)
-    })
-    announce(r, n, mtime)
-  })
+  return writeChain(`${r}\0${n}`, () => writeConfigUnlocked(r, n, value, known))
 }
 
 /**

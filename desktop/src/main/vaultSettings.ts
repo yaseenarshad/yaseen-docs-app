@@ -25,15 +25,12 @@ import {
   type LegacySettingsFile,
   type VaultSettingsDoc,
 } from '@shared/vaultSettings'
-import { BridgeFailure, createRootChain, requireAbsPath } from './fs/fsUtils'
+import { BridgeFailure, requireAbsPath } from './fs/fsUtils'
 import type { Store } from './store'
-import { readConfigDetailed, writeConfig } from './vaultConfig'
+import { readConfigDetailed, withConfigLock, writeConfigUnlocked } from './vaultConfig'
 
 const READ_ONLY_FILE = 'read-only.json'
 const ROW_DATES_MIGRATED_MARK = `${VAULT_SETTINGS_FILE}#rowDates`
-
-/** Serialize consolidation per vault root so concurrent readers never race on write + unlink. */
-const consolidateChain = createRootChain()
 
 export interface ConsolidateVaultSettingsResult {
   doc: VaultSettingsDoc | null
@@ -54,7 +51,7 @@ export async function consolidateVaultSettingsOnDisk(
   opts?: { readOnly?: boolean },
 ): Promise<ConsolidateVaultSettingsResult> {
   const r = requireAbsPath(root, 'root')
-  return consolidateChain(r, async () => {
+  return withConfigLock(r, VAULT_SETTINGS_FILE, async () => {
     const existing = await readConfigDetailed(r, VAULT_SETTINGS_FILE)
     if (existing.state === 'malformed') {
       throw new BridgeFailure('INVALID_CONFIG', `${VAULT_SETTINGS_FILE} is not valid JSON`, { path: existing.file })
@@ -136,7 +133,7 @@ export async function consolidateVaultSettingsOnDisk(
       return { doc, migratedFiles, migratedRowDates, wrote: false, readOnly: true }
     }
 
-    await writeConfig(r, VAULT_SETTINGS_FILE, doc, VAULT_SETTINGS_DOC_KEYS)
+    await writeConfigUnlocked(r, VAULT_SETTINGS_FILE, doc, VAULT_SETTINGS_DOC_KEYS)
     await Promise.all(
       migratedFiles.map((file) =>
         unlink(path.join(dir, file)).catch((err: NodeJS.ErrnoException) => {

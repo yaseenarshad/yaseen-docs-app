@@ -25,7 +25,14 @@ async function vault(...folders: string[]): Promise<string> {
   return root
 }
 const file = (root: string) => path.join(root, '.yaseendocs', 'daily-pages.json')
-const held = async (root: string): Promise<unknown> => JSON.parse(await readFile(file(root), 'utf8'))
+const unifiedFile = (root: string) => path.join(root, '.yaseendocs', 'settings.json')
+const held = async (root: string): Promise<unknown> => {
+  try {
+    return JSON.parse(await readFile(file(root), 'utf8'))
+  } catch {
+    return (JSON.parse(await readFile(unifiedFile(root), 'utf8')) as { dailyPages?: unknown }).dailyPages
+  }
+}
 const put = async (root: string, text: string) => {
   await mkdir(path.join(root, '.yaseendocs'), { recursive: true })
   await writeFile(file(root), text)
@@ -167,11 +174,11 @@ describe('moveSettingsIntoVaults with DAILY_PAGES_MOVE', () => {
     const store = fakeStore({ ...ON }, [[daily]])
     const move = moveSettingsIntoVaults(store, [DAILY_PAGES_MOVE])
     await move.idle()
-    await unlink(file(daily))
+    await unlink(unifiedFile(daily))
     store.set({ windows: [{ id: 'w0', roots: [daily] }, { id: 'w1', roots: [] }] } as unknown as Partial<AppState>)
     move.pulled(daily)
     await move.idle()
-    await expect(stat(file(daily))).rejects.toThrow()
+    await expect(stat(unifiedFile(daily))).rejects.toThrow()
     move.stop()
   })
 

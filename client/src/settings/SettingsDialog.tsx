@@ -57,7 +57,7 @@ type SettingsDialogProps = (
 }
 
 export function SettingsDialog({ ctx: givenCtx, input, onClose, initialPage }: SettingsDialogProps) {
-  const given = givenCtx ?? buildSettingsDialogCtx(input)
+  const given = useMemo(() => givenCtx ?? buildSettingsDialogCtx(input!), [givenCtx, input])
   /** The Mac's own keys (YAZ-3397 D3): asked of main once per open, when the Hotkeys page or a search first shows. */
   const [systemHotkeys, setSystemHotkeys] = useState<SystemHotkey[] | undefined>(undefined)
   /** Settings › Hotkeys' filters (YAZ-3564 K7): the rows read them through `ctx`; a page swap clears them. */
@@ -125,7 +125,7 @@ export function SettingsDialog({ ctx: givenCtx, input, onClose, initialPage }: S
   const searchingHotkeys = onHotkeys && !searching && hotkeyQuery.trim() !== ''
   const needsCandidates = searching || searchingHotkeys
   const hotkeysKey = needsCandidates ? JSON.stringify(ctx.settings.hotkeys) : ''
-  const candidates = useMemo(() => (needsCandidates ? settingCandidates(ctx) : []), [needsCandidates, hotkeysKey, systemHotkeys]) // eslint-disable-line react-hooks/exhaustive-deps -- see above
+  const candidates = useMemo(() => (needsCandidates ? settingCandidates(ctx) : []), [needsCandidates, hotkeysKey, systemHotkeys, effectiveScopeMode, selectedVaultRoot]) // eslint-disable-line react-hooks/exhaustive-deps -- see above
   // ⌘F from a search (YAZ-5968): the search goes, and once the section shows again the bar finds in it.
   useEffect(() => {
     if (findOpen && searching) setQuery('')

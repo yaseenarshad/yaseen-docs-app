@@ -18,7 +18,7 @@ import { FOLDER_PAGES_FILE } from './folderPages'
 import { isRecord } from './guards'
 import { LINK_CLICK_FILE } from './linkClick'
 import { LINK_PILLS_FILE } from './linkPills'
-import { MOBILE_SETTINGS_FILE, mobileSettingsValue, sanitizeMobileSettings, type MobileSettingKey } from './mobileSettings'
+import { MOBILE_SETTINGS_FILE, MOBILE_SETTINGS_KEYS, mobileSettingsValue, sanitizeMobileSettings, type MobileSettingKey } from './mobileSettings'
 import { NEW_PLACES_FILE } from './newPlaces'
 import { REVIEW_SETTINGS_FILE } from './reviews'
 import { SHOW_IDS_FILE } from './showIds'
@@ -304,7 +304,11 @@ export function withMobileSettingInVaultSettings(text: string | null, key: Mobil
     if (!isRecord(raw)) throw new Error(`${VAULT_SETTINGS_FILE} is not a JSON object`)
   }
   const existingMobile = readVaultSection(raw, 'mobile')
-  const nextMobile = mobileSettingsValue({ ...sanitizeMobileSettings(existingMobile), [key]: on })
+  const nextMobile = keepUnknownKeys(
+    existingMobile,
+    mobileSettingsValue({ ...sanitizeMobileSettings(existingMobile), [key]: on }),
+    MOBILE_SETTINGS_KEYS,
+  ) as Record<string, unknown>
   const hasNonDefault = Object.keys(nextMobile).some((k) => k !== 'version')
   const patched = patchVaultSettingsDoc(raw, hasNonDefault ? { mobile: nextMobile } : {}, hasNonDefault ? [] : ['mobile'])
   const merged = keepUnknownKeys(raw, patched, VAULT_SETTINGS_DOC_KEYS) as Record<string, unknown>

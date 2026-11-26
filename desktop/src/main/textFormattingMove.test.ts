@@ -91,7 +91,13 @@ describe('YAZ-5485: the page spacing moves once into each vault (text-formatting
     return { seededConfig: (r: string, n: string) => seen.has(`${r}|${n}`), markSeededConfig: (r: string, n: string) => void seen.add(`${r}|${n}`) }
   }
   const APP = { lineSpacing: 2, blockGap: 8, pageBulletIndent: 34, pageBulletGap: 12 }
-  const read = async (root: string) => JSON.parse(await readFile(path.join(root, VAULT_CONFIG_DIR, TEXT_FORMATTING_FILE), 'utf8')) as unknown
+  const read = async (root: string) => {
+    try {
+      return JSON.parse(await readFile(path.join(root, VAULT_CONFIG_DIR, TEXT_FORMATTING_FILE), 'utf8')) as unknown
+    } catch {
+      return (JSON.parse(await readFile(path.join(root, VAULT_CONFIG_DIR, 'settings.json'), 'utf8')) as { textFormatting?: unknown }).textFormatting
+    }
+  }
   const vault = async (name: string, text?: string) => {
     const root = path.join(dir, name)
     await mkdir(path.join(root, VAULT_CONFIG_DIR), { recursive: true })
@@ -126,8 +132,8 @@ describe('YAZ-5485: the page spacing moves once into each vault (text-formatting
     expect(existsSync(path.join(plain, VAULT_CONFIG_DIR, TEXT_FORMATTING_FILE))).toBe(false)
     const m = marks()
     await run([plain], APP, m)
-    await rm(path.join(plain, VAULT_CONFIG_DIR, TEXT_FORMATTING_FILE))
+    await rm(path.join(plain, VAULT_CONFIG_DIR, 'settings.json'))
     await run([plain], APP, m)
-    expect(existsSync(path.join(plain, VAULT_CONFIG_DIR, TEXT_FORMATTING_FILE))).toBe(false)
+    expect(existsSync(path.join(plain, VAULT_CONFIG_DIR, 'settings.json'))).toBe(false)
   })
 })

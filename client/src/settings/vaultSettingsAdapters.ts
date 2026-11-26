@@ -51,6 +51,7 @@ export function useDerivedReviewSettings(
   onNotice: (text: string, icon?: NoticeKind) => void,
   idsOff = false,
 ): ReviewSettingsState {
+  const { setSection } = vs
   const raw = readVaultSection(vs.doc, 'review')
   const settings = useStableValue(useMemo(() => sanitizeReviewSettings(raw), [raw]))
   const liveRef = useRef({ settings, raw, malformed: vs.malformed })
@@ -72,15 +73,16 @@ export function useDerivedReviewSettings(
         Object.entries(clean).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(before[key as keyof ReviewSettings])),
       )
       const base = isRecord(liveRef.current.raw) ? liveRef.current.raw : {}
-      void vs.setSection('review', { ...base, ...changed })
+      void setSection('review', { ...base, ...changed })
     },
-    [root, onNotice, vs.setSection],
+    [root, onNotice, setSection],
   )
 
   return useMemo(() => ({ settings, save, ready: vs.ready }), [settings, save, vs.ready])
 }
 
 export function useDerivedLinkClick(root: string | null, vs: VaultSettingsState): LinkClickState {
+  const { setSection } = vs
   const raw = readVaultSection(vs.doc, 'linkClick')
   const settings = useStableValue(useMemo(() => sanitizeLinkClick(raw), [raw]))
   const nowRef = useRef(settings)
@@ -89,14 +91,15 @@ export function useDerivedLinkClick(root: string | null, vs: VaultSettingsState)
   const save = useCallback(
     (next: LinkClickSettings) => {
       if (root === null) return
-      void vs.setSection('linkClick', { ...sanitizeLinkClick(next) })
+      void setSection('linkClick', { ...sanitizeLinkClick(next) })
     },
-    [root, vs.setSection],
+    [root, setSection],
   )
   return useMemo(() => ({ settings, save, isExplore }), [settings, save, isExplore])
 }
 
 export function useDerivedShowIds(root: string | null, vs: VaultSettingsState): ShowIdsState {
+  const { setSection } = vs
   const raw = readVaultSection(vs.doc, 'showIds')
   const settings = useStableValue(useMemo(() => sanitizeShowIds(raw), [raw]))
   const nowRef = useRef(settings)
@@ -106,14 +109,15 @@ export function useDerivedShowIds(root: string | null, vs: VaultSettingsState): 
   const save = useCallback(
     (next: ShowIdsSettings) => {
       if (root === null) return
-      void vs.setSection('showIds', { ...sanitizeShowIds(next) })
+      void setSection('showIds', { ...sanitizeShowIds(next) })
     },
-    [root, vs.setSection],
+    [root, setSection],
   )
   return useMemo(() => ({ settings, save, inSearch, inTitle }), [settings, save, inSearch, inTitle])
 }
 
 export function useDerivedUnitWord(root: string | null, vs: VaultSettingsState): UnitWordState {
+  const { setSection } = vs
   const raw = readVaultSection(vs.doc, 'unitWord')
   const settings = useStableValue(useMemo(() => sanitizeUnitWord(raw), [raw]))
   const word = useMemo(() => unitWordOf(settings), [settings])
@@ -128,14 +132,15 @@ export function useDerivedUnitWord(root: string | null, vs: VaultSettingsState):
   const save = useCallback(
     (next: UnitWordSettings) => {
       if (root === null) return
-      void vs.setSection('unitWord', { ...sanitizeUnitWord(next) })
+      void setSection('unitWord', { ...sanitizeUnitWord(next) })
     },
-    [root, vs.setSection],
+    [root, setSection],
   )
   return useMemo(() => ({ settings, word, unit, save }), [settings, word, unit, save])
 }
 
 export function useDerivedTextFormatting(root: string | null, vs: VaultSettingsState, onNotice: (text: string, icon?: NoticeKind) => void): TextFormattingState {
+  const { setSection } = vs
   const raw = readVaultSection(vs.doc, 'textFormatting')
   const formatting = useStableValue(
     useMemo(() => {
@@ -153,14 +158,15 @@ export function useDerivedTextFormatting(root: string | null, vs: VaultSettingsS
       if (malformedRef.current) return onNotice(`Can't save the text formatting: ${VAULT_SETTINGS_FILE} is not valid JSON`, 'error')
       const clean = sanitizeTextFormatting(next)
       const settled = Object.keys(clean).length === 0 ? NO_TEXT_FORMATTING : clean
-      void vs.setSection('textFormatting', textFormattingFile(settled))
+      void setSection('textFormatting', textFormattingFile(settled))
     },
-    [root, onNotice, vs.setSection],
+    [root, onNotice, setSection],
   )
   return useMemo(() => ({ formatting, save }), [formatting, save])
 }
 
 export function useDerivedCardLook(root: string | null, vs: VaultSettingsState, onNotice: (text: string, icon?: NoticeKind) => void): CardLookState {
+  const { setSection } = vs
   const raw = readVaultSection(vs.doc, 'cardLook')
   const look = useStableValue<CardLook | null>(
     useMemo(() => {
@@ -178,14 +184,15 @@ export function useDerivedCardLook(root: string | null, vs: VaultSettingsState, 
       if (root === null) return
       if (malformedRef.current) return onNotice(`Can't save the card look: ${VAULT_SETTINGS_FILE} is not valid JSON`, 'error')
       const clean = sanitizeCardLook(cardLookOf(next))
-      void vs.setSection('cardLook', cardLookFile(Object.keys(clean).length === 0 ? EMPTY_CARD_LOOK : clean) as unknown as Record<string, unknown>)
+      void setSection('cardLook', cardLookFile(Object.keys(clean).length === 0 ? EMPTY_CARD_LOOK : clean) as unknown as Record<string, unknown>)
     },
-    [root, onNotice, vs.setSection],
+    [root, onNotice, setSection],
   )
   return useMemo(() => ({ look, save }), [look, save])
 }
 
 export function useDerivedTableLook(root: string | null, vs: VaultSettingsState, onNotice: (text: string, icon?: NoticeKind) => void): TableLookState {
+  const { setSection } = vs
   const raw = readVaultSection(vs.doc, 'tableLook')
   const look = useStableValue<TableLook | null>(
     useMemo(() => {
@@ -204,14 +211,15 @@ export function useDerivedTableLook(root: string | null, vs: VaultSettingsState,
       if (root === null) return
       if (malformedRef.current) return onNotice(`Can't save the table look: ${VAULT_SETTINGS_FILE} is not valid JSON`, 'error')
       const clean = sanitizeTableLook(tableLookOf(next))
-      void vs.setSection('tableLook', tableLookFile(Object.keys(clean).length === 0 ? EMPTY_TABLE_LOOK : clean) as unknown as Record<string, unknown>)
+      void setSection('tableLook', tableLookFile(Object.keys(clean).length === 0 ? EMPTY_TABLE_LOOK : clean) as unknown as Record<string, unknown>)
     },
-    [root, onNotice, vs.setSection],
+    [root, onNotice, setSection],
   )
   return useMemo(() => ({ look, settings, save }), [look, settings, save])
 }
 
 export function useDerivedFolderPages(root: string | null, vs: VaultSettingsState, onNotice: (text: string, icon?: NoticeKind) => void): FolderPagesFileState {
+  const { setSection } = vs
   const raw = readVaultSection(vs.doc, 'folderPages')
   const file = useStableValue<FolderPagesFile | null>(
     useMemo(() => {
@@ -230,14 +238,15 @@ export function useDerivedFolderPages(root: string | null, vs: VaultSettingsStat
       if (root === null) return
       if (malformedRef.current) return onNotice(`Can't save the folder page defaults: ${VAULT_SETTINGS_FILE} is not valid JSON`, 'error')
       const clean = sanitizeFolderPagesFile(folderPagesOf(next))
-      void vs.setSection('folderPages', folderPagesFile(Object.keys(clean).length === 0 ? EMPTY_FOLDER_PAGES : clean))
+      void setSection('folderPages', folderPagesFile(Object.keys(clean).length === 0 ? EMPTY_FOLDER_PAGES : clean))
     },
-    [root, onNotice, vs.setSection],
+    [root, onNotice, setSection],
   )
   return useMemo(() => ({ file, vault, save }), [file, vault, save])
 }
 
 export function useDerivedLinkPills(root: string | null, vs: VaultSettingsState, onNotice: (text: string, icon?: NoticeKind) => void): LinkPillsState {
+  const { setSection } = vs
   const raw = readVaultSection(vs.doc, 'linkPills')
   const pills = useStableValue(
     useMemo(() => {
@@ -254,14 +263,15 @@ export function useDerivedLinkPills(root: string | null, vs: VaultSettingsState,
       if (root === null) return
       if (malformedRef.current) return onNotice(`Can't save the link pills: ${VAULT_SETTINGS_FILE} is not valid JSON`, 'error')
       const clean = sanitizeLinkPills(next)
-      void vs.setSection('linkPills', linkPillsFile(isDefaultLinkPills(clean) ? NO_LINK_PILLS : clean))
+      void setSection('linkPills', linkPillsFile(isDefaultLinkPills(clean) ? NO_LINK_PILLS : clean))
     },
-    [root, onNotice, vs.setSection],
+    [root, onNotice, setSection],
   )
   return useMemo(() => ({ pills, save }), [pills, save])
 }
 
 export function useDerivedDailyPages(root: string | null, vs: VaultSettingsState, onNotice: (text: string, icon?: NoticeKind) => void): DailyPagesState {
+  const { setSection } = vs
   const raw = readVaultSection(vs.doc, 'dailyPages')
   const file = useStableValue<DailyPagesSettings | null>(
     useMemo(() => {
@@ -278,14 +288,15 @@ export function useDerivedDailyPages(root: string | null, vs: VaultSettingsState
       if (liveRef.current.malformed) return onNotice(`Can't save the daily pages: ${VAULT_SETTINGS_FILE} is not valid JSON`, 'error')
       const clean = readDailyPagesFile(dailyPagesFile(next))
       if (liveRef.current.file !== null && sameDailyPages(liveRef.current.file, clean)) return
-      void vs.setSection('dailyPages', dailyPagesFile(clean))
+      void setSection('dailyPages', dailyPagesFile(clean))
     },
-    [root, onNotice, vs.setSection],
+    [root, onNotice, setSection],
   )
   return useMemo(() => ({ file, save }), [file, save])
 }
 
 export function useDerivedNewPlaces(root: string | null, vs: VaultSettingsState, onNotice: (text: string, icon?: NoticeKind) => void): VaultNewPlacesState {
+  const { setSection } = vs
   const raw = readVaultSection(vs.doc, 'newPlaces')
   const value = useStableValue<VaultNewPlaces>(
     useMemo(() => {
@@ -308,9 +319,9 @@ export function useDerivedNewPlaces(root: string | null, vs: VaultSettingsState,
       const nextSection = { ...existing, ...vaultNewPlacesFile(clean, !hasPlaces) }
       if (clean.newPage === undefined) delete nextSection.newPage
       if (clean.newBoard === undefined) delete nextSection.newBoard
-      void vs.setSection('newPlaces', nextSection)
+      void setSection('newPlaces', nextSection)
     },
-    [root, onNotice, vs.setSection],
+    [root, onNotice, setSection],
   )
   return useMemo(() => ({ value, save }), [value, save])
 }

@@ -148,9 +148,9 @@ export function pageOverrideVars(pageSettings: SettingsState, overrides: VaultSe
     ...(overrides.contentWidth !== undefined || overrides.contentPosition !== undefined ? contentWidthVars(pageSettings) : {}),
     ...(overrides.drawingPosition !== undefined || overrides.imagePosition !== undefined ? tablePositionVars(pageSettings) : {}),
     ...(overrides.threadWidth !== undefined ? { '--thread-width': `${pageSettings.threadWidth}px` } : {}),
-    ...(overrides.threadColor !== undefined && pageSettings.threadColor !== null ? { '--thread-color': pageSettings.threadColor } : {}),
+    ...(Object.hasOwn(overrides, 'threadColor') ? { '--thread-color': pageSettings.threadColor ?? 'initial' } : {}),
     ...(overrides.sectionStep !== undefined ? { '--section-step-setting': pageSettings.sectionStep } : {}),
-    ...(overrides.codeBlockWidth !== undefined && pageSettings.codeBlockWidth != null ? { '--code-block-width': `${pageSettings.codeBlockWidth}px` } : {}),
+    ...(Object.hasOwn(overrides, 'codeBlockWidth') ? { '--code-block-width': pageSettings.codeBlockWidth != null ? `${pageSettings.codeBlockWidth}px` : 'initial' } : {}),
     ...(overrides.inlineCodeStyle !== undefined ? inlineCodeVars(pageSettings.inlineCodeStyle) : {}),
     ...(overrides.guideLineDarkness !== undefined
       ? {

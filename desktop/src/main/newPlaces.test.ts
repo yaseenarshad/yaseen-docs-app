@@ -23,6 +23,14 @@ async function makeVault(): Promise<string> {
   return root
 }
 const file = (root: string) => path.join(root, VAULT_CONFIG_DIR, NEW_PLACES_FILE)
+const unifiedFile = (root: string) => path.join(root, VAULT_CONFIG_DIR, 'settings.json')
+const readSection = async (root: string): Promise<unknown> => {
+  try {
+    return JSON.parse(await readFile(file(root), 'utf8'))
+  } catch {
+    return (JSON.parse(await readFile(unifiedFile(root), 'utf8')) as { newPlaces?: unknown }).newPlaces
+  }
+}
 
 describe('new-places.json (YAZ-4252 D3)', () => {
   it('reads three empty places with no file, and creates none', async () => {
@@ -31,10 +39,11 @@ describe('new-places.json (YAZ-4252 D3)', () => {
     await expect(readFile(file(root), 'utf8')).rejects.toThrow()
   })
 
-  it('saves vault-relative paths ("" for the vault) and reads them back absolute', async () => {
+  it('saves vault-relative paths ("" for the vault) into unified settings.json on clean vaults and reads them back absolute', async () => {
     const root = await makeVault()
     await setNewPlaces(root, [path.join(root, 'Pages', 'Daily'), null, root])
-    expect(JSON.parse(await readFile(file(root), 'utf8'))).toEqual({ version: 1, places: ['Pages/Daily', null, ''] })
+    expect(await readSection(root)).toEqual({ version: 1, places: ['Pages/Daily', null, ''] })
+    await expect(readFile(file(root), 'utf8')).rejects.toThrow()
     expect(await getNewPlaces(root)).toEqual([path.join(root, 'Pages', 'Daily'), null, root])
   })
 
@@ -64,7 +73,7 @@ describe('YAZ-5486: where new things go move once into each vault; a folder only
     return { seededConfig: (r: string, n: string) => seen.has(`${r}|${n}`), markSeededConfig: (r: string, n: string) => void seen.add(`${r}|${n}`) }
   }
   const APP = { ...DEFAULT_SETTINGS, newPageLocation: 'folder' as const, newPageFolder: 'Pages/Daily', newBoardFolder: 'assets' as const }
-  const read = async (root: string) => JSON.parse(await readFile(file(root), 'utf8')) as unknown
+  const read = async (root: string) => readSection(root)
   const run = (roots: string[], s: SettingsState = APP, m = marks()) => NEW_PLACES_MOVE.run(roots, s, m, async () => true)
 
   it('absent: a file with the three empty shortcuts (an older build reads it); the folder only in the vault that holds it', async () => {
@@ -99,9 +108,9 @@ describe('YAZ-5486: where new things go move once into each vault; a folder only
     await expect(readFile(file(plain), 'utf8')).rejects.toThrow()
     const m = marks()
     await run([plain], APP, m)
-    await rm(file(plain))
+    await rm(unifiedFile(plain))
     await run([plain], APP, m)
-    await expect(readFile(file(plain), 'utf8')).rejects.toThrow()
+    await expect(readFile(unifiedFile(plain), 'utf8')).rejects.toThrow()
   })
 
   it('YAZ-5490: the comment hint moves only when it is off; each vault', async () => {

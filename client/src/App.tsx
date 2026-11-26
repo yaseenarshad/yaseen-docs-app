@@ -7,7 +7,7 @@ import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
 import type { IdsInFiles, IdsInSearch } from '@shared/showIds'
 import { spacingVars, type TextFormatting } from '@shared/textFormatting'
-import { VAULT_CHROME_KEYS, type VaultChromeKey, type WorkspaceChromeOverrides } from '@shared/vaultSettings'
+import { VAULT_CHROME_KEYS, VAULT_OVERRIDE_KEYS, type VaultChromeKey, type WorkspaceChromeOverrides } from '@shared/vaultSettings'
 import { NO_PAGE_OVERRIDE_VARS, pageOverrideVars, patchWorkspaceChrome, resolvePageSettings, resolveWindowChrome, setVaultNewPageDrawing, setWindowSearchIncludeInline, splitChromeDiff } from './settings/effectiveSettings'
 import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
@@ -881,7 +881,15 @@ export function App() {
   const saveDailyRef = useRef<(next: DailyPagesSettings) => void>(() => undefined)
   const changeSettings = useCallback((next: SettingsState) => {
     const { vaults: here, settings: shown, appSettings: stored, vault: activeRoot } = placeInputs.current
-    const app = here.length === 0 ? next : withDailyPages(vaultNewPlacesFields(next, newPlacesOfSettings(stored)), dailyPagesOfSettings(stored))
+    const appBase = here.length === 0 ? next : withDailyPages(vaultNewPlacesFields(next, newPlacesOfSettings(stored)), dailyPagesOfSettings(stored))
+    // Preserve Global defaults for any VAULT_OVERRIDE_KEYS that were merely carried over from activeEffective (`shown`) (YAZ-6546).
+    const app: SettingsState = here.length === 0 ? appBase : { ...appBase }
+    if (here.length > 0) {
+      const appRec = app as unknown as Record<string, unknown>
+      for (const k of VAULT_OVERRIDE_KEYS) {
+        if (next[k] === shown[k] || JSON.stringify(next[k]) === JSON.stringify(shown[k])) appRec[k] = stored[k]
+      }
+    }
     const daily = dailyPagesOfSettings(next)
     if (here.length > 0 && !sameDailyPages(daily, dailyPagesOfSettings(shown))) saveDailyRef.current(daily)
     // YAZ-5486: where new things go are the active tab's vault's `new-places.json`; the app value stays (the fallback).
@@ -990,8 +998,8 @@ export function App() {
   // (settings changes broadcast via storage.subscribe land in `settings` above), while the
   // callback identity stays stable — it sits in CrepeHost's effect deps, and a new identity
   // would remount every open editor.
-  const newPageFolderInputs = useRef({ settings })
-  newPageFolderInputs.current = { settings }
+  const newPageFolderInputs = useRef({ settings: appSettings })
+  newPageFolderInputs.current = { settings: appSettings }
   const newPageFolderFor = useCallback((sourcePath: string) => {
     const vault = scopeOf(sourcePath).root
     // YAZ-5486: the vault's own place (`new-places.json`), never another vault's folder.
@@ -3653,9 +3661,9 @@ export function App() {
     }
     const { oldPath, to, viewOnlyCatalog } = pendingRename
     setPendingRename(null)
-    if (dontAskAgain) changeSettings({ ...settings, confirmRename: false })
+    if (dontAskAgain) changeGlobalSettings({ ...storage.getSettings(), confirmRename: false })
     void renameFile(oldPath, to, viewOnlyCatalog)
-  }, [scopeOf, pendingRename, renameFile, changeSettings, settings])
+  }, [scopeOf, pendingRename, renameFile, changeGlobalSettings])
 
   /**
    * In-app delete landed (GRO-2272). Reaches EVERY window, originator included.
