@@ -173,6 +173,16 @@ export const VAULT_SETTINGS_DOC_KEYS: readonly string[] = [
 export const VAULT_OWNED_CHROME_KEYS = ['sidebarTabs'] as const
 export type VaultOwnedChromeKey = (typeof VAULT_OWNED_CHROME_KEYS)[number]
 
+/** Chrome keys that inherit from Global defaults (cleared by Workspace "Reset all", preserving Vault/Workspace-owned `sidebarTabs`). */
+export const GLOBAL_INHERITING_CHROME_KEYS: readonly VaultChromeKey[] = /*#__PURE__*/ VAULT_CHROME_KEYS.filter(
+  (k) => !(VAULT_OWNED_CHROME_KEYS as readonly string[]).includes(k),
+)
+
+/** Override keys that inherit from Global defaults (cleared by Vault "Reset all", preserving Vault/Workspace-owned `sidebarTabs`). */
+export const GLOBAL_INHERITING_OVERRIDE_KEYS: readonly VaultOverrideKey[] = /*#__PURE__*/ VAULT_OVERRIDE_KEYS.filter(
+  (k) => !(VAULT_OWNED_CHROME_KEYS as readonly string[]).includes(k),
+)
+
 const CHROME_KEY_SET: ReadonlySet<string> = /*#__PURE__*/ new Set(VAULT_CHROME_KEYS)
 const OVERRIDE_KEY_SET: ReadonlySet<string> = /*#__PURE__*/ new Set(VAULT_OVERRIDE_KEYS)
 const LEGACY_SECTION_SET: ReadonlySet<string> = /*#__PURE__*/ new Set(LEGACY_SECTION_KEYS)

@@ -6,7 +6,7 @@ import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
 import type { IdsInFiles, IdsInSearch } from '@shared/showIds'
 import { spacingVars, type TextFormatting } from '@shared/textFormatting'
-import { VAULT_CHROME_KEYS, VAULT_OVERRIDE_KEYS, type VaultChromeKey, type WorkspaceChromeOverrides } from '@shared/vaultSettings'
+import { GLOBAL_INHERITING_CHROME_KEYS, VAULT_OVERRIDE_KEYS, type VaultChromeKey, type WorkspaceChromeOverrides } from '@shared/vaultSettings'
 import { webLinkVars } from '@shared/webLinks'
 import { NO_PAGE_OVERRIDE_VARS, pageOverrideVars, patchWorkspaceChrome, resolvePageSettings, resolveWindowChrome, setVaultNewPageDrawing, setWindowSearchIncludeInline, splitChromeDiff } from './settings/effectiveSettings'
 import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
@@ -914,7 +914,7 @@ export function App() {
   }, [changeGlobalSettings])
   const resetWorkspaceChrome = useCallback(() => {
     const { wsKey, legacyWsKey } = chromeWriteRef.current
-    if (wsKey !== null) changeGlobalSettings(patchWorkspaceChrome(storage.getSettings(), wsKey, {}, VAULT_CHROME_KEYS, legacyWsKey))
+    if (wsKey !== null) changeGlobalSettings(patchWorkspaceChrome(storage.getSettings(), wsKey, {}, GLOBAL_INHERITING_CHROME_KEYS, legacyWsKey))
   }, [changeGlobalSettings])
   const changeSidebarSettings = useCallback((next: SettingsState) => {
     const { chrome, other } = splitChromeDiff(chromeWriteRef.current.sidebarSettings, next)
@@ -922,7 +922,7 @@ export function App() {
     if (Object.keys(other).length > 0) changeSettings({ ...storage.getSettings(), ...other })
   }, [writeChromeOverrides, changeSettings])
   const changeRowDates = useCallback((rowDates: SettingsState['rowDates']) => writeChromeOverrides({ rowDates }), [writeChromeOverrides])
-  const tabRowScope = useMemo(() => (roots.length === 0 ? undefined : windowChrome.isMultiVault ? { label: `${matchedVaultSet?.name ?? 'Workspace'} (workspace)`, note: 'Applies to this multi-vault window.' } : { label: first.name ?? storage.vaultName(roots[0]) }), [roots, windowChrome.isMultiVault, matchedVaultSet?.name, first.name])
+  const tabRowScope = useMemo(() => (roots.length === 0 ? undefined : windowChrome.isMultiVault ? { label: matchedVaultSet?.name ? `${matchedVaultSet.name} (workspace)` : 'This workspace', note: 'Applies to this multi-vault window.' } : { label: first.name ?? storage.vaultName(roots[0]) }), [roots, windowChrome.isMultiVault, matchedVaultSet?.name, first.name])
   useEffect(() => {
     roots.forEach((at, i) => setVaultNewPageDrawing(at, vaults[i]?.vaultSettings.overrides.newPageDrawing))
   }, [roots, vaults])

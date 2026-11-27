@@ -3871,19 +3871,3 @@ span.cards-wizard__pill {
 .setting__scope-jump:hover {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
-
-.row-dates-control {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-width: 340px;
-}
-
-.row-dates-control__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 0;
-  font-size: 13.5px;
-}
