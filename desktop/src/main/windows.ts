@@ -129,8 +129,6 @@ export interface WindowHost {
       onTargetShown?: (target: WindowLike) => void
     },
   ): void
-  /** Optional check for whether the host app is hidden (`Cmd+H` on macOS, YAZ-6595 D2). */
-  isAppHidden?(): boolean
 }
 
 /** A cold-start restore target (YAZ-6446 D1): a plain root string matches any containing window (file links, YAZ-2602 A8); `{ exact }` matches only a window whose vaults equal `exact` (vault & workspace launchers). */
@@ -901,7 +899,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       { id, root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, bounds: targetBounds, ...defaultWindowPrefs() },
       opts.inactive === true ? { inactive: true } : false,
     )
-    if (opts.inactive !== true && host.isAppHidden?.()) {
+    if (opts.inactive !== true && host.focusWindow !== undefined) {
       const created = live.get(id)
       if (created !== undefined) focusWindow(created)
     }

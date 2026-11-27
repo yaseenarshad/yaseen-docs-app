@@ -3083,13 +3083,12 @@ describe('createWindowManager: WindowHost.focusWindow delegation (YAZ-6595 D1)',
     expect(dailyWin.showCount).toBe(showsBefore + 1)
   })
 
-  it('focuses newly opened windows via host.focusWindow when host.isAppHidden() is true (YAZ-6606)', () => {
+  it('focuses newly opened active windows via host.focusWindow (behind Chrome or Cmd+H) and skips inactive windows (YAZ-6607)', () => {
     store.upsertWindow({ id: 'daily', root: '/v/daily', roots: ['/v/daily'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 800, height: 600 } })
 
     const focusWindow = vi.fn()
-    const { host, created } = makeHost([AREA], () => false, (p) => p === '/v/daily' || p === '/v/know')
+    const { host, created } = makeHost([AREA], () => false, (p) => p === '/v/daily' || p === '/v/know' || p === '/v/bg')
     host.focusWindow = focusWindow
-    host.isAppHidden = () => true
     const manager = createWindowManager(store, host)
     manager.restore('all')
 
@@ -3097,5 +3096,8 @@ describe('createWindowManager: WindowHost.focusWindow delegation (YAZ-6595 D1)',
     const knowWin = created.find((c) => c.entry.root === '/v/know')!.win
     expect(focusWindow).toHaveBeenCalledTimes(1)
     expect(focusWindow).toHaveBeenCalledWith(knowWin, expect.any(Object))
+
+    manager.openWindow({ root: '/v/bg', file: null, inactive: true })
+    expect(focusWindow).toHaveBeenCalledTimes(1)
   })
 })

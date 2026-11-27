@@ -32,8 +32,8 @@ export interface FocusSingleWindowOptions {
   restoreFallbackMs?: number
 }
 
-/** Tracks any in-flight macOS Dock restore waiter per window so rapid triggers never stack listeners. */
-const pendingRestoreCancels = new WeakMap<FocusableWindow, () => void>()
+/** Tracks any in-flight macOS Dock restore waiter per window so rapid triggers never stack listeners or drop Cmd+H steal focus. */
+const pendingRestoreWaiters = new WeakMap<FocusableWindow, { cancel: () => void; wasHidden: boolean }>()
 
 /**
  * Raises and focuses only `target` without pulling unrelated sibling windows forward.
@@ -47,8 +47,11 @@ const pendingRestoreCancels = new WeakMap<FocusableWindow, () => void>()
 export function focusSingleWindow(target: FocusableWindow, opts: FocusSingleWindowOptions): void {
   if (target.isDestroyed()) return
 
-  // Cancel any prior pending restore waiter for this window before starting a new focus pass.
-  pendingRestoreCancels.get(target)?.()
+  // Cancel any prior pending restore waiter for this window before starting a new focus pass,
+  // preserving `wasHidden` if an earlier Cmd+H trigger already called `showApp()`.
+  const prior = pendingRestoreWaiters.get(target)
+  prior?.cancel()
+  const priorWasHidden = prior?.wasHidden === true
 
   const unhideAppForTarget = (): boolean => {
     const wasHidden = opts.isMac && opts.isAppHidden?.() === true
@@ -74,7 +77,7 @@ export function focusSingleWindow(target: FocusableWindow, opts: FocusSingleWind
   }
 
   if (!target.isMinimized()) {
-    const wasHidden = unhideAppForTarget()
+    const wasHidden = priorWasHidden || unhideAppForTarget()
     raiseNow(wasHidden)
     return
   }
@@ -86,7 +89,7 @@ export function focusSingleWindow(target: FocusableWindow, opts: FocusSingleWind
   }
 
   // Hide siblings and unhide the app BEFORE `restore()` so macOS does not unhide siblings during deminiaturization.
-  const wasHidden = unhideAppForTarget()
+  const wasHidden = priorWasHidden || unhideAppForTarget()
 
   let settled = false
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -94,7 +97,7 @@ export function focusSingleWindow(target: FocusableWindow, opts: FocusSingleWind
     if (settled) return
     settled = true
     if (timer !== undefined) clearTimeout(timer)
-    if (pendingRestoreCancels.get(target) === cleanup) pendingRestoreCancels.delete(target)
+    if (pendingRestoreWaiters.get(target)?.cancel === cleanup) pendingRestoreWaiters.delete(target)
     target.off('restore', onRestore)
     target.off('closed', onClosed)
   }
@@ -107,7 +110,7 @@ export function focusSingleWindow(target: FocusableWindow, opts: FocusSingleWind
     cleanup()
   }
 
-  pendingRestoreCancels.set(target, cleanup)
+  pendingRestoreWaiters.set(target, { cancel: cleanup, wasHidden })
   target.once('restore', onRestore)
   target.once('closed', onClosed)
   target.restore()

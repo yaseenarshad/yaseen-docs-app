@@ -331,7 +331,6 @@ const manager = createWindowManager(store, {
       onTargetShown: (target) => hooks?.onTargetShown?.(target as unknown as BrowserWindow),
     })
   },
-  isAppHidden: () => process.platform === 'darwin' && !hiddenE2E && app.isHidden(),
 })
 
 /** The updater (YAZ-2976 D2): one per app, so every window gets the same state (S20). `start()` runs on `ready`. */

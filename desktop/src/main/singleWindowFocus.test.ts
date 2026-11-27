@@ -290,6 +290,40 @@ describe('focusSingleWindow (YAZ-6595 D1/D2)', () => {
     expect(target.listenerCount('closed')).toBe(0)
   })
 
+  it('preserves Cmd+H stealAppFocus across rapid repeated triggers on a minimized target on macOS', () => {
+    const log: string[] = []
+    let appHidden = true
+    const target = new FakeFocusableWindow('target', log, { minimized: true })
+    const sibling = new FakeFocusableWindow('sibling', log, { visible: true })
+    const opts = {
+      isMac: true,
+      isAppHidden: () => appHidden,
+      showApp: () => {
+        appHidden = false
+        log.push('app:show')
+      },
+      stealAppFocus: () => log.push('app:stealFocus'),
+      siblingWindows: () => [target, sibling],
+    }
+
+    focusSingleWindow(target, opts)
+    target.minimized = true
+    focusSingleWindow(target, opts)
+
+    expect(target.listenerCount('restore')).toBe(1)
+    target.emit('restore')
+
+    expect(log).toEqual([
+      'sibling:hide',
+      'app:show',
+      'target:restore',
+      'target:restore',
+      'target:moveTop',
+      'target:focus',
+      'app:stealFocus',
+    ])
+  })
+
   it('does not hide siblings or call showApp/stealAppFocus on non-macOS even if isAppHidden returns true', () => {
     const log: string[] = []
     const target = new FakeFocusableWindow('target', log, { visible: true })
