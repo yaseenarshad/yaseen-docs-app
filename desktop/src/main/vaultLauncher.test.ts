@@ -1,5 +1,5 @@
 import { execFile as nodeExecFile } from 'node:child_process'
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -9,11 +9,13 @@ import {
   encodeIcnsFromPng,
   installVaultLauncher,
   LAUNCHER_BUNDLE_ID_PREFIX,
+  LAUNCHER_BUNDLE_VERSION,
   launcherBundleId,
   LSREGISTER_PATH,
   MAX_BUNDLE_NAME_LENGTH,
   pickApplicationsDir,
   readLauncherPlist,
+  refreshOutdatedLaunchers,
   removeOrphanLauncher,
   removeVaultLauncher,
   sanitizeBundleName,
@@ -105,11 +107,13 @@ describe('launcherBundleId & buildLauncherPlist', () => {
       expect(xml).toContain('<key>LSUIElement</key>\n  <true/>')
       expect(xml).toContain('<key>CFBundleExecutable</key>\n  <string>vault-launcher</string>')
       expect(xml).toContain('<key>CFBundleIconFile</key>\n  <string>AppIcon</string>')
+      expect(xml).toContain(`<key>CFBundleVersion</key>\n  <string>${LAUNCHER_BUNDLE_VERSION}</string>`)
       await writeFile(join(appPath, 'Contents', 'Info.plist'), xml, 'utf8')
       expect(await readLauncherPlist(appPath)).toEqual({
         bundleId: id1,
         vaultPath: '/Users/me/A & B',
         vaultUrl: 'yaseendocs:///Users/me/A%20%26%20B?open=today',
+        bundleVersion: LAUNCHER_BUNDLE_VERSION,
       })
     } finally {
       await rm(tmp, { recursive: true, force: true })
@@ -177,6 +181,7 @@ describe('installVaultLauncher & removeVaultLauncher', () => {
       bundleId: res.bundleId,
       vaultPath: '/Users/me/Personal',
       vaultUrl: 'yaseendocs:///Users/me/Personal?open=inbox',
+      bundleVersion: LAUNCHER_BUNDLE_VERSION,
     })
 
     // codesign ran on staged temp bundle, lsregister ran on final target.
@@ -367,6 +372,7 @@ describe('installVaultLauncher & removeVaultLauncher', () => {
           bundleId: vaultRes.bundleId,
           vaultPath: '/Users/me/Daily',
           vaultUrl: 'yaseendocs:///Users/me/Daily',
+          bundleVersion: LAUNCHER_BUNDLE_VERSION,
         },
       },
       {
@@ -376,6 +382,7 @@ describe('installVaultLauncher & removeVaultLauncher', () => {
           bundleId: wsRes.bundleId,
           vaultPath: 'workspace:ws-7',
           vaultUrl: 'yaseendocs://workspace/ws-7',
+          bundleVersion: LAUNCHER_BUNDLE_VERSION,
         },
       },
     ])
@@ -485,6 +492,7 @@ describe('installVaultLauncher & removeVaultLauncher', () => {
       bundleId: res.bundleId,
       vaultPath: 'workspace:ws-42',
       vaultUrl: 'yaseendocs://workspace/ws-42',
+      bundleVersion: LAUNCHER_BUNDLE_VERSION,
     })
     // Collision guard blocks another workspace with the same name.
     await expect(
@@ -514,5 +522,318 @@ describe('installVaultLauncher & removeVaultLauncher', () => {
       },
     )
     await expect(execFileAsync('codesign', ['--verify', '--strict', res.appPath])).resolves.toBeDefined()
+  })
+})
+
+describe('refreshOutdatedLaunchers (YAZ-6605)', () => {
+  let root: string
+  let appsDir: string
+  let newBinary: string
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'yd-refresh-'))
+    appsDir = join(root, 'Applications')
+    await mkdir(appsDir, { recursive: true })
+    newBinary = join(root, 'vault-launcher-v2')
+    await writeFile(newBinary, '#!/bin/sh\n# v2 binary\nexit 0\n', 'utf8')
+  })
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true })
+  })
+
+  async function writeLauncherBundle(opts: {
+    name: string
+    bundleId: string
+    vaultPath: string
+    vaultUrl: string
+    version?: string | null
+    binaryContent?: string
+    iconBytes?: Buffer
+  }): Promise<string> {
+    const appPath = join(appsDir, `${opts.name}.app`)
+    await mkdir(join(appPath, 'Contents', 'MacOS'), { recursive: true })
+    await mkdir(join(appPath, 'Contents', 'Resources'), { recursive: true })
+    let xml = buildLauncherPlist({
+      name: opts.name,
+      bundleId: opts.bundleId,
+      vaultUrl: opts.vaultUrl,
+      vaultPath: opts.vaultPath,
+    })
+    if (opts.version === null) {
+      xml = xml.replace(/\s*<key>CFBundleVersion<\/key>\s*<string>[\s\S]*?<\/string>/, '')
+    } else if (opts.version !== undefined) {
+      xml = xml.replace(/(<key>CFBundleVersion<\/key>\s*<string>)[\s\S]*?(<\/string>)/, `$1${opts.version}$2`)
+    }
+    await writeFile(join(appPath, 'Contents', 'Info.plist'), xml, 'utf8')
+    await writeFile(join(appPath, 'Contents', 'MacOS', 'vault-launcher'), opts.binaryContent ?? '#!/bin/sh\n# v1 binary\nexit 0\n', 'utf8')
+    await writeFile(join(appPath, 'Contents', 'Resources', 'AppIcon.icns'), opts.iconBytes ?? encodeIcnsFromPng(FAKE_PNG))
+    return appPath
+  }
+
+  it('readLauncherPlist parses numeric CFBundleVersion and returns null when missing or non-numeric', async () => {
+    const v1 = await writeLauncherBundle({
+      name: 'V1',
+      bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}v1`,
+      vaultPath: '/Users/me/V1',
+      vaultUrl: 'yaseendocs:///Users/me/V1',
+      version: '1',
+    })
+    const missing = await writeLauncherBundle({
+      name: 'MissingVer',
+      bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}missing`,
+      vaultPath: '/Users/me/Missing',
+      vaultUrl: 'yaseendocs:///Users/me/Missing',
+      version: null,
+    })
+    const bad = await writeLauncherBundle({
+      name: 'NonNumeric',
+      bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}bad`,
+      vaultPath: '/Users/me/Bad',
+      vaultUrl: 'yaseendocs:///Users/me/Bad',
+      version: '1.2.3',
+    })
+
+    expect((await readLauncherPlist(v1))?.bundleVersion).toBe(1)
+    expect((await readLauncherPlist(missing))?.bundleVersion).toBeNull()
+    expect((await readLauncherPlist(bad))?.bundleVersion).toBeNull()
+  })
+
+  it('upgrades a v1 bundle atomically, bumps CFBundleVersion to 2, signs it, and preserves icon and plist metadata', async () => {
+    const customIcon = encodeIcnsFromPng(
+      Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('custom-preserved-icon')]),
+    )
+    const bundleId = launcherBundleId('/Users/me/Daily', 'Daily Notes')
+    const appPath = await writeLauncherBundle({
+      name: 'Daily Notes',
+      bundleId,
+      vaultPath: '/Users/me/Daily',
+      vaultUrl: 'yaseendocs:///Users/me/Daily?open=today',
+      version: '1',
+      iconBytes: customIcon,
+    })
+
+    const execCalls: Array<[string, readonly string[]]> = []
+    const upgraded = await refreshOutdatedLaunchers(newBinary, {
+      appDirs: [appsDir],
+      execFile: async (file, args) => {
+        execCalls.push([file, args])
+      },
+    })
+
+    expect(upgraded).toEqual([appPath])
+    expect(execCalls).toHaveLength(1)
+    expect(execCalls[0][0]).toBe('codesign')
+    expect(execCalls[0][1].slice(0, 3)).toEqual(['--force', '--sign', '-'])
+    expect(execCalls[0][1][3]).toMatch(/\.yaseen-launcher-upgrade-.*\.app$/)
+
+    // Binary replaced and executable (0o755).
+    const binPath = join(appPath, 'Contents', 'MacOS', 'vault-launcher')
+    expect(await readFile(binPath, 'utf8')).toBe('#!/bin/sh\n# v2 binary\nexit 0\n')
+    const binStat = await stat(binPath)
+    expect(binStat.mode & 0o777).toBe(0o755)
+
+    // CFBundleVersion bumped to 2 and all metadata + display name preserved.
+    expect(await readLauncherPlist(appPath)).toEqual({
+      bundleId,
+      vaultPath: '/Users/me/Daily',
+      vaultUrl: 'yaseendocs:///Users/me/Daily?open=today',
+      bundleVersion: LAUNCHER_BUNDLE_VERSION,
+    })
+    const plistXml = await readFile(join(appPath, 'Contents', 'Info.plist'), 'utf8')
+    expect(plistXml).toContain('<key>CFBundleDisplayName</key>\n  <string>Daily Notes</string>')
+
+    // AppIcon.icns preserved byte-for-byte.
+    expect(await readFile(join(appPath, 'Contents', 'Resources', 'AppIcon.icns'))).toEqual(customIcon)
+
+    // No stray temp bundles or files left in appsDir or Contents/.
+    expect(await readdir(appsDir)).toEqual(['Daily Notes.app'])
+    expect((await readdir(join(appPath, 'Contents'))).sort()).toEqual(['Info.plist', 'MacOS', 'Resources'])
+    expect(await readdir(join(appPath, 'Contents', 'MacOS'))).toEqual(['vault-launcher'])
+  })
+
+  it('inserts CFBundleVersion when missing on an outdated own launcher', async () => {
+    const appPath = await writeLauncherBundle({
+      name: 'LegacyNoVer',
+      bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}legacy`,
+      vaultPath: '/Users/me/Legacy',
+      vaultUrl: 'yaseendocs:///Users/me/Legacy',
+      version: null,
+    })
+
+    const upgraded = await refreshOutdatedLaunchers(newBinary, {
+      appDirs: [appsDir],
+      execFile: async () => {},
+    })
+
+    expect(upgraded).toEqual([appPath])
+    expect((await readLauncherPlist(appPath))?.bundleVersion).toBe(LAUNCHER_BUNDLE_VERSION)
+  })
+
+  it('skips bundles already at CFBundleVersion >= 2 with zero codesign calls', async () => {
+    const v2 = await writeLauncherBundle({
+      name: 'CurrentV2',
+      bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}v2`,
+      vaultPath: '/Users/me/V2',
+      vaultUrl: 'yaseendocs:///Users/me/V2',
+      version: String(LAUNCHER_BUNDLE_VERSION),
+      binaryContent: '#!/bin/sh\n# keep v2\n',
+    })
+    const v3 = await writeLauncherBundle({
+      name: 'FutureV3',
+      bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}v3`,
+      vaultPath: '/Users/me/V3',
+      vaultUrl: 'yaseendocs:///Users/me/V3',
+      version: String(LAUNCHER_BUNDLE_VERSION + 1),
+      binaryContent: '#!/bin/sh\n# keep v3\n',
+    })
+
+    const execFile = vi.fn(async () => {})
+    const upgraded = await refreshOutdatedLaunchers(newBinary, { appDirs: [appsDir], execFile })
+
+    expect(upgraded).toEqual([])
+    expect(execFile).not.toHaveBeenCalled()
+    expect(await readFile(join(v2, 'Contents', 'MacOS', 'vault-launcher'), 'utf8')).toBe('#!/bin/sh\n# keep v2\n')
+    expect(await readFile(join(v3, 'Contents', 'MacOS', 'vault-launcher'), 'utf8')).toBe('#!/bin/sh\n# keep v3\n')
+  })
+
+  it('ignores third-party .app bundles even when their CFBundleVersion is 1', async () => {
+    const thirdParty = join(appsDir, 'Safari.app')
+    await mkdir(join(thirdParty, 'Contents', 'MacOS'), { recursive: true })
+    const thirdPartyPlist =
+      '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.apple.Safari</string><key>CFBundleVersion</key><string>1</string></dict></plist>'
+    await writeFile(join(thirdParty, 'Contents', 'Info.plist'), thirdPartyPlist, 'utf8')
+    await writeFile(join(thirdParty, 'Contents', 'MacOS', 'vault-launcher'), 'do-not-touch', 'utf8')
+
+    const execFile = vi.fn(async () => {})
+    const upgraded = await refreshOutdatedLaunchers(newBinary, { appDirs: [appsDir], execFile })
+
+    expect(upgraded).toEqual([])
+    expect(execFile).not.toHaveBeenCalled()
+    expect(await readFile(join(thirdParty, 'Contents', 'Info.plist'), 'utf8')).toBe(thirdPartyPlist)
+    expect(await readFile(join(thirdParty, 'Contents', 'MacOS', 'vault-launcher'), 'utf8')).toBe('do-not-touch')
+  })
+
+  it('returns [] cleanly when binaryPath does not exist without modifying v1 bundles', async () => {
+    const v1 = await writeLauncherBundle({
+      name: 'Untouched',
+      bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}untouched`,
+      vaultPath: '/Users/me/Untouched',
+      vaultUrl: 'yaseendocs:///Users/me/Untouched',
+      version: '1',
+      binaryContent: '#!/bin/sh\n# original\n',
+    })
+
+    const execFile = vi.fn(async () => {})
+    const upgraded = await refreshOutdatedLaunchers(join(root, 'missing-binary'), { appDirs: [appsDir], execFile })
+
+    expect(upgraded).toEqual([])
+    expect(execFile).not.toHaveBeenCalled()
+    expect((await readLauncherPlist(v1))?.bundleVersion).toBe(1)
+    expect(await readFile(join(v1, 'Contents', 'MacOS', 'vault-launcher'), 'utf8')).toBe('#!/bin/sh\n# original\n')
+  })
+
+  it('cleans up temp files, rolls back a bundle whose codesign fails, and still upgrades other valid bundles', async () => {
+    const failing = await writeLauncherBundle({
+      name: 'AlphaFail',
+      bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}alpha`,
+      vaultPath: '/Users/me/Alpha',
+      vaultUrl: 'yaseendocs:///Users/me/Alpha',
+      version: '1',
+      binaryContent: '#!/bin/sh\n# alpha v1\n',
+    })
+    const succeeding = await writeLauncherBundle({
+      name: 'BetaPass',
+      bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}beta`,
+      vaultPath: '/Users/me/Beta',
+      vaultUrl: 'yaseendocs:///Users/me/Beta',
+      version: '1',
+      binaryContent: '#!/bin/sh\n# beta v1\n',
+    })
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const upgraded = await refreshOutdatedLaunchers(newBinary, {
+        appDirs: [appsDir],
+        execFile: async (_file, args) => {
+          const stagedPlist = await readFile(join(args[3], 'Contents', 'Info.plist'), 'utf8')
+          if (stagedPlist.includes('AlphaFail')) throw new Error('codesign failed for AlphaFail')
+        },
+      })
+
+      expect(upgraded).toEqual([succeeding])
+      // Failed bundle stayed untouched (never swapped) and zero temp bundles remain.
+      expect((await readdir(appsDir)).sort()).toEqual(['AlphaFail.app', 'BetaPass.app'])
+      expect((await readLauncherPlist(failing))?.bundleVersion).toBe(1)
+      expect(await readFile(join(failing, 'Contents', 'MacOS', 'vault-launcher'), 'utf8')).toBe('#!/bin/sh\n# alpha v1\n')
+      expect((await readdir(join(failing, 'Contents'))).sort()).toEqual(['Info.plist', 'MacOS', 'Resources'])
+      expect(await readdir(join(failing, 'Contents', 'MacOS'))).toEqual(['vault-launcher'])
+
+      // Other valid bundle upgraded cleanly.
+      expect((await readLauncherPlist(succeeding))?.bundleVersion).toBe(LAUNCHER_BUNDLE_VERSION)
+      expect(await readFile(join(succeeding, 'Contents', 'MacOS', 'vault-launcher'), 'utf8')).toBe('#!/bin/sh\n# v2 binary\nexit 0\n')
+      expect((await readdir(join(succeeding, 'Contents'))).sort()).toEqual(['Info.plist', 'MacOS', 'Resources'])
+      expect(await readdir(join(succeeding, 'Contents', 'MacOS'))).toEqual(['vault-launcher'])
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('cleans up temp bundles if staging fails on one bundle and continues upgrading other valid bundles', async () => {
+    const malformed = await writeLauncherBundle({
+      name: 'MalformedFail',
+      bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}malformed`,
+      vaultPath: '/Users/me/Malformed',
+      vaultUrl: 'yaseendocs:///Users/me/Malformed',
+      version: null,
+      binaryContent: '#!/bin/sh\n# malformed v1\n',
+    })
+    // Strip closing </dict> so updatePlistBundleVersion throws during staging.
+    const rawPlist = await readFile(join(malformed, 'Contents', 'Info.plist'), 'utf8')
+    await writeFile(join(malformed, 'Contents', 'Info.plist'), rawPlist.replace('</dict>', ''), 'utf8')
+
+    const valid = await writeLauncherBundle({
+      name: 'OpenPass',
+      bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}open`,
+      vaultPath: '/Users/me/Open',
+      vaultUrl: 'yaseendocs:///Users/me/Open',
+      version: '1',
+      binaryContent: '#!/bin/sh\n# open v1\n',
+    })
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const upgraded = await refreshOutdatedLaunchers(newBinary, {
+        appDirs: [appsDir],
+        execFile: async () => {},
+      })
+
+      expect(upgraded).toEqual([valid])
+      expect((await readdir(appsDir)).sort()).toEqual(['MalformedFail.app', 'OpenPass.app'])
+      expect(await readFile(join(malformed, 'Contents', 'MacOS', 'vault-launcher'), 'utf8')).toBe('#!/bin/sh\n# malformed v1\n')
+
+      expect((await readLauncherPlist(valid))?.bundleVersion).toBe(LAUNCHER_BUNDLE_VERSION)
+      expect(await readFile(join(valid, 'Contents', 'MacOS', 'vault-launcher'), 'utf8')).toBe('#!/bin/sh\n# v2 binary\nexit 0\n')
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it.skipIf(process.platform !== 'darwin')('upgraded v1 bundle passes strict codesign verification with the real Swift binary on macOS', async () => {
+    const binPath = resolve(import.meta.dirname, '..', '..', 'build', 'bin', 'vault-launcher')
+    const appPath = await writeLauncherBundle({
+      name: 'RealUpgradeTest',
+      bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}real-upgrade`,
+      vaultPath: '/Users/me/RealUpgrade',
+      vaultUrl: 'yaseendocs:///Users/me/RealUpgrade',
+      version: '1',
+    })
+
+    const upgraded = await refreshOutdatedLaunchers(binPath, { appDirs: [appsDir] })
+    expect(upgraded).toEqual([appPath])
+    expect((await readLauncherPlist(appPath))?.bundleVersion).toBe(LAUNCHER_BUNDLE_VERSION)
+    await expect(execFileAsync('codesign', ['--verify', '--strict', appPath])).resolves.toBeDefined()
   })
 })
