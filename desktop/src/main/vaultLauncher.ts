@@ -22,6 +22,9 @@ const execFileAsync = promisify(nodeExecFile)
 /** Bundle identifier prefix owned by Yaseen Docs vault launchers (used by collision & remove guards). */
 export const LAUNCHER_BUNDLE_ID_PREFIX = 'com.yasinarshad.yaseendocs.launcher.'
 
+/** Current launcher bundle version written to `CFBundleVersion` (YAZ-6605). */
+export const LAUNCHER_BUNDLE_VERSION = 2
+
 /** Path to macOS LaunchServices registration helper. */
 export const LSREGISTER_PATH = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
 
@@ -78,6 +81,7 @@ export interface LauncherPlistInfo {
   bundleId: string | null
   vaultPath: string | null
   vaultUrl: string | null
+  bundleVersion: number | null
 }
 
 /**
@@ -158,7 +162,7 @@ export function buildLauncherPlist(fields: { name: string; bundleId: string; vau
     ['CFBundleName', fields.name],
     ['CFBundlePackageType', 'APPL'],
     ['CFBundleShortVersionString', '1.0'],
-    ['CFBundleVersion', '1'],
+    ['CFBundleVersion', String(LAUNCHER_BUNDLE_VERSION)],
     ['LSMinimumSystemVersion', '12.0'],
     ['LSUIElement', true],
     ['YaseenDocsVaultURL', fields.vaultUrl],
@@ -190,17 +194,19 @@ function readPlistString(xml: string, key: string): string | null {
 }
 
 /**
- * Read `CFBundleIdentifier`, `YaseenDocsVaultPath`, and `YaseenDocsVaultURL` from an `.app`'s
- * `Contents/Info.plist`. Returns `null` if the plist cannot be read (e.g. missing bundle).
+ * Read `CFBundleIdentifier`, `YaseenDocsVaultPath`, `YaseenDocsVaultURL`, and `CFBundleVersion`
+ * from an `.app`'s `Contents/Info.plist`. Returns `null` if the plist cannot be read (e.g. missing bundle).
  * Non-XML (binary) plists parse with `null` fields, so guards fail closed on third-party apps.
  */
 export async function readLauncherPlist(appPath: string): Promise<LauncherPlistInfo | null> {
   try {
     const xml = await readFile(join(appPath, 'Contents', 'Info.plist'), 'utf8')
+    const rawVersion = readPlistString(xml, 'CFBundleVersion')
     return {
       bundleId: readPlistString(xml, 'CFBundleIdentifier'),
       vaultPath: readPlistString(xml, 'YaseenDocsVaultPath'),
       vaultUrl: readPlistString(xml, 'YaseenDocsVaultURL'),
+      bundleVersion: rawVersion !== null && /^\d+$/.test(rawVersion) ? Number(rawVersion) : null,
     }
   } catch {
     return null
@@ -434,4 +440,105 @@ export async function removeVaultLauncher(
   }
   await deps.trashItem(appPath)
   return true
+}
+
+function updatePlistBundleVersion(xml: string, version: number): string {
+  const re = /(<key>CFBundleVersion<\/key>\s*<string>)[\s\S]*?(<\/string>)/
+  if (re.test(xml)) {
+    return xml.replace(re, `$1${version}$2`)
+  }
+  const closeIdx = xml.lastIndexOf('</dict>')
+  if (closeIdx === -1) {
+    throw new Error('Malformed Info.plist: missing </dict>')
+  }
+  const insertion = `  <key>CFBundleVersion</key>\n  <string>${version}</string>\n`
+  return `${xml.slice(0, closeIdx)}${insertion}${xml.slice(closeIdx)}`
+}
+
+/**
+ * Scan installed Yaseen Docs `.app` launchers and atomically upgrade any bundle whose
+ * `CFBundleVersion` is below `LAUNCHER_BUNDLE_VERSION` (YAZ-6605).
+ *
+ * - Returns `[]` immediately if `binaryPath` does not exist (safe for dev runs without a built helper).
+ * - Preserves each bundle's `AppIcon.icns`, display name, bundle identifier, vault URL, and vault path.
+ * - Stages the new binary and updated `Info.plist` via sibling temp files before swapping and re-signing.
+ * - Rolls back and cleans up temp files if one bundle fails, continuing with remaining bundles.
+ */
+export async function refreshOutdatedLaunchers(
+  binaryPath: string,
+  deps?: Pick<VaultLauncherDeps, 'appDirs' | 'execFile'>,
+): Promise<string[]> {
+  if (!(await pathExists(binaryPath))) return []
+  const installed = await scanInstalledLaunchers(deps?.appDirs)
+  const exec = deps?.execFile ?? defaultExecFile
+  const upgraded: string[] = []
+
+  for (const item of installed) {
+    if ((item.info.bundleVersion ?? 0) >= LAUNCHER_BUNDLE_VERSION) continue
+
+    const contentsDir = join(item.appPath, 'Contents')
+    const plistPath = join(contentsDir, 'Info.plist')
+    const macOsDir = join(contentsDir, 'MacOS')
+    const binPath = join(macOsDir, 'vault-launcher')
+    const id = randomUUID()
+    const tmpBin = join(macOsDir, `.vault-launcher-tmp-${id}`)
+    const tmpPlist = join(contentsDir, `Info.plist.tmp-${id}`)
+
+    let origPlist: string | null = null
+    let origBin: Buffer | null = null
+    let origBinMode: number | null = null
+    let binSwapped = false
+    let plistSwapped = false
+
+    try {
+      origPlist = await readFile(plistPath, 'utf8')
+      const nextPlist = updatePlistBundleVersion(origPlist, LAUNCHER_BUNDLE_VERSION)
+      try {
+        const [buf, st] = await Promise.all([readFile(binPath), stat(binPath)])
+        origBin = buf
+        origBinMode = st.mode & 0o777
+      } catch {
+        origBin = null
+        origBinMode = null
+      }
+
+      await mkdir(macOsDir, { recursive: true })
+      await copyFile(binaryPath, tmpBin)
+      await chmod(tmpBin, 0o755)
+      await writeFile(tmpPlist, nextPlist, 'utf8')
+
+      await rename(tmpBin, binPath)
+      binSwapped = true
+      await rename(tmpPlist, plistPath)
+      plistSwapped = true
+
+      await exec('codesign', ['--force', '--sign', '-', item.appPath])
+      const now = new Date()
+      await utimes(item.appPath, now, now).catch(() => {})
+      upgraded.push(item.appPath)
+    } catch (err) {
+      await rm(tmpBin, { force: true }).catch(() => {})
+      await rm(tmpPlist, { force: true }).catch(() => {})
+      if (plistSwapped && origPlist !== null) {
+        const rollbackPlist = join(contentsDir, `Info.plist.tmp-${randomUUID()}`)
+        await writeFile(rollbackPlist, origPlist, 'utf8')
+          .then(() => rename(rollbackPlist, plistPath))
+          .catch(async () => {
+            await rm(rollbackPlist, { force: true }).catch(() => {})
+          })
+      }
+      if (binSwapped && origBin !== null) {
+        const rollbackBin = join(macOsDir, `.vault-launcher-tmp-${randomUUID()}`)
+        await writeFile(rollbackBin, origBin)
+          .then(() => chmod(rollbackBin, origBinMode ?? 0o755))
+          .then(() => rename(rollbackBin, binPath))
+          .catch(async () => {
+            await rm(rollbackBin, { force: true }).catch(() => {})
+          })
+      }
+      console.warn(`[vaultLauncher] failed to refresh "${item.appPath}": ${String(err)}`)
+    }
+  }
+
+  return upgraded
 }
