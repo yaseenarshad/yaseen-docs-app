@@ -1,20 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { RESTORE_FOCUS_FALLBACK_MS, focusSingleWindow, type FocusableWindow } from './singleWindowFocus'
+import { POST_ACTIVATE_REFOCUS_MS, RESTORE_FOCUS_FALLBACK_MS, focusSingleWindow, type FocusableWindow } from './singleWindowFocus'
 
 class FakeFocusableWindow implements FocusableWindow {
   destroyed = false
   minimized = false
   visible = true
+  focused = true
   private listeners = new Map<'restore' | 'closed', Set<() => void>>()
 
   constructor(
     public readonly name: string,
     private readonly log: string[],
-    init?: { destroyed?: boolean; minimized?: boolean; visible?: boolean },
+    init?: { destroyed?: boolean; minimized?: boolean; visible?: boolean; focused?: boolean },
   ) {
     if (init?.destroyed !== undefined) this.destroyed = init.destroyed
     if (init?.minimized !== undefined) this.minimized = init.minimized
     if (init?.visible !== undefined) this.visible = init.visible
+    if (init?.focused !== undefined) this.focused = init.focused
   }
 
   isDestroyed(): boolean {
@@ -27,6 +29,10 @@ class FakeFocusableWindow implements FocusableWindow {
 
   isVisible(): boolean {
     return this.visible
+  }
+
+  isFocused(): boolean {
+    return this.focused
   }
 
   show(): void {
@@ -108,9 +114,9 @@ describe('focusSingleWindow (YAZ-6595 D1/D2)', () => {
     expect(stealAppFocus).not.toHaveBeenCalled()
   })
 
-  it('calls moveTop before focus for a visible target without calling show or stealAppFocus', () => {
+  it('calls moveTop, focus, and stealAppFocus on macOS for a visible target without calling show or hiding siblings', () => {
     const log: string[] = []
-    const target = new FakeFocusableWindow('target', log, { visible: true })
+    const target = new FakeFocusableWindow('target', log, { visible: true, focused: true })
     const sibling = new FakeFocusableWindow('sibling', log, { visible: true })
 
     focusSingleWindow(target, {
@@ -121,12 +127,18 @@ describe('focusSingleWindow (YAZ-6595 D1/D2)', () => {
       siblingWindows: () => [target, sibling],
     })
 
-    expect(log).toEqual(['target:moveTop', 'target:focus'])
+    expect(log).toEqual(['target:moveTop', 'target:focus', 'app:stealFocus'])
+    expect(sibling.isVisible()).toBe(true)
+
+    // When target is already focused after stealAppFocus, the post-activation timer is a no-op.
+    vi.advanceTimersByTime(POST_ACTIVATE_REFOCUS_MS + 10)
+    expect(log).toEqual(['target:moveTop', 'target:focus', 'app:stealFocus'])
+    expect(target.listenerCount('closed')).toBe(0)
   })
 
-  it('calls show before moveTop and focus when recalling a hidden target', () => {
+  it('re-focuses target once after stealAppFocus if macOS cross-display activation left target unfocused', () => {
     const log: string[] = []
-    const target = new FakeFocusableWindow('target', log, { visible: false })
+    const target = new FakeFocusableWindow('target', log, { visible: true, focused: false })
 
     focusSingleWindow(target, {
       isMac: true,
@@ -134,7 +146,41 @@ describe('focusSingleWindow (YAZ-6595 D1/D2)', () => {
       stealAppFocus: () => log.push('app:stealFocus'),
     })
 
-    expect(log).toEqual(['target:show', 'target:moveTop', 'target:focus'])
+    expect(log).toEqual(['target:moveTop', 'target:focus', 'app:stealFocus'])
+    vi.advanceTimersByTime(POST_ACTIVATE_REFOCUS_MS - 1)
+    expect(log).toEqual(['target:moveTop', 'target:focus', 'app:stealFocus'])
+
+    vi.advanceTimersByTime(1)
+    expect(log).toEqual(['target:moveTop', 'target:focus', 'app:stealFocus', 'target:moveTop', 'target:focus'])
+    expect(target.listenerCount('closed')).toBe(0)
+  })
+
+  it('cancels a prior window post-activation refocus when another window is focused immediately after', () => {
+    const log: string[] = []
+    const winA = new FakeFocusableWindow('winA', log, { visible: true, focused: false })
+    const winB = new FakeFocusableWindow('winB', log, { visible: true, focused: true })
+
+    focusSingleWindow(winA, { isMac: true, stealAppFocus: () => log.push('app:stealFocus') })
+    vi.advanceTimersByTime(20)
+    focusSingleWindow(winB, { isMac: true, stealAppFocus: () => log.push('app:stealFocus') })
+    vi.advanceTimersByTime(POST_ACTIVATE_REFOCUS_MS + 20)
+
+    expect(log).toEqual(['winA:moveTop', 'winA:focus', 'app:stealFocus', 'winB:moveTop', 'winB:focus', 'app:stealFocus'])
+    expect(winA.listenerCount('closed')).toBe(0)
+    expect(winB.listenerCount('closed')).toBe(0)
+  })
+
+  it('calls show before moveTop, focus, and stealAppFocus when recalling a hidden target on macOS', () => {
+    const log: string[] = []
+    const target = new FakeFocusableWindow('target', log, { visible: false, focused: true })
+
+    focusSingleWindow(target, {
+      isMac: true,
+      isAppHidden: () => false,
+      stealAppFocus: () => log.push('app:stealFocus'),
+    })
+
+    expect(log).toEqual(['target:show', 'target:moveTop', 'target:focus', 'app:stealFocus'])
     expect(target.isVisible()).toBe(true)
   })
 
@@ -142,7 +188,7 @@ describe('focusSingleWindow (YAZ-6595 D1/D2)', () => {
     const log: string[] = []
     const target = new FakeFocusableWindow('target', log, { minimized: true })
 
-    focusSingleWindow(target, { isMac: true })
+    focusSingleWindow(target, { isMac: true, stealAppFocus: () => log.push('app:stealFocus') })
 
     expect(log).toEqual(['target:restore'])
     expect(target.listenerCount('restore')).toBe(1)
@@ -150,32 +196,34 @@ describe('focusSingleWindow (YAZ-6595 D1/D2)', () => {
 
     target.emit('restore')
 
-    expect(log).toEqual(['target:restore', 'target:moveTop', 'target:focus'])
+    expect(log).toEqual(['target:restore', 'target:moveTop', 'target:focus', 'app:stealFocus'])
     expect(target.listenerCount('restore')).toBe(0)
-    expect(target.listenerCount('closed')).toBe(0)
 
-    // Advancing past the fallback window must not raise a second time.
+    // Advancing past both the post-activation refocus and fallback windows cleans up closed listener and never raises twice.
     vi.advanceTimersByTime(RESTORE_FOCUS_FALLBACK_MS + 100)
-    expect(log).toEqual(['target:restore', 'target:moveTop', 'target:focus'])
+    expect(target.listenerCount('closed')).toBe(0)
+    expect(log).toEqual(['target:restore', 'target:moveTop', 'target:focus', 'app:stealFocus'])
   })
 
   it('on macOS, raises via fallback timer if restore event never fires', () => {
     const log: string[] = []
     const target = new FakeFocusableWindow('target', log, { minimized: true })
 
-    focusSingleWindow(target, { isMac: true })
+    focusSingleWindow(target, { isMac: true, stealAppFocus: () => log.push('app:stealFocus') })
 
     vi.advanceTimersByTime(RESTORE_FOCUS_FALLBACK_MS - 1)
     expect(log).toEqual(['target:restore'])
 
     vi.advanceTimersByTime(1)
-    expect(log).toEqual(['target:restore', 'target:moveTop', 'target:focus'])
+    expect(log).toEqual(['target:restore', 'target:moveTop', 'target:focus', 'app:stealFocus'])
     expect(target.listenerCount('restore')).toBe(0)
+
+    vi.advanceTimersByTime(POST_ACTIVATE_REFOCUS_MS)
     expect(target.listenerCount('closed')).toBe(0)
 
     // Late restore event after fallback is ignored.
     target.emit('restore')
-    expect(log).toEqual(['target:restore', 'target:moveTop', 'target:focus'])
+    expect(log).toEqual(['target:restore', 'target:moveTop', 'target:focus', 'app:stealFocus'])
   })
 
   it('on macOS, cancels fallback timer and listeners if minimized target closes before restore', () => {
