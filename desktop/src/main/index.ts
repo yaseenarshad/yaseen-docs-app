@@ -61,7 +61,7 @@ import { initMint, macId } from './vaultIndex/mint'
 import { createWindowManager, type RestoreTarget } from './windows'
 import { focusSingleWindow } from './singleWindowFocus'
 import { createDockIconController, defaultDockIconPath, type DockIconController } from './dockIcon'
-import { installVaultLauncher, removeOrphanLauncher, removeVaultLauncher, vaultLauncherBinaryPath } from './vaultLauncher'
+import { installVaultLauncher, refreshOutdatedLaunchers, removeOrphanLauncher, removeVaultLauncher, vaultLauncherBinaryPath } from './vaultLauncher'
 import { dropLanded } from './dragLanding'
 import { blockFileNavigation, createWindowOpenHandler } from './windowOpenPolicy'
 import { createUpdater, runFile, shortVersion, spawnDetached } from './updater'
@@ -710,6 +710,10 @@ app.whenReady().then(() => {
   void Promise.all([Promise.race([settingsFolder.ready, new Promise((done) => setTimeout(done, 500))]), cardSkillReady]).then(() => {
     manager.restore(asked.length > 0 ? asked : store.get().settings.startupWindows)
     links.flush()
+    if (process.platform === 'darwin' && !hiddenE2E) {
+      const binaryPath = vaultLauncherBinaryPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname })
+      void refreshOutdatedLaunchers(binaryPath).catch((err: unknown) => console.warn(`[vaultLauncher] refresh failed: ${String(err)}`))
+    }
   })
 })
 

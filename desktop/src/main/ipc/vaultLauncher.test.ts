@@ -494,22 +494,22 @@ describe('launcher lifecycle & All Launchers IPC (YAZ-6447)', () => {
       {
         appPath: process.platform === 'darwin' ? '/Applications/daily vault.app' : '/Applications/Daily Vault.app',
         name: 'daily vault',
-        info: { bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}daily`, vaultPath: rootA, vaultUrl: `yaseendocs://${rootA}` },
+        info: { bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}daily`, vaultPath: rootA, vaultUrl: `yaseendocs://${rootA}`, bundleVersion: 2 },
       },
       {
         appPath: '/Applications/All Folders.app',
         name: 'All Folders',
-        info: { bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}ws`, vaultPath: `workspace:${ws.id}`, vaultUrl: `yaseendocs://workspace/${ws.id}` },
+        info: { bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}ws`, vaultPath: `workspace:${ws.id}`, vaultUrl: `yaseendocs://workspace/${ws.id}`, bundleVersion: 2 },
       },
       {
         appPath: '/Applications/Demo Orphan.app',
         name: 'Demo Orphan',
-        info: { bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}demo`, vaultPath: '/Users/yasin/DeletedVault', vaultUrl: 'yaseendocs:///Users/yasin/DeletedVault' },
+        info: { bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}demo`, vaultPath: '/Users/yasin/DeletedVault', vaultUrl: 'yaseendocs:///Users/yasin/DeletedVault', bundleVersion: 2 },
       },
       {
         appPath: '/Applications/Mystery Orphan.app',
         name: 'Mystery Orphan',
-        info: { bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}mystery`, vaultPath: null, vaultUrl: null },
+        info: { bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}mystery`, vaultPath: null, vaultUrl: null, bundleVersion: null },
       },
     ]
 
