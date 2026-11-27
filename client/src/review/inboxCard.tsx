@@ -9,12 +9,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { reviewTitleOf, type CardTitleAt, type CardTitleShow } from '@shared/cardLine'
 import { reviewTitleAt, titleShows, titleStepOf, type TitleStep } from '@shared/cardTitleShows'
 import { cardSides, hiddenCount } from '@shared/cardText'
+import type { SpaceBehavior } from '@shared/reviews'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { CardBody, type CardLinkDoors } from './cardParts'
 import { CARD_MEDIA, CARD_OPENS, stopCardAudio, type CardViewLinkHit } from '../editor/card/cardMedia'
 import { linkPath } from '../editor/wikilink/linkResolve'
 import type { WikilinkHover } from '../editor/wikilink/wikilinkHover'
-import { glideToBottomIfNear, glideView, spaceMove } from './inboxScroll'
+import { glideToBottomIfNear, glideView, resetScrollChain, spaceMove } from './inboxScroll'
 import { START, hide, markOf, nextStep, reveal, shownParts, type Reveal } from './cardSteps'
 
 /** The step a card is at (D18): how many sides show, which hidden words, and the marked blank (`cardSteps.ts`, YAZ-5049 round 4). */
@@ -77,14 +78,17 @@ export interface CardSteps {
 
 /**
  * Space's steps over `text`, the card `cardKey` (a new key starts at the front), in the scrolled view `viewRef`; `title`
- * where the title is its own step (YAZ-5709, `bandTitleStep`).
+ * where the title is its own step (YAZ-5709, `bandTitleStep`); `spaceBehavior` controls step-scroll vs direct jump (YAZ-6598).
  */
-export function useCardSteps(text: string | null, cardKey: string | null, viewRef: RefObject<HTMLElement | null>, title: TitleStep = null): CardSteps {
+export function useCardSteps(text: string | null, cardKey: string | null, viewRef: RefObject<HTMLElement | null>, title: TitleStep = null, spaceBehavior: SpaceBehavior = 'scroll'): CardSteps {
   const counts = useMemo(() => (text === null ? [] : cardSides(text).map(hiddenCount)), [text])
   const [stepState, setStep] = useState<CardStep>({ ...START, key: cardKey })
   const step: CardStep = stepState.key === cardKey ? stepState : { ...START, key: cardKey }
   // A card that goes and comes back (⌘Z after the last answer) starts again from its first step.
-  useEffect(() => setStep((s) => (s.key === cardKey ? s : { ...START, key: cardKey })), [cardKey])
+  useEffect(() => {
+    setStep((s) => (s.key === cardKey ? s : { ...START, key: cardKey }))
+    if (viewRef.current !== null) resetScrollChain(viewRef.current)
+  }, [cardKey, viewRef])
   const hiddenUpTo = useCallback((sides: number): number => counts.slice(0, sides).reduce((a, b) => a + b, 0), [counts])
   const after = text === null ? null : nextStep(step, counts, title)
   const done = text !== null && after === null
@@ -107,7 +111,7 @@ export function useCardSteps(text: string | null, cardKey: string | null, viewRe
       // clicks that are actually oriented towards just moving the screen"): the same for the next side and the end.
       const view = viewRef.current
       if (by === 'key' && view !== null && !titleNow) {
-        const dy = spaceMove(view, done ? 'end' : (mark ?? 'side'))
+        const dy = spaceMove(view, done ? 'end' : (mark ?? 'side'), spaceBehavior)
         if (dy !== 0) {
           glideView(view, dy)
           return true
@@ -119,7 +123,7 @@ export function useCardSteps(text: string | null, cardKey: string | null, viewRe
       setStep({ ...after, key: step.key })
       return true
     },
-    [done, after, text, step, viewRef, titleNow, mark, counts, title, nextSide],
+    [done, after, text, step, viewRef, titleNow, mark, counts, title, nextSide, spaceBehavior],
   )
   const openNextSide = useCallback((): boolean => {
     if (text === null || step.sides >= counts.length) return false
@@ -143,7 +147,10 @@ export function useCardSteps(text: string | null, cardKey: string | null, viewRe
   )
   const restart = useCallback(() => {
     setStep({ ...START, key: cardKey })
-    if (viewRef.current !== null) viewRef.current.scrollTop = 0
+    if (viewRef.current !== null) {
+      resetScrollChain(viewRef.current)
+      viewRef.current.scrollTop = 0
+    }
   }, [cardKey, viewRef])
   return { counts, step, done, nextSide, titleNow, mark, onLastSide, stepOn, openNextSide, showWord, hideWord, restart }
 }
@@ -160,7 +167,10 @@ export function useStepScroll(steps: Pick<CardSteps, 'step'>, shown: boolean, vi
     const before = lastKey.current
     lastKey.current = key
     const view = viewRef.current
-    if (shown && view !== null && before !== undefined && before !== key) view.scrollTop = 0
+    if (shown && view !== null && before !== undefined && before !== key) {
+      resetScrollChain(view)
+      view.scrollTop = 0
+    }
   }, [key, shown, lastKey, viewRef])
   // The card's sound never outlives it (YAZ-5014): the next card, a hidden view and its close stop it.
   useEffect(() => stopCardAudio, [key, shown])

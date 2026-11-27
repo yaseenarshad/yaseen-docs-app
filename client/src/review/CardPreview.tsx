@@ -60,7 +60,7 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
   // One preview is one card: a new ask (another card) starts at its front.
   const cardKey = `${card.path}\n${card.id ?? ''}\n${card.text}`
   const titleStep = bandTitleStep(headTitle, card.titleAt, settings?.titleAt ?? 'always')
-  const steps = useCardSteps(text, cardKey, rootRef, titleStep)
+  const steps = useCardSteps(text, cardKey, rootRef, titleStep, settings?.spaceBehavior ?? 'scroll')
   // YAZ-5696: the Inbox's timing (the card's own choice, else the vault's; Review off: at once).
   const band = bandTitle(headTitle, card.titleAt, settings?.titleAt ?? 'always', steps)
   useStepScroll(steps, true, rootRef)
