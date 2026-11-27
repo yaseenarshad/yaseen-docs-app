@@ -83,6 +83,7 @@ import { MEMORY_SECTION } from './memorySection'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
 import { NEW_PER_DAY_FIELD, RETENTION_FIELD, ReviewNumberControl, UP_NEXT_PER_DAY_FIELD, WEIGHTS_FIELD, wholeField, type ReviewField } from './ReviewNumberControl'
 import { ReviewHowCardsComeBack } from './ReviewHowCardsComeBack'
+import { RowDatesControl } from './RowDatesControl'
 import { LinkPillsControl } from './LinkPillsControl'
 import type { LinkPillsState } from './useLinkPills'
 import { DEFAULT_WEB_LINKS } from '@shared/webLinks'
@@ -618,6 +619,8 @@ export const groupsOf = (section: SettingsSection, ctx: SettingsCtx): readonly S
 
 /** The colour rows' control (YAZ-5100 round 2): loaded only when Settings shows one. */
 const IconColourControl = lazy(() => import('./IconColourControl'))
+/** Settings › Sidebar › Tab row control (YAZ-6593): lazy-loaded. */
+const SidebarTabsControl = lazy(() => import('./SidebarTabsControl'))
 
 /**
  * Whether a kind's colour row shows (YAZ-5100 round 2): only where the colour shows. Grey and Off draw no colour, and a
@@ -1367,6 +1370,32 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     title: 'Sidebar',
     groups: [
       {
+        // YAZ-6593: Sidebar tab row order, visibility, and right-hand buttons (owned per vault or per workspace).
+        title: 'Tab row',
+        hint: 'Choose which tabs and buttons show at the top of the sidebar and drag to reorder them. Saved per vault or per workspace.',
+        items: [
+          {
+            id: 'sidebarTabs',
+            label: 'Tab row',
+            hint: 'Order and visibility of sidebar tabs and right-hand buttons.',
+            keywords: ['sidebar', 'tab', 'tabs', 'tab row', 'order', 'reorder', 'hide', 'show', 'files', 'search', 'focus', 'favorites', 'sessions', 'recents', 'sort', 'collapse', 'more'],
+            wide: () => true,
+            render: ({ settings, onChange, scope }) => (
+              <Suspense fallback={null}>
+                <SidebarTabsControl
+                  value={settings.sidebarTabs}
+                  onChange={(sidebarTabs) => onChange({ ...settings, sidebarTabs })}
+                  scopeLabel={scope?.activeScopeLabel}
+                  isGlobal={scope !== undefined && scope.activeScopeMode === 'global'}
+                  activeTargetLabel={scope?.activeTargetLabel}
+                  onJumpToActive={scope?.onJumpToActiveScope}
+                />
+              </Suspense>
+            ),
+          },
+        ],
+      },
+      {
         // YAZ-5885 D1, D2: how tall every row of the sidebar's lists is (Files, Favorites, Focus, Recents, the search
         // results), a Files window too. The text keeps its size; the sidebar zoom scales on top.
         title: 'Rows',
@@ -1379,6 +1408,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // Wide always: the label keeps its width while Custom adds its field beside the buttons.
             wide: () => true,
             render: ({ settings, onChange }) => <RowSpacingControl value={settings.sidebarRowHeight} onSet={(sidebarRowHeight) => onChange({ ...settings, sidebarRowHeight })} />,
+          },
+          {
+            id: 'rowDates',
+            label: 'Show last updated',
+            hint: 'Choose which sidebar tabs show each note\'s last updated date.',
+            keywords: ['sidebar', 'row', 'rows', 'dates', 'date', 'updated', 'modified', 'last updated', 'recents', 'files', 'focus', 'favorites', 'search'],
+            wide: () => true,
+            render: ({ settings, onChange }) => <RowDatesControl value={settings.rowDates} onChange={(rowDates) => onChange({ ...settings, rowDates })} />,
           },
         ],
       },

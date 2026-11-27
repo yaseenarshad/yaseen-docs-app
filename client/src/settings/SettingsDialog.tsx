@@ -54,16 +54,20 @@ type SettingsDialogProps = (
   onClose: () => void
   /** Open straight onto a page (the Share dialog's "Open Settings › Sharing", YAZ-3040); absent = the first. */
   initialPage?: SettingsSectionId
+  /** Open directly in a specific scope (YAZ-6593); absent = `'global'`. */
+  initialScope?: SettingsScopeMode
+  /** Scroll a specific `[data-setting="..."]` row into view on mount (YAZ-6593). */
+  initialSettingId?: string
 }
 
-export function SettingsDialog({ ctx: givenCtx, input, onClose, initialPage }: SettingsDialogProps) {
+export function SettingsDialog({ ctx: givenCtx, input, onClose, initialPage, initialScope, initialSettingId }: SettingsDialogProps) {
   const given = useMemo(() => givenCtx ?? buildSettingsDialogCtx(input!), [givenCtx, input])
   /** The Mac's own keys (YAZ-3397 D3): asked of main once per open, when the Hotkeys page or a search first shows. */
   const [systemHotkeys, setSystemHotkeys] = useState<SystemHotkey[] | undefined>(undefined)
   /** Settings › Hotkeys' filters (YAZ-3564 K7): the rows read them through `ctx`; a page swap clears them. */
   const [hotkeyFilter, setHotkeyFilter] = useState<HotkeyFilter>(NO_FILTER)
   /** Top-of-Settings scope switcher (YAZ-6546, YAZ-6556): Global defaults | This vault | This workspace. */
-  const [scopeMode, setScopeMode] = useState<SettingsScopeMode>('global')
+  const [scopeMode, setScopeMode] = useState<SettingsScopeMode>(initialScope ?? 'global')
   const [selectedVaultRoot, setSelectedVaultRoot] = useState<string | null>(() => given.scope?.activeVaultRoot ?? null)
   const effectiveScopeMode: SettingsScopeMode =
     given.scope === undefined || given.scope.vaults.length === 0
@@ -72,10 +76,34 @@ export function SettingsDialog({ ctx: givenCtx, input, onClose, initialPage }: S
         ? 'global'
         : scopeMode
   const scoped = useMemo(() => buildScopedSettings(given, effectiveScopeMode, selectedVaultRoot), [given, effectiveScopeMode, selectedVaultRoot])
-  const ctx = useMemo<SettingsCtx>(
-    () => ({ ...scoped.ctx, ...(systemHotkeys === undefined ? {} : { systemHotkeys }), hotkeyFilter }),
-    [scoped.ctx, systemHotkeys, hotkeyFilter],
-  )
+  const ctx = useMemo<SettingsCtx>(() => {
+    const baseScope = scoped.ctx.scope
+    const scope =
+      baseScope === undefined
+        ? undefined
+        : {
+            ...baseScope,
+            activeScopeMode: effectiveScopeMode,
+            activeScopeLabel:
+              effectiveScopeMode === 'workspace' && baseScope.workspace !== undefined
+                ? baseScope.workspace.name
+                : effectiveScopeMode === 'vault' && scoped.activeVault !== null
+                  ? scoped.activeVault.name
+                  : 'Global defaults',
+            activeTargetLabel:
+              baseScope.workspace !== undefined
+                ? baseScope.workspace.name
+                : (scoped.activeVault?.name ?? baseScope.vaults[0]?.name),
+            onSelectScope: (m: SettingsScopeMode) => setScopeMode(m),
+            onJumpToActiveScope: () => setScopeMode(baseScope.workspace !== undefined ? 'workspace' : 'vault'),
+          }
+    return {
+      ...scoped.ctx,
+      ...(scope === undefined ? {} : { scope }),
+      ...(systemHotkeys === undefined ? {} : { systemHotkeys }),
+      hotkeyFilter,
+    }
+  }, [scoped.ctx, scoped.activeVault, effectiveScopeMode, systemHotkeys, hotkeyFilter])
   const sections = availableSections(ctx)
   const settingsPages = sections.filter((s) => s.standalone !== true)
   const referencePages = sections.filter((s) => s.standalone === true)
@@ -115,6 +143,14 @@ export function SettingsDialog({ ctx: givenCtx, input, onClose, initialPage }: S
       if (previous instanceof HTMLElement) previous.focus()
     }
   }, [])
+
+  useEffect(() => {
+    if (initialSettingId === undefined) return
+    const pane = paneRef.current
+    if (pane === null) return
+    const escaped = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(initialSettingId) : initialSettingId
+    pane.querySelector<HTMLElement>(`[data-setting="${escaped}"]`)?.scrollIntoView?.({ block: 'nearest' })
+  }, [initialSettingId])
 
   // Built lazily on first search: the searchable text is labels, hints and keywords, none of which
   // a click inside the dialog changes in a way search needs to see — but a hotkey's text is its
@@ -234,7 +270,11 @@ export function SettingsDialog({ ctx: givenCtx, input, onClose, initialPage }: S
   useEffect(() => () => window.clearTimeout(revealTimer.current), [])
 
   const row = (item: SettingDef, s: SettingsSection, g: SettingsGroup) => {
-    const meta = scoped.rowMeta(item, s, g)
+    const rawMeta = scoped.rowMeta(item, s, g)
+    const meta =
+      rawMeta.workspaceWinsName !== undefined
+        ? { ...rawMeta, onJumpToWorkspace: () => setScopeMode('workspace') }
+        : rawMeta
     return (
       <SettingRow key={item.id} id={item.id} label={resolveLabel(item, ctx)} hint={resolveHint(item, ctx)} wide={resolveWide(item, ctx)} bare={item.bare === true} {...meta}>
         {item.render(ctx)}

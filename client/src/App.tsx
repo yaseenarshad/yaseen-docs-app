@@ -6,7 +6,7 @@ import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
 import type { IdsInFiles, IdsInSearch } from '@shared/showIds'
 import { spacingVars, type TextFormatting } from '@shared/textFormatting'
-import { VAULT_CHROME_KEYS, VAULT_OVERRIDE_KEYS, type VaultChromeKey, type WorkspaceChromeOverrides } from '@shared/vaultSettings'
+import { GLOBAL_INHERITING_CHROME_KEYS, VAULT_OVERRIDE_KEYS, type VaultChromeKey, type WorkspaceChromeOverrides } from '@shared/vaultSettings'
 import { webLinkVars } from '@shared/webLinks'
 import { NO_PAGE_OVERRIDE_VARS, pageOverrideVars, patchWorkspaceChrome, resolvePageSettings, resolveWindowChrome, setVaultNewPageDrawing, setWindowSearchIncludeInline, splitChromeDiff } from './settings/effectiveSettings'
 import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
@@ -600,8 +600,8 @@ export function App() {
   const matchedVaultSet = roots.length >= 2 ? (storage.getVaultSets().find((set) => sameVaults(set.roots, roots)) ?? null) : null
   const legacyRowDates = roots.length > 0 ? storage.getFolderRowDates(roots[0]) : null
   const windowChrome = useMemo(
-    () => resolveWindowChrome(appSettings, roots, matchedVaultSet?.id ?? null, roots.length === 1 ? first.vaultSettings.overrides : null, legacyRowDates),
-    [appSettings, roots, matchedVaultSet?.id, first.vaultSettings.overrides, legacyRowDates],
+    () => resolveWindowChrome(appSettings, roots, matchedVaultSet?.id ?? null, roots.length === 1 ? first.vaultSettings.overrides : null, legacyRowDates, matchedVaultSet?.name ?? null),
+    [appSettings, roots, matchedVaultSet?.id, matchedVaultSet?.name, first.vaultSettings.overrides, legacyRowDates],
   )
   const chromeSettings = windowChrome.settings
   const [cardSkill] = useState(storage.getCardSkill)
@@ -904,17 +904,17 @@ export function App() {
     storage.setSettings(next)
     setSettings(next)
   }, [])
-  const chromeWriteRef = useRef({ roots, first, wsKey: windowChrome.wsKey, sidebarSettings })
-  chromeWriteRef.current = { roots, first, wsKey: windowChrome.wsKey, sidebarSettings }
+  const chromeWriteRef = useRef({ roots, first, wsKey: windowChrome.wsKey, legacyWsKey: windowChrome.legacyWsKey, sidebarSettings })
+  chromeWriteRef.current = { roots, first, wsKey: windowChrome.wsKey, legacyWsKey: windowChrome.legacyWsKey, sidebarSettings }
   const writeChromeOverrides = useCallback((patch: Partial<WorkspaceChromeOverrides>, unset: readonly VaultChromeKey[] = []) => {
     const cur = chromeWriteRef.current
     if (cur.roots.length === 0) return changeGlobalSettings({ ...storage.getSettings(), ...patch })
     if (cur.roots.length === 1) return void cur.first.vaultSettings.setOverrides(patch, unset)
-    if (cur.wsKey !== null) changeGlobalSettings(patchWorkspaceChrome(storage.getSettings(), cur.wsKey, patch, unset))
+    if (cur.wsKey !== null) changeGlobalSettings(patchWorkspaceChrome(storage.getSettings(), cur.wsKey, patch, unset, cur.legacyWsKey))
   }, [changeGlobalSettings])
   const resetWorkspaceChrome = useCallback(() => {
-    const { wsKey } = chromeWriteRef.current
-    if (wsKey !== null) changeGlobalSettings(patchWorkspaceChrome(storage.getSettings(), wsKey, {}, VAULT_CHROME_KEYS))
+    const { wsKey, legacyWsKey } = chromeWriteRef.current
+    if (wsKey !== null) changeGlobalSettings(patchWorkspaceChrome(storage.getSettings(), wsKey, {}, GLOBAL_INHERITING_CHROME_KEYS, legacyWsKey))
   }, [changeGlobalSettings])
   const changeSidebarSettings = useCallback((next: SettingsState) => {
     const { chrome, other } = splitChromeDiff(chromeWriteRef.current.sidebarSettings, next)
@@ -922,7 +922,7 @@ export function App() {
     if (Object.keys(other).length > 0) changeSettings({ ...storage.getSettings(), ...other })
   }, [writeChromeOverrides, changeSettings])
   const changeRowDates = useCallback((rowDates: SettingsState['rowDates']) => writeChromeOverrides({ rowDates }), [writeChromeOverrides])
-  const resetSidebarTabsToGlobal = useCallback(() => writeChromeOverrides({}, ['sidebarTabs']), [writeChromeOverrides])
+  const tabRowScope = useMemo(() => (roots.length === 0 ? undefined : windowChrome.isMultiVault ? { label: matchedVaultSet?.name ? `${matchedVaultSet.name} (workspace)` : 'This workspace', note: 'Applies to this multi-vault window.' } : { label: first.name ?? storage.vaultName(roots[0]) }), [roots, windowChrome.isMultiVault, matchedVaultSet?.name, first.name])
   useEffect(() => {
     roots.forEach((at, i) => setVaultNewPageDrawing(at, vaults[i]?.vaultSettings.overrides.newPageDrawing))
   }, [roots, vaults])
@@ -1697,8 +1697,8 @@ export function App() {
   // open the ONE dialog — and it can open with the sidebar collapsed. `open`/`close` are stable
   // because `useMenuEvents` resubscribes whenever a callback identity changes.
   const [settingsOpen, setSettingsOpen] = useState(false)
-  // Which page the dialog opens on: the first, or Sharing from the Share dialog's "Open Settings › Sharing" (YAZ-3040).
-  const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | 'cards' | undefined>(undefined)
+  // Which page (and optional scope/row) the dialog opens on (YAZ-3040, YAZ-6593).
+  const [settingsTarget, setSettingsTarget] = useState<{ page?: 'sharing' | 'hotkeys' | 'cards' | 'sidebar'; scope?: 'global' | 'vault' | 'workspace'; settingId?: string }>({})
   // Spacing's Vault dropdown starts on the active tab's vault at each open (YAZ-5485).
   useEffect(() => {
     if (!settingsOpen) {
@@ -1709,17 +1709,13 @@ export function App() {
       setFolderPagesRoot(null)
     }
   }, [settingsOpen])
-  const openSettings = useCallback(() => {
-    setSettingsPage(undefined)
-    setSettingsOpen(true)
-  }, [])
-  const openSharingSettings = useCallback(() => {
-    setSettingsPage('sharing')
-    setSettingsOpen(true)
-  }, [])
+  const openSettings = useCallback(() => { setSettingsTarget({}); setSettingsOpen(true) }, [])
+  const openSharingSettings = useCallback(() => { setSettingsTarget({ page: 'sharing' }); setSettingsOpen(true) }, [])
   // The card skill's notice (YAZ-5108): "Open Settings" opens at Cards (was Review), where the switch is.
-  const openReviewSettings = useCallback(() => {
-    setSettingsPage('cards')
+  const openReviewSettings = useCallback(() => { setSettingsTarget({ page: 'cards' }); setSettingsOpen(true) }, [])
+  const openSidebarSettings = useCallback(() => {
+    const scope = chromeWriteRef.current.roots.length >= 2 ? 'workspace' : chromeWriteRef.current.roots.length === 1 ? 'vault' : 'global'
+    setSettingsTarget({ page: 'sidebar', scope, settingId: 'sidebarTabs' })
     setSettingsOpen(true)
   }, [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
@@ -1966,7 +1962,7 @@ export function App() {
   useEffect(() => onKeySheetRequest(openKeySheet), [openKeySheet])
   const changeKeys = useCallback(() => {
     setKeySheetOpen(false)
-    setSettingsPage('hotkeys')
+    setSettingsTarget({ page: 'hotkeys' })
     setSettingsOpen(true)
   }, [])
 
@@ -4292,7 +4288,7 @@ export function App() {
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
       {settingsOpen && (
         <Suspense fallback={null}>
-          <SettingsDialog input={{ roots, vaults, active, appSettings, settings, onChange: changeSettings, onChangeGlobal: changeGlobalSettings, matchedWorkspaceName: matchedVaultSet?.name ?? null, wsKey: windowChrome.wsKey, wsChromeOverrides: windowChrome.chromeOverrides, onWriteWorkspaceChrome: writeChromeOverrides, onResetWorkspaceChrome: resetWorkspaceChrome, dailyHereRoot: dailyHere.root, saveDaily, openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder, vaultStorage, sharing, vaultIcons, placeVaults, refreshLauncherIcons, pickers: { spacingRoot, setSpacingRoot, cardLookRoot, setCardLookRoot, tableLookRoot, setTableLookRoot, folderPagesRoot, setFolderPagesRoot, iconLookRoot, setIconLookRoot } }} initialPage={settingsPage} onClose={closeSettings} />
+          <SettingsDialog input={{ roots, vaults, active, appSettings, settings, onChange: changeSettings, onChangeGlobal: changeGlobalSettings, matchedWorkspaceName: matchedVaultSet?.name ?? null, wsKey: windowChrome.wsKey, wsChromeOverrides: windowChrome.chromeOverrides, onWriteWorkspaceChrome: writeChromeOverrides, onResetWorkspaceChrome: resetWorkspaceChrome, dailyHereRoot: dailyHere.root, saveDaily, openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder, vaultStorage, sharing, vaultIcons, placeVaults, refreshLauncherIcons, pickers: { spacingRoot, setSpacingRoot, cardLookRoot, setCardLookRoot, tableLookRoot, setTableLookRoot, folderPagesRoot, setFolderPagesRoot, iconLookRoot, setIconLookRoot } }} initialPage={settingsTarget.page} initialScope={settingsTarget.scope} initialSettingId={settingsTarget.settingId} onClose={closeSettings} />
         </Suspense>
       )}
       {courseOpen !== null && (
@@ -4438,7 +4434,8 @@ export function App() {
           pageFilesIn={pageFilesIn}
           onChangeSettings={changeSidebarSettings}
           onChangeRowDates={changeRowDates}
-          onResetTabsToGlobal={Object.hasOwn(windowChrome.chromeOverrides, 'sidebarTabs') ? resetSidebarTabsToGlobal : undefined}
+          tabRowScope={tabRowScope}
+          onEditTabRowInSettings={openSidebarSettings}
           onOpenSettings={openSettings}
           onOpenDailyPage={settings.dailyPages ? openDailyPage : undefined}
           update={update}

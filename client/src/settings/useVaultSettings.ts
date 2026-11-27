@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isRecord } from '@shared/guards'
 import {
-  VAULT_OVERRIDE_KEYS,
+  GLOBAL_INHERITING_OVERRIDE_KEYS,
   VAULT_SETTINGS_FILE,
   VAULT_SETTINGS_VERSION,
   extractVaultOverrides,
+  isVaultOwnedChromeKey,
   patchVaultSettingsDoc,
   type LegacySectionKey,
   type VaultOverrideKey,
@@ -226,19 +227,20 @@ export function useVaultSettings(root: string | null, readOnly = false): VaultSe
   const resetAll = useCallback(async (): Promise<void> => {
     if (rootRef.current === null) return
     if (readOnlyRef.current) {
-      const baseKeys = Object.keys(extractVaultOverrides(docRef.current))
-      if (baseKeys.length === 0) {
-        setSessionOverrides(EMPTY_OVERRIDES)
-      } else {
+      const baseKeys = Object.keys(extractVaultOverrides(docRef.current)).filter((k) => !isVaultOwnedChromeKey(k))
+      setSessionOverrides((prev) => {
         const next: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(prev)) {
+          if (isVaultOwnedChromeKey(k)) next[k] = v
+        }
         for (const k of baseKeys) next[k] = SESSION_UNSET
-        setSessionOverrides(next)
-      }
+        return Object.keys(next).length === 0 ? EMPTY_OVERRIDES : next
+      })
       return
     }
     if (malformedRef.current) return
-    const nextDoc = patchVaultSettingsDoc(docRef.current, {}, VAULT_OVERRIDE_KEYS)
-    await commitPatch(nextDoc, { version: VAULT_SETTINGS_VERSION }, ['version', ...VAULT_OVERRIDE_KEYS])
+    const nextDoc = patchVaultSettingsDoc(docRef.current, {}, GLOBAL_INHERITING_OVERRIDE_KEYS)
+    await commitPatch(nextDoc, { version: VAULT_SETTINGS_VERSION }, ['version', ...GLOBAL_INHERITING_OVERRIDE_KEYS])
   }, [commitPatch])
 
   const effectiveDoc = useMemo(() => mergeSessionSections(doc, sessionSections), [doc, sessionSections])

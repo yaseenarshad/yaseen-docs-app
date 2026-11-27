@@ -6172,6 +6172,31 @@ describe('the tab row fits: the saved row and the ⋯ menu (YAZ-3273, YAZ-3278)'
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Favorites')
   })
 
+  it('YAZ-6593: the Tab row panel shows the scope header, "Reset to default" (no "Reset to global"), and "Edit in Settings…"', async () => {
+    const onEditTabRowInSettings = vi.fn()
+    const { el, props } = await mount({
+      lens: 'files',
+      ...withTabs({ hidden: ['focus'] }),
+      tabRowScope: { label: 'My Workspace (workspace)', note: 'Applies to this multi-vault window.' },
+      onEditTabRowInSettings,
+    })
+    rightClick(el.querySelector('.sidebar__lenses'))
+    act(() => itemByLabel(el, 'Edit tab row…')?.click())
+    const panel = panelOf(el)
+    expect(panel?.querySelector('.tab-row-panel__scope')?.textContent).toContain('Tabs for: My Workspace (workspace)')
+    expect(panel?.querySelector('.tab-row-panel__scope-note')?.textContent).toBe('Applies to this multi-vault window.')
+    expect(panel?.textContent).not.toContain('Reset to global')
+    const resetBtn = panel?.querySelector<HTMLButtonElement>('.tab-row-panel__reset')
+    expect(resetBtn?.textContent).toBe('Reset to default')
+    act(() => resetBtn?.click())
+    expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({ ...TEST_SETTINGS, sidebarTabs: DEFAULT_SIDEBAR_TABS })
+    const editBtn = panel?.querySelector<HTMLButtonElement>('.tab-row-panel__action')
+    expect(editBtn?.textContent).toBe('Edit in Settings…')
+    act(() => editBtn?.click())
+    expect(onEditTabRowInSettings).toHaveBeenCalledTimes(1)
+    expect(panelOf(el)).toBeNull()
+  })
+
   describe('the fit (D1, S2 to S5, S30)', () => {
     // A fake layout: the row is `width` px wide, Files 47 px, a glyph 31 px, each button 30 px, no gap and no padding (no CSS in jsdom).
     let width = 400
