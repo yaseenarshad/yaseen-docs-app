@@ -19,6 +19,7 @@ import { CARD_MIN_WIDTH, clampCardWidth, inboxCardWidth, setInboxCardWidth } fro
 import { useReadOnlyVault } from '../vault/readOnlyVault'
 import { ZOOM_EVENT } from '../editor/zoomRequest'
 import { listenTour } from '../course/tourBus'
+import cardScreensCss from './cardScreens.css?inline'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -1277,6 +1278,22 @@ describe('YAZ-5044 the Inbox head: the ID, the title in the card`s band (YAZ-530
     expect(vi.mocked(props.openPage).mock.calls).toEqual([[PATH]])
   })
 
+  it('YAZ-6591: without an explicit openAt prop, CardInbox reads vault-level review.settings.inboxOpenAt', () => {
+    mount(PLAIN, { ...DEFAULT_REVIEW_SETTINGS, inboxOpenAt: 'card' })
+    session = { ...session, card: { ...session.card!, index: 1 }, place: [{ kind: 'page', label: 'Cards', path: PATH }] }
+    render()
+    press('o')
+    expect(vi.mocked(props.openPage).mock.lastCall).toEqual([PATH, { id: 'WIKI-9', index: 1 }])
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__path-part[data-kind="page"]')!.click())
+    expect(vi.mocked(props.openPage).mock.lastCall).toEqual([PATH, { id: 'WIKI-9', index: 1 }])
+    // Default 'top' opens the page alone.
+    mount(PLAIN, { ...DEFAULT_REVIEW_SETTINGS, inboxOpenAt: 'top' })
+    session = { ...session, card: { ...session.card!, index: 1 }, place: [{ kind: 'page', label: 'Cards', path: PATH }] }
+    render()
+    press('o')
+    expect(vi.mocked(props.openPage).mock.lastCall).toEqual([PATH])
+  })
+
   it('YAZ-5164 part 3: the front never shows the title; a click on the head`s title renames the card on its card line (YAZ-5308), one write', async () => {
     lineWrites.length = 0
     mount(PLAIN)
@@ -1932,6 +1949,130 @@ describe('YAZ-5689: the top row`s right end is the count and ONE sliders icon, "
     expect(onFocusMode).toHaveBeenLastCalledWith(true)
     withFocus(true, onFocusMode)
     expect(focus().getAttribute('aria-pressed')).toBe('true')
+  })
+})
+
+describe('YAZ-6591: cardLocation 4 modes, View panel Location quick toggle, and Focus accent dot', () => {
+  const PLACE = [
+    { kind: 'folder' as const, label: 'Spanish', path: '/v/spanish' },
+    { kind: 'page' as const, label: 'Verbs', path: PATH },
+  ]
+  const pathEl = () => el.querySelector('.card-inbox__path')
+  const fromEl = () => el.querySelector('.card-inbox__from')
+  const view = () => el.querySelector<HTMLButtonElement>('.card-inbox__bar .card-inbox__view')!
+  const panel = () => document.querySelector<HTMLElement>('.card-inbox__view-panel')
+  const openView = () => {
+    if (panel() === null) act(() => view().click())
+    return panel()!
+  }
+  const locationBtn = () => openView().querySelector<HTMLButtonElement>('[data-row="location"] button.card-inbox__view-time')!
+  const renderWith = (over: Partial<CardInboxProps> = {}) => act(() => root?.render(<CardInbox {...props} review={review} session={session} {...over} />))
+
+  beforeEach(() => localStorage.removeItem('inbox:zoom'))
+
+  it('focus-hide (default): shows breadcrumb normally, hides it in Focus mode, and keeps folder/page review scope visible', () => {
+    mount(TWO_SIDES)
+    session = { ...session, scope: 'folder', from: ['Spanish'], place: PLACE }
+    renderWith({ focusMode: false, onFocusMode: vi.fn() })
+    expect(review.settings.cardLocation).toBe('focus-hide')
+    expect(pathEl()).not.toBeNull()
+    expect(fromEl()?.textContent).toBe('·in Spanish')
+
+    renderWith({ focusMode: true, onFocusMode: vi.fn() })
+    expect(pathEl()).toBeNull()
+    expect(fromEl()?.textContent).toBe('·in Spanish')
+
+    renderWith({ focusMode: false, onFocusMode: vi.fn() })
+    expect(pathEl()).not.toBeNull()
+  })
+
+  it('until-revealed: hides breadcrumb until all blanks and sides show, then reveals it and hides again on the next card', async () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, cardLocation: 'until-revealed' })
+    session = { ...session, place: PLACE }
+    render()
+    // 4 steps to reveal TWO_SIDES: France, side 2, Paris, Seine.
+    for (let i = 0; i < 3; i++) {
+      expect(pathEl(), `step ${i}`).toBeNull()
+      press(' ')
+    }
+    expect(pathEl()).toBeNull()
+    press(' ')
+    await flush()
+    expect(pathEl()).not.toBeNull()
+
+    // Moving to the next card hides location again.
+    session = { ...session, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10', text: 'Next {{word}}' } }, place: PLACE }
+    render()
+    expect(pathEl()).toBeNull()
+  })
+
+  it('show: always keeps breadcrumb visible even in Focus mode before reveal', () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, cardLocation: 'show' })
+    session = { ...session, place: PLACE }
+    renderWith({ focusMode: true, onFocusMode: vi.fn() })
+    expect(pathEl()).not.toBeNull()
+  })
+
+  it('hide: always hides breadcrumb even outside Focus mode and after full reveal, while keeping review scope visible', async () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, cardLocation: 'hide' })
+    session = { ...session, scope: 'folder', from: ['Spanish'], place: PLACE }
+    renderWith({ focusMode: false, onFocusMode: vi.fn() })
+    expect(pathEl()).toBeNull()
+    expect(fromEl()?.textContent).toBe('·in Spanish')
+    for (let i = 0; i < 4; i++) press(' ')
+    await flush()
+    expect(pathEl()).toBeNull()
+    expect(fromEl()?.textContent).toBe('·in Spanish')
+  })
+
+  it('View panel Location row peeks for the current card, resets on the next card, and clears when cardLocation changes', () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, cardLocation: 'focus-hide' })
+    session = { ...session, place: PLACE }
+    renderWith({ focusMode: true, onFocusMode: vi.fn() })
+    expect(pathEl()).toBeNull()
+
+    const rows = [...openView().querySelectorAll<HTMLElement>('.card-inbox__view-row')]
+    expect(rows.map((r) => r.dataset.row)).toEqual(['time', 'zoom', 'focus', 'location'])
+    expect(rows[3].querySelector('.card-inbox__view-label')?.textContent).toBe('Location')
+    expect([locationBtn().textContent, locationBtn().getAttribute('aria-label'), locationBtn().getAttribute('aria-pressed')]).toEqual(['Show', 'Card location', 'false'])
+
+    // Peek for the current card: breadcrumb shows and button flips to Hide.
+    act(() => locationBtn().click())
+    expect(pathEl()).not.toBeNull()
+    expect([locationBtn().textContent, locationBtn().getAttribute('aria-pressed')]).toEqual(['Hide', 'true'])
+
+    // Next card resets the peek automatically so it never spoils the next card.
+    session = { ...session, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10' } }, place: PLACE }
+    renderWith({ focusMode: true, onFocusMode: vi.fn() })
+    expect(pathEl()).toBeNull()
+    expect([locationBtn().textContent, locationBtn().getAttribute('aria-pressed')]).toEqual(['Show', 'false'])
+
+    // Peek again, then change cardLocation setting: peek clears and new setting wins.
+    act(() => locationBtn().click())
+    expect(pathEl()).not.toBeNull()
+    review = { ...review, settings: { ...review.settings, cardLocation: 'hide' } }
+    renderWith({ focusMode: true, onFocusMode: vi.fn() })
+    expect(pathEl()).toBeNull()
+    expect([locationBtn().textContent, locationBtn().getAttribute('aria-pressed')]).toEqual(['Show', 'false'])
+  })
+
+  it('View button wears the Focus accent dot (data-focused) and title when focusMode is active', () => {
+    mount(TWO_SIDES)
+    renderWith({ focusMode: false, onFocusMode: vi.fn() })
+    expect(view().hasAttribute('data-focused')).toBe(false)
+    expect(view().title).toBe('View')
+
+    renderWith({ focusMode: true, onFocusMode: vi.fn() })
+    expect(view().hasAttribute('data-focused')).toBe(true)
+    expect(view().title).toBe('View · Focus mode')
+    expect(cardScreensCss).toContain('.card-inbox__view[data-focused]::after')
+
+    // Combined with zoom: both attributes and both title parts present.
+    const plus = openView().querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!
+    act(() => plus.click())
+    expect(view().hasAttribute('data-zoomed')).toBe(true)
+    expect(view().hasAttribute('data-focused')).toBe(true)
+    expect(view().title).toBe('View · Zoom 125% · Focus mode')
   })
 })
 
