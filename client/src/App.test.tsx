@@ -7530,8 +7530,8 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
           return [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].map((n) => n.textContent).filter((text) => text?.startsWith('Vault: ')).map((text) => [title, text])
         })
     act(() => emitSettings())
-    // Files names it twice ("Daily pages" and "This vault") and Links & IDs names it once at the top of the section (YAZ-6484).
-    expect(named()).toEqual([['Files', 'Vault: v'], ['Files', 'Vault: v'], ['Links & IDs', 'Vault: v'], ...Array.from({ length: 4 }, () => ['Cards', 'Vault: v']), ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
+    // Files names it twice ("Daily pages" and "This vault"), Links & IDs once, and Cards five times (Cards, Inbox, Answers, Daily, Memory — YAZ-6591).
+    expect(named()).toEqual([['Files', 'Vault: v'], ['Files', 'Vault: v'], ['Links & IDs', 'Vault: v'], ...Array.from({ length: 5 }, () => ['Cards', 'Vault: v']), ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
     act(() => button(el, 'Close settings')?.click())
     show('/w/b.md')
     act(() => emitSettings())
