@@ -41,7 +41,8 @@ describe('the Review screen: Open page and Back, double taps, Undo, lost answers
     app.sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store })
     await app.click('Search')
     await app.click('Review')
-    for (let i = 0; i < 8 && !app.text().includes('DC-'); i++) await app.settle()
+    // ReviewView is lazy-loaded (like the reader below); on a cold import it can take more than 8 settles.
+    for (let i = 0; i < 400 && !app.text().includes('DC-'); i++) await app.settle()
     await app.click('Remembered')
     for (let i = 0; i < 4; i++) await app.settle()
     const card = app.host.querySelector<HTMLElement>('.review__card')!
@@ -61,7 +62,8 @@ describe('the Review screen: Open page and Back, double taps, Undo, lost answers
     expect(panelText()).toContain('A long page')
     console.log('[4B-A] page scrolled to:', JSON.stringify(scrolled))
     await act(async () => closeTop())
-    for (let i = 0; i < 8 && !app.text().includes('DC-'); i++) await app.settle()
+    // ReviewView is lazy-loaded (like the reader below); on a cold import it can take more than 8 settles.
+    for (let i = 0; i < 400 && !app.text().includes('DC-'); i++) await app.settle()
     for (let i = 0; i < 6; i++) await app.settle()
     Element.prototype.scrollIntoView = orig
     const after = { meta: app.host.querySelector('.review__meta')?.textContent, head: app.host.querySelector('.review__head')?.textContent, last: app.host.querySelector('.review__last')?.textContent, blanks: app.host.querySelectorAll('.card__blank').length, card: (app.host.querySelector('.phone-card__body')?.textContent ?? '').replace(/\s+/g, ' ').trim() }
@@ -77,7 +79,8 @@ describe('the Review screen: Open page and Back, double taps, Undo, lost answers
     app.sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store })
     await app.click('Search')
     await app.click('Review')
-    for (let i = 0; i < 8 && !app.text().includes('DC-'); i++) await app.settle()
+    // ReviewView is lazy-loaded (like the reader below); on a cold import it can take more than 8 settles.
+    for (let i = 0; i < 400 && !app.text().includes('DC-'); i++) await app.settle()
     const scrolled: string[] = []
     const orig = Element.prototype.scrollIntoView
     Element.prototype.scrollIntoView = function (this: Element) {
