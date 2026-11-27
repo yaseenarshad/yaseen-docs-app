@@ -348,7 +348,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   // Space's steps (D18, YAZ-5048, YAZ-5049, YAZ-5105 round 3) and the scroll that follows them: the Inbox's card,
   // shared with the Preview (YAZ-5152, `inboxCard.tsx`). The card's sound stops with the card and a hidden Inbox.
   const titleStep = bandTitleStep(headTitle, card?.page?.titleAt, review.settings.titleAt)
-  const steps = useCardSteps(text, cardKey, rootRef, titleStep)
+  const steps = useCardSteps(text, cardKey, rootRef, titleStep, review.settings.spaceBehavior)
   const { counts, step, done, nextSide, titleNow, onLastSide } = steps
   // YAZ-5696: when the band's title shows (the card's own choice, else Settings › Cards › Show card titles).
   const band = bandTitle(headTitle, card?.page?.titleAt, review.settings.titleAt, steps)
@@ -361,9 +361,9 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
     cardLocation === 'hide' ||
     (cardLocation === 'focus-hide' && focusMode) ||
     (cardLocation === 'until-revealed' && !done)
-  const [locationPeek, setLocationPeek] = useState<{ key: string | null; hidden: boolean } | null>(null)
-  useEffect(() => setLocationPeek(null), [cardKey, cardLocation])
-  const hideLocation = locationPeek !== null && locationPeek.key === cardKey ? locationPeek.hidden : baseHideLocation
+  const peekScope = `${cardKey ?? ''}\0${cardLocation}\0${focusMode ? '1' : '0'}`
+  const [locationPeek, setLocationPeek] = useState<{ scope: string; hidden: boolean } | null>(null)
+  const hideLocation = locationPeek !== null && locationPeek.scope === peekScope ? locationPeek.hidden : baseHideLocation
 
   // The buttons show with the card (YAZ-5010): their reviews are fixed now, so the hover and the write agree (D13). Again after a delete re-reads the card.
   // The page object, not its text (YAZ-5029): a card read again with the same text is a new page, and fixes again.
@@ -653,7 +653,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
             focusMode={focusMode}
             onFocusMode={onFocusMode}
             locationHidden={hideLocation}
-            onToggleLocation={session.place.length > 0 ? () => setLocationPeek({ key: cardKey, hidden: !hideLocation }) : undefined}
+            onToggleLocation={session.place.length > 0 ? () => setLocationPeek({ scope: peekScope, hidden: !hideLocation }) : undefined}
           />
         }
       />

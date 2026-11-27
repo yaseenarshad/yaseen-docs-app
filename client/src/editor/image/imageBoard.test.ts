@@ -274,6 +274,30 @@ describe('a board src (2B)', () => {
     expect(openExplore).toHaveBeenCalledExactlyOnceWith('/w/Sketch.excalidraw')
   })
 
+  it('YAZ-6614: read-only double-click on cross-vault .excalidraw opens Explore directly when wired (no unlock prompt)', async () => {
+    const openExplore = vi.fn()
+    const onEditInPopup = vi.fn()
+    const base = imageOptions()
+    const image: ImageOptions = {
+      ...base,
+      boards: {
+        ...base.boards!,
+        onEditInPopup,
+        linkMenu: (path) => ({ labels: [], open: () => void path, openExplore: () => openExplore(path) }),
+      },
+    }
+    const { root, view } = await mount('![Sketch](../w/Sketch.excalidraw)\n', image)
+    await windows(1)
+    view.setProps({ editable: () => false })
+    const captured: Event[] = []
+    root.addEventListener(READ_ONLY_EDIT, (e) => captured.push(e))
+
+    fakes.list[0]!.host.onOpen!('thisTab')
+    expect(openExplore).toHaveBeenCalledExactlyOnceWith('/w/Sketch.excalidraw')
+    expect(onEditInPopup).not.toHaveBeenCalled()
+    expect(captured).toHaveLength(0)
+  })
+
   it('an alias in the alt stays: `![CloudFront|My name](…)` writes `|My name|640x360 …`', async () => {
     const { crepe } = await mount('![CloudFront|My name](../w/CloudFront.drawio)\n')
     await windows(1)

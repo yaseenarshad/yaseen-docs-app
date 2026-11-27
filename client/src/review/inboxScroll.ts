@@ -38,10 +38,14 @@ export const BLANK_BOTTOM_MARGIN_PX = 32
 const scrollState = new WeakMap<HTMLElement, { from: number; target: number; at: number }>()
 const CHAIN_MS = 300
 
-function scrollViewTo(view: HTMLElement, top: number): void {
+function scrollViewTo(view: HTMLElement, top: number): boolean {
   const smooth = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== true
-  if (typeof view.scrollTo === 'function') view.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
-  else view.scrollTop = top
+  if (typeof view.scrollTo === 'function') {
+    view.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
+    return smooth
+  }
+  view.scrollTop = top
+  return false
 }
 
 /**
@@ -94,8 +98,8 @@ export function glideView(view: HTMLElement, dy: number): void {
   const now = Date.now()
   const base = effectiveScrollTop(view, now)
   const target = Math.min(max, Math.max(0, base + dy / cssZoom(view)))
-  scrollState.set(view, { from: view.scrollTop, target, at: now })
-  scrollViewTo(view, target)
+  if (scrollViewTo(view, target)) scrollState.set(view, { from: view.scrollTop, target, at: now })
+  else scrollState.delete(view)
 }
 
 /**
@@ -110,8 +114,8 @@ export function arrowGlide(view: HTMLElement, delta: -1 | 1): boolean {
   const base = effectiveScrollTop(view, now)
   const target = Math.min(max, Math.max(0, base + delta * step))
   if (Math.abs(target - view.scrollTop) < 1 && Math.abs(target - base) < 1) return false
-  scrollState.set(view, { from: view.scrollTop, target, at: now })
-  scrollViewTo(view, target)
+  if (scrollViewTo(view, target)) scrollState.set(view, { from: view.scrollTop, target, at: now })
+  else scrollState.delete(view)
   return true
 }
 
@@ -125,8 +129,8 @@ export function glideToBottomIfNear(view: HTMLElement): void {
   const base = effectiveScrollTop(view, now)
   const remaining = max - base
   if (remaining < 1 || remaining > view.clientHeight * 0.5) return
-  scrollState.set(view, { from: view.scrollTop, target: max, at: now })
-  scrollViewTo(view, max)
+  if (scrollViewTo(view, max)) scrollState.set(view, { from: view.scrollTop, target: max, at: now })
+  else scrollState.delete(view)
 }
 
 /**

@@ -501,8 +501,13 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
           onOptions: (next) => writeOptions(view, mount, next),
           onOpen: (how) => {
             if (how === 'thisTab' && refOf(mount.target).kind === 'drawing' && opts.onEditInPopup !== undefined) {
-              if (!view.editable) tellReadOnlyEdit(dom, 'drawing', () => opts.onEditInPopup?.(mount.target))
-              else opts.onEditInPopup(mount.target)
+              if (!view.editable) {
+                const openExplore = opts.linkMenu?.(mount.target).openExplore
+                if (openExplore !== undefined) openExplore()
+                else tellReadOnlyEdit(dom, 'drawing', () => opts.onEditInPopup?.(mount.target))
+              } else {
+                opts.onEditInPopup(mount.target)
+              }
               return
             }
             opts.follow?.(mount.target, how)

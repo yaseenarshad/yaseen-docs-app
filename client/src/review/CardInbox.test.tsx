@@ -2374,29 +2374,42 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(scrollTo).not.toHaveBeenCalled()
       })
 
-      it('the next blank off screen: that Space only glides it in, a third of the way down, and shows nothing; the next Space shows it, and nothing moves', () => {
+      it('the next blank off screen: in jump mode Space glides it in a third down; in default scroll mode Space walks down in ~35% reading steps', () => {
+        // Explicit jump mode preserves direct glide to LAND_LINE (700 - 200 = 500).
         mount(THREE)
-        scroller()
+        review.settings = { ...review.settings, spaceBehavior: 'jump' }
+        render()
+        const jumpView = scroller()
         press(' ')
         place.word1 = [700, 720]
         press(' ')
         expect(shown()).toEqual(['one'])
         expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
         // The glide put it in view: now Space shows it, and the view stays where it is.
+        jumpView.scrollTop = 500
         place.word1 = [200, 220]
         place.word2 = [700, 720]
         scrollTo.mockClear()
         press(' ')
         expect(shown()).toEqual(['one', 'two'])
         expect(scrollTo).not.toHaveBeenCalled()
+
+        // Default scroll mode steps down by 180 px instead of jumping 500 px past intervening sections.
+        mount(THREE)
+        scroller()
+        press(' ')
+        place.word1 = [700, 720]
+        press(' ')
+        expect(shown()).toEqual(['one'])
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 180 }))
       })
 
       it('a blank cut by the view`s bottom edge, or by the top row`s, is not in view: Space only moves it (above the view: the least scroll, a small gap kept); the in-flow dock never clips it (YAZ-6055)', () => {
         mount(THREE)
         scroller()
-        // Even if the in-flow dock rect is above box.bottom, a blank wholly inside [top, box.bottom] is in view.
+        // Even if the in-flow dock rect is above box.bottom, a blank wholly inside [top, box.bottom - 32px margin] is in view.
         place.dock = [340, 420]
-        place.word0 = [350, 370]
+        place.word0 = [340, 360]
         press(' ')
         expect(shown()).toEqual(['one'])
         expect(scrollTo).not.toHaveBeenCalled()
@@ -2413,9 +2426,11 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 300 + 90 - 100 - 6 }))
       })
 
-      it('the next side: Space shows it when the card`s end sits in the top two thirds of the room; lower, that Space only brings the end up a third of the way down, and the next shows the side, with no move after', () => {
+      it('the next side: Space shows it when the card`s end sits in the top two thirds of the room; lower, jump mode glides to LAND_LINE while scroll mode steps in ~35% chunks', () => {
         mount(TWO_SIDES)
-        scroller()
+        review.settings = { ...review.settings, spaceBehavior: 'jump' }
+        render()
+        const view = scroller()
         press(' ')
         expect(shown()).toEqual(['France'])
         place.panel = [110, 700]
@@ -2423,6 +2438,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(sides()).toBe(1)
         expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
         scrollTo.mockClear()
+        view.scrollTop = 500
         place.panel = [110, 200]
         place.word1 = [700, 720]
         press(' ')
@@ -2432,7 +2448,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         // The side's first blank is below the view: the next Space only moves it.
         press(' ')
         expect(shown()).toEqual(['France'])
-        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 500 + 700 - 200 }))
       })
 
       it('fix "my spacebar on inbox is no longer working": a short card (its end low in the room, nothing to scroll) shows its next side at once; a move the view cannot make in full is cut to what it can', () => {
@@ -2469,9 +2485,9 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(blanks()).toBe(0)
         // 5000px remaining (> half viewport): stays put so unread text is not skipped.
         expect(scrollTo).not.toHaveBeenCalled()
-        // Next Space pages down smoothly (~70% of 300px room = 210px).
+        // Next Space steps down smoothly in default scroll mode (180px step), without ringing buttons.
         press(' ')
-        expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: Math.round(300 * 0.7), behavior: 'smooth' })
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 180, behavior: 'smooth' })
         expect(answers().hasAttribute('data-nudge')).toBe(false)
         scrollTo.mockClear()
         // Once at the bottom: one more Space moves nothing and rings the buttons.
