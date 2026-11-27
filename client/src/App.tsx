@@ -922,7 +922,7 @@ export function App() {
     if (Object.keys(other).length > 0) changeSettings({ ...storage.getSettings(), ...other })
   }, [writeChromeOverrides, changeSettings])
   const changeRowDates = useCallback((rowDates: SettingsState['rowDates']) => writeChromeOverrides({ rowDates }), [writeChromeOverrides])
-  const resetSidebarTabsToGlobal = useCallback(() => writeChromeOverrides({}, ['sidebarTabs']), [writeChromeOverrides])
+  const tabRowScope = useMemo(() => (roots.length === 0 ? undefined : windowChrome.isMultiVault ? { label: `${matchedVaultSet?.name ?? 'Workspace'} (workspace)`, note: 'Applies to this multi-vault window.' } : { label: first.name ?? storage.vaultName(roots[0]) }), [roots, windowChrome.isMultiVault, matchedVaultSet?.name, first.name])
   useEffect(() => {
     roots.forEach((at, i) => setVaultNewPageDrawing(at, vaults[i]?.vaultSettings.overrides.newPageDrawing))
   }, [roots, vaults])
@@ -1698,7 +1698,7 @@ export function App() {
   // because `useMenuEvents` resubscribes whenever a callback identity changes.
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Which page the dialog opens on: the first, or Sharing from the Share dialog's "Open Settings › Sharing" (YAZ-3040).
-  const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | 'cards' | undefined>(undefined)
+  const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | 'cards' | 'sidebar' | undefined>(undefined)
   // Spacing's Vault dropdown starts on the active tab's vault at each open (YAZ-5485).
   useEffect(() => {
     if (!settingsOpen) {
@@ -1709,19 +1709,11 @@ export function App() {
       setFolderPagesRoot(null)
     }
   }, [settingsOpen])
-  const openSettings = useCallback(() => {
-    setSettingsPage(undefined)
-    setSettingsOpen(true)
-  }, [])
-  const openSharingSettings = useCallback(() => {
-    setSettingsPage('sharing')
-    setSettingsOpen(true)
-  }, [])
+  const openSettings = useCallback(() => { setSettingsPage(undefined); setSettingsOpen(true) }, [])
+  const openSharingSettings = useCallback(() => { setSettingsPage('sharing'); setSettingsOpen(true) }, [])
   // The card skill's notice (YAZ-5108): "Open Settings" opens at Cards (was Review), where the switch is.
-  const openReviewSettings = useCallback(() => {
-    setSettingsPage('cards')
-    setSettingsOpen(true)
-  }, [])
+  const openReviewSettings = useCallback(() => { setSettingsPage('cards'); setSettingsOpen(true) }, [])
+  const openSidebarSettings = useCallback(() => { setSettingsPage('sidebar'); setSettingsOpen(true) }, [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
   // THE CARD COURSE (YAZ-5120): one layer over the window, opened only by a person's click (Settings › Cards, the
@@ -4438,7 +4430,8 @@ export function App() {
           pageFilesIn={pageFilesIn}
           onChangeSettings={changeSidebarSettings}
           onChangeRowDates={changeRowDates}
-          onResetTabsToGlobal={Object.hasOwn(windowChrome.chromeOverrides, 'sidebarTabs') ? resetSidebarTabsToGlobal : undefined}
+          tabRowScope={tabRowScope}
+          onEditTabRowInSettings={openSidebarSettings}
           onOpenSettings={openSettings}
           onOpenDailyPage={settings.dailyPages ? openDailyPage : undefined}
           update={update}

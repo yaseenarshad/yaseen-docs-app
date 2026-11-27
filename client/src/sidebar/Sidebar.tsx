@@ -46,7 +46,7 @@ import { appRowsLast, keepsOrder, searchIdsOption, shownLabel, sortLevel, sortSe
 import { useVaultRowDates } from './useVaultRowDates'
 import { cardSkillFolder } from '@shared/cardSkillFolder'
 import { cardSkillPrompt } from '../vault/cardSkill'
-import { ACTIVE_TAB_SELECTOR, SidebarTabs } from './SidebarTabs'
+import { ACTIVE_TAB_SELECTOR, SidebarTabs, type TabRowScope } from './SidebarTabs'
 import { folderShortcuts } from './folderShortcuts'
 import { folderPageRows, showFolderPageFiles } from './folderPageRows'
 import { askPageTab } from '../views/pageTabRequest'
@@ -268,7 +268,7 @@ interface SidebarProps {
   /** Show folder page files of each vault (YAZ-5489: its folder-pages.json, else the app's); absent, the app's. */
   pageFilesIn?: (root: string) => boolean
   onChangeSettings: (next: SettingsState) => void
-  onChangeRowDates?: (next: SettingsState['rowDates']) => void; onResetTabsToGlobal?: () => void
+  onChangeRowDates?: (next: SettingsState['rowDates']) => void; tabRowScope?: TabRowScope; onEditTabRowInSettings?: () => void
   /** The footer cog: App mounts the settings dialog, so the cog only asks for it (YAZ-1679). */
   onOpenSettings: () => void
   /** The footer's "Open today's daily page" (YAZ-3607 D7), a background tab on ⌘-click (YAZ-3776); absent while Daily pages is off. */
@@ -775,7 +775,7 @@ export function Sidebar({
   createRequest = null,
   onCreateConsumed,
   settings,
-  onChangeSettings, onChangeRowDates, onResetTabsToGlobal,
+  onChangeSettings, onChangeRowDates, tabRowScope, onEditTabRowInSettings,
   onOpenSettings,
   onOpenDailyPage,
   update,
@@ -2273,7 +2273,7 @@ export function Sidebar({
         foldDisabled={foldDisabled}
         foldLabel={allLabel}
         foldOpen={foldOpen}
-        onFold={foldAll} onRefresh={onRefreshFiles} onResetTabsToGlobal={onResetTabsToGlobal}
+        onFold={foldAll} onRefresh={onRefreshFiles} tabRowScope={tabRowScope} onEditTabRowInSettings={onEditTabRowInSettings}
       />
       {/* The search bar (YAZ-739 A-, chrome v2 row 2), on the Search tab only (YAZ-2638 D2): the
           tab carries the magnifier, so the bar has none. With text typed the body below is the

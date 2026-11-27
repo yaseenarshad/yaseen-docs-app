@@ -618,6 +618,8 @@ export const groupsOf = (section: SettingsSection, ctx: SettingsCtx): readonly S
 
 /** The colour rows' control (YAZ-5100 round 2): loaded only when Settings shows one. */
 const IconColourControl = lazy(() => import('./IconColourControl'))
+/** Settings › Sidebar › Tab row control (YAZ-6593): lazy-loaded. */
+const SidebarTabsControl = lazy(() => import('./SidebarTabsControl'))
 
 /**
  * Whether a kind's colour row shows (YAZ-5100 round 2): only where the colour shows. Grey and Off draw no colour, and a
@@ -1366,6 +1368,25 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     id: 'sidebar',
     title: 'Sidebar',
     groups: [
+      {
+        // YAZ-6593: Sidebar tab row order, visibility, and right-hand buttons (owned per vault or per workspace).
+        title: 'Tab row',
+        hint: 'Choose which tabs and buttons show at the top of the sidebar and drag to reorder them. Saved per vault or per workspace.',
+        items: [
+          {
+            id: 'sidebarTabs',
+            label: 'Tab row',
+            hint: 'Order and visibility of sidebar tabs and right-hand buttons.',
+            keywords: ['sidebar', 'tab', 'tabs', 'tab row', 'order', 'reorder', 'hide', 'show', 'files', 'search', 'focus', 'favorites', 'sessions', 'recents', 'sort', 'collapse', 'more'],
+            wide: () => true,
+            render: ({ settings, onChange }) => (
+              <Suspense fallback={null}>
+                <SidebarTabsControl value={settings.sidebarTabs} onChange={(sidebarTabs) => onChange({ ...settings, sidebarTabs })} />
+              </Suspense>
+            ),
+          },
+        ],
+      },
       {
         // YAZ-5885 D1, D2: how tall every row of the sidebar's lists is (Files, Favorites, Focus, Recents, the search
         // results), a Files window too. The text keeps its size; the sidebar zoom scales on top.
