@@ -600,8 +600,8 @@ export function App() {
   const matchedVaultSet = roots.length >= 2 ? (storage.getVaultSets().find((set) => sameVaults(set.roots, roots)) ?? null) : null
   const legacyRowDates = roots.length > 0 ? storage.getFolderRowDates(roots[0]) : null
   const windowChrome = useMemo(
-    () => resolveWindowChrome(appSettings, roots, matchedVaultSet?.id ?? null, roots.length === 1 ? first.vaultSettings.overrides : null, legacyRowDates),
-    [appSettings, roots, matchedVaultSet?.id, first.vaultSettings.overrides, legacyRowDates],
+    () => resolveWindowChrome(appSettings, roots, matchedVaultSet?.id ?? null, roots.length === 1 ? first.vaultSettings.overrides : null, legacyRowDates, matchedVaultSet?.name ?? null),
+    [appSettings, roots, matchedVaultSet?.id, matchedVaultSet?.name, first.vaultSettings.overrides, legacyRowDates],
   )
   const chromeSettings = windowChrome.settings
   const [cardSkill] = useState(storage.getCardSkill)
@@ -904,17 +904,17 @@ export function App() {
     storage.setSettings(next)
     setSettings(next)
   }, [])
-  const chromeWriteRef = useRef({ roots, first, wsKey: windowChrome.wsKey, sidebarSettings })
-  chromeWriteRef.current = { roots, first, wsKey: windowChrome.wsKey, sidebarSettings }
+  const chromeWriteRef = useRef({ roots, first, wsKey: windowChrome.wsKey, legacyWsKey: windowChrome.legacyWsKey, sidebarSettings })
+  chromeWriteRef.current = { roots, first, wsKey: windowChrome.wsKey, legacyWsKey: windowChrome.legacyWsKey, sidebarSettings }
   const writeChromeOverrides = useCallback((patch: Partial<WorkspaceChromeOverrides>, unset: readonly VaultChromeKey[] = []) => {
     const cur = chromeWriteRef.current
     if (cur.roots.length === 0) return changeGlobalSettings({ ...storage.getSettings(), ...patch })
     if (cur.roots.length === 1) return void cur.first.vaultSettings.setOverrides(patch, unset)
-    if (cur.wsKey !== null) changeGlobalSettings(patchWorkspaceChrome(storage.getSettings(), cur.wsKey, patch, unset))
+    if (cur.wsKey !== null) changeGlobalSettings(patchWorkspaceChrome(storage.getSettings(), cur.wsKey, patch, unset, cur.legacyWsKey))
   }, [changeGlobalSettings])
   const resetWorkspaceChrome = useCallback(() => {
-    const { wsKey } = chromeWriteRef.current
-    if (wsKey !== null) changeGlobalSettings(patchWorkspaceChrome(storage.getSettings(), wsKey, {}, VAULT_CHROME_KEYS))
+    const { wsKey, legacyWsKey } = chromeWriteRef.current
+    if (wsKey !== null) changeGlobalSettings(patchWorkspaceChrome(storage.getSettings(), wsKey, {}, VAULT_CHROME_KEYS, legacyWsKey))
   }, [changeGlobalSettings])
   const changeSidebarSettings = useCallback((next: SettingsState) => {
     const { chrome, other } = splitChromeDiff(chromeWriteRef.current.sidebarSettings, next)

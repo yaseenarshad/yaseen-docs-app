@@ -29,6 +29,7 @@ import { sanitizeVaultLauncherPreset, type VaultLauncherPreset } from './vaultIc
 import { sanitizeWebLinks } from './webLinks'
 import {
   DEFAULT_ROW_DATES,
+  DEFAULT_SIDEBAR_TABS,
   SIDEBAR_BUTTONS,
   SIDEBAR_TABS,
   type RowDates,
@@ -165,23 +166,62 @@ export const VAULT_SETTINGS_DOC_KEYS: readonly string[] = [
   ...LEGACY_SECTION_KEYS,
 ]
 
+/**
+ * Chrome keys that live ONLY on Vault and Workspace — never inherited from Global defaults (YAZ-6593).
+ * Unset vaults/workspaces start from their built-in app default (`DEFAULT_SIDEBAR_TABS`).
+ */
+export const VAULT_OWNED_CHROME_KEYS = ['sidebarTabs'] as const
+export type VaultOwnedChromeKey = (typeof VAULT_OWNED_CHROME_KEYS)[number]
+
 const CHROME_KEY_SET: ReadonlySet<string> = /*#__PURE__*/ new Set(VAULT_CHROME_KEYS)
 const OVERRIDE_KEY_SET: ReadonlySet<string> = /*#__PURE__*/ new Set(VAULT_OVERRIDE_KEYS)
 const LEGACY_SECTION_SET: ReadonlySet<string> = /*#__PURE__*/ new Set(LEGACY_SECTION_KEYS)
+const VAULT_OWNED_CHROME_SET: ReadonlySet<string> = /*#__PURE__*/ new Set(VAULT_OWNED_CHROME_KEYS)
 
 export const isVaultChromeKey = (key: string): key is VaultChromeKey => CHROME_KEY_SET.has(key)
 export const isVaultOverrideKey = (key: string): key is VaultOverrideKey => OVERRIDE_KEY_SET.has(key)
 export const isLegacySectionKey = (key: string): key is LegacySectionKey => LEGACY_SECTION_SET.has(key)
+export const isVaultOwnedChromeKey = (key: string): key is VaultOwnedChromeKey => VAULT_OWNED_CHROME_SET.has(key)
+
+/** Legacy UUID-based workspace key (`ws:<vaultSetId>`) kept for backward-compatible reads and migration. */
+export function legacyWorkspaceSettingsKey(vaultSetId?: string | null): string | null {
+  if (vaultSetId !== undefined && vaultSetId !== null && vaultSetId.trim() !== '') return `ws:${vaultSetId}`
+  return null
+}
 
 /**
  * Stable key for `SettingsState.workspaceSettings`:
- * - Saved workspace (`VaultSet.id`): `ws:<id>`
+ * - Saved workspace with a name (YAZ-6593): `ws-name:<normalized lowercase name>` so chrome syncs across Macs
+ *   even when each Mac has a different local `VaultSet.id`.
+ * - Saved workspace without a name: `ws:<id>`
  * - Ad-hoc multi-vault window: `roots:<sorted canonical roots joined by \0>`
  */
-export function workspaceSettingsKey(roots: readonly string[], vaultSetId?: string | null): string {
-  if (vaultSetId !== undefined && vaultSetId !== null && vaultSetId.trim() !== '') return `ws:${vaultSetId}`
+export function workspaceSettingsKey(roots: readonly string[], vaultSetId?: string | null, vaultSetName?: string | null): string {
+  const cleanedName = vaultSetName?.trim().toLowerCase() ?? ''
+  if (cleanedName.length > 0) return `ws-name:${cleanedName}`
+  const legacy = legacyWorkspaceSettingsKey(vaultSetId)
+  if (legacy !== null) return legacy
   const norm = [...new Set(roots.map((r) => r.replace(/\/+$/, '')))].sort()
   return `roots:${norm.join('\0')}`
+}
+
+/**
+ * Read workspace chrome overrides from `SettingsState.workspaceSettings`, checking the canonical portable key
+ * (`ws-name:<name>`) first and falling back to the legacy UUID key (`ws:<vaultSetId>`) when upgrading (YAZ-6593).
+ */
+export function readWorkspaceChrome(
+  workspaceSettings: Record<string, Record<string, unknown>> | undefined,
+  roots: readonly string[],
+  vaultSetId?: string | null,
+  vaultSetName?: string | null,
+): WorkspaceChromeOverrides {
+  if (!isRecord(workspaceSettings)) return {}
+  const key = workspaceSettingsKey(roots, vaultSetId, vaultSetName)
+  const direct = extractWorkspaceChrome(workspaceSettings[key])
+  if (Object.keys(direct).length > 0) return direct
+  const legacy = legacyWorkspaceSettingsKey(vaultSetId)
+  if (legacy !== null && legacy !== key) return extractWorkspaceChrome(workspaceSettings[legacy])
+  return {}
 }
 
 /** Repair a hand-edited or partial `sidebarTabs` object so missing arrays never crash `.join()` in the sidebar. */
@@ -289,6 +329,8 @@ export function readVaultLauncherPreset(raw: unknown): VaultLauncherPreset | nul
  * - Single-vault window (`workspace == null`): lays all present `vault` overrides over `global`.
  * - Multi-vault window (`workspace != null`): lays non-chrome `vault` overrides (page/outline/layout/nav) over `global`,
  *   and lays `workspace` chrome overrides over `global` so switching tabs never flips sidebar/tab-bar chrome.
+ * - Vault/Workspace-only chrome keys (`sidebarTabs`, YAZ-6593): NEVER inherit from `global.sidebarTabs`; unset
+ *   vaults/workspaces start cleanly from `DEFAULT_SIDEBAR_TABS`.
  */
 export function resolveVaultSettings(
   global: SettingsState,
@@ -297,10 +339,14 @@ export function resolveVaultSettings(
 ): SettingsState {
   const hasVault = vault !== undefined && vault !== null && Object.keys(vault).length > 0
   const hasWorkspace = workspace !== undefined && workspace !== null && Object.keys(workspace).length > 0
-  if (!hasVault && !hasWorkspace) return global
-  const out: Record<string, unknown> = { ...global }
+  const ownTabs = workspace !== undefined && workspace !== null ? workspace.sidebarTabs : vault?.sidebarTabs
+  const resolvedTabs = ownTabs ?? DEFAULT_SIDEBAR_TABS
+  const tabsMatchGlobal = global.sidebarTabs === resolvedTabs
+  if (!hasVault && !hasWorkspace && tabsMatchGlobal) return global
+  const out: Record<string, unknown> = { ...global, sidebarTabs: resolvedTabs }
   if (hasVault) {
     for (const key of VAULT_OVERRIDE_KEYS) {
+      if (key === 'sidebarTabs') continue
       if (workspace !== undefined && workspace !== null && isVaultChromeKey(key)) continue
       const v = vault[key]
       if (v !== undefined) out[key] = v
@@ -308,6 +354,7 @@ export function resolveVaultSettings(
   }
   if (hasWorkspace) {
     for (const key of VAULT_CHROME_KEYS) {
+      if (key === 'sidebarTabs') continue
       const v = workspace[key]
       if (v !== undefined) out[key] = v
     }
