@@ -1252,6 +1252,10 @@ describe('the widths of the tabs (YAZ-2689)', () => {
     expect(rule('.workspace[data-inbox-focus] > .tabbar-row')).toMatch(/display:\s*none;/)
   })
 
+  it('YAZ-6591: focus mode hides sidebar — `.app[data-inbox-focus-sidebar]` hides `.sidebar-shell` and `.sidebar-resize`', () => {
+    expect(rule('.app[data-inbox-focus-sidebar] > .sidebar-shell,\n.app[data-inbox-focus-sidebar] > .sidebar-resize')).toMatch(/display:\s*none;/)
+  })
+
   it('YAZ-3808 6F: with no hover to trust (a drag, and after it until the mouse moves), a tab under the pointer does not light up', () => {
     expect(rule('.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):not(.tabbar__tab--lit):hover::before')).toMatch(/background:\s*var\(--tab-fill\);/)
     expect(rule('.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):hover .tabbar__close,\n.tabbar--hoverless .tabbar__close:hover')).toMatch(/visibility:\s*hidden;/)

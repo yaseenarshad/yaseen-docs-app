@@ -598,7 +598,8 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
-.card-inbox__view[data-zoomed]::after {
+.card-inbox__view[data-zoomed]::after,
+.card-inbox__view[data-focused]::after {
   content: '';
   position: absolute;
   top: 3px;

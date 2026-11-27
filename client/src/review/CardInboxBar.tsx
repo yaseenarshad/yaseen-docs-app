@@ -66,6 +66,8 @@ interface CardInboxBarProps {
   resetCards?: (kind: AddKind) => void
   /** A click on a part of the card's place: the folder page of the vault or a folder, or the page. */
   openPlace?: (part: CardPlacePart) => void
+  /** Hide the card's folder › page breadcrumb (YAZ-6591); keeps the review scope ("· in …") visible. */
+  hideLocation?: boolean
   /** The bubble's Show in sidebar (YAZ-5713): the card's page in the sidebar, lit (the Mac's own Show in sidebar). */
   showInSidebar?: () => void
   /** The folder pick for new cards (YAZ-5322): the picker's rows and its save; without it the row has no "from". */
@@ -76,7 +78,7 @@ interface CardInboxBarProps {
   view?: ReactNode
 }
 
-export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, showInSidebar, pick, friendsButton, view }: CardInboxBarProps) {
+export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, hideLocation = false, showInSidebar, pick, friendsButton, view }: CardInboxBarProps) {
   const button = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const picker = useNewCardsPicker(pick ?? NO_PICK, session)
@@ -135,7 +137,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             <span className="card-inbox__from-part">in {session.from.join(' / ')}</span>
           </span>
         )}
-        {session.place.length > 0 && <CardPath parts={session.place} openPlace={openPlace} showInSidebar={showInSidebar} />}
+        {!hideLocation && session.place.length > 0 && <CardPath parts={session.place} openPlace={openPlace} showInSidebar={showInSidebar} />}
         {/* YAZ-5680 check 2: on every finish screen too, as Mochi ("Finished learning cards." with 4 / 4). */}
         {session.progress.total > 0 && (
           <HoverTip

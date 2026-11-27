@@ -261,7 +261,8 @@ function FriendsIcon() {
   )
 }
 
-export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, showInSidebar, focusMode = false, onFocusMode, courseOffer, hotkeys, linkPreview }: CardInboxProps) {
+export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, openPage: openFile, openAt: openAtProp, editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, showInSidebar, focusMode = false, onFocusMode, courseOffer, hotkeys, linkPreview }: CardInboxProps) {
+  const openAt = openAtProp ?? review.settings.inboxOpenAt
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
@@ -353,6 +354,16 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   const band = bandTitle(headTitle, card?.page?.titleAt, review.settings.titleAt, steps)
   const bodyRef = useRef<HTMLDivElement>(null)
   useStepScroll(steps, shown, rootRef)
+
+  // YAZ-6591: card location hiding (4-mode vault setting) with a per-card quick peek from the View panel.
+  const cardLocation = review.settings.cardLocation
+  const baseHideLocation =
+    cardLocation === 'hide' ||
+    (cardLocation === 'focus-hide' && focusMode) ||
+    (cardLocation === 'until-revealed' && !done)
+  const [locationPeek, setLocationPeek] = useState<{ key: string | null; hidden: boolean } | null>(null)
+  useEffect(() => setLocationPeek(null), [cardKey, cardLocation])
+  const hideLocation = locationPeek !== null && locationPeek.key === cardKey ? locationPeek.hidden : baseHideLocation
 
   // The buttons show with the card (YAZ-5010): their reviews are fixed now, so the hover and the write agree (D13). Again after a delete re-reads the card.
   // The page object, not its text (YAZ-5029): a card read again with the same text is a new page, and fixes again.
@@ -612,6 +623,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
         addCards={review.addCards}
         resetCards={review.resetCards}
         openPlace={(part) => (part.kind === 'page' ? (card !== null && part.path === card.path ? openCard(card, cardFile) : openFile(part.path)) : openPlace?.(part.path))}
+        hideLocation={hideLocation}
         showInSidebar={card !== null && showInSidebar !== undefined ? () => showInSidebar(card.path) : undefined}
         pick={review}
         friendsButton={
@@ -632,7 +644,18 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
             </button>
           ) : undefined
         }
-        view={<ReviewViewButton seconds={session.today.seconds} time={time} zoom={zoom} setZoom={setZoom} focusMode={focusMode} onFocusMode={onFocusMode} />}
+        view={
+          <ReviewViewButton
+            seconds={session.today.seconds}
+            time={time}
+            zoom={zoom}
+            setZoom={setZoom}
+            focusMode={focusMode}
+            onFocusMode={onFocusMode}
+            locationHidden={hideLocation}
+            onToggleLocation={session.place.length > 0 ? () => setLocationPeek({ key: cardKey, hidden: !hideLocation }) : undefined}
+          />
+        }
       />
       {friendsOpen && (
         <Suspense fallback={null}>
