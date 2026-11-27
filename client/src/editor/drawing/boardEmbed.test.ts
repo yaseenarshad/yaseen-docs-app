@@ -374,6 +374,25 @@ describe('open and the menu (2C)', () => {
     expect(onEditInPopup).toHaveBeenCalledExactlyOnceWith('Sketch.excalidraw')
   })
 
+  it('YAZ-6614: read-only double-click on embedded .excalidraw opens Explore directly when wired (no unlock prompt)', async () => {
+    const onEditInPopup = vi.fn()
+    const openExplore = vi.fn()
+    const { root, view } = await mount('![[Sketch.excalidraw]]\n', {
+      wikilinkNav: { ...nav(), openExplore },
+      viewOnlyLinks: viewOnlyResolving(),
+      boardEmbeds: { root: '/v', onEditInPopup },
+    })
+    await windows(1)
+    view.setProps({ editable: () => false })
+    const captured: ReadOnlyEditEvent[] = []
+    root.addEventListener(READ_ONLY_EDIT, (e) => captured.push(e as ReadOnlyEditEvent))
+
+    fakes.list[0]!.host.onOpen!('thisTab')
+    expect(openExplore).toHaveBeenCalledExactlyOnceWith('/v/Sketch.excalidraw')
+    expect(onEditInPopup).not.toHaveBeenCalled()
+    expect(captured).toHaveLength(0)
+  })
+
   it('YAZ-6548: right-click menu on embedded .excalidraw and .drawio includes Open in Explore; read-only .excalidraw keeps Edit drawing via tellReadOnlyEdit', async () => {
     const openExplore = vi.fn()
     const onEditInPopup = vi.fn()

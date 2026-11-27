@@ -32,9 +32,13 @@ interface ReviewViewButtonProps {
   /** Focus mode and its door; without a door, no Focus mode row. */
   focusMode: boolean
   onFocusMode?: (on: boolean) => void
+  /** Whether the current card's location breadcrumb is hidden (YAZ-6591). */
+  locationHidden?: boolean
+  /** One-click per-card toggle for the location breadcrumb; absent when the card has no place. */
+  onToggleLocation?: () => void
 }
 
-export function ReviewViewButton({ seconds, time, zoom, setZoom, focusMode, onFocusMode }: ReviewViewButtonProps) {
+export function ReviewViewButton({ seconds, time, zoom, setZoom, focusMode, onFocusMode, locationHidden = false, onToggleLocation }: ReviewViewButtonProps) {
   const button = useRef<HTMLButtonElement>(null)
   const [at, setAt] = useState<{ x: number; y: number } | null>(null)
   const [timeShown, setTimeShown] = useState(false)
@@ -48,6 +52,9 @@ export function ReviewViewButton({ seconds, time, zoom, setZoom, focusMode, onFo
     setAt({ x: (r?.right ?? PANEL_WIDTH) - PANEL_WIDTH, y: (r?.bottom ?? 0) + 4 })
   }
   const spent = todayDuration(seconds)
+  const titleParts = ['View']
+  if (zoom !== 100) titleParts.push(`Zoom ${zoom}%`)
+  if (focusMode) titleParts.push('Focus mode')
   return (
     <>
       <button
@@ -58,7 +65,8 @@ export function ReviewViewButton({ seconds, time, zoom, setZoom, focusMode, onFo
         aria-haspopup="dialog"
         aria-expanded={at !== null}
         data-zoomed={zoom !== 100 || undefined}
-        title={zoom !== 100 ? `View · Zoom ${zoom}%` : 'View'}
+        data-focused={focusMode || undefined}
+        title={titleParts.join(' · ')}
         // Not the panel's close-on-press: the click toggles it. The keyboard stays in the Inbox.
         onMouseDown={(e) => {
           e.preventDefault()
@@ -95,6 +103,14 @@ export function ReviewViewButton({ seconds, time, zoom, setZoom, focusMode, onFo
                 </kbd>
                 <button type="button" className="card-inbox__focus" aria-label="Focus mode" aria-pressed={focusMode} onMouseDown={(e) => e.preventDefault()} onClick={() => onFocusMode(!focusMode)}>
                   <FocusIcon on={focusMode} />
+                </button>
+              </div>
+            )}
+            {onToggleLocation !== undefined && (
+              <div className="card-inbox__view-row" data-row="location">
+                <span className="card-inbox__view-label">Location</span>
+                <button type="button" className="card-inbox__view-time" aria-label="Card location" aria-pressed={!locationHidden} onMouseDown={(e) => e.preventDefault()} onClick={onToggleLocation}>
+                  {locationHidden ? 'Show' : 'Hide'}
                 </button>
               </div>
             )}

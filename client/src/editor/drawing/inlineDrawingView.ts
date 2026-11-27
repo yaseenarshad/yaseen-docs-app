@@ -375,6 +375,13 @@ export class InlineDrawingView implements NodeView {
       if (index >= 0) this.deps.onOpenInTab(index, how === 'backgroundTab')
       return
     }
+    if (!this.view.editable && this.deps.onOpenExplore !== undefined) {
+      const live = this.liveNode()
+      if (live === null) return
+      const index = inlineDrawingIndexAt(this.view.state.doc, live.pos)
+      if (index >= 0) this.deps.onOpenExplore(index, drawingTitleOf(live.node.attrs.drawingLine) || undefined)
+      return
+    }
     this.openEdit()
   }
 

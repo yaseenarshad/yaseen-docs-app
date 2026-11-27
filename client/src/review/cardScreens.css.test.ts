@@ -87,10 +87,12 @@ describe('the top row`s View icon and the breadcrumb (YAZ-5689)', () => {
     expect(all.filter((r) => r.selectors.some((s) => s.includes('.card-inbox__tools')))).toEqual([])
   })
 
-  it('the View icon: a quiet button; away from 100% a small accent dot', () => {
+  it('the View icon: a quiet button; away from 100% or in Focus mode a small accent dot', () => {
     expect(decls(cards, '.card-inbox__view')).toMatchObject({ background: 'none', color: 'var(--fg-muted)' })
-    const dot = decls(cards, '.card-inbox__view[data-zoomed]::after')
-    expect(dot).toMatchObject({ background: 'var(--accent)', 'border-radius': '50%' })
+    const zoomedDot = all.find((r) => r.selectors.includes('.card-inbox__view[data-zoomed]::after'))?.decls
+    const focusedDot = all.find((r) => r.selectors.includes('.card-inbox__view[data-focused]::after'))?.decls
+    expect(zoomedDot).toMatchObject({ background: 'var(--accent)', 'border-radius': '50%' })
+    expect(focusedDot).toMatchObject({ background: 'var(--accent)', 'border-radius': '50%' })
   })
 
   it('the crumb: no percentage cap on the page part; YAZ-5713: the folders never shrink (they fold from the start, `usePlaceFold`), the page`s name does', () => {

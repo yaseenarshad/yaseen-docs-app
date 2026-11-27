@@ -543,4 +543,26 @@ describe('landOnInlineDrawing (Show in page)', () => {
       resetMenuIconsForTest()
     }
   })
+
+  it('YAZ-6614: double-clicking an inline drawing in a read-only vault opens it in Explore without prompting to unlock; Edit button still prompts', async () => {
+    const onEdit = vi.fn()
+    const onOpenExplore = vi.fn()
+    const { root, view } = await mount(SAMPLE_MD, { inlineDrawing: { root: '/vault', onEdit, onOpenExplore } })
+    await flushMicrotasks()
+    view.setProps({ editable: () => false })
+
+    const captured: ReadOnlyEditEvent[] = []
+    root.addEventListener(READ_ONLY_EDIT, (e) => captured.push(e as ReadOnlyEditEvent))
+
+    // Double-click (onOpen 'thisTab') opens Explore read-only immediately — no unlock prompt.
+    fakes.list[0]!.host.onOpen!('thisTab')
+    expect(onOpenExplore).toHaveBeenCalledExactlyOnceWith(0, undefined)
+    expect(onEdit).not.toHaveBeenCalled()
+    expect(captured).toHaveLength(0)
+
+    // Explicit header Edit button still prompts tellReadOnlyEdit.
+    root.querySelector<HTMLButtonElement>('.inline-drawing__edit')!.click()
+    expect(captured).toHaveLength(1)
+    expect(captured[0]!.detail).toBe('drawing')
+  })
 })

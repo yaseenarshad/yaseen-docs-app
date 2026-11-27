@@ -2,10 +2,10 @@ import { CARD_TITLE_MARK_SHOW, CARD_TITLE_SHOW, OLD_TITLE_AT, type CardTitleMark
 import { isRecord } from './guards'
 
 /**
- * A vault's card review settings (YAZ-4959 D14): `<root>/.yaseendocs/review.json`, per vault, so every Mac
- * computes the same due dates. They replace page upkeep review (YAZ-2322, D6: no legacy). A missing or malformed file
- * is the defaults; each bad field falls back to its default alone, and a key this build does not know is ignored.
- * The schedule that reads them is `cardSchedule.ts`.
+ * A vault's card review settings (YAZ-4959 D14; consolidated in `<vault>/.yaseendocs/settings.json` under `review`,
+ * YAZ-6546), per vault, so every Mac and Phone share the same due dates and Inbox behavior. `REVIEW_SETTINGS_FILE`
+ * stays for legacy read fallback only. A missing or malformed section uses the defaults; each bad field falls back
+ * to its default alone, and unknown keys are ignored. The schedule that reads them is `cardSchedule.ts`.
  */
 
 export const REVIEW_SETTINGS_FILE = 'review.json'
@@ -49,6 +49,18 @@ export type AllCardsOrder = (typeof ALL_CARDS_ORDERS)[number]
  */
 export const DUE_TODAY_ORDERS = ['in-order', 'shuffle'] as const
 export type DueTodayOrder = (typeof DUE_TODAY_ORDERS)[number]
+
+/** What Spacebar (and Phone tap) does when the next hidden word is below view (YAZ-6591): step-scroll or direct jump. */
+export const SPACE_BEHAVIORS = ['scroll', 'jump'] as const
+export type SpaceBehavior = (typeof SPACE_BEHAVIORS)[number]
+
+/** When the Inbox top bar shows the card's folder › page location (YAZ-6591). */
+export const CARD_LOCATION_MODES = ['focus-hide', 'until-revealed', 'show', 'hide'] as const
+export type CardLocationMode = (typeof CARD_LOCATION_MODES)[number]
+
+/** Where O in the Inbox opens a card that lives in a page (YAZ-5307; moved to vault settings in YAZ-6591). */
+export const REVIEW_INBOX_OPEN_AT = ['top', 'card'] as const
+export type ReviewInboxOpenAt = (typeof REVIEW_INBOX_OPEN_AT)[number]
 
 export interface ReviewSettings {
   /** Review cards in this vault: off, no card is due and the Inbox shows none. */
@@ -95,6 +107,20 @@ export interface ReviewSettings {
    */
   loopArrows: boolean
   /**
+   * What Space (and Phone tap) does when the next hidden word or side is below view (YAZ-6591): `scroll` (the default)
+   * walks down in ~35% reading steps so non-cloze sections are not skipped; `jump` jumps straight to the next hidden word.
+   */
+  spaceBehavior: SpaceBehavior
+  /**
+   * When the Inbox top bar hides the card's folder › page breadcrumb (YAZ-6591): `focus-hide` (default, hides in Focus
+   * mode), `until-revealed` (hides until all blanks and sides show), `show` (always show), or `hide` (always hide).
+   */
+  cardLocation: CardLocationMode
+  /** Whether Focus mode (`F`) hides the sidebar along with the tab bar (YAZ-6591): `false` (default, tab bar only) or `true`. */
+  focusHidesSidebar: boolean
+  /** Where O in the Inbox opens a card that lives in a page (`top` default, or `card`, YAZ-5307 / YAZ-6591). */
+  inboxOpenAt: ReviewInboxOpenAt
+  /**
    * When a card's title shows in Review (YAZ-5696, Settings › Cards › Card look › "Show card titles"): Never, Always
    * (the default: as before), After the first click, Before Side 2. A card's own choice on its line wins
    * (`cardTitleAtOf`); `notitle` never shows it. Round 1's `once` and `front` read as Always and After the first click.
@@ -139,6 +165,10 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = Object.freeze({
   pauseAfter: 60,
   timeSoFar: 'hidden',
   loopArrows: false,
+  spaceBehavior: 'scroll',
+  cardLocation: 'focus-hide',
+  focusHidesSidebar: false,
+  inboxOpenAt: 'top',
   titleAt: 'always',
   titleRoom: 'always',
   titleMark: 'different',
@@ -182,6 +212,10 @@ export function sanitizeReviewSettings(raw: unknown): ReviewSettings {
     pauseAfter: (PAUSE_AFTER_CHOICES as readonly unknown[]).includes(r.pauseAfter) ? (r.pauseAfter as PauseAfter) : d.pauseAfter,
     timeSoFar: (TIME_SO_FAR_CHOICES as readonly unknown[]).includes(r.timeSoFar) ? (r.timeSoFar as TimeSoFar) : d.timeSoFar,
     loopArrows: typeof r.loopArrows === 'boolean' ? r.loopArrows : d.loopArrows,
+    spaceBehavior: (SPACE_BEHAVIORS as readonly unknown[]).includes(r.spaceBehavior) ? (r.spaceBehavior as SpaceBehavior) : d.spaceBehavior,
+    cardLocation: (CARD_LOCATION_MODES as readonly unknown[]).includes(r.cardLocation) ? (r.cardLocation as CardLocationMode) : d.cardLocation,
+    focusHidesSidebar: typeof r.focusHidesSidebar === 'boolean' ? r.focusHidesSidebar : d.focusHidesSidebar,
+    inboxOpenAt: (REVIEW_INBOX_OPEN_AT as readonly unknown[]).includes(r.inboxOpenAt) ? (r.inboxOpenAt as ReviewInboxOpenAt) : d.inboxOpenAt,
     titleAt: (CARD_TITLE_SHOW as readonly unknown[]).includes(r.titleAt) ? (r.titleAt as CardTitleShow) : typeof r.titleAt === 'string' && Object.hasOwn(OLD_TITLE_AT, r.titleAt) ? OLD_TITLE_AT[r.titleAt] : d.titleAt,
     // Anything but 'shown' is the default, Always.
     titleRoom: r.titleRoom === 'shown' ? 'shown' : d.titleRoom,

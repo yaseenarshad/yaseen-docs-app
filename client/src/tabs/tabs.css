@@ -52,6 +52,12 @@
   display: none;
 }
 
+/* Focus mode hides sidebar (YAZ-6591): while the Inbox tab shows with focusHidesSidebar on, sidebar and its resizer hide. */
+.app[data-inbox-focus-sidebar] > .sidebar-shell,
+.app[data-inbox-focus-sidebar] > .sidebar-resize {
+  display: none;
+}
+
 /* Room at the row's end for the floating "Show right panel" button while that panel is closed (S93). */
 .tabbar-row--end {
   padding-right: 44px;

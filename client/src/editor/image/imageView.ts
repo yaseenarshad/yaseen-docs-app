@@ -406,8 +406,13 @@ class ImageNodeView implements NodeView {
           const ref = this.boardRef()
           const edit = this.opts.boards?.onEditInPopup
           if (how === 'thisTab' && ref.kind === 'drawing' && ref.root !== null && ref.path !== null && edit !== undefined) {
-            if (!this.view.editable) tellReadOnlyEdit(this.dom, 'drawing', () => edit(ref.root!, ref.path!))
-            else edit(ref.root, ref.path)
+            if (!this.view.editable) {
+              const openExplore = this.opts.boards?.linkMenu?.(ref.path).openExplore
+              if (openExplore !== undefined) openExplore()
+              else tellReadOnlyEdit(this.dom, 'drawing', () => edit(ref.root!, ref.path!))
+            } else {
+              edit(ref.root, ref.path)
+            }
             return
           }
           if (ref.path !== null) this.opts.boards?.open?.(ref.path, how)

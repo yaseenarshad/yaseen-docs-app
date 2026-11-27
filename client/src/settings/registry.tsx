@@ -2919,6 +2919,143 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
+        title: 'Inbox',
+        vault: true,
+        items: [
+          {
+            // YAZ-6591: what Space (and Phone tap) does when the next hidden word is below view.
+            id: 'spaceBehavior',
+            label: 'Spacebar during review',
+            hint: 'When the next hidden word is below view. Scroll through card steps down so you do not skip text between hidden words. Jump to next hidden word scrolls straight to the next blank.',
+            keywords: [...REVIEW_KEYWORDS, 'space', 'spacebar', 'scroll', 'jump', 'cloze', 'hidden', 'step', 'tap', 'phone'],
+            available: reviewOn,
+            render: ({ review }) =>
+              review && (
+                <Segmented
+                  options={[
+                    { label: 'Scroll through card', value: 'scroll' as const },
+                    { label: 'Jump to next hidden word', value: 'jump' as const },
+                  ]}
+                  value={review.settings.spaceBehavior}
+                  onChange={(spaceBehavior) => review.save({ ...review.settings, spaceBehavior })}
+                  ariaLabel="Spacebar during review"
+                />
+              ),
+          },
+          {
+            // YAZ-6591: when the Inbox top bar hides the card's folder › page breadcrumb so the page title does not spoil answers.
+            id: 'cardLocation',
+            label: 'Card location',
+            hint: (ctx) => unit(ctx, 'When the Inbox top bar shows the card’s folder and page path. Hiding it stops the page name from giving away the answer.'),
+            keywords: [...REVIEW_KEYWORDS, 'location', 'path', 'breadcrumb', 'folder', 'page', 'focus', 'hide', 'spoiler', 'reveal'],
+            wide: true,
+            available: reviewOn,
+            render: ({ review }) =>
+              review && (
+                <Segmented
+                  options={[
+                    { label: 'Hide in focus mode', value: 'focus-hide' as const },
+                    { label: 'Hide until revealed', value: 'until-revealed' as const },
+                    { label: 'Always show', value: 'show' as const },
+                    { label: 'Always hide', value: 'hide' as const },
+                  ]}
+                  value={review.settings.cardLocation}
+                  onChange={(cardLocation) => review.save({ ...review.settings, cardLocation })}
+                  ariaLabel="Card location"
+                />
+              ),
+          },
+          {
+            // YAZ-6591: whether Focus mode (F) hides only the tab bar or both the tab bar and sidebar.
+            id: 'focusHidesSidebar',
+            label: 'Focus mode hides',
+            hint: 'What Focus mode (F) hides while reviewing in the Inbox.',
+            keywords: [...REVIEW_KEYWORDS, 'focus', 'sidebar', 'tab bar', 'distraction', 'hide'],
+            available: reviewOn,
+            render: ({ review }) =>
+              review && (
+                <Segmented
+                  options={[
+                    { label: 'Tab bar only', value: false },
+                    { label: 'Tab bar and sidebar', value: true },
+                  ]}
+                  value={review.settings.focusHidesSidebar}
+                  onChange={(focusHidesSidebar) => review.save({ ...review.settings, focusHidesSidebar })}
+                  ariaLabel="Focus mode hides"
+                />
+              ),
+          },
+          {
+            // YAZ-5307 / YAZ-6591: where O in the Inbox opens a card that lives in a page; vault-level in review settings.
+            id: 'inboxOpenAt',
+            label: (ctx) => unit(ctx, 'O opens the page at'),
+            hint: (ctx) => unit(ctx, 'Where O in the Inbox opens a card that is in a page: at the top of the page, or at the card, with one flash. A card file opens as before.'),
+            keywords: [...REVIEW_KEYWORDS, 'inbox', 'open', 'o', 'top', 'card', 'land', 'jump', 'scroll'],
+            available: reviewOn,
+            render: (ctx) => {
+              const { review } = ctx
+              return (
+                review && (
+                  <Segmented
+                    options={[
+                      { label: 'The top', value: 'top' as const },
+                      { label: 'The card', value: 'card' as const },
+                    ]}
+                    value={review.settings.inboxOpenAt}
+                    onChange={(inboxOpenAt) => review.save({ ...review.settings, inboxOpenAt })}
+                    ariaLabel={unit(ctx, 'O opens the page at')}
+                  />
+                )
+              )
+            },
+          },
+          {
+            // YAZ-6019: whether ← and → stop at the first and last card (default) or wrap around (YAZ-5715).
+            // Saved in vault review settings so Mac and phone stay in sync.
+            id: 'loopArrows',
+            label: 'Arrow keys at the ends',
+            hint: 'What ← and → do at the first and last card in the Inbox. Stop at the ends keeps the real start and end of today\'s cards.',
+            keywords: [...REVIEW_KEYWORDS, 'arrow', 'arrows', 'left', 'right', 'loop', 'wrap', 'wheel', 'first', 'end', 'ends'],
+            available: reviewOn,
+            render: ({ review }) =>
+              review && (
+                <Segmented
+                  options={[
+                    { label: 'Stop at the ends', value: false },
+                    { label: 'Loop around', value: true },
+                  ]}
+                  value={review.settings.loopArrows}
+                  onChange={(loopArrows) => review.save({ ...review.settings, loopArrows })}
+                  ariaLabel="Arrow keys at the ends"
+                />
+              ),
+          },
+          {
+            // YAZ-5130 (Yaseen: "having it in sight will be stressful"): only how the Inbox shows today's time
+            // (the top row's View panel since YAZ-5689; the phone's sheet) DURING the review; the finish screens always
+            // show it (YAZ-5665). The timer saves each answer's seconds in all three.
+            id: 'timeSoFar',
+            label: 'Time so far',
+            hint: "Today's review time in Review's View panel (top right). Hidden: click Show to see it. Finish screens always show it. Answer times are saved.",
+            keywords: [...REVIEW_KEYWORDS, 'timer', 'time', 'today', 'clock', 'hide', 'show', 'how long'],
+            available: reviewOn,
+            render: ({ review }) =>
+              review && (
+                <Segmented
+                  options={[
+                    { label: 'Hidden (click to see)', value: 'hidden' as const },
+                    { label: 'Shown', value: 'shown' as const },
+                    { label: 'Off', value: 'off' as const },
+                  ]}
+                  value={review.settings.timeSoFar}
+                  onChange={(timeSoFar) => review.save({ ...review.settings, timeSoFar })}
+                  ariaLabel="Time so far"
+                />
+              ),
+          },
+        ],
+      },
+      {
         title: 'Answers',
         vault: true,
         items: [
@@ -2960,70 +3097,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                   value={review.settings.pauseAfter}
                   onChange={(pauseAfter) => review.save({ ...review.settings, pauseAfter })}
                   ariaLabel="Pause the timer after"
-                />
-              ),
-          },
-          {
-            // YAZ-5130 (Yaseen: "having it in sight will be stressful"): only how the Inbox shows today's time
-            // (the top row's View panel since YAZ-5689; the phone's sheet) DURING the review; the finish screens always
-            // show it (YAZ-5665). The timer saves each answer's seconds in all three.
-            id: 'timeSoFar',
-            label: 'Time so far',
-            hint: "Today's review time in Review's View panel (top right). Hidden: click Show to see it. Finish screens always show it. Answer times are saved.",
-            keywords: [...REVIEW_KEYWORDS, 'timer', 'time', 'today', 'clock', 'hide', 'show', 'how long'],
-            available: reviewOn,
-            render: ({ review }) =>
-              review && (
-                <Segmented
-                  options={[
-                    { label: 'Hidden (click to see)', value: 'hidden' as const },
-                    { label: 'Shown', value: 'shown' as const },
-                    { label: 'Off', value: 'off' as const },
-                  ]}
-                  value={review.settings.timeSoFar}
-                  onChange={(timeSoFar) => review.save({ ...review.settings, timeSoFar })}
-                  ariaLabel="Time so far"
-                />
-              ),
-          },
-          {
-            // YAZ-5307 (Yaseen: "by default it open at top of page but if someone wants to change it to go to the card on
-            // the page they can"): the app's settings, as Card look's rows: a habit of the person, not of the vault.
-            id: 'inboxOpenAt',
-            label: (ctx) => unit(ctx, 'Inbox: O opens the page at'),
-            hint: (ctx) => unit(ctx, 'Where O in the Inbox opens a card that is in a page: at the top of the page, or at the card, with one flash. A card file opens as before. For the whole app.'),
-            keywords: [...REVIEW_KEYWORDS, 'inbox', 'open', 'o', 'top', 'card', 'land', 'jump', 'scroll'],
-            available: reviewOn,
-            render: (ctx) => (
-              <Segmented
-                options={[
-                  { label: 'The top', value: 'top' as const },
-                  { label: 'The card', value: 'card' as const },
-                ]}
-                value={ctx.settings.inboxOpenAt}
-                onChange={(inboxOpenAt) => ctx.onChange({ ...ctx.settings, inboxOpenAt })}
-                ariaLabel={unit(ctx, 'Inbox: O opens the page at')}
-              />
-            ),
-          },
-          {
-            // YAZ-6019: whether ← and → stop at the first and last card (default) or wrap around (YAZ-5715).
-            // Saved in review.json so Mac and phone stay in sync.
-            id: 'loopArrows',
-            label: 'Arrow keys at the ends',
-            hint: 'What ← and → do at the first and last card in the Inbox. Stop at the ends keeps the real start and end of today\'s cards.',
-            keywords: [...REVIEW_KEYWORDS, 'arrow', 'arrows', 'left', 'right', 'loop', 'wrap', 'wheel', 'first', 'end', 'ends'],
-            available: reviewOn,
-            render: ({ review }) =>
-              review && (
-                <Segmented
-                  options={[
-                    { label: 'Stop at the ends', value: false },
-                    { label: 'Loop around', value: true },
-                  ]}
-                  value={review.settings.loopArrows}
-                  onChange={(loopArrows) => review.save({ ...review.settings, loopArrows })}
-                  ariaLabel="Arrow keys at the ends"
                 />
               ),
           },

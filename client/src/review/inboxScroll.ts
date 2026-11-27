@@ -18,6 +18,7 @@
  * word a Space just showed stays still, to study it. A Space never scrolls after it shows; when what it would show is
  * out of view, that Space only scrolls (`spaceMove`), and the next one shows. This replaces round 3's follow.
  */
+import type { SpaceBehavior } from '@shared/reviews'
 import type { Span } from '../editor/find/leastScroll'
 import { cssZoom } from '../lib/cssZoom'
 
@@ -29,16 +30,44 @@ export const LAND_LINE = 1 / 3
 export const ARROW_SCROLL_FRACTION = 0.35
 /** Minimum step (CSS px) per Up/Down press on shorter windows. */
 export const ARROW_SCROLL_MIN_PX = 180
-/** Fraction of visible room per Space page-down after the final reveal (YAZ-6058), keeping ~30% reading overlap. */
+/** Fraction of visible room per Space page-down after the final reveal in jump mode (YAZ-6058), keeping ~30% reading overlap. */
 export const SPACE_PAGE_FRACTION = 0.7
+/** Bottom breathing room (~1.5 lines) below a blank inside the viewport before Space reveals it in scroll mode (YAZ-6591). */
+export const BLANK_BOTTOM_MARGIN_PX = 32
 
-const arrowState = new WeakMap<HTMLElement, { target: number; at: number }>()
-const ARROW_CHAIN_MS = 300
+const scrollState = new WeakMap<HTMLElement, { from: number; target: number; at: number }>()
+const CHAIN_MS = 300
 
-function scrollViewTo(view: HTMLElement, top: number): void {
+function scrollViewTo(view: HTMLElement, top: number): boolean {
   const smooth = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== true
-  if (typeof view.scrollTo === 'function') view.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
-  else view.scrollTop = top
+  if (typeof view.scrollTo === 'function') {
+    view.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
+    return smooth
+  }
+  view.scrollTop = top
+  return false
+}
+
+/**
+ * The scrollTop `view` will land at when a smooth glide is in flight (within `CHAIN_MS`), else its live `scrollTop`.
+ * Ignores stale targets if `view.scrollTop` moved outside the in-flight range (e.g. manual scroll or reset).
+ */
+export function effectiveScrollTop(view: HTMLElement, now = Date.now()): number {
+  const prev = scrollState.get(view)
+  if (prev === undefined || now - prev.at > CHAIN_MS) return view.scrollTop
+  const lo = Math.min(prev.from, prev.target) - 1
+  const hi = Math.max(prev.from, prev.target) + 1
+  if (view.scrollTop < lo || view.scrollTop > hi) {
+    scrollState.delete(view)
+    return view.scrollTop
+  }
+  const max = Math.max(0, view.scrollHeight - view.clientHeight)
+  return Math.min(max, Math.max(0, prev.target))
+}
+
+/** Clears any pending smooth-scroll target (e.g. when resetting `scrollTop` to 0 on a new card or restart). */
+export function resetScrollChain(view: HTMLElement): void {
+  scrollState.delete(view)
 }
 
 /** The scroll (screen px, + is down) that shows `thing` with room below it in `room`; 0 when it shows so already. */
@@ -63,10 +92,14 @@ export function inboxRoom(view: HTMLElement): Span {
  */
 export const inRoom = (thing: Span, room: Span): boolean => thing.start >= room.start && thing.end <= room.end
 
-/** Moves the Inbox's view by `dy` screen px: a glide, or at once with Reduce motion. The target is absolute, so a call during a glide lands right. */
+/** Moves the Inbox's view by `dy` screen px: a glide, or at once with Reduce motion. Chains onto any pending glide target so rapid Space presses never stall. */
 export function glideView(view: HTMLElement, dy: number): void {
-  arrowState.delete(view)
-  scrollViewTo(view, view.scrollTop + dy / cssZoom(view))
+  const max = Math.max(0, view.scrollHeight - view.clientHeight)
+  const now = Date.now()
+  const base = effectiveScrollTop(view, now)
+  const target = Math.min(max, Math.max(0, base + dy / cssZoom(view)))
+  if (scrollViewTo(view, target)) scrollState.set(view, { from: view.scrollTop, target, at: now })
+  else scrollState.delete(view)
 }
 
 /**
@@ -78,12 +111,11 @@ export function arrowGlide(view: HTMLElement, delta: -1 | 1): boolean {
   if (max < 1) return false
   const step = Math.max(ARROW_SCROLL_MIN_PX, Math.round(view.clientHeight * ARROW_SCROLL_FRACTION))
   const now = Date.now()
-  const prev = arrowState.get(view)
-  const base = prev !== undefined && now - prev.at <= ARROW_CHAIN_MS ? prev.target : view.scrollTop
+  const base = effectiveScrollTop(view, now)
   const target = Math.min(max, Math.max(0, base + delta * step))
-  if (Math.abs(target - view.scrollTop) < 1 && (prev === undefined || Math.abs(target - prev.target) < 1)) return false
-  arrowState.set(view, { target, at: now })
-  scrollViewTo(view, target)
+  if (Math.abs(target - view.scrollTop) < 1 && Math.abs(target - base) < 1) return false
+  if (scrollViewTo(view, target)) scrollState.set(view, { from: view.scrollTop, target, at: now })
+  else scrollState.delete(view)
   return true
 }
 
@@ -93,10 +125,12 @@ export function arrowGlide(view: HTMLElement, delta: -1 | 1): boolean {
  */
 export function glideToBottomIfNear(view: HTMLElement): void {
   const max = Math.max(0, view.scrollHeight - view.clientHeight)
-  const remaining = max - view.scrollTop
+  const now = Date.now()
+  const base = effectiveScrollTop(view, now)
+  const remaining = max - base
   if (remaining < 1 || remaining > view.clientHeight * 0.5) return
-  arrowState.delete(view)
-  scrollViewTo(view, max)
+  if (scrollViewTo(view, max)) scrollState.set(view, { from: view.scrollTop, target: max, at: now })
+  else scrollState.delete(view)
 }
 
 /**
@@ -104,49 +138,113 @@ export function glideToBottomIfNear(view: HTMLElement): void {
  */
 export type SpaceTarget = number | 'side' | 'end'
 
-/**
- * The move (screen px) a Space makes INSTEAD of showing, in the Inbox's view `view`; 0 when it may show.
- * - A blank not wholly in view (round 5): it comes a third of the way down (above the view: the least scroll).
- * - The next side: it shows under the card's bottom edge, so that edge must sit in the room's top two thirds, with room
- *   for the side under it; lower, it comes a third of the way down.
- * - The end: the card's end — the Reviews strip under it (YAZ-5105), else the card's bottom edge — comes in by ⌘F's
- *   rule. In view, the Space rings the buttons (round 3).
- * A view with no room laid out never moves.
- *
- * ONLY A MOVE THE VIEW CAN MAKE (fix, "my spacebar on inbox is no longer working"): the move is cut to how far the
- * view can still scroll, and a Space with no move left shows. A short card ends right where its buttons start, so its
- * end is always low in the room, and the view has nothing to scroll: a "side" Space glided nowhere, every time, and
- * the next side never showed.
- */
-export function spaceMove(view: HTMLElement, target: SpaceTarget): number {
-  return reachable(view, wantedMove(view, target))
+export interface SpaceMovePlan {
+  target: SpaceTarget
+  room: Span
+  /** Measured span of the marked blank (screen px), shifted for any pending glide. */
+  blank?: Span
+  /** Measured bottom edge of the card panel/body (screen px), shifted for any pending glide. */
+  edge?: number
+  /** Remaining downward scroll range (screen px) from the effective scroll top. */
+  remainingDown: number
+  /** Remaining upward scroll range (screen px, non-negative) from the effective scroll top. */
+  remainingUp: number
+  /** Visible scroll container height (screen px), used for the ~35% reading step. */
+  viewportHeight: number
+  mode: SpaceBehavior
+  /** Active CSS zoom multiplier (screen px per CSS px); defaults to 1. */
+  zoom?: number
 }
 
-/** The move cut to the view's scroll range (screen px); 0 under one px, where nothing would move. */
-function reachable(view: HTMLElement, dy: number): number {
+function stepDown(wanted: number, step: number): number {
+  if (wanted <= 0) return wanted
+  return wanted <= step * 1.2 ? wanted : step
+}
+
+/**
+ * Shared pure reading-scroll planner for Desktop Inbox, Desktop Card Preview, and Mobile Review (YAZ-6598).
+ * Returns the clamped screen-px scroll delta for `target`, or `0` when Space / tap should reveal instead of scrolling.
+ */
+export function planSpaceMove({ target, room, blank, edge, remainingDown, remainingUp, viewportHeight, mode, zoom = 1 }: SpaceMovePlan): number {
+  const height = room.end - room.start
+  if (height <= 0) return 0
+  const minStep = Math.round(ARROW_SCROLL_MIN_PX * zoom)
+  const margin = Math.round(BLANK_BOTTOM_MARGIN_PX * zoom)
+  const readStep = Math.max(minStep, Math.round(viewportHeight * ARROW_SCROLL_FRACTION))
+  let dy = 0
+
+  if (typeof target === 'number') {
+    if (blank === undefined) return 0
+    const blankHeight = blank.end - blank.start
+    if (blankHeight >= height) {
+      // Viewport-taller cloze (YAZ-6616): cannot fit wholly in `room`, so reveal once its top sits in the upper 2/3.
+      if (blank.start >= room.start && blank.start <= room.start + height * READ_LINE) return 0
+      const gap = Math.min(6, height * LAND_LINE)
+      const wanted = blank.start < room.start ? blank.start - room.start - gap : blank.start - (room.start + height * LAND_LINE)
+      dy = mode === 'scroll' ? stepDown(wanted, readStep) : wanted
+    } else if (mode === 'scroll') {
+      if (blankHeight > height - margin) {
+        // Tall fitting blank (or viewport shorter than `margin`, YAZ-6616): reveal once wholly in `room`.
+        if (inRoom(blank, room)) return 0
+        const gap = Math.min(6, Math.max(0, height - blankHeight))
+        const wanted = blank.start < room.start ? blank.start - room.start - gap : blank.end - room.end
+        dy = stepDown(wanted, readStep)
+      } else {
+        const hasBottomRoom = blank.end <= room.end - margin || (blank.end <= room.end && remainingDown < 1)
+        if (blank.start >= room.start && hasBottomRoom) return 0
+        if (blank.start < room.start) {
+          const gap = Math.min(6, Math.max(0, height - margin - blankHeight))
+          dy = readingScroll(blank, room, gap)
+        } else {
+          // Blank ends inside or below the bottom breathing strip: always scroll DOWN (never up, YAZ-6616).
+          const minDown = blank.end - (room.end - margin)
+          const landDown = blank.start - (room.start + height * LAND_LINE)
+          dy = stepDown(Math.max(minDown, landDown), readStep)
+        }
+      }
+    } else {
+      dy = inRoom(blank, room) ? 0 : readingScroll(blank, room)
+    }
+  } else if (target === 'side') {
+    if (edge === undefined) return 0
+    const wanted = readingScroll({ start: edge, end: edge }, room)
+    dy = mode === 'scroll' ? stepDown(wanted, readStep) : wanted
+  } else {
+    if (remainingDown < 1) return 0
+    const page = mode === 'scroll' ? readStep : Math.max(minStep, Math.round(height * SPACE_PAGE_FRACTION))
+    dy = stepDown(remainingDown, page)
+  }
+
   if (dy === 0) return 0
-  const zoom = cssZoom(view)
-  const down = Math.max(0, view.scrollHeight - view.clientHeight - view.scrollTop) * zoom
-  const up = -view.scrollTop * zoom
-  const move = Math.min(Math.max(dy, up), down)
+  const move = Math.min(Math.max(dy, -Math.max(0, remainingUp)), Math.max(0, remainingDown))
   return Math.abs(move) < 1 ? 0 : move
 }
 
-function wantedMove(view: HTMLElement, target: SpaceTarget): number {
+/**
+ * The move (screen px) a Space makes INSTEAD of showing, in the Inbox's view `view`; 0 when it may show.
+ * Evaluates against `effectiveScrollTop(view)` so rapid Space presses during smooth scrolling chain cleanly.
+ */
+export function spaceMove(view: HTMLElement, target: SpaceTarget, mode: SpaceBehavior = 'scroll'): number {
   const room = inboxRoom(view)
   if (room.end - room.start <= 0) return 0
+  const zoom = cssZoom(view)
+  const base = effectiveScrollTop(view)
+  const pendingShift = (view.scrollTop - base) * zoom
+  const remainingDown = Math.max(0, view.scrollHeight - view.clientHeight - base) * zoom
+  const remainingUp = Math.max(0, base) * zoom
+  const viewportHeight = view.clientHeight > 0 ? view.clientHeight * zoom : room.end - room.start
+
+  let blank: Span | undefined
+  let edge: number | undefined
   if (typeof target === 'number') {
     const r = view.querySelector(`[data-hidden="${target}"]`)?.getBoundingClientRect()
     if (r === undefined) return 0
-    const blank = { start: r.top, end: r.bottom }
-    return inRoom(blank, room) ? 0 : readingScroll(blank, room)
+    blank = { start: r.top + pendingShift, end: r.bottom + pendingShift }
+  } else if (target === 'side') {
+    const bottom = view.querySelector('.card-inbox__panel')?.getBoundingClientRect().bottom
+    if (bottom === undefined) return 0
+    edge = bottom + pendingShift
   }
-  const edge = view.querySelector('.card-inbox__panel')?.getBoundingClientRect().bottom
-  if (target === 'side') return edge === undefined ? 0 : readingScroll({ start: edge, end: edge }, room)
-  // YAZ-6058: at the end, page down smoothly (~70% of visible room per Space) so long tails/Side 2 are read in chunks,
-  // snapping cleanly to the very bottom (showing Forgot / Remembered) once within ~1.2× a page step.
-  const remaining = Math.max(0, view.scrollHeight - view.clientHeight - view.scrollTop) * cssZoom(view)
-  if (remaining < 1) return 0
-  const page = Math.max(ARROW_SCROLL_MIN_PX, Math.round((room.end - room.start) * SPACE_PAGE_FRACTION))
-  return remaining <= page * 1.2 ? remaining : page
+
+  return planSpaceMove({ target, room, blank, edge, remainingDown, remainingUp, viewportHeight, mode, zoom })
 }

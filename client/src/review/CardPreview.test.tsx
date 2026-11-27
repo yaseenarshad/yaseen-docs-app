@@ -240,6 +240,54 @@ describe('Preview a card (YAZ-5152)', () => {
     expect(writes.transformFile).not.toHaveBeenCalled()
   })
 
+  it('YAZ-6598: Preview honors settings.spaceBehavior (scroll step-scrolls and chains rapid Space; jump skips directly to blank)', () => {
+    const box = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 800, width: 800, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+    let blankTop = 1000
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('card-inbox')) return box(0, 600)
+      if (this.dataset.hidden === '0') return box(blankTop, blankTop + 20)
+      return box(150, 170)
+    })
+    try {
+      // Default ('scroll'): Space walks down in ~35% viewport steps (210px) and chains rapid presses without stalling.
+      mount(TEXT, '', false, undefined, { ...DEFAULT_REVIEW_SETTINGS, spaceBehavior: 'scroll' })
+      const scrollView = el.querySelector<HTMLElement>('.card-inbox')!
+      const scrollTo = vi.fn()
+      scrollView.scrollTo = scrollTo as never
+      Object.defineProperty(scrollView, 'clientHeight', { value: 600, configurable: true })
+      Object.defineProperty(scrollView, 'scrollHeight', { value: 2600, configurable: true })
+      scrollView.scrollTop = 0
+
+      press(' ')
+      expect(shown()).toEqual([])
+      expect(scrollTo).toHaveBeenLastCalledWith({ top: 210, behavior: 'smooth' })
+      // Second rapid Space while scrollTop is still 0 chains to 420.
+      press(' ')
+      expect(shown()).toEqual([])
+      expect(scrollTo).toHaveBeenLastCalledWith({ top: 420, behavior: 'smooth' })
+
+      act(() => root?.unmount())
+      root = null
+      el.remove()
+
+      // 'jump': Space jumps straight to put the blank at 1/3 down (200px -> delta 800px).
+      blankTop = 1000
+      mount(TEXT, '', false, undefined, { ...DEFAULT_REVIEW_SETTINGS, spaceBehavior: 'jump' })
+      const jumpView = el.querySelector<HTMLElement>('.card-inbox')!
+      const jumpScrollTo = vi.fn()
+      jumpView.scrollTo = jumpScrollTo as never
+      Object.defineProperty(jumpView, 'clientHeight', { value: 600, configurable: true })
+      Object.defineProperty(jumpView, 'scrollHeight', { value: 2600, configurable: true })
+      jumpView.scrollTop = 0
+
+      press(' ')
+      expect(shown()).toEqual([])
+      expect(jumpScrollTo).toHaveBeenCalledExactlyOnceWith({ top: 800, behavior: 'smooth' })
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it('Esc closes, ahead of what is under it, and the keyboard goes back where it was (Edit card\'s editor, its caret kept)', () => {
     const editor = document.createElement('div')
     editor.tabIndex = -1

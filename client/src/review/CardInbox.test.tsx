@@ -19,6 +19,7 @@ import { CARD_MIN_WIDTH, clampCardWidth, inboxCardWidth, setInboxCardWidth } fro
 import { useReadOnlyVault } from '../vault/readOnlyVault'
 import { ZOOM_EVENT } from '../editor/zoomRequest'
 import { listenTour } from '../course/tourBus'
+import cardScreensCss from './cardScreens.css?inline'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -1277,6 +1278,22 @@ describe('YAZ-5044 the Inbox head: the ID, the title in the card`s band (YAZ-530
     expect(vi.mocked(props.openPage).mock.calls).toEqual([[PATH]])
   })
 
+  it('YAZ-6591: without an explicit openAt prop, CardInbox reads vault-level review.settings.inboxOpenAt', () => {
+    mount(PLAIN, { ...DEFAULT_REVIEW_SETTINGS, inboxOpenAt: 'card' })
+    session = { ...session, card: { ...session.card!, index: 1 }, place: [{ kind: 'page', label: 'Cards', path: PATH }] }
+    render()
+    press('o')
+    expect(vi.mocked(props.openPage).mock.lastCall).toEqual([PATH, { id: 'WIKI-9', index: 1 }])
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__path-part[data-kind="page"]')!.click())
+    expect(vi.mocked(props.openPage).mock.lastCall).toEqual([PATH, { id: 'WIKI-9', index: 1 }])
+    // Default 'top' opens the page alone.
+    mount(PLAIN, { ...DEFAULT_REVIEW_SETTINGS, inboxOpenAt: 'top' })
+    session = { ...session, card: { ...session.card!, index: 1 }, place: [{ kind: 'page', label: 'Cards', path: PATH }] }
+    render()
+    press('o')
+    expect(vi.mocked(props.openPage).mock.lastCall).toEqual([PATH])
+  })
+
   it('YAZ-5164 part 3: the front never shows the title; a click on the head`s title renames the card on its card line (YAZ-5308), one write', async () => {
     lineWrites.length = 0
     mount(PLAIN)
@@ -1935,6 +1952,130 @@ describe('YAZ-5689: the top row`s right end is the count and ONE sliders icon, "
   })
 })
 
+describe('YAZ-6591: cardLocation 4 modes, View panel Location quick toggle, and Focus accent dot', () => {
+  const PLACE = [
+    { kind: 'folder' as const, label: 'Spanish', path: '/v/spanish' },
+    { kind: 'page' as const, label: 'Verbs', path: PATH },
+  ]
+  const pathEl = () => el.querySelector('.card-inbox__path')
+  const fromEl = () => el.querySelector('.card-inbox__from')
+  const view = () => el.querySelector<HTMLButtonElement>('.card-inbox__bar .card-inbox__view')!
+  const panel = () => document.querySelector<HTMLElement>('.card-inbox__view-panel')
+  const openView = () => {
+    if (panel() === null) act(() => view().click())
+    return panel()!
+  }
+  const locationBtn = () => openView().querySelector<HTMLButtonElement>('[data-row="location"] button.card-inbox__view-time')!
+  const renderWith = (over: Partial<CardInboxProps> = {}) => act(() => root?.render(<CardInbox {...props} review={review} session={session} {...over} />))
+
+  beforeEach(() => localStorage.removeItem('inbox:zoom'))
+
+  it('focus-hide (default): shows breadcrumb normally, hides it in Focus mode, and keeps folder/page review scope visible', () => {
+    mount(TWO_SIDES)
+    session = { ...session, scope: 'folder', from: ['Spanish'], place: PLACE }
+    renderWith({ focusMode: false, onFocusMode: vi.fn() })
+    expect(review.settings.cardLocation).toBe('focus-hide')
+    expect(pathEl()).not.toBeNull()
+    expect(fromEl()?.textContent).toBe('·in Spanish')
+
+    renderWith({ focusMode: true, onFocusMode: vi.fn() })
+    expect(pathEl()).toBeNull()
+    expect(fromEl()?.textContent).toBe('·in Spanish')
+
+    renderWith({ focusMode: false, onFocusMode: vi.fn() })
+    expect(pathEl()).not.toBeNull()
+  })
+
+  it('until-revealed: hides breadcrumb until all blanks and sides show, then reveals it and hides again on the next card', async () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, cardLocation: 'until-revealed' })
+    session = { ...session, place: PLACE }
+    render()
+    // 4 steps to reveal TWO_SIDES: France, side 2, Paris, Seine.
+    for (let i = 0; i < 3; i++) {
+      expect(pathEl(), `step ${i}`).toBeNull()
+      press(' ')
+    }
+    expect(pathEl()).toBeNull()
+    press(' ')
+    await flush()
+    expect(pathEl()).not.toBeNull()
+
+    // Moving to the next card hides location again.
+    session = { ...session, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10', text: 'Next {{word}}' } }, place: PLACE }
+    render()
+    expect(pathEl()).toBeNull()
+  })
+
+  it('show: always keeps breadcrumb visible even in Focus mode before reveal', () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, cardLocation: 'show' })
+    session = { ...session, place: PLACE }
+    renderWith({ focusMode: true, onFocusMode: vi.fn() })
+    expect(pathEl()).not.toBeNull()
+  })
+
+  it('hide: always hides breadcrumb even outside Focus mode and after full reveal, while keeping review scope visible', async () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, cardLocation: 'hide' })
+    session = { ...session, scope: 'folder', from: ['Spanish'], place: PLACE }
+    renderWith({ focusMode: false, onFocusMode: vi.fn() })
+    expect(pathEl()).toBeNull()
+    expect(fromEl()?.textContent).toBe('·in Spanish')
+    for (let i = 0; i < 4; i++) press(' ')
+    await flush()
+    expect(pathEl()).toBeNull()
+    expect(fromEl()?.textContent).toBe('·in Spanish')
+  })
+
+  it('View panel Location row peeks for the current card, resets on the next card, and clears when cardLocation changes', () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, cardLocation: 'focus-hide' })
+    session = { ...session, place: PLACE }
+    renderWith({ focusMode: true, onFocusMode: vi.fn() })
+    expect(pathEl()).toBeNull()
+
+    const rows = [...openView().querySelectorAll<HTMLElement>('.card-inbox__view-row')]
+    expect(rows.map((r) => r.dataset.row)).toEqual(['time', 'zoom', 'focus', 'location'])
+    expect(rows[3].querySelector('.card-inbox__view-label')?.textContent).toBe('Location')
+    expect([locationBtn().textContent, locationBtn().getAttribute('aria-label'), locationBtn().getAttribute('aria-pressed')]).toEqual(['Show', 'Card location', 'false'])
+
+    // Peek for the current card: breadcrumb shows and button flips to Hide.
+    act(() => locationBtn().click())
+    expect(pathEl()).not.toBeNull()
+    expect([locationBtn().textContent, locationBtn().getAttribute('aria-pressed')]).toEqual(['Hide', 'true'])
+
+    // Next card resets the peek automatically so it never spoils the next card.
+    session = { ...session, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10' } }, place: PLACE }
+    renderWith({ focusMode: true, onFocusMode: vi.fn() })
+    expect(pathEl()).toBeNull()
+    expect([locationBtn().textContent, locationBtn().getAttribute('aria-pressed')]).toEqual(['Show', 'false'])
+
+    // Peek again, then change cardLocation setting: peek clears and new setting wins.
+    act(() => locationBtn().click())
+    expect(pathEl()).not.toBeNull()
+    review = { ...review, settings: { ...review.settings, cardLocation: 'hide' } }
+    renderWith({ focusMode: true, onFocusMode: vi.fn() })
+    expect(pathEl()).toBeNull()
+    expect([locationBtn().textContent, locationBtn().getAttribute('aria-pressed')]).toEqual(['Show', 'false'])
+  })
+
+  it('View button wears the Focus accent dot (data-focused) and title when focusMode is active', () => {
+    mount(TWO_SIDES)
+    renderWith({ focusMode: false, onFocusMode: vi.fn() })
+    expect(view().hasAttribute('data-focused')).toBe(false)
+    expect(view().title).toBe('View')
+
+    renderWith({ focusMode: true, onFocusMode: vi.fn() })
+    expect(view().hasAttribute('data-focused')).toBe(true)
+    expect(view().title).toBe('View · Focus mode')
+    expect(cardScreensCss).toContain('.card-inbox__view[data-focused]::after')
+
+    // Combined with zoom: both attributes and both title parts present.
+    const plus = openView().querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!
+    act(() => plus.click())
+    expect(view().hasAttribute('data-zoomed')).toBe(true)
+    expect(view().hasAttribute('data-focused')).toBe(true)
+    expect(view().title).toBe('View · Zoom 125% · Focus mode')
+  })
+})
+
 describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Settings)', () => {
   const rows = () => [...document.querySelectorAll<HTMLElement>('.card-inbox__filter-row')]
   // A field reads as "[10]": the done screen's pill is "Add [10] new cards" (round 2).
@@ -2233,29 +2374,42 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(scrollTo).not.toHaveBeenCalled()
       })
 
-      it('the next blank off screen: that Space only glides it in, a third of the way down, and shows nothing; the next Space shows it, and nothing moves', () => {
+      it('the next blank off screen: in jump mode Space glides it in a third down; in default scroll mode Space walks down in ~35% reading steps', () => {
+        // Explicit jump mode preserves direct glide to LAND_LINE (700 - 200 = 500).
         mount(THREE)
-        scroller()
+        review.settings = { ...review.settings, spaceBehavior: 'jump' }
+        render()
+        const jumpView = scroller()
         press(' ')
         place.word1 = [700, 720]
         press(' ')
         expect(shown()).toEqual(['one'])
         expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
         // The glide put it in view: now Space shows it, and the view stays where it is.
+        jumpView.scrollTop = 500
         place.word1 = [200, 220]
         place.word2 = [700, 720]
         scrollTo.mockClear()
         press(' ')
         expect(shown()).toEqual(['one', 'two'])
         expect(scrollTo).not.toHaveBeenCalled()
+
+        // Default scroll mode steps down by 180 px instead of jumping 500 px past intervening sections.
+        mount(THREE)
+        scroller()
+        press(' ')
+        place.word1 = [700, 720]
+        press(' ')
+        expect(shown()).toEqual(['one'])
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 180 }))
       })
 
       it('a blank cut by the view`s bottom edge, or by the top row`s, is not in view: Space only moves it (above the view: the least scroll, a small gap kept); the in-flow dock never clips it (YAZ-6055)', () => {
         mount(THREE)
         scroller()
-        // Even if the in-flow dock rect is above box.bottom, a blank wholly inside [top, box.bottom] is in view.
+        // Even if the in-flow dock rect is above box.bottom, a blank wholly inside [top, box.bottom - 32px margin] is in view.
         place.dock = [340, 420]
-        place.word0 = [350, 370]
+        place.word0 = [340, 360]
         press(' ')
         expect(shown()).toEqual(['one'])
         expect(scrollTo).not.toHaveBeenCalled()
@@ -2272,9 +2426,11 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 300 + 90 - 100 - 6 }))
       })
 
-      it('the next side: Space shows it when the card`s end sits in the top two thirds of the room; lower, that Space only brings the end up a third of the way down, and the next shows the side, with no move after', () => {
+      it('the next side: Space shows it when the card`s end sits in the top two thirds of the room; lower, jump mode glides to LAND_LINE while scroll mode steps in ~35% chunks', () => {
         mount(TWO_SIDES)
-        scroller()
+        review.settings = { ...review.settings, spaceBehavior: 'jump' }
+        render()
+        const view = scroller()
         press(' ')
         expect(shown()).toEqual(['France'])
         place.panel = [110, 700]
@@ -2282,6 +2438,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(sides()).toBe(1)
         expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
         scrollTo.mockClear()
+        view.scrollTop = 500
         place.panel = [110, 200]
         place.word1 = [700, 720]
         press(' ')
@@ -2291,7 +2448,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         // The side's first blank is below the view: the next Space only moves it.
         press(' ')
         expect(shown()).toEqual(['France'])
-        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 500 + 700 - 200 }))
       })
 
       it('fix "my spacebar on inbox is no longer working": a short card (its end low in the room, nothing to scroll) shows its next side at once; a move the view cannot make in full is cut to what it can', () => {
@@ -2328,9 +2485,9 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(blanks()).toBe(0)
         // 5000px remaining (> half viewport): stays put so unread text is not skipped.
         expect(scrollTo).not.toHaveBeenCalled()
-        // Next Space pages down smoothly (~70% of 300px room = 210px).
+        // Next Space steps down smoothly in default scroll mode (180px step), without ringing buttons.
         press(' ')
-        expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: Math.round(300 * 0.7), behavior: 'smooth' })
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 180, behavior: 'smooth' })
         expect(answers().hasAttribute('data-nudge')).toBe(false)
         scrollTo.mockClear()
         // Once at the bottom: one more Space moves nothing and rings the buttons.
