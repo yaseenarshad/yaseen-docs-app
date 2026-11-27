@@ -2,7 +2,8 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 
 import type { SidebarTab, SidebarTabsPrefs } from '@shared/types'
 import { CollapseAllIcon, ExpandAllIcon, MoreIcon, SortIcon } from '../views/view/icons'
 import { ContextMenu } from './ContextMenu'
-import { rowGlyph, TabFace, TabRowPanel } from './TabRowPanel'
+import { rowGlyph, TabFace, TabRowPanel, type TabRowScope } from './TabRowPanel'
+export type { TabRowScope }
 import { fitTabs, onBar, rowLayout, TAB_LABEL, tabRowSections, toggleTab, type RowButtons } from './tabRow'
 
 /**
@@ -38,8 +39,10 @@ interface SidebarTabsProps {
   onFold: () => void
   /** "Refresh files" in the tab-row menu (YAZ-6440). */
   onRefresh?: () => void
-  /** Clears per-vault/workspace `sidebarTabs` override when customized (YAZ-6546). */
-  onResetTabsToGlobal?: () => void
+  /** Which vault or workspace this tab row applies to (YAZ-6593). */
+  tabRowScope?: TabRowScope
+  /** Opens Settings › Sidebar › Tab row from the popover footer (YAZ-6593). */
+  onEditTabRowInSettings?: () => void
 }
 
 /** Where the focus goes back to when the menu or the panel closes: the ⋯ button, a tab, or (null) the tab that shows. */
@@ -70,7 +73,7 @@ const isMenuKey = (e: { key: string; shiftKey: boolean; metaKey: boolean; ctrlKe
  * the row again only when a tab comes or goes (S30). With no observer, or no layout (jsdom), nothing
  * is measured and every tab fits.
  */
-export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs, onChangePrefs, sortShows, sortOpen, sortFiltered = false, sortLabel = 'Sort', onSort, foldShows, foldDisabled = false, foldLabel, foldOpen, onFold, onRefresh, onResetTabsToGlobal }: SidebarTabsProps) {
+export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs, onChangePrefs, sortShows, sortOpen, sortFiltered = false, sortLabel = 'Sort', onSort, foldShows, foldDisabled = false, foldLabel, foldOpen, onFold, onRefresh, tabRowScope, onEditTabRowInSettings }: SidebarTabsProps) {
   const buttons: RowButtons = { sort: sortShows, fold: foldShows }
   const [fit, setFit] = useState(Number.POSITIVE_INFINITY)
   const layout = rowLayout(prefs, lens, fit, buttons)
@@ -331,7 +334,7 @@ export const SidebarTabs = memo(function SidebarTabs({ lens, onLensChange, prefs
           <ContextMenu x={menu.x} y={menu.y} sections={sectionsAt(menu)} onClose={closeMenu} />
         </div>
       )}
-      {panel !== null && <TabRowPanel x={panel.x} y={panel.y} prefs={prefs} focus={panel.focus} autoFocus={panel.keyboard} onChange={onChangePrefs} onResetToGlobal={onResetTabsToGlobal} onClose={closePanel} />}
+      {panel !== null && <TabRowPanel x={panel.x} y={panel.y} prefs={prefs} focus={panel.focus} autoFocus={panel.keyboard} onChange={onChangePrefs} scope={tabRowScope} onEditInSettings={onEditTabRowInSettings} onClose={closePanel} />}
     </>
   )
 })

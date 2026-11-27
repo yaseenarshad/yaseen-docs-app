@@ -64,7 +64,8 @@ describe('settingCandidates', () => {
       'commentsResolved',
       'commentsHint',
       // Settings › Sidebar (YAZ-3440 D7), after Appearance. The Line set's colour rows show only with that set.
-      // Row spacing (YAZ-5885) first, in its Rows group.
+      // Tab row (YAZ-6593) first, then Row spacing (YAZ-5885) in its Rows group.
+      'sidebarTabs',
       'sidebarRowHeight',
       'sidebarLines',
       'sidebarLineStyle',
@@ -340,8 +341,8 @@ describe('searchSettings', () => {
 
   it('the sidebar\'s level lines (YAZ-3309 D6, D7, D9, S12): "sidebar" finds the three rows of the group first; "folder", "tree" and "indent" find Show, not the TOC row; "thread" finds Style and Thread colour beside Bullet threading; "accent" finds the two colour pickers', () => {
     // The hover preview's Sidebar row (YAZ-3403) and "Sidebar remembers" (YAZ-5701) start with "Sidebar", so they lead.
-    // Row spacing (YAZ-5885), the first row of the Sidebar page, comes before them.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'sidebar')).slice(0, 6)).toEqual(['sidebarPlace', 'hoverPreviewIn.sidebar', 'sidebarRowHeight', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
+    // Tab row (YAZ-6593) and Row spacing (YAZ-5885) come before Level lines.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'sidebar')).slice(0, 7)).toEqual(['sidebarPlace', 'hoverPreviewIn.sidebar', 'sidebarTabs', 'sidebarRowHeight', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     for (const query of ['folder', 'tree', 'indent']) {
       expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('sidebarLines')
       expect(ids(searchSettings(settingCandidates(ctx()), query))).not.toContain('tocLines')
@@ -365,6 +366,10 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'menu icons'))[0]).toBe('menuIcons')
     expect(ids(searchSettings(settingCandidates(ctx()), 'context menu'))).toContain('menuIcons')
     expect(ids(searchSettings(settingCandidates(ctx()), 'right click'))).toContain('menuIcons')
+  })
+
+  it('YAZ-6593: "tab row" finds sidebarTabs', () => {
+    expect(ids(searchSettings(settingCandidates(ctx()), 'tab row'))[0]).toBe('sidebarTabs')
   })
 
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {
