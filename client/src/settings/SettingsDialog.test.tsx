@@ -183,8 +183,8 @@ const FILES_ROWS = ['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 
 /** Settings › Folder pages (YAZ-4585): its personal rows, with the folder views' hover row moved from Files & Links, the view defaults, the page default. */
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'cardClickOpens', 'calendarScale', 'cardTitles', 'calendarCardStyle', 'hideWeekends', 'weekLine', 'dayLine', 'monthShade', 'monthLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
-// YAZ-5050 round 2: in groups — Daily limits, Answers, Scheduling, Card look (with its preview).
-const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'loopArrows', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
+// YAZ-5050 round 2 / YAZ-6591: in groups — Daily limits, Inbox, Answers, Scheduling, Card look (with its preview).
+const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'spaceBehavior', 'cardLocation', 'focusHidesSidebar', 'inboxOpenAt', 'loopArrows', 'timeSoFar', 'buttons', 'pauseAfter', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
 /**
  * Settings › Cards › GitHub (YAZ-5098, YAZ-5652): the token row. The Mac's send of the numbers (YAZ-5086, `friendsSend`)
  * shows only with Friends on (`shared/features.ts`).
@@ -514,12 +514,13 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ],
       ['Links & IDs', [{ text: 'Vault: Work', under: 'Links & IDs', className: 'settings-section__note' }]],
       ['Folder pages', []],
-      // YAZ-5483: Cards names the vault on each group saved in review.json, not on the page (Card look is the app's).
+      // YAZ-5483 / YAZ-6591: Cards names the vault on each group saved in vault review settings (including Inbox).
       [
         'Cards',
         [
           { text: 'Vault: Work', under: undefined, className: 'settings-group__hint' },
           { text: 'Vault: Work', under: 'Daily limits', className: 'settings-group__hint' },
+          { text: 'Vault: Work', under: 'Inbox', className: 'settings-group__hint' },
           { text: 'Vault: Work', under: 'Answers', className: 'settings-group__hint' },
           { text: 'Vault: Work', under: 'Scheduling', className: 'settings-group__hint' },
         ],
@@ -535,7 +536,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(lines(one.el).flatMap(([, found]) => found)).toEqual([])
   })
 
-  it("YAZ-5483: Cards says which rows are the vault's and which are for the whole app — Card look and the Inbox O row are the app's", () => {
+  it("YAZ-5483 / YAZ-6591: Cards marks vault groups (including Inbox) and no longer labels inboxOpenAt as For the whole app", () => {
     const { el } = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON, { enabled: true, held: false }, 'Work')
     clickNav(el, 'Cards')
     const groups = [...el.querySelectorAll<HTMLElement>('#settings-cards .settings-group')].map((g) => ({
@@ -545,8 +546,8 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     }))
     // YAZ-5484: Card look is the vault's now (card-look.json), with its own Vault dropdown (as Spacing): no "For the whole app".
     expect(groups.find((g) => g.title === 'Card look')).toEqual({ title: 'Card look', vault: false, wholeApp: false })
-    for (const title of [undefined, 'Daily limits', 'Answers', 'Scheduling']) expect(groups.find((g) => g.title === title), String(title)).toMatchObject({ vault: true, wholeApp: false })
-    expect(el.querySelector('#settings-cards [data-setting="inboxOpenAt"] .setting__hint')?.textContent).toMatch(/For the whole app\.$/)
+    for (const title of [undefined, 'Daily limits', 'Inbox', 'Answers', 'Scheduling']) expect(groups.find((g) => g.title === title), String(title)).toMatchObject({ vault: true, wholeApp: false })
+    expect(el.querySelector('#settings-cards [data-setting="inboxOpenAt"] .setting__hint')?.textContent).not.toContain('For the whole app')
     // A Card look row's own hint does not repeat it: its group says it.
     expect(el.querySelector('#settings-cards [data-setting="shownHiddenWords"] .setting__hint')?.textContent).not.toContain('whole app')
     unmount()
@@ -1791,9 +1792,9 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('on: the card rows in order, with their words and values; off: the switch alone. No upkeep row is left', () => {
     const { el, rerender } = mountOn('Cards', { ...DEFAULT_SETTINGS }, status(), S)
     expect(reviewRows(el)).toEqual([...ALL, ...FRIENDS_ROWS])
-    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Use cards in this vault', undefined, 'Card skill in the sidebar', 'Card course', 'Card tips', 'New cards a day', 'Up next a day', 'New cards order', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Inbox: O opens the page at', 'Arrow keys at the ends', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card text size', 'Card title size', 'Show card titles', 'Title mark in the card head', 'Title room', 'Card tables', 'Card sides in pages', 'Card sides on card pages', 'Card sides in Explore', 'Card spacing'])
-    // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look. (YAZ-6190 D4: GitHub moved to Sync.)
-    expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look', ...(FRIENDS_ENABLED ? ['GitHub'] : [])])
+    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Use cards in this vault', undefined, 'Card skill in the sidebar', 'Card course', 'Card tips', 'New cards a day', 'Up next a day', 'New cards order', 'Spacebar during review', 'Card location', 'Focus mode hides', 'O opens the page at', 'Arrow keys at the ends', 'Time so far', 'Answer buttons', 'Pause the timer after', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card text size', 'Card title size', 'Show card titles', 'Title mark in the card head', 'Title room', 'Card tables', 'Card sides in pages', 'Card sides on card pages', 'Card sides in Explore', 'Card spacing'])
+    // YAZ-5050 round 2 / YAZ-6591: the groups, in order; Inbox sits right before Answers. (YAZ-6190 D4: GitHub moved to Sync.)
+    expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Inbox', 'Answers', 'Scheduling', 'Card look', ...(FRIENDS_ENABLED ? ['GitHub'] : [])])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why. YAZ-5708: the
     // rules of now (YAZ-5655, consolidated): days only, only misses come back, a new card's first ✓ joins today's reviews.
     const how = row(el, 'howCardsComeBack')!.querySelector('details')!
@@ -1857,8 +1858,6 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     // YAZ-5387: Card title size, and Card text size's Same as pages · Custom.
     ['cardTitleSize', {}],
     ['cardTextSize', {}],
-    // YAZ-5307: Inbox: O opens the page at (`store.cardLook.test.ts` saves it through main and reads it back).
-    ['inboxOpenAt', {}],
     ['cardLineSpacing', { cardSpacing: 'custom' }],
     ['cardBlockGap', { cardSpacing: 'custom' }],
     ['cardBulletSpace', { cardSpacing: 'custom' }],
@@ -1900,23 +1899,78 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(save).not.toHaveBeenCalled()
   })
 
-  it('YAZ-5307: Inbox: O opens the page at · The top (the default) · The card, after Time so far; an app setting, not the vault\'s', () => {
+  it('YAZ-6591 / YAZ-6597: Settings › Cards › Inbox holds all 6 vault-level Inbox rows before Answers, updates left sub-TOC, and saves via review.save', () => {
     const { el, onChange, save } = mountOn('Cards', DEFAULT_SETTINGS, undefined, S)
-    const ids = reviewRows(el)
-    expect(ids.slice(ids.indexOf('timeSoFar'), ids.indexOf('timeSoFar') + 2)).toEqual(['timeSoFar', 'inboxOpenAt'])
-    expect(row(el, 'inboxOpenAt')?.querySelector('.setting__label')?.textContent).toBe('Inbox: O opens the page at')
-    expect(rowButtons(el, 'inboxOpenAt').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['The top', 'true'], ['The card', 'false']])
-    act(() => rowButtons(el, 'inboxOpenAt')[1].click())
-    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, inboxOpenAt: 'card' })
-    expect(save).not.toHaveBeenCalled()
-  })
+    const groupByTitle = (title: string) => [...el.querySelectorAll<HTMLElement>('#settings-cards .settings-group')].find((g) => g.dataset.groupTitle === title)
+    const groupRowIds = (title: string) => [...(groupByTitle(title)?.querySelectorAll<HTMLElement>('.setting') ?? [])].map((r) => r.dataset.setting)
 
-  it('YAZ-6019: Arrow keys at the ends · Stop at the ends (default) · Loop around, in review.json', () => {
-    const { el, save } = mountOn('Cards', DEFAULT_SETTINGS, undefined, S)
+    expect(groupRowIds('Inbox')).toEqual(['spaceBehavior', 'cardLocation', 'focusHidesSidebar', 'inboxOpenAt', 'loopArrows', 'timeSoFar'])
+    expect(groupRowIds('Answers')).toEqual(['buttons', 'pauseAfter'])
+    expect([...el.querySelectorAll('.settings-nav__sub')].map((b) => b.textContent)).toEqual(['Daily limits', 'Inbox', 'Answers', 'Scheduling', 'Card look', ...(FRIENDS_ENABLED ? ['GitHub'] : [])])
+
+    // 1. Spacebar during review
+    expect(row(el, 'spaceBehavior')?.querySelector('.setting__label')?.textContent).toBe('Spacebar during review')
+    expect(rowButtons(el, 'spaceBehavior').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['Scroll through card', 'true'],
+      ['Jump to next hidden word', 'false'],
+    ])
+    act(() => rowButtons(el, 'spaceBehavior')[1].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, spaceBehavior: 'jump' })
+
+    // 2. Card location
+    expect(row(el, 'cardLocation')?.querySelector('.setting__label')?.textContent).toBe('Card location')
+    expect(rowButtons(el, 'cardLocation').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['Hide in focus mode', 'true'],
+      ['Hide until revealed', 'false'],
+      ['Always show', 'false'],
+      ['Always hide', 'false'],
+    ])
+    act(() => rowButtons(el, 'cardLocation')[1].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, cardLocation: 'until-revealed' })
+    act(() => rowButtons(el, 'cardLocation')[2].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, cardLocation: 'show' })
+    act(() => rowButtons(el, 'cardLocation')[3].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, cardLocation: 'hide' })
+
+    // 3. Focus mode hides
+    expect(row(el, 'focusHidesSidebar')?.querySelector('.setting__label')?.textContent).toBe('Focus mode hides')
+    expect(rowButtons(el, 'focusHidesSidebar').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['Tab bar only', 'true'],
+      ['Tab bar and sidebar', 'false'],
+    ])
+    act(() => rowButtons(el, 'focusHidesSidebar')[1].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, focusHidesSidebar: true })
+
+    // 4. O opens the page at (moved to vault review settings, dropped "Inbox: " prefix and "For the whole app.")
+    expect(row(el, 'inboxOpenAt')?.querySelector('.setting__label')?.textContent).toBe('O opens the page at')
+    expect(row(el, 'inboxOpenAt')?.querySelector('.setting__hint')?.textContent).not.toContain('For the whole app')
+    expect(rowButtons(el, 'inboxOpenAt').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['The top', 'true'],
+      ['The card', 'false'],
+    ])
+    act(() => rowButtons(el, 'inboxOpenAt')[1].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, inboxOpenAt: 'card' })
+
+    // 5. Arrow keys at the ends
     expect(row(el, 'loopArrows')?.querySelector('.setting__label')?.textContent).toBe('Arrow keys at the ends')
-    expect(rowButtons(el, 'loopArrows').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Stop at the ends', 'true'], ['Loop around', 'false']])
+    expect(rowButtons(el, 'loopArrows').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['Stop at the ends', 'true'],
+      ['Loop around', 'false'],
+    ])
     act(() => rowButtons(el, 'loopArrows')[1].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, loopArrows: true })
+
+    // 6. Time so far
+    expect(row(el, 'timeSoFar')?.querySelector('.setting__label')?.textContent).toBe('Time so far')
+    expect(rowButtons(el, 'timeSoFar').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['Hidden (click to see)', 'true'],
+      ['Shown', 'false'],
+      ['Off', 'false'],
+    ])
+    act(() => rowButtons(el, 'timeSoFar')[1].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, timeSoFar: 'shown' })
+
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('YAZ-5136 round 3: Card tables is Same as pages (the default, Settings › Tables) · Left · Centre, beside Card width; an app setting', () => {

@@ -112,7 +112,7 @@ function mountScoped(opts: {
   document.body.appendChild(container)
   root = createRoot(container)
   act(() => {
-    root?.render(<SettingsDialog ctx={{ settings: globalSettings, onChange, scope }} onClose={vi.fn()} />)
+    root?.render(<SettingsDialog ctx={{ settings: globalSettings, onChange, review: vaults[0]?.review, scope }} onClose={vi.fn()} />)
   })
   return { el: container, onChange, onChangeGlobal, wsSetOverrides, wsResetAll, vaults }
 }
@@ -248,5 +248,40 @@ describe('SettingsDialog scope switcher (YAZ-6546, YAZ-6556)', () => {
     // Must keep Global defaults for tabWidth and contentWidth (never leaking workspace/vault overrides)
     expect(saved.tabWidth).toBe(DEFAULT_SETTINGS.tabWidth)
     expect(saved.contentWidth).toBe(DEFAULT_SETTINGS.contentWidth)
+  })
+
+  it('YAZ-6597: cardTips shows Global badge while all 6 Inbox rows are vault-only in Vault and Workspace modes', () => {
+    const v1 = makeScopeVault('/v1', 'Notes', {})
+    const v2 = makeScopeVault('/v2', 'Work', {})
+    const { el, onChangeGlobal } = mountScoped({ vaults: [v1, v2], wsName: 'Daily Focus' })
+
+    clickNav(el, 'Cards')
+    clickScopeTab(el, 'This workspace')
+    expect(el.querySelector('[data-setting="cardTips"] .setting__scope-badge')?.textContent).toBe('Global')
+    for (const id of ['spaceBehavior', 'cardLocation', 'focusHidesSidebar', 'inboxOpenAt', 'loopArrows', 'timeSoFar']) {
+      expect(el.querySelector(`[data-setting="${id}"] .setting__scope-badge`)?.textContent, id).toBe('Per-vault')
+    }
+
+    // Switch to Vault mode targeting v1
+    const select = el.querySelector<HTMLSelectElement>('.settings-scope__select')!
+    act(() => {
+      select.value = '/v1'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(el.querySelector('[data-setting="cardTips"] .setting__scope-badge')?.textContent).toBe('Global')
+    for (const id of ['spaceBehavior', 'cardLocation', 'focusHidesSidebar', 'inboxOpenAt', 'loopArrows', 'timeSoFar']) {
+      const rowEl = el.querySelector(`[data-setting="${id}"]`)
+      expect(rowEl, id).not.toBeNull()
+      expect(rowEl?.querySelector('.setting__scope-badge'), id).toBeNull()
+      expect(rowEl?.querySelector('.setting__override-dot'), id).toBeNull()
+    }
+
+    // Changing Spacebar during review in Vault mode writes through v1.review.save (never global or vaultSettings overrides)
+    const spaceRow = el.querySelector('[data-setting="spaceBehavior"]')!
+    const jumpBtn = [...spaceRow.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Jump to next hidden word')
+    act(() => jumpBtn?.click())
+    expect(v1.review.save).toHaveBeenCalledWith({ ...DEFAULT_REVIEW_SETTINGS, spaceBehavior: 'jump' })
+    expect(v1.vaultSettings.setOverrides).not.toHaveBeenCalled()
+    expect(onChangeGlobal).not.toHaveBeenCalled()
   })
 })

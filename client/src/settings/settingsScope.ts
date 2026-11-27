@@ -125,7 +125,7 @@ const LEGACY_VAULT_ROW_IDS = new Set([
   'folderPagesVault',
 ])
 
-const GLOBAL_ONLY_CARD_IDS = new Set(['githubToken', 'friendsSend', 'cardCourse'])
+const GLOBAL_ONLY_CARD_IDS = new Set(['githubToken', 'friendsSend', 'cardCourse', 'cardTips'])
 const GLOBAL_ONLY_FOLDER_PAGE_IDS = new Set(['hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks'])
 
 export function overrideKeyOf(item: SettingDef): VaultOverrideKey | undefined {

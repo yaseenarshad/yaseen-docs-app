@@ -12,8 +12,8 @@ import { searchSettings, settingCandidates, wordMatches, type SettingHit } from 
 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
-// Settings › Review (YAZ-4967, D14): the card settings.
-const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'loopArrows', 'retention', 'maxDays', 'fuzz', 'weights', 'cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview', 'howCardsComeBack', ...(FRIENDS_ENABLED ? ['friendsSend'] : [])]
+// Settings › Review (YAZ-4967, D14; YAZ-6591 Inbox group): the card settings.
+const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'spaceBehavior', 'cardLocation', 'focusHidesSidebar', 'inboxOpenAt', 'loopArrows', 'timeSoFar', 'buttons', 'pauseAfter', 'retention', 'maxDays', 'fuzz', 'weights', 'cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTitleAt', 'cardTitleMark', 'cardTitleRoom', 'cardTablePosition', 'cardSidesFold', 'cardSidesFoldCardPages', 'cardSidesFoldExplore', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview', 'howCardsComeBack', ...(FRIENDS_ENABLED ? ['friendsSend'] : [])]
 // Settings › Link pills (YAZ-4924): the preview row, then one row for each choice, after This vault.
 const LINK_PILL_ROWS = ['linkPills']
 // Preview links on hover (`folderLinks`) beside Preview rows; Confirm changes after Ask before deleting (YAZ-3746 13AN).
@@ -436,6 +436,9 @@ describe('searchSettings', () => {
     for (const query of ['review', 'cards', 'inbox', 'fsrs']) {
       expect(ids(searchSettings(candidates, query).filter((h) => h.section.id === 'cards')).sort()).toEqual([...REVIEW_ROWS].sort())
     }
+    expect(ids(searchSettings(candidates, 'spacebar during review'))[0]).toBe('spaceBehavior')
+    expect(ids(searchSettings(candidates, 'card location'))[0]).toBe('cardLocation')
+    expect(ids(searchSettings(candidates, 'focus mode hides'))[0]).toBe('focusHidesSidebar')
   })
 
   it('no match is an empty list', () => {
