@@ -1697,8 +1697,8 @@ export function App() {
   // open the ONE dialog — and it can open with the sidebar collapsed. `open`/`close` are stable
   // because `useMenuEvents` resubscribes whenever a callback identity changes.
   const [settingsOpen, setSettingsOpen] = useState(false)
-  // Which page the dialog opens on: the first, or Sharing from the Share dialog's "Open Settings › Sharing" (YAZ-3040).
-  const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | 'cards' | 'sidebar' | undefined>(undefined)
+  // Which page (and optional scope/row) the dialog opens on (YAZ-3040, YAZ-6593).
+  const [settingsTarget, setSettingsTarget] = useState<{ page?: 'sharing' | 'hotkeys' | 'cards' | 'sidebar'; scope?: 'global' | 'vault' | 'workspace'; settingId?: string }>({})
   // Spacing's Vault dropdown starts on the active tab's vault at each open (YAZ-5485).
   useEffect(() => {
     if (!settingsOpen) {
@@ -1709,11 +1709,15 @@ export function App() {
       setFolderPagesRoot(null)
     }
   }, [settingsOpen])
-  const openSettings = useCallback(() => { setSettingsPage(undefined); setSettingsOpen(true) }, [])
-  const openSharingSettings = useCallback(() => { setSettingsPage('sharing'); setSettingsOpen(true) }, [])
+  const openSettings = useCallback(() => { setSettingsTarget({}); setSettingsOpen(true) }, [])
+  const openSharingSettings = useCallback(() => { setSettingsTarget({ page: 'sharing' }); setSettingsOpen(true) }, [])
   // The card skill's notice (YAZ-5108): "Open Settings" opens at Cards (was Review), where the switch is.
-  const openReviewSettings = useCallback(() => { setSettingsPage('cards'); setSettingsOpen(true) }, [])
-  const openSidebarSettings = useCallback(() => { setSettingsPage('sidebar'); setSettingsOpen(true) }, [])
+  const openReviewSettings = useCallback(() => { setSettingsTarget({ page: 'cards' }); setSettingsOpen(true) }, [])
+  const openSidebarSettings = useCallback(() => {
+    const scope = chromeWriteRef.current.roots.length >= 2 ? 'workspace' : chromeWriteRef.current.roots.length === 1 ? 'vault' : 'global'
+    setSettingsTarget({ page: 'sidebar', scope, settingId: 'sidebarTabs' })
+    setSettingsOpen(true)
+  }, [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
   // THE CARD COURSE (YAZ-5120): one layer over the window, opened only by a person's click (Settings › Cards, the
@@ -1958,7 +1962,7 @@ export function App() {
   useEffect(() => onKeySheetRequest(openKeySheet), [openKeySheet])
   const changeKeys = useCallback(() => {
     setKeySheetOpen(false)
-    setSettingsPage('hotkeys')
+    setSettingsTarget({ page: 'hotkeys' })
     setSettingsOpen(true)
   }, [])
 
@@ -4284,7 +4288,7 @@ export function App() {
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
       {settingsOpen && (
         <Suspense fallback={null}>
-          <SettingsDialog input={{ roots, vaults, active, appSettings, settings, onChange: changeSettings, onChangeGlobal: changeGlobalSettings, matchedWorkspaceName: matchedVaultSet?.name ?? null, wsKey: windowChrome.wsKey, wsChromeOverrides: windowChrome.chromeOverrides, onWriteWorkspaceChrome: writeChromeOverrides, onResetWorkspaceChrome: resetWorkspaceChrome, dailyHereRoot: dailyHere.root, saveDaily, openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder, vaultStorage, sharing, vaultIcons, placeVaults, refreshLauncherIcons, pickers: { spacingRoot, setSpacingRoot, cardLookRoot, setCardLookRoot, tableLookRoot, setTableLookRoot, folderPagesRoot, setFolderPagesRoot, iconLookRoot, setIconLookRoot } }} initialPage={settingsPage} onClose={closeSettings} />
+          <SettingsDialog input={{ roots, vaults, active, appSettings, settings, onChange: changeSettings, onChangeGlobal: changeGlobalSettings, matchedWorkspaceName: matchedVaultSet?.name ?? null, wsKey: windowChrome.wsKey, wsChromeOverrides: windowChrome.chromeOverrides, onWriteWorkspaceChrome: writeChromeOverrides, onResetWorkspaceChrome: resetWorkspaceChrome, dailyHereRoot: dailyHere.root, saveDaily, openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder, vaultStorage, sharing, vaultIcons, placeVaults, refreshLauncherIcons, pickers: { spacingRoot, setSpacingRoot, cardLookRoot, setCardLookRoot, tableLookRoot, setTableLookRoot, folderPagesRoot, setFolderPagesRoot, iconLookRoot, setIconLookRoot } }} initialPage={settingsTarget.page} initialScope={settingsTarget.scope} initialSettingId={settingsTarget.settingId} onClose={closeSettings} />
         </Suspense>
       )}
       {courseOpen !== null && (

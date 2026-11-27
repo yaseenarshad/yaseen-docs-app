@@ -64,9 +64,10 @@ describe('settingCandidates', () => {
       'commentsResolved',
       'commentsHint',
       // Settings › Sidebar (YAZ-3440 D7), after Appearance. The Line set's colour rows show only with that set.
-      // Tab row (YAZ-6593) first, then Row spacing (YAZ-5885) in its Rows group.
+      // Tab row (YAZ-6593) first, then Row spacing (YAZ-5885) and Show last updated (YAZ-6593) in Rows.
       'sidebarTabs',
       'sidebarRowHeight',
+      'rowDates',
       'sidebarLines',
       'sidebarLineStyle',
       'sidebarThreadColor',
@@ -341,8 +342,8 @@ describe('searchSettings', () => {
 
   it('the sidebar\'s level lines (YAZ-3309 D6, D7, D9, S12): "sidebar" finds the three rows of the group first; "folder", "tree" and "indent" find Show, not the TOC row; "thread" finds Style and Thread colour beside Bullet threading; "accent" finds the two colour pickers', () => {
     // The hover preview's Sidebar row (YAZ-3403) and "Sidebar remembers" (YAZ-5701) start with "Sidebar", so they lead.
-    // Tab row (YAZ-6593) and Row spacing (YAZ-5885) come before Level lines.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'sidebar')).slice(0, 7)).toEqual(['sidebarPlace', 'hoverPreviewIn.sidebar', 'sidebarTabs', 'sidebarRowHeight', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
+    // Tab row (YAZ-6593), Row spacing (YAZ-5885), and Show last updated (YAZ-6593) come before Level lines.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'sidebar')).slice(0, 8)).toEqual(['sidebarPlace', 'hoverPreviewIn.sidebar', 'sidebarTabs', 'sidebarRowHeight', 'rowDates', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor'])
     for (const query of ['folder', 'tree', 'indent']) {
       expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('sidebarLines')
       expect(ids(searchSettings(settingCandidates(ctx()), query))).not.toContain('tocLines')

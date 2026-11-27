@@ -83,6 +83,7 @@ import { MEMORY_SECTION } from './memorySection'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
 import { NEW_PER_DAY_FIELD, RETENTION_FIELD, ReviewNumberControl, UP_NEXT_PER_DAY_FIELD, WEIGHTS_FIELD, wholeField, type ReviewField } from './ReviewNumberControl'
 import { ReviewHowCardsComeBack } from './ReviewHowCardsComeBack'
+import { RowDatesControl } from './RowDatesControl'
 import { LinkPillsControl } from './LinkPillsControl'
 import type { LinkPillsState } from './useLinkPills'
 import { DEFAULT_WEB_LINKS } from '@shared/webLinks'
@@ -1379,9 +1380,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             hint: 'Order and visibility of sidebar tabs and right-hand buttons.',
             keywords: ['sidebar', 'tab', 'tabs', 'tab row', 'order', 'reorder', 'hide', 'show', 'files', 'search', 'focus', 'favorites', 'sessions', 'recents', 'sort', 'collapse', 'more'],
             wide: () => true,
-            render: ({ settings, onChange }) => (
+            render: ({ settings, onChange, scope }) => (
               <Suspense fallback={null}>
-                <SidebarTabsControl value={settings.sidebarTabs} onChange={(sidebarTabs) => onChange({ ...settings, sidebarTabs })} />
+                <SidebarTabsControl
+                  value={settings.sidebarTabs}
+                  onChange={(sidebarTabs) => onChange({ ...settings, sidebarTabs })}
+                  scopeLabel={scope?.activeScopeLabel}
+                  isGlobal={scope !== undefined && scope.activeScopeMode === 'global'}
+                  activeTargetLabel={scope?.activeTargetLabel}
+                  onJumpToActive={scope?.onJumpToActiveScope}
+                />
               </Suspense>
             ),
           },
@@ -1400,6 +1408,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // Wide always: the label keeps its width while Custom adds its field beside the buttons.
             wide: () => true,
             render: ({ settings, onChange }) => <RowSpacingControl value={settings.sidebarRowHeight} onSet={(sidebarRowHeight) => onChange({ ...settings, sidebarRowHeight })} />,
+          },
+          {
+            id: 'rowDates',
+            label: 'Show last updated',
+            hint: 'Choose which sidebar tabs show each note\'s last updated date.',
+            keywords: ['sidebar', 'row', 'rows', 'dates', 'date', 'updated', 'modified', 'last updated', 'recents', 'files', 'focus', 'favorites', 'search'],
+            wide: () => true,
+            render: ({ settings, onChange }) => <RowDatesControl value={settings.rowDates} onChange={(rowDates) => onChange({ ...settings, rowDates })} />,
           },
         ],
       },
