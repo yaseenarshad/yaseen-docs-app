@@ -33,7 +33,7 @@ import { NEEDS_FIX, UNDO_SHOWN_MS, hintText, lostTitle } from './words'
 import { FilterIcon, filterLabel } from '@client/review/cardFilters'
 import { DiscardAnswer } from '../screens/DiscardAnswer'
 import { useReviewTop } from '../screens/reviewTop'
-import { glideCard, moreBelow, tapMove, type TapTarget } from './cardScroll'
+import { glideCard, moreBelow, resetCardScroll, tapMove, type TapTarget } from './cardScroll'
 import { readNewFrom, readOrders, saveNewFrom, saveOrder, type PhoneOrders } from './newFromPick'
 import { ReviewSheet } from './ReviewSheet'
 import { DoneScreen, type DoneLook } from '@client/review/DoneScreen'
@@ -368,7 +368,7 @@ function SessionScreen({
     const target: TapTarget = mark !== null ? mark : step.sides < counts.length ? 'side' : 'end'
     // The Mac's reading scroll: a part out of view first comes into view; that tap shows nothing.
     const view = cardBox.current
-    const move = view === null || titleNow ? 0 : tapMove(view, after === null ? 'end' : target)
+    const move = view === null || titleNow ? 0 : tapMove(view, after === null ? 'end' : target, review.settings.spaceBehavior)
     if (move !== 0 && view !== null) return glideCard(view, move)
     if (after === null) return setNudge({ key: cardKey, n: nudge.key === cardKey ? nudge.n + 1 : 1 })
     lastShown.current = !titleNow && typeof target === 'number' ? target : null
@@ -421,7 +421,10 @@ function SessionScreen({
   }, [cardKey, text, step.sides, step.open])
   // A new card starts at its top.
   useLayoutEffect(() => {
-    if (cardBox.current !== null) cardBox.current.scrollTop = 0
+    if (cardBox.current !== null) {
+      resetCardScroll(cardBox.current)
+      cardBox.current.scrollTop = 0
+    }
   }, [cardKey])
 
   // The buttons' reviews are fixed when the card shows (D13): the answer writes what was fixed.
