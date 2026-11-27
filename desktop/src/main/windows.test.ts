@@ -3013,3 +3013,35 @@ describe('createWindowManager: automation bounds, inactive open, and flush-first
     }
   })
 })
+
+describe('createWindowManager: WindowHost.focusWindow delegation (YAZ-6595 D1)', () => {
+  it('delegates raising target windows to host.focusWindow on routeToFile and openVaultSet', () => {
+    const ws = store.saveVaultSet('All Folders', ['/v/a', '/v/b'])!
+    store.upsertWindow({ id: 'solo-a', root: '/v/a', roots: ['/v/a'], file: '/v/a/note.md', tabs: ['/v/a/note.md'], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'ws-ab', root: '/v/a', roots: ['/v/a', '/v/b'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 40, y: 40, width: 800, height: 600 } })
+
+    const focusWindow = vi.fn()
+    const { host, created } = makeHost([AREA], (p) => p === '/v/a/note.md', (p) => p === '/v/a' || p === '/v/b')
+    host.focusWindow = focusWindow
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+
+    const soloWin = created.find((c) => c.entry.id === 'solo-a')!.win
+    const wsWin = created.find((c) => c.entry.id === 'ws-ab')!.win
+
+    manager.routeToFile('/v/a')
+    expect(focusWindow).toHaveBeenCalledTimes(1)
+    expect(focusWindow).toHaveBeenLastCalledWith(soloWin)
+    expect(soloWin.focusCount).toBe(0)
+
+    manager.routeToFile('/v/a/note.md', '/v/a')
+    expect(focusWindow).toHaveBeenCalledTimes(2)
+    expect(focusWindow).toHaveBeenLastCalledWith(soloWin)
+    expect(soloWin.focusCount).toBe(0)
+
+    expect(manager.openVaultSet(ws.id)).toEqual({ opened: true, missing: [] })
+    expect(focusWindow).toHaveBeenCalledTimes(3)
+    expect(focusWindow).toHaveBeenLastCalledWith(wsWin)
+    expect(wsWin.focusCount).toBe(0)
+  })
+})

@@ -59,6 +59,7 @@ import { APP_NAME, STATE_FILE, applyUserDataOverride } from './userData'
 import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
 import { initMint, macId } from './vaultIndex/mint'
 import { createWindowManager, type RestoreTarget } from './windows'
+import { focusSingleWindow } from './singleWindowFocus'
 import { createDockIconController, defaultDockIconPath, type DockIconController } from './dockIcon'
 import { installVaultLauncher, removeOrphanLauncher, removeVaultLauncher, vaultLauncherBinaryPath } from './vaultLauncher'
 import { dropLanded } from './dragLanding'
@@ -201,8 +202,8 @@ const manager = createWindowManager(store, {
       backgroundColor: windowBackgroundColor(store.get().settings.theme, nativeTheme.shouldUseDarkColors),
       webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, plugins: true, zoomFactor: appZoomFactor(store.get().settings), ...((hiddenE2E || hidden || inactive) && { backgroundThrottling: false }) },
     })
-    // A hidden e2e window must never surface: `focus()`, `show()`, and `showInactive()` would order it front.
-    if (hiddenE2E) win.show = win.focus = win.showInactive = () => {}
+    // A hidden e2e window must never surface: `focus()`, `show()`, `showInactive()`, and `moveTop()` would order it front.
+    if (hiddenE2E) win.show = win.focus = win.showInactive = win.moveTop = () => {}
     if (inactive && !hidden && !hiddenE2E) {
       win.once('ready-to-show', () => {
         if (!win.isDestroyed()) win.showInactive()
@@ -314,6 +315,17 @@ const manager = createWindowManager(store, {
     popup.webContents.setZoomFactor(appZoomFactor(store.get().settings))
     popup.setBounds(bounds)
     if (!hiddenE2E && !popup.isVisible()) popup.showInactive()
+  },
+  // Single-window focus (YAZ-6595 D1/D2): raises only the target window without activating unrelated windows.
+  focusWindow(win) {
+    if (hiddenE2E) return
+    focusSingleWindow(win as BrowserWindow, {
+      isMac: process.platform === 'darwin',
+      isAppHidden: () => app.isHidden(),
+      showApp: () => app.show(),
+      stealAppFocus: () => app.focus({ steal: true }),
+      siblingWindows: () => BrowserWindow.getAllWindows().filter((w) => !previewPopups.has(w)),
+    })
   },
 })
 

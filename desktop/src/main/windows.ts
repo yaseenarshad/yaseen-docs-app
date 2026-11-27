@@ -121,6 +121,8 @@ export interface WindowHost {
   showPreview(win: ManagedWindow, bounds: WindowBounds | null): void
   /** Optional hook invoked when a vault deep link carries `?open=inbox` or `?open=today` (YAZ-5967, YAZ-6373). */
   onOpenTarget?(win: ManagedWindow, vaultPath: string, openTarget: LinkOpenTarget): void
+  /** Optional single-window focus strategy (YAZ-6595 D1/D2): raises only `win` without pulling unrelated windows forward. */
+  focusWindow?(win: ManagedWindow): void
 }
 
 /** A cold-start restore target (YAZ-6446 D1): a plain root string matches any containing window (file links, YAZ-2602 A8); `{ exact }` matches only a window whose vaults equal `exact` (vault & workspace launchers). */
@@ -904,6 +906,10 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   }
 
   const focusWindow = (win: ManagedWindow): void => {
+    if (host.focusWindow !== undefined) {
+      host.focusWindow(win)
+      return
+    }
     if (win.isMinimized()) win.restore()
     win.focus()
   }
