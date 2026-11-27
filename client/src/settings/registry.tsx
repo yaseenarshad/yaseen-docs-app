@@ -2948,6 +2948,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             label: 'Card location',
             hint: (ctx) => unit(ctx, 'When the Inbox top bar shows the card’s folder and page path. Hiding it stops the page name from giving away the answer.'),
             keywords: [...REVIEW_KEYWORDS, 'location', 'path', 'breadcrumb', 'folder', 'page', 'focus', 'hide', 'spoiler', 'reveal'],
+            wide: true,
             available: reviewOn,
             render: ({ review }) =>
               review && (
