@@ -95,9 +95,10 @@ export function followSettingsFolder(store: Pick<Store, 'get' | 'onChange' | 'ap
     const text = settingsFileText(deps.host, settingsSavedAt, settings)
     if (text === lastText) return
     const file = path.join(dir, settingsFileName(await deps.macId()))
-    const { mtime } = await atomicWrite(file, text)
+    const write = async () => (await atomicWrite(file, text)).mtime
     // Drops the watcher's echo, and re-anchors a watcher that started before the folder existed.
-    watcher?.recordOwnWrite(file, mtime)
+    if (watcher) await watcher.ownWrite(file, write)
+    else await write()
     lastText = text
   }
 
