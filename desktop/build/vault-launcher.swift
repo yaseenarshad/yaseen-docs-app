@@ -16,7 +16,7 @@ if let raw = Bundle.main.object(forInfoDictionaryKey: "YaseenDocsVaultURL") as? 
     group.enter()
     let config = NSWorkspace.OpenConfiguration()
     // Keep cold-start activation; warm launches deliver open-url silently so Electron raises only the target window (YAZ-6595 D1).
-    let isRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).isEmpty
+    let isRunning = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).contains { !$0.isTerminated }
     config.activates = !isRunning
     workspace.open([url], withApplicationAt: appURL, configuration: config) { _, _ in
       group.leave()

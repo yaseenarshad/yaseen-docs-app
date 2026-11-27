@@ -12,7 +12,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { constants as fsConstants } from 'node:fs'
 import { access, chmod, copyFile, mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { fileLink, type LinkOpenTarget } from '@shared/links'
 import { stripSlash } from '@shared/types'
@@ -326,21 +326,7 @@ export async function installVaultLauncher(opts: InstallVaultLauncherOptions, de
     await writeFile(join(resourcesDir, 'AppIcon.icns'), icns)
 
     await exec('codesign', ['--force', '--sign', '-', tmpApp])
-
-    // Atomic swap into `target` (preserve existing bundle in a backup sibling until swap succeeds).
-    if (await pathExists(target)) {
-      const backup = join(dir, `.yaseen-launcher-bak-${randomUUID()}.app`)
-      await rename(target, backup)
-      try {
-        await rename(tmpApp, target)
-      } catch (err) {
-        await rename(backup, target).catch(() => {})
-        throw err
-      }
-      await rm(backup, { recursive: true, force: true }).catch(() => {})
-    } else {
-      await rename(tmpApp, target)
-    }
+    await atomicSwapBundle(tmpApp, target, dir)
   } catch (err) {
     await rm(tmpApp, { recursive: true, force: true }).catch(() => {})
     throw err
@@ -442,6 +428,22 @@ export async function removeVaultLauncher(
   return true
 }
 
+async function atomicSwapBundle(tmpApp: string, target: string, dir: string): Promise<void> {
+  if (await pathExists(target)) {
+    const backup = join(dir, `.yaseen-launcher-bak-${randomUUID()}.app`)
+    await rename(target, backup)
+    try {
+      await rename(tmpApp, target)
+    } catch (err) {
+      await rename(backup, target).catch(() => {})
+      throw err
+    }
+    await rm(backup, { recursive: true, force: true }).catch(() => {})
+  } else {
+    await rename(tmpApp, target)
+  }
+}
+
 function updatePlistBundleVersion(xml: string, version: number): string {
   const re = /(<key>CFBundleVersion<\/key>\s*<string>)[\s\S]*?(<\/string>)/
   if (re.test(xml)) {
@@ -457,12 +459,12 @@ function updatePlistBundleVersion(xml: string, version: number): string {
 
 /**
  * Scan installed Yaseen Docs `.app` launchers and atomically upgrade any bundle whose
- * `CFBundleVersion` is below `LAUNCHER_BUNDLE_VERSION` (YAZ-6605).
+ * `CFBundleVersion` is below `LAUNCHER_BUNDLE_VERSION` (YAZ-6605, YAZ-6606).
  *
  * - Returns `[]` immediately if `binaryPath` does not exist (safe for dev runs without a built helper).
  * - Preserves each bundle's `AppIcon.icns`, display name, bundle identifier, vault URL, and vault path.
- * - Stages the new binary and updated `Info.plist` via sibling temp files before swapping and re-signing.
- * - Rolls back and cleans up temp files if one bundle fails, continuing with remaining bundles.
+ * - Stages a full sibling temp `.app` bundle, ad-hoc signs it FIRST, then swaps atomically so the
+ *   installed bundle is never left unsigned or partially upgraded on crash or `codesign` failure.
  */
 export async function refreshOutdatedLaunchers(
   binaryPath: string,
@@ -476,66 +478,36 @@ export async function refreshOutdatedLaunchers(
   for (const item of installed) {
     if ((item.info.bundleVersion ?? 0) >= LAUNCHER_BUNDLE_VERSION) continue
 
-    const contentsDir = join(item.appPath, 'Contents')
-    const plistPath = join(contentsDir, 'Info.plist')
-    const macOsDir = join(contentsDir, 'MacOS')
-    const binPath = join(macOsDir, 'vault-launcher')
-    const id = randomUUID()
-    const tmpBin = join(macOsDir, `.vault-launcher-tmp-${id}`)
-    const tmpPlist = join(contentsDir, `Info.plist.tmp-${id}`)
-
-    let origPlist: string | null = null
-    let origBin: Buffer | null = null
-    let origBinMode: number | null = null
-    let binSwapped = false
-    let plistSwapped = false
+    const dir = dirname(item.appPath)
+    const tmpApp = join(dir, `.yaseen-launcher-upgrade-${randomUUID()}.app`)
+    const tmpContents = join(tmpApp, 'Contents')
+    const tmpMacOs = join(tmpContents, 'MacOS')
+    const tmpResources = join(tmpContents, 'Resources')
 
     try {
-      origPlist = await readFile(plistPath, 'utf8')
+      const origPlist = await readFile(join(item.appPath, 'Contents', 'Info.plist'), 'utf8')
       const nextPlist = updatePlistBundleVersion(origPlist, LAUNCHER_BUNDLE_VERSION)
-      try {
-        const [buf, st] = await Promise.all([readFile(binPath), stat(binPath)])
-        origBin = buf
-        origBinMode = st.mode & 0o777
-      } catch {
-        origBin = null
-        origBinMode = null
+
+      await mkdir(tmpMacOs, { recursive: true })
+      await mkdir(tmpResources, { recursive: true })
+      await writeFile(join(tmpContents, 'Info.plist'), nextPlist, 'utf8')
+
+      const destBin = join(tmpMacOs, 'vault-launcher')
+      await copyFile(binaryPath, destBin)
+      await chmod(destBin, 0o755)
+
+      const origIcon = join(item.appPath, 'Contents', 'Resources', 'AppIcon.icns')
+      if (await pathExists(origIcon)) {
+        await copyFile(origIcon, join(tmpResources, 'AppIcon.icns'))
       }
 
-      await mkdir(macOsDir, { recursive: true })
-      await copyFile(binaryPath, tmpBin)
-      await chmod(tmpBin, 0o755)
-      await writeFile(tmpPlist, nextPlist, 'utf8')
-
-      await rename(tmpBin, binPath)
-      binSwapped = true
-      await rename(tmpPlist, plistPath)
-      plistSwapped = true
-
-      await exec('codesign', ['--force', '--sign', '-', item.appPath])
+      await exec('codesign', ['--force', '--sign', '-', tmpApp])
+      await atomicSwapBundle(tmpApp, item.appPath, dir)
       const now = new Date()
       await utimes(item.appPath, now, now).catch(() => {})
       upgraded.push(item.appPath)
     } catch (err) {
-      await rm(tmpBin, { force: true }).catch(() => {})
-      await rm(tmpPlist, { force: true }).catch(() => {})
-      if (plistSwapped && origPlist !== null) {
-        const rollbackPlist = join(contentsDir, `Info.plist.tmp-${randomUUID()}`)
-        await writeFile(rollbackPlist, origPlist, 'utf8')
-          .then(() => rename(rollbackPlist, plistPath))
-          .catch(async () => {
-            await rm(rollbackPlist, { force: true }).catch(() => {})
-          })
-      }
-      if (binSwapped && origBin !== null) {
-        const rollbackBin = join(macOsDir, `.vault-launcher-tmp-${randomUUID()}`)
-        await writeFile(rollbackBin, origBin)
-          .then(() => chmod(rollbackBin, origBinMode ?? 0o755))
-          .then(() => rename(rollbackBin, binPath))
-          .catch(async () => {
-            await rm(rollbackBin, { force: true }).catch(() => {})
-          })
-      }
+      await rm(tmpApp, { recursive: true, force: true }).catch(() => {})
       console.warn(`[vaultLauncher] failed to refresh "${item.appPath}": ${String(err)}`)
     }
   }

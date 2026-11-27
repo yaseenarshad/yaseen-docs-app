@@ -232,30 +232,62 @@ describe('focusSingleWindow (YAZ-6595 D1/D2)', () => {
     expect(minimizedSibling.isMinimized()).toBe(true)
   })
 
-  it('evaluates isAppHidden when a minimized target finishes restoring on macOS', () => {
+  it('under Cmd+H with a minimized target on macOS, hides siblings and calls showApp BEFORE restore(), then steals focus after restore', () => {
     const log: string[] = []
+    let appHidden = true
     const target = new FakeFocusableWindow('target', log, { minimized: true })
     const openSibling = new FakeFocusableWindow('openSibling', log, { visible: true })
+    const hiddenSiblings: string[] = []
+    const shownTargets: string[] = []
 
     focusSingleWindow(target, {
       isMac: true,
-      isAppHidden: () => true,
-      showApp: () => log.push('app:show'),
+      isAppHidden: () => appHidden,
+      showApp: () => {
+        appHidden = false
+        log.push('app:show')
+      },
       stealAppFocus: () => log.push('app:stealFocus'),
       siblingWindows: () => [target, openSibling],
+      onSiblingHidden: (s) => hiddenSiblings.push(s === openSibling ? 'openSibling' : 'other'),
+      onTargetShown: (t) => shownTargets.push(t === target ? 'target' : 'other'),
     })
 
-    expect(log).toEqual(['target:restore'])
+    expect(log).toEqual(['openSibling:hide', 'app:show', 'target:restore'])
+    expect(hiddenSiblings).toEqual(['openSibling'])
+    expect(shownTargets).toEqual([])
+
     target.emit('restore')
 
     expect(log).toEqual([
-      'target:restore',
       'openSibling:hide',
       'app:show',
+      'target:restore',
       'target:moveTop',
       'target:focus',
       'app:stealFocus',
     ])
+    expect(shownTargets).toEqual(['target'])
+  })
+
+  it('dedupes rapid repeated focusSingleWindow calls while a minimized target is restoring on macOS', () => {
+    const log: string[] = []
+    const target = new FakeFocusableWindow('target', log, { minimized: true })
+
+    focusSingleWindow(target, { isMac: true, restoreFallbackMs: 800 })
+    // Simulate macOS still reporting isMinimized() = true while deminiaturization animates.
+    target.minimized = true
+    focusSingleWindow(target, { isMac: true, restoreFallbackMs: 800 })
+
+    expect(target.listenerCount('restore')).toBe(1)
+    expect(target.listenerCount('closed')).toBe(1)
+
+    target.emit('restore')
+    vi.advanceTimersByTime(1000)
+
+    expect(log).toEqual(['target:restore', 'target:restore', 'target:moveTop', 'target:focus'])
+    expect(target.listenerCount('restore')).toBe(0)
+    expect(target.listenerCount('closed')).toBe(0)
   })
 
   it('does not hide siblings or call showApp/stealAppFocus on non-macOS even if isAppHidden returns true', () => {

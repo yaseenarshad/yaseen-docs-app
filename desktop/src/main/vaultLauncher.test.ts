@@ -622,7 +622,10 @@ describe('refreshOutdatedLaunchers (YAZ-6605)', () => {
     })
 
     expect(upgraded).toEqual([appPath])
-    expect(execCalls).toEqual([['codesign', ['--force', '--sign', '-', appPath]]])
+    expect(execCalls).toHaveLength(1)
+    expect(execCalls[0][0]).toBe('codesign')
+    expect(execCalls[0][1].slice(0, 3)).toEqual(['--force', '--sign', '-'])
+    expect(execCalls[0][1][3]).toMatch(/\.yaseen-launcher-upgrade-.*\.app$/)
 
     // Binary replaced and executable (0o755).
     const binPath = join(appPath, 'Contents', 'MacOS', 'vault-launcher')
@@ -643,7 +646,8 @@ describe('refreshOutdatedLaunchers (YAZ-6605)', () => {
     // AppIcon.icns preserved byte-for-byte.
     expect(await readFile(join(appPath, 'Contents', 'Resources', 'AppIcon.icns'))).toEqual(customIcon)
 
-    // No stray temp files left in Contents/ or Contents/MacOS/.
+    // No stray temp bundles or files left in appsDir or Contents/.
+    expect(await readdir(appsDir)).toEqual(['Daily Notes.app'])
     expect((await readdir(join(appPath, 'Contents'))).sort()).toEqual(['Info.plist', 'MacOS', 'Resources'])
     expect(await readdir(join(appPath, 'Contents', 'MacOS'))).toEqual(['vault-launcher'])
   })
@@ -752,12 +756,14 @@ describe('refreshOutdatedLaunchers (YAZ-6605)', () => {
       const upgraded = await refreshOutdatedLaunchers(newBinary, {
         appDirs: [appsDir],
         execFile: async (_file, args) => {
-          if (args.includes(failing)) throw new Error('codesign failed for AlphaFail')
+          const stagedPlist = await readFile(join(args[3], 'Contents', 'Info.plist'), 'utf8')
+          if (stagedPlist.includes('AlphaFail')) throw new Error('codesign failed for AlphaFail')
         },
       })
 
       expect(upgraded).toEqual([succeeding])
-      // Failed bundle rolled back cleanly with zero temp files left behind.
+      // Failed bundle stayed untouched (never swapped) and zero temp bundles remain.
+      expect((await readdir(appsDir)).sort()).toEqual(['AlphaFail.app', 'BetaPass.app'])
       expect((await readLauncherPlist(failing))?.bundleVersion).toBe(1)
       expect(await readFile(join(failing, 'Contents', 'MacOS', 'vault-launcher'), 'utf8')).toBe('#!/bin/sh\n# alpha v1\n')
       expect((await readdir(join(failing, 'Contents'))).sort()).toEqual(['Info.plist', 'MacOS', 'Resources'])
@@ -774,15 +780,19 @@ describe('refreshOutdatedLaunchers (YAZ-6605)', () => {
     }
   })
 
-  it('cleans up temp files if staging fails on one bundle and continues upgrading other valid bundles', async () => {
-    const unwritable = await writeLauncherBundle({
-      name: 'LockedFail',
-      bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}locked`,
-      vaultPath: '/Users/me/Locked',
-      vaultUrl: 'yaseendocs:///Users/me/Locked',
-      version: '1',
-      binaryContent: '#!/bin/sh\n# locked v1\n',
+  it('cleans up temp bundles if staging fails on one bundle and continues upgrading other valid bundles', async () => {
+    const malformed = await writeLauncherBundle({
+      name: 'MalformedFail',
+      bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}malformed`,
+      vaultPath: '/Users/me/Malformed',
+      vaultUrl: 'yaseendocs:///Users/me/Malformed',
+      version: null,
+      binaryContent: '#!/bin/sh\n# malformed v1\n',
     })
+    // Strip closing </dict> so updatePlistBundleVersion throws during staging.
+    const rawPlist = await readFile(join(malformed, 'Contents', 'Info.plist'), 'utf8')
+    await writeFile(join(malformed, 'Contents', 'Info.plist'), rawPlist.replace('</dict>', ''), 'utf8')
+
     const valid = await writeLauncherBundle({
       name: 'OpenPass',
       bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}open`,
@@ -792,9 +802,6 @@ describe('refreshOutdatedLaunchers (YAZ-6605)', () => {
       binaryContent: '#!/bin/sh\n# open v1\n',
     })
 
-    // Make Contents/MacOS read-only so copyFile into the staged temp path fails.
-    const lockedMacOsDir = join(unwritable, 'Contents', 'MacOS')
-    await chmod(lockedMacOsDir, 0o555)
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const upgraded = await refreshOutdatedLaunchers(newBinary, {
@@ -803,15 +810,13 @@ describe('refreshOutdatedLaunchers (YAZ-6605)', () => {
       })
 
       expect(upgraded).toEqual([valid])
-      expect((await readLauncherPlist(unwritable))?.bundleVersion).toBe(1)
-      expect((await readdir(join(unwritable, 'Contents'))).sort()).toEqual(['Info.plist', 'MacOS', 'Resources'])
-      expect(await readdir(lockedMacOsDir)).toEqual(['vault-launcher'])
+      expect((await readdir(appsDir)).sort()).toEqual(['MalformedFail.app', 'OpenPass.app'])
+      expect(await readFile(join(malformed, 'Contents', 'MacOS', 'vault-launcher'), 'utf8')).toBe('#!/bin/sh\n# malformed v1\n')
 
       expect((await readLauncherPlist(valid))?.bundleVersion).toBe(LAUNCHER_BUNDLE_VERSION)
       expect(await readFile(join(valid, 'Contents', 'MacOS', 'vault-launcher'), 'utf8')).toBe('#!/bin/sh\n# v2 binary\nexit 0\n')
       expect(warnSpy).toHaveBeenCalledTimes(1)
     } finally {
-      await chmod(lockedMacOsDir, 0o755)
       warnSpy.mockRestore()
     }
   })

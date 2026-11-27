@@ -3031,17 +3031,71 @@ describe('createWindowManager: WindowHost.focusWindow delegation (YAZ-6595 D1)',
 
     manager.routeToFile('/v/a')
     expect(focusWindow).toHaveBeenCalledTimes(1)
-    expect(focusWindow).toHaveBeenLastCalledWith(soloWin)
+    expect(focusWindow).toHaveBeenLastCalledWith(soloWin, expect.objectContaining({ onSiblingHidden: expect.any(Function), onTargetShown: expect.any(Function) }))
     expect(soloWin.focusCount).toBe(0)
 
     manager.routeToFile('/v/a/note.md', '/v/a')
     expect(focusWindow).toHaveBeenCalledTimes(2)
-    expect(focusWindow).toHaveBeenLastCalledWith(soloWin)
+    expect(focusWindow).toHaveBeenLastCalledWith(soloWin, expect.objectContaining({ onSiblingHidden: expect.any(Function), onTargetShown: expect.any(Function) }))
     expect(soloWin.focusCount).toBe(0)
 
     expect(manager.openVaultSet(ws.id)).toEqual({ opened: true, missing: [] })
     expect(focusWindow).toHaveBeenCalledTimes(3)
-    expect(focusWindow).toHaveBeenLastCalledWith(wsWin)
+    expect(focusWindow).toHaveBeenLastCalledWith(wsWin, expect.objectContaining({ onSiblingHidden: expect.any(Function), onTargetShown: expect.any(Function) }))
     expect(wsWin.focusCount).toBe(0)
+  })
+
+  it('tracks Cmd+H hidden siblings in hiddenWindows so closing the visible window auto-reveals them and recall clears hidden state (YAZ-6606)', () => {
+    store.upsertWindow({ id: 'daily', root: '/v/daily', roots: ['/v/daily'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'know', root: '/v/know', roots: ['/v/know'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 40, y: 40, width: 800, height: 600 } })
+
+    const { host, created } = makeHost([AREA], () => false, (p) => p === '/v/daily' || p === '/v/know')
+    let hideSiblingOnce = true
+    host.focusWindow = (win, hooks) => {
+      if (hideSiblingOnce) {
+        hideSiblingOnce = false
+        const sibling = created.find((c) => c.win !== win)!.win
+        hooks?.onSiblingHidden?.(sibling)
+      }
+      hooks?.onTargetShown?.(win)
+      win.focus()
+    }
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+
+    const dailyWin = created.find((c) => c.entry.id === 'daily')!.win
+    const knowWin = created.find((c) => c.entry.id === 'know')!.win
+
+    manager.routeToFile('/v/know')
+    expect(manager.hiddenWindows()).toEqual(['daily'])
+
+    // Recalling daily clears its hidden state via onTargetShown.
+    manager.routeToFile('/v/daily')
+    expect(manager.hiddenWindows()).toEqual([])
+
+    // Hide daily again, then close know: daily must auto-reveal so the app never becomes a windowless zombie.
+    hideSiblingOnce = true
+    manager.routeToFile('/v/know')
+    expect(manager.hiddenWindows()).toEqual(['daily'])
+    const showsBefore = dailyWin.showCount
+    knowWin.destroy()
+    expect(manager.hiddenWindows()).toEqual([])
+    expect(dailyWin.showCount).toBe(showsBefore + 1)
+  })
+
+  it('focuses newly opened windows via host.focusWindow when host.isAppHidden() is true (YAZ-6606)', () => {
+    store.upsertWindow({ id: 'daily', root: '/v/daily', roots: ['/v/daily'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 800, height: 600 } })
+
+    const focusWindow = vi.fn()
+    const { host, created } = makeHost([AREA], () => false, (p) => p === '/v/daily' || p === '/v/know')
+    host.focusWindow = focusWindow
+    host.isAppHidden = () => true
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+
+    manager.routeToFile('/v/know')
+    const knowWin = created.find((c) => c.entry.root === '/v/know')!.win
+    expect(focusWindow).toHaveBeenCalledTimes(1)
+    expect(focusWindow).toHaveBeenCalledWith(knowWin, expect.any(Object))
   })
 })

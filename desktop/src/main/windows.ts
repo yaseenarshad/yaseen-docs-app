@@ -122,7 +122,15 @@ export interface WindowHost {
   /** Optional hook invoked when a vault deep link carries `?open=inbox` or `?open=today` (YAZ-5967, YAZ-6373). */
   onOpenTarget?(win: ManagedWindow, vaultPath: string, openTarget: LinkOpenTarget): void
   /** Optional single-window focus strategy (YAZ-6595 D1/D2): raises only `win` without pulling unrelated windows forward. */
-  focusWindow?(win: ManagedWindow): void
+  focusWindow?(
+    win: ManagedWindow,
+    hooks?: {
+      onSiblingHidden?: (sibling: WindowLike) => void
+      onTargetShown?: (target: WindowLike) => void
+    },
+  ): void
+  /** Optional check for whether the host app is hidden (`Cmd+H` on macOS, YAZ-6595 D2). */
+  isAppHidden?(): boolean
 }
 
 /** A cold-start restore target (YAZ-6446 D1): a plain root string matches any containing window (file links, YAZ-2602 A8); `{ exact }` matches only a window whose vaults equal `exact` (vault & workspace launchers). */
@@ -893,6 +901,10 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       { id, root: opts.root, roots: normalizeRoots(opts.roots ?? [], opts.root), file: opts.file, tabs: opts.file === null ? [] : [opts.file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: DEFAULT_SIDEBAR_LENS, bounds: targetBounds, ...defaultWindowPrefs() },
       opts.inactive === true ? { inactive: true } : false,
     )
+    if (opts.inactive !== true && host.isAppHidden?.()) {
+      const created = live.get(id)
+      if (created !== undefined) focusWindow(created)
+    }
     return id
   }
   /** Where a window made FROM `from` goes (YAZ-3357): cascaded off a full window, beside a Files window, which is too narrow to copy. */
@@ -907,7 +919,19 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
   const focusWindow = (win: ManagedWindow): void => {
     if (host.focusWindow !== undefined) {
-      host.focusWindow(win)
+      host.focusWindow(win, {
+        onSiblingHidden: (sibling) => {
+          const siblingId = idFor(sibling.webContents)
+          if (siblingId !== undefined && !hiddenWins.has(siblingId)) {
+            hiddenWins.add(siblingId)
+            tellHidden()
+          }
+        },
+        onTargetShown: (shown) => {
+          const shownId = idFor(shown.webContents)
+          if (shownId !== undefined && hiddenWins.delete(shownId)) tellHidden()
+        },
+      })
       return
     }
     if (win.isMinimized()) win.restore()
