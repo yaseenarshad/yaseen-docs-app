@@ -232,10 +232,14 @@ describe('YAZ-6598: unified step-scroll planner and rapid-Space chaining', () =>
       planSpaceMove({ target: 0, room: viewRoom, blank: { start: 570, end: 590 }, remainingDown: 0, remainingUp: 400, viewportHeight: 600, mode: 'scroll' }),
     ).toBe(0)
 
-    // Tiny viewport (height 80, room [100, 180], read line 153.33, margin line 148):
-    // blank [130, 150] has readingScroll === 0, yet sits inside the 32px strip -> falls back to 150 - 148 = 2px so it always moves.
+    // Tiny viewport (height 80, room [100, 180], land line 126.67, margin line 148):
+    // blank [130, 150] moves down to the land line (3.33px) with >32px breathing room;
+    // blank [110, 150] (already above land line) moves down by minDown = 150 - 148 = 2px so it clears the 32px strip.
     expect(
       planSpaceMove({ target: 0, room: { start: 100, end: 180 }, blank: { start: 130, end: 150 }, remainingDown: 200, remainingUp: 0, viewportHeight: 80, mode: 'scroll' }),
+    ).toBeCloseTo(130 - (100 + 80 * LAND_LINE))
+    expect(
+      planSpaceMove({ target: 0, room: { start: 100, end: 180 }, blank: { start: 110, end: 150 }, remainingDown: 200, remainingUp: 0, viewportHeight: 80, mode: 'scroll' }),
     ).toBe(2)
   })
 
@@ -286,7 +290,7 @@ describe('YAZ-6598: unified step-scroll planner and rapid-Space chaining', () =>
   })
 
   it('rapid Space chaining scales pendingShift and scroll targets cleanly under CSS zoom', () => {
-    // Zoom 1.25: clientHeight 480 CSS px -> 600 screen px; room [0, 600], readStep = 210 screen px -> 168 CSS px.
+    // Zoom 1.25: clientHeight 480 CSS px -> 600 screen px; room [0, 600], minStep = round(180 * 1.25) = 225 screen px -> 180 CSS px.
     const { view, scrollTo } = makeView({ height: 480, topBar: 0, scrollHeight: 2480, scrollTop: 0, zoom: 1.25 })
     const blank = document.createElement('span')
     blank.dataset.hidden = '0'
@@ -294,17 +298,92 @@ describe('YAZ-6598: unified step-scroll planner and rapid-Space chaining', () =>
     view.append(blank)
 
     const m1 = spaceMove(view, 0, 'scroll')
-    expect(m1).toBe(210)
+    expect(m1).toBe(225)
     glideView(view, m1)
-    expect(scrollTo).toHaveBeenLastCalledWith({ top: 210 / 1.25, behavior: 'smooth' })
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 225 / 1.25, behavior: 'smooth' })
 
-    // Second rapid press while scrollTop is still 0 shifts blank by -210 screen px (to 690..710) and chains to 420 / 1.25.
+    // Second rapid press while scrollTop is still 0 shifts blank by -225 screen px (to 675..695) and chains to 450 / 1.25.
     const m2 = spaceMove(view, 0, 'scroll')
-    expect(m2).toBe(210)
+    expect(m2).toBe(225)
     glideView(view, m2)
-    expect(scrollTo).toHaveBeenLastCalledWith({ top: 420 / 1.25, behavior: 'smooth' })
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 450 / 1.25, behavior: 'smooth' })
 
-    // Third rapid press shifts blank to 480..500 (<= 568) -> reveals!
+    // Third rapid press shifts blank to 450..470 (<= 600 - 40 = 560) -> reveals!
     expect(spaceMove(view, 0, 'scroll')).toBe(0)
+  })
+
+  it('YAZ-6616: never oscillates on tall blanks, viewport-taller clozes, medium bottom-strip blanks, or very short viewports', () => {
+    // 1. Tall fitting blank (480px inside 500px room, taller than room - 32px): reveals immediately when wholly in room.
+    expect(
+      planSpaceMove({
+        target: 0,
+        room: { start: 100, end: 600 },
+        blank: { start: 110, end: 590 },
+        remainingDown: 800,
+        remainingUp: 200,
+        viewportHeight: 600,
+        mode: 'scroll',
+      }),
+    ).toBe(0)
+
+    // 2. Viewport-taller cloze (600px in 500px room): scrolls down while off-screen, reveals once top is in upper 2/3.
+    const step = planSpaceMove({
+      target: 0,
+      room: { start: 100, end: 600 },
+      blank: { start: 900, end: 1500 },
+      remainingDown: 1200,
+      remainingUp: 0,
+      viewportHeight: 600,
+      mode: 'scroll',
+    })
+    expect(step).toBeGreaterThan(0)
+    expect(
+      planSpaceMove({
+        target: 0,
+        room: { start: 100, end: 600 },
+        blank: { start: 120, end: 720 },
+        remainingDown: 1200,
+        remainingUp: 200,
+        viewportHeight: 600,
+        mode: 'scroll',
+      }),
+    ).toBe(0)
+
+    // 3. Medium blank starting above LAND_LINE (266.7) and ending inside bottom 32px strip ([230, 580] in [100, 600]):
+    // must scroll DOWN (positive) to clear the bottom strip, never UP, then reveal once cleared.
+    const down = planSpaceMove({
+      target: 0,
+      room: { start: 100, end: 600 },
+      blank: { start: 230, end: 580 },
+      remainingDown: 800,
+      remainingUp: 200,
+      viewportHeight: 600,
+      mode: 'scroll',
+    })
+    expect(down).toBeGreaterThan(0)
+    expect(
+      planSpaceMove({
+        target: 0,
+        room: { start: 100, end: 600 },
+        blank: { start: 230 - down, end: 580 - down },
+        remainingDown: 800 - down,
+        remainingUp: 200 + down,
+        viewportHeight: 600,
+        mode: 'scroll',
+      }),
+    ).toBe(0)
+
+    // 4. Very short viewport (height <= 32px): reveals once blank fits in room.
+    expect(
+      planSpaceMove({
+        target: 0,
+        room: { start: 100, end: 124 },
+        blank: { start: 102, end: 122 },
+        remainingDown: 400,
+        remainingUp: 100,
+        viewportHeight: 124,
+        mode: 'scroll',
+      }),
+    ).toBe(0)
   })
 })

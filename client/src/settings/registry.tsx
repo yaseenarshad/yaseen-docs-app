@@ -2909,7 +2909,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-6591: when the Inbox top bar hides the card's folder › page breadcrumb so the page title does not spoil answers.
             id: 'cardLocation',
             label: 'Card location',
-            hint: 'When the Inbox top bar shows the card’s folder and page path. Hiding it stops the page name from giving away the answer.',
+            hint: (ctx) => unit(ctx, 'When the Inbox top bar shows the card’s folder and page path. Hiding it stops the page name from giving away the answer.'),
             keywords: [...REVIEW_KEYWORDS, 'location', 'path', 'breadcrumb', 'folder', 'page', 'focus', 'hide', 'spoiler', 'reveal'],
             available: reviewOn,
             render: ({ review }) =>

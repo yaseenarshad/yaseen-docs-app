@@ -152,6 +152,8 @@ export interface SpaceMovePlan {
   /** Visible scroll container height (screen px), used for the ~35% reading step. */
   viewportHeight: number
   mode: SpaceBehavior
+  /** Active CSS zoom multiplier (screen px per CSS px); defaults to 1. */
+  zoom?: number
 }
 
 function stepDown(wanted: number, step: number): number {
@@ -163,22 +165,43 @@ function stepDown(wanted: number, step: number): number {
  * Shared pure reading-scroll planner for Desktop Inbox, Desktop Card Preview, and Mobile Review (YAZ-6598).
  * Returns the clamped screen-px scroll delta for `target`, or `0` when Space / tap should reveal instead of scrolling.
  */
-export function planSpaceMove({ target, room, blank, edge, remainingDown, remainingUp, viewportHeight, mode }: SpaceMovePlan): number {
+export function planSpaceMove({ target, room, blank, edge, remainingDown, remainingUp, viewportHeight, mode, zoom = 1 }: SpaceMovePlan): number {
   const height = room.end - room.start
   if (height <= 0) return 0
-  const readStep = Math.max(ARROW_SCROLL_MIN_PX, Math.round(viewportHeight * ARROW_SCROLL_FRACTION))
+  const minStep = Math.round(ARROW_SCROLL_MIN_PX * zoom)
+  const margin = Math.round(BLANK_BOTTOM_MARGIN_PX * zoom)
+  const readStep = Math.max(minStep, Math.round(viewportHeight * ARROW_SCROLL_FRACTION))
   let dy = 0
 
   if (typeof target === 'number') {
     if (blank === undefined) return 0
-    if (mode === 'scroll') {
-      const hasBottomRoom = blank.end <= room.end - BLANK_BOTTOM_MARGIN_PX || (blank.end <= room.end && remainingDown < 1)
-      if (blank.start >= room.start && hasBottomRoom) return 0
-      let wanted = readingScroll(blank, room)
-      if (wanted === 0 && blank.end > room.end - BLANK_BOTTOM_MARGIN_PX) {
-        wanted = blank.end - (room.end - BLANK_BOTTOM_MARGIN_PX)
+    const blankHeight = blank.end - blank.start
+    if (blankHeight >= height) {
+      // Viewport-taller cloze (YAZ-6616): cannot fit wholly in `room`, so reveal once its top sits in the upper 2/3.
+      if (blank.start >= room.start && blank.start <= room.start + height * READ_LINE) return 0
+      const gap = Math.min(6, height * LAND_LINE)
+      const wanted = blank.start < room.start ? blank.start - room.start - gap : blank.start - (room.start + height * LAND_LINE)
+      dy = mode === 'scroll' ? stepDown(wanted, readStep) : wanted
+    } else if (mode === 'scroll') {
+      if (blankHeight > height - margin) {
+        // Tall fitting blank (or viewport shorter than `margin`, YAZ-6616): reveal once wholly in `room`.
+        if (inRoom(blank, room)) return 0
+        const gap = Math.min(6, Math.max(0, height - blankHeight))
+        const wanted = blank.start < room.start ? blank.start - room.start - gap : blank.end - room.end
+        dy = stepDown(wanted, readStep)
+      } else {
+        const hasBottomRoom = blank.end <= room.end - margin || (blank.end <= room.end && remainingDown < 1)
+        if (blank.start >= room.start && hasBottomRoom) return 0
+        if (blank.start < room.start) {
+          const gap = Math.min(6, Math.max(0, height - margin - blankHeight))
+          dy = readingScroll(blank, room, gap)
+        } else {
+          // Blank ends inside or below the bottom breathing strip: always scroll DOWN (never up, YAZ-6616).
+          const minDown = blank.end - (room.end - margin)
+          const landDown = blank.start - (room.start + height * LAND_LINE)
+          dy = stepDown(Math.max(minDown, landDown), readStep)
+        }
       }
-      dy = stepDown(wanted, readStep)
     } else {
       dy = inRoom(blank, room) ? 0 : readingScroll(blank, room)
     }
@@ -188,7 +211,7 @@ export function planSpaceMove({ target, room, blank, edge, remainingDown, remain
     dy = mode === 'scroll' ? stepDown(wanted, readStep) : wanted
   } else {
     if (remainingDown < 1) return 0
-    const page = mode === 'scroll' ? readStep : Math.max(ARROW_SCROLL_MIN_PX, Math.round(height * SPACE_PAGE_FRACTION))
+    const page = mode === 'scroll' ? readStep : Math.max(minStep, Math.round(height * SPACE_PAGE_FRACTION))
     dy = stepDown(remainingDown, page)
   }
 
@@ -223,5 +246,5 @@ export function spaceMove(view: HTMLElement, target: SpaceTarget, mode: SpaceBeh
     edge = bottom + pendingShift
   }
 
-  return planSpaceMove({ target, room, blank, edge, remainingDown, remainingUp, viewportHeight, mode })
+  return planSpaceMove({ target, room, blank, edge, remainingDown, remainingUp, viewportHeight, mode, zoom })
 }
