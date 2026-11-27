@@ -50,8 +50,8 @@ let root: Root | null = null
 let scope!: VaultScope
 const notify = vi.fn()
 
-function Probe({ vault, allowFileAction }: { vault: string; allowFileAction: (r: string) => Promise<boolean> }) {
-  scope = useVaultScope(vault, notify, allowFileAction)
+function Probe({ vault, allowFileAction, transientReadOnly = false }: { vault: string; allowFileAction: (r: string) => Promise<boolean>; transientReadOnly?: boolean }) {
+  scope = useVaultScope(vault, notify, allowFileAction, transientReadOnly)
   return null
 }
 
@@ -120,5 +120,37 @@ describe('useVaultScope IDs read-only guards (YAZ-5989)', () => {
 
     expect(await scope.ids!.backfillCreated()).toEqual({ written: 2, skipped: 1 })
     expect(api.backfillCreated).toHaveBeenCalledExactlyOnceWith('/v')
+  })
+})
+
+describe('useVaultScope read-only vault settings writes (YAZ-6593 D1)', () => {
+  it('writes vault settings to settings.json when read-only.json is on, while transient --read-only windows stay disk-free', async () => {
+    vi.mocked(api.vaultConfig.read).mockImplementation(async (_r, name) => (name === 'read-only.json' ? { on: true } : null))
+    await act(async () => {
+      root?.render(<Probe vault="/ro-vault" allowFileAction={async () => false} transientReadOnly={false} />)
+    })
+    expect(scope.readOnlyVault.locked).toBe(true)
+
+    await act(async () => {
+      await scope.vaultSettings.setOverrides({ contentWidth: 'full' })
+    })
+    expect(api.vaultConfig.write).toHaveBeenCalledWith(
+      '/ro-vault',
+      'settings.json',
+      expect.objectContaining({ contentWidth: 'full' }),
+      expect.arrayContaining(['contentWidth']),
+    )
+
+    // Transient CLI --read-only window stays completely disk-free
+    vi.mocked(api.vaultConfig.write).mockClear()
+    await act(async () => {
+      root?.render(<Probe vault="/cli-ro" allowFileAction={async () => false} transientReadOnly={true} />)
+    })
+    expect(scope.readOnlyVault.locked).toBe(true)
+    await act(async () => {
+      await scope.vaultSettings.setOverrides({ contentWidth: 'narrow' })
+    })
+    expect(api.vaultConfig.write).not.toHaveBeenCalled()
+    expect(scope.vaultSettings.overrides.contentWidth).toBe('narrow')
   })
 })

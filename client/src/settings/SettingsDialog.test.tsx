@@ -150,7 +150,7 @@ const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'tabWidth',
 /** The icon colour rows (YAZ-3440 D4, YAZ-5100 round 2), by kind. */
 const colourRows = (...kinds: string[]) => kinds.map((kind) => `sidebarIconColors.${kind}`)
 /** Settings › Sidebar with Material and "Colour" (the defaults), no vault open: a colour row per kind Material draws in one colour. */
-const SIDEBAR_ROWS = ['sidebarRowHeight', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarPlace', 'sidebarIconSet', 'sidebarFileIcons', ...colourRows('page', 'drawing', 'diagram', 'folder'), 'sidebarIconRules', 'goTo']
+const SIDEBAR_ROWS = ['sidebarTabs', 'sidebarRowHeight', 'rowDates', 'sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarPlace', 'sidebarIconSet', 'sidebarFileIcons', ...colourRows('page', 'drawing', 'diagram', 'folder'), 'sidebarIconRules', 'goTo']
 const SIDEBAR_ROWS_BARE = SIDEBAR_ROWS.filter((id) => !id.startsWith('sidebarIconColors.'))
 /** The same with a vault whose Review is on: the Card colour row too. */
 const SIDEBAR_ROWS_REVIEW = SIDEBAR_ROWS.flatMap((id) => (id === 'sidebarIconColors.page' ? [id, 'sidebarIconColors.card'] : [id]))
@@ -439,10 +439,10 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(el.querySelector('#settings-appearance .settings-group')).not.toBeNull()
     expect(el.querySelector('#settings-appearance .settings-group')?.querySelector('.settings-group__title')).toBeNull()
 
-    // Sidebar (YAZ-3440 D7): its four groups; the Icon rules are a setting, so they need no vault (D9). Go to is ⌘D's place (YAZ-3556 D8).
+    // Sidebar (YAZ-3440 D7, YAZ-6593): Tab row first, then Rows, Level lines, Folders, File icons, Icon rules, Show in sidebar.
     clickNav(el, 'Sidebar')
-    expect(groupTitles(el)).toEqual(['Rows', 'Level lines', 'Folders', 'File icons', 'Icon rules', 'Show in sidebar'])
-    expect(hints()).toEqual([])
+    expect(groupTitles(el)).toEqual(['Tab row', 'Rows', 'Level lines', 'Folders', 'File icons', 'Icon rules', 'Show in sidebar'])
+    expect(hints()).toEqual(['Choose which tabs and buttons show at the top of the sidebar and drag to reorder them. Saved per vault or per workspace.'])
 
     clickNav(el, 'Editor')
     expect(groupTitles(el)).toEqual(EDITOR_GROUPS)

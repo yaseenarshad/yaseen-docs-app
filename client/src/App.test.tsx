@@ -9039,12 +9039,15 @@ describe('App: unified per-vault & multi-vault workspace settings (YAZ-6546, YAZ
     bridge.vaultConfig.write.mockClear()
     await act(async () => sidebarProps.onChangeRowDates?.({ ...sidebarProps.settings.rowDates, files: true }))
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+    const portableKey = workspaceSettingsKey(['/v', '/w'], 'ws-1', 'Work')
     expect(bridge.state.setSettings).toHaveBeenLastCalledWith(
       expect.objectContaining({
         workspaceSettings: expect.objectContaining({
-          [wsKey]: expect.objectContaining({ rowDates: expect.objectContaining({ files: true }) }),
+          [portableKey]: expect.objectContaining({ rowDates: expect.objectContaining({ files: true }) }),
         }),
       }),
     )
+    const savedWs = ((bridge.state.setSettings.mock.calls as unknown[][]).at(-1)?.[0] as AppState['settings']).workspaceSettings
+    expect(savedWs[wsKey]).toBeUndefined()
   })
 })

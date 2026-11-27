@@ -16,11 +16,12 @@ import { DEFAULT_LINK_CLICK } from '@shared/linkClick'
 import { DEFAULT_SHOW_IDS } from '@shared/showIds'
 import { NO_LINK_PILLS } from '@shared/linkPills'
 import { DEFAULT_UNIT_WORD, PAGE_WORD, SAME_WORD } from '@shared/unitWord'
-import { DEFAULT_SETTINGS, type SettingsState } from '@shared/types'
+import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_TABS, type SettingsState } from '@shared/types'
 import type { VaultOverrideKey, VaultSettingsOverrides, WorkspaceChromeOverrides } from '@shared/vaultSettings'
 import { NO_TEXT_FORMATTING } from './useTextFormatting'
 import { NO_NEW_PLACES } from './useVaultNewPlaces'
-import type { SettingsScopeCtx, SettingsScopeVault } from './settingsScope'
+import { buildScopedSettings, type SettingsScopeCtx, type SettingsScopeMode, type SettingsScopeVault } from './settingsScope'
+import type { SettingDef, SettingsGroup, SettingsSection, SettingsSectionId } from './registry'
 import { SettingsDialog } from './SettingsDialog'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -81,6 +82,9 @@ function mountScoped(opts: {
   vaults?: SettingsScopeVault[]
   wsOverrides?: WorkspaceChromeOverrides
   wsName?: string
+  initialPage?: SettingsSectionId
+  initialScope?: SettingsScopeMode
+  initialSettingId?: string
 }) {
   const globalSettings = opts.globalSettings ?? { ...DEFAULT_SETTINGS }
   const vaults = opts.vaults ?? []
@@ -112,7 +116,15 @@ function mountScoped(opts: {
   document.body.appendChild(container)
   root = createRoot(container)
   act(() => {
-    root?.render(<SettingsDialog ctx={{ settings: globalSettings, onChange, review: vaults[0]?.review, scope }} onClose={vi.fn()} />)
+    root?.render(
+      <SettingsDialog
+        ctx={{ settings: globalSettings, onChange, review: vaults[0]?.review, scope }}
+        onClose={vi.fn()}
+        initialPage={opts.initialPage}
+        initialScope={opts.initialScope}
+        initialSettingId={opts.initialSettingId}
+      />,
+    )
   })
   return { el: container, onChange, onChangeGlobal, wsSetOverrides, wsResetAll, vaults }
 }
@@ -283,5 +295,121 @@ describe('SettingsDialog scope switcher (YAZ-6546, YAZ-6556)', () => {
     expect(v1.review.save).toHaveBeenCalledWith({ ...DEFAULT_REVIEW_SETTINGS, spaceBehavior: 'jump' })
     expect(v1.vaultSettings.setOverrides).not.toHaveBeenCalled()
     expect(onChangeGlobal).not.toHaveBeenCalled()
+  })
+
+  it('multi-vault Vault view chrome rows show workspace-wins warning and Edit workspace jumps to workspace scope (YAZ-6593)', () => {
+    const v1 = makeScopeVault('/v1', 'Notes', { tabWidth: 'compact', contentWidth: 'medium' })
+    const v2 = makeScopeVault('/v2', 'Work', {})
+    const { el } = mountScoped({
+      vaults: [v1, v2],
+      wsName: 'Daily Focus',
+      wsOverrides: { tabWidth: 'wide' },
+      initialPage: 'appearance',
+      initialScope: 'vault',
+    })
+
+    expect(el.querySelector('.settings-scope-bar')?.getAttribute('data-scope-mode')).toBe('vault')
+
+    // Chrome row in Vault mode shows workspace-wins warning + Edit workspace jump button
+    const tabWidthRow = el.querySelector('[data-setting="tabWidth"]')!
+    const warn = tabWidthRow.querySelector('.setting__scope-warn')
+    expect(warn).not.toBeNull()
+    expect(warn?.textContent).toContain('Used when opened alone · This window uses Daily Focus.')
+    const jumpBtn = warn?.querySelector<HTMLButtonElement>('.setting__scope-jump')
+    expect(jumpBtn?.textContent).toBe('Edit workspace')
+
+    // Non-chrome per-vault row has NO workspace-wins warning
+    expect(el.querySelector('[data-setting="contentWidth"] .setting__scope-warn')).toBeNull()
+
+    // Sidebar chrome rows also show workspace-wins warning
+    clickNav(el, 'Sidebar')
+    expect(el.querySelector('[data-setting="sidebarRowHeight"] .setting__scope-warn')?.textContent).toContain(
+      'Used when opened alone · This window uses Daily Focus.',
+    )
+
+    // Clicking Edit workspace jumps to workspace scope
+    const sidebarJump = el.querySelector<HTMLButtonElement>('[data-setting="sidebarRowHeight"] .setting__scope-jump')
+    act(() => sidebarJump?.click())
+    expect(el.querySelector('.settings-scope-bar')?.getAttribute('data-scope-mode')).toBe('workspace')
+    expect(el.querySelector('[data-setting="sidebarRowHeight"] .setting__scope-warn')).toBeNull()
+  })
+
+  it('single-vault Vault view never shows workspace-wins warning on chrome rows (YAZ-6593)', () => {
+    const vault = makeScopeVault('/v', 'Personal', { tabWidth: 'compact' })
+    const { el } = mountScoped({ vaults: [vault], initialPage: 'appearance', initialScope: 'vault' })
+    expect(el.querySelector('[data-setting="tabWidth"] .setting__scope-warn')).toBeNull()
+  })
+
+  it('sidebarTabs is Vault/Workspace-only: never emits overridden, onReset, or overriddenIn, and is excluded from overrideCount (YAZ-6593)', () => {
+    const customTabs = { ...DEFAULT_SIDEBAR_TABS, hidden: ['search' as const] }
+    const v1 = makeScopeVault('/v1', 'Notes', { sidebarTabs: customTabs })
+    const v2 = makeScopeVault('/v2', 'Work', { sidebarTabs: customTabs, contentWidth: 'full' })
+    const sidebarTabsItem: SettingDef = { id: 'sidebarTabs', label: 'Tab row', render: () => null }
+    const dummySection: SettingsSection = { id: 'sidebar', title: 'Sidebar', groups: [] }
+    const dummyGroup: SettingsGroup = { items: [sidebarTabsItem] }
+    const scope: SettingsScopeCtx = {
+      vaults: [v1, v2],
+      activeVaultRoot: v1.root,
+      workspace: {
+        key: 'ws-name:daily focus',
+        name: 'Daily Focus',
+        overrides: { sidebarTabs: customTabs },
+        setOverrides: vi.fn(),
+        resetAll: vi.fn(),
+      },
+      globalSettings: { ...DEFAULT_SETTINGS },
+      onChangeGlobal: vi.fn(),
+    }
+    const baseCtx = { settings: { ...DEFAULT_SETTINGS }, onChange: vi.fn(), scope }
+
+    // Global mode: no overriddenIn note
+    const globalScoped = buildScopedSettings(baseCtx, 'global', v1.root)
+    expect(globalScoped.rowMeta(sidebarTabsItem, dummySection, dummyGroup)).toEqual({})
+
+    // Workspace mode: no overridden/onReset and excluded from overrideCount
+    const wsScoped = buildScopedSettings(baseCtx, 'workspace', v1.root)
+    expect(wsScoped.rowMeta(sidebarTabsItem, dummySection, dummyGroup)).toEqual({})
+    expect(wsScoped.overrideCount).toBe(0)
+    expect(wsScoped.onResetAll).toBeUndefined()
+
+    // Multi-vault Vault mode: still emits workspaceWinsName, but no overridden/onReset and excluded from overrideCount
+    const vaultScoped = buildScopedSettings(baseCtx, 'vault', v1.root)
+    expect(vaultScoped.rowMeta(sidebarTabsItem, dummySection, dummyGroup)).toEqual({ workspaceWinsName: 'Daily Focus' })
+    expect(vaultScoped.overrideCount).toBe(0)
+    expect(vaultScoped.onResetAll).toBeUndefined()
+
+    // Vault v2 has sidebarTabs + contentWidth: overrideCount counts only contentWidth (1)
+    const v2Scoped = buildScopedSettings(baseCtx, 'vault', v2.root)
+    expect(v2Scoped.overrideCount).toBe(1)
+    expect(v2Scoped.onResetAll).toBeDefined()
+
+    // Single-vault Vault mode: empty meta (no workspaceWinsName, no overridden/onReset)
+    const singleScope: SettingsScopeCtx = { ...scope, vaults: [v1], workspace: undefined }
+    const singleVaultScoped = buildScopedSettings({ ...baseCtx, scope: singleScope }, 'vault', v1.root)
+    expect(singleVaultScoped.rowMeta(sidebarTabsItem, dummySection, dummyGroup)).toEqual({})
+    expect(singleVaultScoped.overrideCount).toBe(0)
+  })
+
+  it('SettingsDialog respects initialScope and scrolls initialSettingId into view on mount (YAZ-6593)', () => {
+    const v1 = makeScopeVault('/v1', 'Notes', {})
+    const v2 = makeScopeVault('/v2', 'Work', {})
+    const scrollSpy = vi.fn()
+    const origScroll = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scrollSpy
+    try {
+      const { el } = mountScoped({
+        vaults: [v1, v2],
+        wsName: 'Daily Focus',
+        initialPage: 'sidebar',
+        initialScope: 'workspace',
+        initialSettingId: 'sidebarRowHeight',
+      })
+      expect(el.querySelector('.settings-scope-bar')?.getAttribute('data-scope-mode')).toBe('workspace')
+      expect(scrollSpy).toHaveBeenCalledTimes(1)
+      expect(scrollSpy).toHaveBeenCalledWith({ block: 'nearest' })
+      expect(scrollSpy.mock.instances[0]).toBe(el.querySelector('[data-setting="sidebarRowHeight"]'))
+    } finally {
+      Element.prototype.scrollIntoView = origScroll
+    }
   })
 })

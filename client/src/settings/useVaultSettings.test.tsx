@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { VAULT_OVERRIDE_KEYS, VAULT_SETTINGS_FILE } from '@shared/vaultSettings'
+import { GLOBAL_INHERITING_OVERRIDE_KEYS, VAULT_SETTINGS_FILE } from '@shared/vaultSettings'
 import { BridgeRequestError } from '../api'
 
 type ChangeListener = (change: { root: string; name: string }) => void
@@ -137,7 +137,7 @@ describe('useVaultSettings (YAZ-6546, YAZ-6555)', () => {
     )
   })
 
-  it('resetAll clears all 36 override keys while preserving legacy sections', async () => {
+  it('resetAll clears all 35 Global-inheriting override keys while preserving legacy sections', async () => {
     read.mockResolvedValue({
       version: 1,
       contentWidth: 'full',
@@ -157,7 +157,7 @@ describe('useVaultSettings (YAZ-6546, YAZ-6555)', () => {
       '/v',
       VAULT_SETTINGS_FILE,
       { version: 1 },
-      ['version', ...VAULT_OVERRIDE_KEYS],
+      ['version', ...GLOBAL_INHERITING_OVERRIDE_KEYS],
     )
     expect(state.overrides).toEqual({})
     expect(state.doc?.review).toEqual({ enabled: true })
@@ -244,5 +244,28 @@ describe('useVaultSettings (YAZ-6546, YAZ-6555)', () => {
     })
     expect(read).toHaveBeenCalledTimes(2)
     expect(state.overrides).toEqual({ contentWidth: 'narrow' })
+  })
+
+  it('YAZ-6618: resetAll clears Global-inheriting overrides while preserving Vault-owned sidebarTabs', async () => {
+    const customTabs = {
+      order: ['files', 'favorites', 'search', 'focus', 'sessions', 'recents'] as const,
+      hidden: ['sessions'] as const,
+      hiddenButtons: ['more'] as const,
+    }
+    read.mockResolvedValueOnce({ version: 1, contentWidth: 'full', tabWidth: 'wide', sidebarTabs: customTabs })
+    await act(async () => {
+      root?.render(<Probe vault="/v" />)
+    })
+    expect(state.overrides.contentWidth).toBe('full')
+    expect(state.overrides.sidebarTabs).toEqual(customTabs)
+
+    await act(async () => {
+      await state.resetAll()
+    })
+    expect(state.overrides.contentWidth).toBeUndefined()
+    expect(state.overrides.tabWidth).toBeUndefined()
+    expect(state.overrides.sidebarTabs).toEqual(customTabs)
+    const writtenKnown = write.mock.calls.at(-1)?.[3] as string[]
+    expect(writtenKnown).not.toContain('sidebarTabs')
   })
 })

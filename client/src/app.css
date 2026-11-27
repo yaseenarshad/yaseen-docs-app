@@ -2638,6 +2638,24 @@ body.drag-held iframe {
   font-size: 13px;
 }
 
+.tab-row-panel__scope {
+  padding: 4px 8px 3px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--fg-muted);
+}
+
+.tab-row-panel__scope strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.tab-row-panel__scope-note {
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
 .tab-row-panel__head {
   padding: 4px 8px 2px;
   font-size: 11.5px;
@@ -3280,7 +3298,8 @@ body.drag-held iframe {
    "Reset tab row" in the Tab row panel (YAZ-3279) looks like an item, but keeps its own class, so the
    menu's walk and tests never count it. */
 .ctx-menu__item,
-.tab-row-panel__reset {
+.tab-row-panel__reset,
+.tab-row-panel__action {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3355,7 +3374,8 @@ body.drag-held iframe {
 }
 
 .ctx-menu__item:hover:not(:disabled),
-.tab-row-panel__reset:hover {
+.tab-row-panel__reset:hover,
+.tab-row-panel__action:hover {
   background: var(--accent-soft);
 }
 

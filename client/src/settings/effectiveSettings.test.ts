@@ -59,10 +59,23 @@ describe('effectiveSettings (YAZ-6546, YAZ-6555)', () => {
     expect(pageB.contentWidth).toBe('narrow')
   })
 
-  it('patchWorkspaceChrome sparsely updates and removes empty workspace entries', () => {
-    const wsKey = 'ws:set-1'
-    const afterSet = patchWorkspaceChrome(DEFAULT_SETTINGS, wsKey, { tabWidth: 'wide', sidebarLines: 'always' })
+  it('patchWorkspaceChrome sparsely updates, migrates legacy ws:<id> to ws-name:<name>, and removes empty entries', () => {
+    const wsKey = 'ws-name:all folders'
+    const legacyKey = 'ws:set-1'
+    const seeded: SettingsState = {
+      ...DEFAULT_SETTINGS,
+      workspaceSettings: { [legacyKey]: { tabWidth: 'wide' } },
+    }
+    // Reading via resolveWindowChrome falls back to legacy ws:set-1 and exposes both wsKey & legacyWsKey
+    const resolved = resolveWindowChrome(seeded, ['/v', '/w'], 'set-1', null, null, 'All Folders')
+    expect(resolved.wsKey).toBe(wsKey)
+    expect(resolved.legacyWsKey).toBe(legacyKey)
+    expect(resolved.settings.tabWidth).toBe('wide')
+
+    // Patching migrates legacy entry under ws-name:all folders and deletes legacy ws:set-1
+    const afterSet = patchWorkspaceChrome(seeded, wsKey, { sidebarLines: 'always' }, [], legacyKey)
     expect(afterSet.workspaceSettings[wsKey]).toEqual({ tabWidth: 'wide', sidebarLines: 'always' })
+    expect(afterSet.workspaceSettings[legacyKey]).toBeUndefined()
 
     const afterUnsetOne = patchWorkspaceChrome(afterSet, wsKey, {}, ['tabWidth'])
     expect(afterUnsetOne.workspaceSettings[wsKey]).toEqual({ sidebarLines: 'always' })

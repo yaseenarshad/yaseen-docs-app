@@ -3753,3 +3753,121 @@ span.cards-wizard__pill {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---------- sidebar tab row, row dates & scope warning/jump (YAZ-6593) ---------- */
+
+.sidebar-tabs-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 380px;
+}
+
+.sidebar-tabs-control__scope {
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+
+.sidebar-tabs-control__scope strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.sidebar-tabs-editor--settings {
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 13.5px;
+}
+
+.sidebar-tabs-editor--settings .tab-row-panel__row,
+.sidebar-tabs-editor--settings .tab-row-panel__button-row {
+  padding: 5px 8px;
+}
+
+.sidebar-tabs-editor--settings .tab-row-panel__moves {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.sidebar-tabs-editor--settings .tab-row-panel__note + .tab-row-panel__moves {
+  margin-left: 6px;
+}
+
+.sidebar-tabs-editor--settings .tab-row-panel__move {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sidebar-tabs-editor--settings .tab-row-panel__move:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.sidebar-tabs-editor--settings .tab-row-panel__move:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.sidebar-tabs-control__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-tabs-redirect {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--fg-muted);
+}
+
+.setting__scope-warn {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--fg-muted);
+}
+
+.setting__scope-jump {
+  padding: 3px 9px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.setting__scope-jump:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
