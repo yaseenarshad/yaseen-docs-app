@@ -163,9 +163,11 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   // The vault's answer on IDs as the last snapshot said it (below, with `onSnapshot`): here, so Cards follow it (YAZ-5154).
   const [idsSnapshot, setIdsSnapshot] = useState<{ root: string | null; enabled: boolean; held: boolean; old: number; unfinished: boolean; ask: IndexResponse['ask'] } | null>(null)
   const vaultIds = idsSnapshot?.root === root ? idsSnapshot : null
-  // Unified per-vault settings (YAZ-6546): ONE read of `.yaseendocs/settings.json` + `.yaseendocs/read-only.json`.
+  // Unified per-vault settings (YAZ-6546, YAZ-6593): ONE read of `.yaseendocs/settings.json` + `.yaseendocs/read-only.json`.
+  // Vault read-only (`read-only.json`) protects notes/folders from accidental edits while allowing deliberate settings writes;
+  // only CLI `--read-only` (`transientReadOnly`) keeps `.yaseendocs/` untouched on disk.
   const readOnlyVault = useReadOnlyVault(root, transientReadOnly)
-  const vaultSettings = useVaultSettings(root, readOnlyVault.locked)
+  const vaultSettings = useVaultSettings(root, transientReadOnly)
   // Cards need IDs (YAZ-5154): a vault the index says gives none publishes Cards off. No answer yet hides nothing.
   const reviewSettings = useDerivedReviewSettings(root, vaultSettings, notify, vaultIds?.enabled === false)
   const linkClick = useDerivedLinkClick(root, vaultSettings)

@@ -1,17 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS, type SettingsState } from './types'
+import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_TABS, type SettingsState } from './types'
 import {
   VAULT_CHROME_KEYS,
   VAULT_OVERRIDE_KEYS,
+  VAULT_OWNED_CHROME_KEYS,
   VAULT_SETTINGS_VERSION,
   extractVaultOverrides,
   extractWorkspaceChrome,
   isVaultChromeKey,
   isVaultOverrideKey,
+  isVaultOwnedChromeKey,
   isVaultSettingsDocEmpty,
   mergeLegacyFilesIntoDoc,
   patchVaultSettingsDoc,
   readVaultSection,
+  readWorkspaceChrome,
   resolveVaultSettings,
   withMobileSettingInVaultSettings,
   workspaceSettingsKey,
@@ -56,14 +59,40 @@ describe('shared/vaultSettings (YAZ-6546)', () => {
     expect(multi.bulletThreading).toBe(true)
     expect(multi.contentWidth).toBe('full')
     expect(multi.tabWidth).toBe('compact')
-    // Vault A's sidebarTabs is ignored in multi-vault mode (inherits Global when workspace didn't override it)
-    expect(multi.sidebarTabs).toEqual(global.sidebarTabs)
+    // Vault A's sidebarTabs is ignored in multi-vault mode and NEVER inherits Global (YAZ-6593)
+    expect(multi.sidebarTabs).toEqual(DEFAULT_SIDEBAR_TABS)
   })
 
-  it('builds deterministic workspace keys for saved VaultSets and ad-hoc multi-vault roots', () => {
+  it('YAZ-6593: sidebarTabs is Vault/Workspace-only and never inherits non-default global.sidebarTabs', () => {
+    expect(VAULT_OWNED_CHROME_KEYS).toEqual(['sidebarTabs'])
+    expect(isVaultOwnedChromeKey('sidebarTabs')).toBe(true)
+    expect(isVaultOwnedChromeKey('rowDates')).toBe(false)
+
+    const globalWithCustomTabs: SettingsState = {
+      ...DEFAULT_SETTINGS,
+      sidebarTabs: {
+        order: ['files', 'favorites', 'search', 'recents', 'focus', 'sessions'],
+        hidden: ['sessions'],
+        hiddenButtons: ['more'],
+      },
+    }
+    // Unset single vault ignores global.sidebarTabs and starts at DEFAULT_SIDEBAR_TABS
+    expect(resolveVaultSettings(globalWithCustomTabs, {}).sidebarTabs).toEqual(DEFAULT_SIDEBAR_TABS)
+    // Unset multi-vault workspace ignores global.sidebarTabs and starts at DEFAULT_SIDEBAR_TABS
+    expect(resolveVaultSettings(globalWithCustomTabs, {}, {}).sidebarTabs).toEqual(DEFAULT_SIDEBAR_TABS)
+  })
+
+  it('builds deterministic portable workspace keys for named VaultSets, unnamed IDs, and ad-hoc multi-vault roots', () => {
+    expect(workspaceSettingsKey(['/b', '/a'], 'set-123', ' All Folders ')).toBe('ws-name:all folders')
     expect(workspaceSettingsKey(['/b', '/a'], 'set-123')).toBe('ws:set-123')
     expect(workspaceSettingsKey(['/b/', '/a'], null)).toBe('roots:/a\0/b')
     expect(workspaceSettingsKey(['/a', '/b'])).toBe('roots:/a\0/b')
+
+    // Portable read falls back to legacy ws:<id> until upgraded, preferring ws-name:<name> when present
+    const legacyOnly = { 'ws:set-123': { tabWidth: 'wide' } }
+    expect(readWorkspaceChrome(legacyOnly, ['/a', '/b'], 'set-123', 'All Folders')).toEqual({ tabWidth: 'wide' })
+    const both = { 'ws:set-123': { tabWidth: 'wide' }, 'ws-name:all folders': { tabWidth: 'compact' } }
+    expect(readWorkspaceChrome(both, ['/a', '/b'], 'set-123', 'All Folders')).toEqual({ tabWidth: 'compact' })
   })
 
   it('patches sparse docs, removes unset keys, and preserves unknown forward-compat keys', () => {

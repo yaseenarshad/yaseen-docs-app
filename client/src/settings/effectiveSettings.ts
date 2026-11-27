@@ -17,6 +17,8 @@ import type { NewPageDrawing, RowDates, SettingsState } from '@shared/types'
 import {
   VAULT_CHROME_KEYS,
   extractWorkspaceChrome,
+  legacyWorkspaceSettingsKey,
+  readWorkspaceChrome,
   resolveVaultSettings,
   workspaceSettingsKey,
   type VaultChromeKey,
@@ -32,6 +34,7 @@ export interface ResolvedWindowChrome {
   settings: SettingsState
   isMultiVault: boolean
   wsKey: string | null
+  legacyWsKey: string | null
   chromeOverrides: WorkspaceChromeOverrides
 }
 
@@ -41,9 +44,10 @@ export function resolveWindowChrome(
   matchedVaultSetId: string | null,
   singleVaultOverrides: VaultSettingsOverrides | null,
   legacyRowDates?: RowDates | null,
+  matchedVaultSetName?: string | null,
 ): ResolvedWindowChrome {
   if (roots.length === 0) {
-    return { settings: global, isMultiVault: false, wsKey: null, chromeOverrides: {} }
+    return { settings: global, isMultiVault: false, wsKey: null, legacyWsKey: null, chromeOverrides: {} }
   }
   if (roots.length === 1) {
     const chromeOverrides = extractWorkspaceChrome(singleVaultOverrides)
@@ -51,15 +55,17 @@ export function resolveWindowChrome(
     if (singleVaultOverrides?.rowDates === undefined && legacyRowDates !== undefined && legacyRowDates !== null) {
       settings = { ...settings, rowDates: legacyRowDates }
     }
-    return { settings, isMultiVault: false, wsKey: null, chromeOverrides }
+    return { settings, isMultiVault: false, wsKey: null, legacyWsKey: null, chromeOverrides }
   }
-  const wsKey = workspaceSettingsKey(roots, matchedVaultSetId)
-  const chromeOverrides = extractWorkspaceChrome(global.workspaceSettings?.[wsKey])
+  const wsKey = workspaceSettingsKey(roots, matchedVaultSetId, matchedVaultSetName)
+  const rawLegacy = legacyWorkspaceSettingsKey(matchedVaultSetId)
+  const legacyWsKey = rawLegacy !== null && rawLegacy !== wsKey ? rawLegacy : null
+  const chromeOverrides = readWorkspaceChrome(global.workspaceSettings, roots, matchedVaultSetId, matchedVaultSetName)
   let settings = resolveVaultSettings(global, null, chromeOverrides)
   if (chromeOverrides.rowDates === undefined && legacyRowDates !== undefined && legacyRowDates !== null) {
     settings = { ...settings, rowDates: legacyRowDates }
   }
-  return { settings, isMultiVault: true, wsKey, chromeOverrides }
+  return { settings, isMultiVault: true, wsKey, legacyWsKey, chromeOverrides }
 }
 
 export function resolvePageSettings(
@@ -71,14 +77,25 @@ export function resolvePageSettings(
   return resolveVaultSettings(global, pageVaultOverrides, isMultiVault ? (wsChrome ?? {}) : null)
 }
 
-/** Sparsely patch `SettingsState.workspaceSettings[wsKey]`, deleting `wsKey` when no chrome keys remain. */
+/**
+ * Sparsely patch `SettingsState.workspaceSettings[wsKey]`, deleting `wsKey` when no chrome keys remain.
+ * When `legacyWsKey` (`ws:<uuid>`) is provided, migrates any existing entries from `legacyWsKey` into `wsKey`
+ * and removes `legacyWsKey` so there is never a stale duplicate (YAZ-6593).
+ */
 export function patchWorkspaceChrome(
   global: SettingsState,
   wsKey: string,
   patch: Partial<WorkspaceChromeOverrides>,
   unset: readonly VaultChromeKey[] = [],
+  legacyWsKey?: string | null,
 ): SettingsState {
-  const existing = extractWorkspaceChrome(global.workspaceSettings?.[wsKey])
+  const rawCurrent = global.workspaceSettings?.[wsKey]
+  const existing =
+    rawCurrent !== undefined
+      ? extractWorkspaceChrome(rawCurrent)
+      : legacyWsKey !== undefined && legacyWsKey !== null
+        ? extractWorkspaceChrome(global.workspaceSettings?.[legacyWsKey])
+        : {}
   const nextEntry: Record<string, unknown> = { ...existing }
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined) delete nextEntry[k]
@@ -87,6 +104,7 @@ export function patchWorkspaceChrome(
   for (const k of unset) delete nextEntry[k]
 
   const nextMap: Record<string, Record<string, unknown>> = { ...global.workspaceSettings }
+  if (legacyWsKey !== undefined && legacyWsKey !== null && legacyWsKey !== wsKey) delete nextMap[legacyWsKey]
   if (Object.keys(nextEntry).length === 0) delete nextMap[wsKey]
   else nextMap[wsKey] = nextEntry
   return { ...global, workspaceSettings: nextMap }

@@ -65,9 +65,11 @@ describe('the panel', () => {
     expect(onChange.mock.calls.map(([next]) => next.hiddenButtons)).toEqual([['sort'], ['more']])
   })
 
-  it('S25: "Reset tab row" is the default order with every tab and button shown; at the default it writes nothing', () => {
+  it('S25: "Reset to default" is the default order with every tab and button shown; at the default it writes nothing', () => {
     const changed = mount({ order: ['sessions', 'files', 'search', 'focus', 'favorites', 'recents'], hidden: ['search'], hiddenButtons: ['fold'] })
-    click(changed.el.querySelector('.tab-row-panel__reset'))
+    const resetBtn = changed.el.querySelector('.tab-row-panel__reset')
+    expect(resetBtn?.textContent).toBe('Reset to default')
+    click(resetBtn)
     expect(changed.onChange).toHaveBeenCalledExactlyOnceWith(DEFAULT_SIDEBAR_TABS)
     act(() => root?.unmount())
     const plain = mount()
@@ -75,16 +77,35 @@ describe('the panel', () => {
     expect(plain.onChange).not.toHaveBeenCalled()
   })
 
-  it('YAZ-6546: renders "Reset to global" when onResetToGlobal is provided and invokes it on click', () => {
-    const onResetToGlobal = vi.fn()
+  it('YAZ-6593: renders scope header, omits "Reset to global", and invokes onEditInSettings (after closing) on "Edit in Settings…"', () => {
+    const onEditInSettings = vi.fn()
+    const onClose = vi.fn()
     host = document.createElement('div')
     document.body.appendChild(host)
     root = createRoot(host)
-    act(() => root!.render(<TabRowPanel x={20} y={30} prefs={DEFAULT_SIDEBAR_TABS} focus={null} autoFocus={false} onChange={vi.fn()} onResetToGlobal={onResetToGlobal} onClose={vi.fn()} />))
-    const btn = host.querySelector<HTMLButtonElement>('.tab-row-panel__reset--global')
-    expect(btn?.textContent).toBe('Reset to global')
-    click(btn)
-    expect(onResetToGlobal).toHaveBeenCalledTimes(1)
+    act(() =>
+      root!.render(
+        <TabRowPanel
+          x={20}
+          y={30}
+          prefs={DEFAULT_SIDEBAR_TABS}
+          focus={null}
+          autoFocus={false}
+          onChange={vi.fn()}
+          scope={{ label: 'Work (workspace)', note: 'Applies to this multi-vault window.' }}
+          onEditInSettings={onEditInSettings}
+          onClose={onClose}
+        />,
+      ),
+    )
+    expect(host.querySelector('.tab-row-panel__scope')?.textContent).toContain('Tabs for: Work (workspace)')
+    expect(host.querySelector('.tab-row-panel__scope-note')?.textContent).toBe('Applies to this multi-vault window.')
+    expect(host.textContent).not.toContain('Reset to global')
+    const settingsBtn = host.querySelector<HTMLButtonElement>('.tab-row-panel__action')
+    expect(settingsBtn?.textContent).toBe('Edit in Settings…')
+    click(settingsBtn)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onEditInSettings).toHaveBeenCalledTimes(1)
   })
 
   it('S26: Esc, a press outside and the window losing focus close it; a press inside does not', () => {
