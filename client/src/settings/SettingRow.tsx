@@ -35,11 +35,24 @@ export function SettingRow({
   onReset,
   overriddenIn,
   scopeBadge,
+  workspaceWinsName,
+  onJumpToWorkspace,
   children,
 }: SettingRowProps) {
+  const scopeWarn = workspaceWinsName !== undefined && (
+    <p className="setting__scope-warn">
+      Used when opened alone · This window uses {workspaceWinsName}.
+      {onJumpToWorkspace !== undefined && (
+        <button type="button" className="setting__scope-jump" onClick={onJumpToWorkspace}>
+          Edit workspace
+        </button>
+      )}
+    </p>
+  )
   if (bare) {
     return (
       <div className={`setting setting--bare${overridden ? ' setting--overridden' : ''}`} data-setting={id} role="group" aria-label={label}>
+        {scopeWarn}
         {children}
       </div>
     )
@@ -58,6 +71,7 @@ export function SettingRow({
           )}
         </div>
         {overriddenIn !== undefined && <p className="setting__scope-note">Overridden in {overriddenIn}</p>}
+        {scopeWarn}
         {hint !== undefined && <p className="setting__hint">{hint}</p>}
       </div>
       <div className="setting__control">{children}</div>

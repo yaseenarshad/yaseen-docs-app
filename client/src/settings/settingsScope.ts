@@ -18,6 +18,7 @@ import {
   VAULT_CHROME_KEYS,
   VAULT_OVERRIDE_KEYS,
   isVaultChromeKey,
+  isVaultOwnedChromeKey,
   isVaultOverrideKey,
   resolveVaultSettings,
   type VaultChromeKey,
@@ -83,6 +84,12 @@ export interface SettingsScopeCtx {
   globalSettings: SettingsState
   onChangeGlobal: (next: SettingsState) => void
   saveDailyFor?: (next: DailyPagesSettings, vaultRoot: string) => void
+  /** Runtime scope state injected by SettingsDialog so controls (e.g. SidebarTabsControl) can inspect and switch scope. */
+  activeScopeMode?: SettingsScopeMode
+  activeScopeLabel?: string
+  activeTargetLabel?: string
+  onSelectScope?: (mode: SettingsScopeMode) => void
+  onJumpToActiveScope?: () => void
 }
 
 export interface SettingRowScopeMeta {
@@ -90,6 +97,8 @@ export interface SettingRowScopeMeta {
   onReset?: () => void
   overriddenIn?: string
   scopeBadge?: 'Global' | 'Per-vault'
+  workspaceWinsName?: string
+  onJumpToWorkspace?: () => void
 }
 
 export interface ScopedSettingsResult {
@@ -267,7 +276,9 @@ export function buildScopedSettings(
   if (mode === 'vault') {
     const ctx = withVaultContext(given, scope, activeVault)
     const overrides = activeVault.vaultSettings.overrides
-    const overrideCount = Object.keys(overrides).length
+    const overrideCount = Object.keys(overrides).filter(
+      (k) => overrides[k as VaultOverrideKey] !== undefined && !isVaultOwnedChromeKey(k),
+    ).length
     return {
       ctx,
       activeVault,
@@ -276,10 +287,12 @@ export function buildScopedSettings(
       rowMeta: (item, section, group) => {
         const key = overrideKeyOf(item)
         if (key !== undefined) {
+          const workspaceWins = ws !== undefined && isVaultChromeKey(key) ? { workspaceWinsName: ws.name } : {}
+          if (isVaultOwnedChromeKey(key)) return workspaceWins
           const overridden = Object.hasOwn(overrides, key) && overrides[key] !== undefined
           return overridden
-            ? { overridden: true, onReset: () => void activeVault.vaultSettings.setOverrides({}, [key]) }
-            : {}
+            ? { overridden: true, onReset: () => void activeVault.vaultSettings.setOverrides({}, [key]), ...workspaceWins }
+            : workspaceWins
         }
         if (isLegacyVaultRow(item, section, group)) return {}
         return { scopeBadge: 'Global' }
@@ -314,7 +327,9 @@ export function buildScopedSettings(
       }
       if (Object.keys(rest).length > 0) scope.onChangeGlobal({ ...scope.globalSettings, ...rest })
     }
-    const overrideCount = Object.keys(ws.overrides).length
+    const overrideCount = Object.keys(ws.overrides).filter(
+      (k) => ws.overrides[k as VaultChromeKey] !== undefined && !isVaultOwnedChromeKey(k),
+    ).length
     return {
       ctx: { ...given, settings: wsSettings, onChange },
       activeVault,
@@ -323,6 +338,7 @@ export function buildScopedSettings(
       rowMeta: (item, section, group) => {
         const key = overrideKeyOf(item)
         if (key !== undefined) {
+          if (isVaultOwnedChromeKey(key)) return {}
           if (isVaultChromeKey(key)) {
             const overridden = Object.hasOwn(ws.overrides, key) && ws.overrides[key] !== undefined
             return overridden ? { overridden: true, onReset: () => ws.setOverrides({}, [key]) } : {}
@@ -364,7 +380,7 @@ export function buildScopedSettings(
     overrideCount: 0,
     rowMeta: (item) => {
       const key = overrideKeyOf(item)
-      if (key === undefined) return {}
+      if (key === undefined || isVaultOwnedChromeKey(key)) return {}
       if (ws !== undefined && isVaultChromeKey(key) && Object.hasOwn(ws.overrides, key) && ws.overrides[key] !== undefined) {
         return { overriddenIn: ws.name }
       }
