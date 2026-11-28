@@ -1102,8 +1102,12 @@ describe('subscribeMenuRebuildOnActiveFile', () => {
 describe('the menu\'s fixed keys (YAZ-3419)', () => {
   it('every key the menu carries is a changeable command\'s, a numbered vault\'s, in MENU_FIXED_KEYS, or a Mac standard key (⌘R, YAZ-3737 D2) — so the recorder and the store refuse it', () => {
     const vaults: MenuInputs['keyedVaults'] = [{ key: 1, name: 'Pages', path: '/vaults/pages' }]
-    const fixed = (['markdown', 'drawing', 'diagram', null] as const).flatMap((kind) =>
-      allItems(build(RECENTS, true, noopHandlers(), vaults, kind)).filter((i) => typeof i.accelerator === 'string' && i.accelerator !== '' && !i.id?.startsWith('menu.window.vault.')),
+    const fixed = [false, true].flatMap((isShim) =>
+      (['markdown', 'drawing', 'diagram', null] as const).flatMap((kind) =>
+        allItems(buildMenuTemplate({ recents: RECENTS, keyedVaults: vaults, isDev: true, activeKind: kind, hotkeys: {}, isShim }, noopHandlers())).filter(
+          (i) => typeof i.accelerator === 'string' && i.accelerator !== '' && !i.id?.startsWith('menu.window.vault.'),
+        ),
+      ),
     )
     const stray = fixed.filter((i) => !HOTKEY_COMMANDS.some((c) => sameKey(c.key, i.accelerator as string)) && ![...MENU_FIXED_KEYS, ...APP_STANDARD_KEYS].some((k) => sameKey(k.accelerator, i.accelerator as string)))
     expect(stray.map((i) => `${i.id} ${String(i.accelerator)}`)).toEqual([])

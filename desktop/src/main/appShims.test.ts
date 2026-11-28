@@ -89,7 +89,6 @@ function makeHarness(opts: {
   const hostWorkspaceWins = new Map<string, string>()
 
   const windows = {
-    openWindow: vi.fn(),
     openVaultSet: vi.fn((_id: string, _from?: string, shimKey?: string) => {
       if (shimKey !== undefined) {
         const list = shimWindows.get(shimKey) ?? []
@@ -98,7 +97,6 @@ function makeHarness(opts: {
       }
       return { opened: true, missing: [] }
     }),
-    openAlone: vi.fn(() => true),
     routeToFile: vi.fn((_path: string, _root?: string | null, _open?: unknown, shimKey?: string) => {
       if (shimKey !== undefined) {
         const list = shimWindows.get(shimKey) ?? []
@@ -125,7 +123,7 @@ function makeHarness(opts: {
         shimWindows.set(k, list.filter((id) => !ids.includes(id)))
       }
     }),
-    appNotice: vi.fn(),
+    linkNotice: vi.fn(),
   }
 
   const showHostDock = vi.fn()
@@ -467,11 +465,11 @@ describe('createAppShimController', () => {
 
     const evOut = shim.emitEvent('open-file', '/somewhere/else/doc.md')
     expect(evOut.preventDefault).toHaveBeenCalledOnce()
-    expect(h.windows.routeToFile).toHaveBeenLastCalledWith('/somewhere/else/doc.md', undefined, undefined, undefined)
+    expect(h.handleLink).toHaveBeenCalledWith(fileLink('/somewhere/else/doc.md'))
 
     const evUrl = shim.emitEvent('open-url', fileLink(`${VAULT}/doc.md`))
     expect(evUrl.preventDefault).toHaveBeenCalledOnce()
-    expect(h.handleLink).toHaveBeenCalledExactlyOnceWith(fileLink(`${VAULT}/doc.md`))
+    expect(h.handleLink).toHaveBeenCalledWith(fileLink(`${VAULT}/doc.md`))
     h.controller.dispose()
   })
 
@@ -500,11 +498,29 @@ describe('createAppShimController', () => {
     h.controller.dispose()
   })
 
-  it('handleVersionMismatch shows a clear restart notice via appNotice (D5)', () => {
+  it('handleVersionMismatch shows a clear restart notice via linkNotice (D5)', () => {
     const h = makeHarness()
     h.controller.handleVersionMismatch('/Applications/Work.app')
-    expect(h.windows.appNotice).toHaveBeenCalledExactlyOnceWith('Work needs to restart to match the updated Yaseen Docs app')
+    expect(h.windows.linkNotice).toHaveBeenCalledExactlyOnceWith('Work needs to restart to match the updated Yaseen Docs app')
     expect(h.warn).toHaveBeenCalledOnce()
     h.controller.dispose()
+  })
+
+  it('evicts prior connected shim cleanly when a duplicate connection arrives for the same shimKey (YAZ-6626)', async () => {
+    const h = makeHarness()
+    const s1 = new FakeShim()
+    const s2 = new FakeShim(BUNDLE_ID, BUNDLE_PATH, 9002)
+    await h.controller.handleConnected(s1)
+    await h.controller.handleConnected(s2)
+    expect(s1.quitCount).toBe(1)
+    expect(h.controller.connectedCount()).toBe(1)
+    expect(h.controller.getShim(VAULT)).toBe(s2)
+    h.controller.dispose()
+  })
+
+  it('accepts macOS APFS case differences in allowedDirs (YAZ-6626)', () => {
+    const shim = new FakeShim(BUNDLE_ID, '/applications/Work.app')
+    const res = validateShimConnection(shim, validPlist(), ['/Applications'], 'darwin')
+    expect(res.ok).toBe(true)
   })
 })

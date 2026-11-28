@@ -111,6 +111,10 @@ export interface WindowHost {
   onWindowOpened?(id: string, shimKey: string | undefined): void
   /** Optional lifecycle hook invoked after a window closes and its tracking state is cleaned up (YAZ-6625). */
   onWindowClosed?(id: string, shimKey: string | undefined): void
+  /** Optional check whether `shimKey` is currently connected before binding a new window to it (YAZ-6626). */
+  isShimConnected?(shimKey: string): boolean
+  /** Optional check whether the host will stay alive when its last window closes (e.g. other shims connected/starting; YAZ-6626). */
+  keepAliveOnLastWindowClosed?(): boolean
   /** Every display's workArea, primary first (`clampBounds` keeps the earliest area on ties). */
   workAreas(): WindowBounds[]
   /** Where the pointer is on the screen (YAZ-3637 D1): a drag that ended with no point is let go there. */
@@ -331,6 +335,8 @@ export interface WindowManager extends WindowLookup {
   handoffWindowToShim(windowId: string, shimKey: string): Promise<string | null>
   /** Flush renderers, commit bounds, and destroy only the specified window ids (YAZ-6625 D4 shim quit-requested). */
   flushAndCloseWindows(ids: readonly string[]): Promise<void>
+  /** Remove stale non-live `AppState.windows` entries on headless `--app-shim-host` launches that skip `restore()` (YAZ-6626). */
+  pruneStaleWindows(): void
   /** The unobtrusive can't-open surface (E1): un-minimize + focus a live window, send `link:notice`. Never a dialog. With no live window, the Welcome window opens and says it (YAZ-2589 A2). */
   linkNotice(message: string): void
   /** A notice about ONE vault (YAZ-2677 S45): `link:notice` to each live window that shows `root`, held like any link push until its page listens. No window is raised, and none opens for it. */
@@ -594,6 +600,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   const windowShims = new Map<string, string>()
   /** Host windows currently closing as part of host-to-shim handoff (skip Recently closed & hidden-window reveal). */
   const handoffClosing = new Set<string>()
+  /** Shim windows currently closing as part of shim `quit-requested` (skip Recently closed & hidden-window reveal; YAZ-6626). */
+  const shimQuitClosing = new Set<string>()
   /** Page views for popped-out windows that have not read their identity yet (YAZ-2951 D2), by window id. Memory only. */
   const startViews = new Map<string, StartView>()
   /** The memory reload's page views and size (YAZ-3737 D4, D12), by window id, until the new page's first identity read. Memory only. */
@@ -758,7 +766,12 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     const hidden = opts?.hidden === true
     const inactive = opts?.inactive === true
     // Files windows (entry.kind === 'files') MUST stay host-owned: child.setParentWindow throws on shim windows (YAZ-6625 D4).
-    const shimKey = isFilesWindow(entry) ? undefined : opts?.shimKey
+    // Also verify the shim is still connected so `windowShims` never desyncs from BrowserWindow attachment (YAZ-6626).
+    const requestedShimKey = isFilesWindow(entry) ? undefined : opts?.shimKey
+    const shimKey =
+      requestedShimKey !== undefined && (host.isShimConnected === undefined || host.isShimConnected(requestedShimKey))
+        ? requestedShimKey
+        : undefined
     if (shimKey !== undefined) windowShims.set(entry.id, shimKey)
     const createOpts =
       hidden || inactive || shimKey !== undefined
@@ -840,6 +853,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const closedShimKey = windowShims.get(id)
       windowShims.delete(id)
       const wasHandoff = handoffClosing.delete(id)
+      const wasShimQuit = shimQuitClosing.delete(id)
       heldLinks.delete(wcId)
       // A lit window goes dark with the window whose row lit it; a closed lit window is forgotten (YAZ-3091 D8).
       const target = lit.get(id)
@@ -853,7 +867,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       zoomMenus.delete(id)
       if (minimizedWins.delete(id) && !quitting) tellMinimized()
       if (quitting) return
-      if (wasHandoff) {
+      if (wasHandoff || wasShimQuit) {
+        if (wasShimQuit) recordUsed(activeVault(entryOf(id)))
         store.removeWindow(id)
         host.onWindowClosed?.(id, closedShimKey)
         return
@@ -863,12 +878,15 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       else if (hiddenWins.size > 0 && [...live.keys()].every((other) => hiddenWins.has(other))) for (const other of [...hiddenWins]) showWindow(other)
       // A user close forgets the window; the LAST one closing quits the app (`window-all-closed`), so that is
       // a quit too: its entry stays, and the vault it was working in is the "last vault" (YAZ-2589 A1, YAZ-2602 A8).
+      // Shim windows (and closes while the host stays alive for shims) drop their `store.windows` entry because
+      // their per-vault/workspace `lastBounds` are already persisted (prevents zombie windows on `--app-shim-host`; YAZ-6626).
       if (wasReadOnly) {
         // Transient read-only windows never persist in AppState.windows, never bump recents, and never enter Recently closed (YAZ-4502).
         store.removeWindow(id)
-      } else if (live.size > 0) {
+      } else if (live.size > 0 || closedShimKey !== undefined || host.keepAliveOnLastWindowClosed?.()) {
         // A window you close puts its pages in "Recently closed" (YAZ-3487 D10). A quit does not: its tabs come back.
         const entry = entryOf(id)
+        if (live.size === 0) recordUsed(activeVault(entry))
         if (entry !== undefined && !isFilesWindow(entry)) store.addClosed(placeVaults(store.get().folders, entry.roots), entry.tabs)
         store.removeWindow(id)
       } else recordUsed(activeVault(entryOf(id)))
@@ -1555,8 +1573,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       if (win === undefined || entry === undefined || isFilesWindow(entry) || readOnlyWins.has(windowId) || windowShims.has(windowId)) return null
       closingWins.add(windowId)
       handoffClosing.add(windowId)
-      commitBounds(windowId, win)
+      commitBounds(windowId, win, true)
       await flushRenderer(win)
+      if (quitting || (host.isShimConnected !== undefined && !host.isShimConnected(shimKey))) {
+        handoffClosing.delete(windowId)
+        closingWins.delete(windowId)
+        return null
+      }
       const fresh = entryOf(windowId) ?? entry
       const liveBounds = win.isDestroyed() ? fresh.bounds : win.getBounds()
       if (!win.isDestroyed()) {
@@ -1602,13 +1625,17 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
         const win = liveWindow(id)
         if (win === undefined) continue
         closingWins.add(id)
+        shimQuitClosing.add(id)
         if (!readOnlyWins.has(id)) commitBounds(id, win, true)
         targets.push([id, win])
       }
       await Promise.all(
-        targets.map(async ([, win]) => {
+        targets.map(async ([id, win]) => {
           await flushRenderer(win)
-          if (win.isDestroyed()) return
+          if (win.isDestroyed()) {
+            shimQuitClosing.delete(id)
+            return
+          }
           const closed = new Promise<void>((resolve) => {
             let done = false
             const finish = () => {
@@ -1623,8 +1650,15 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
           })
           win.destroy()
           await closed
+          shimQuitClosing.delete(id)
         }),
       )
+    },
+
+    pruneStaleWindows() {
+      for (const w of store.get().windows) {
+        if (!live.has(w.id)) store.removeWindow(w.id)
+      }
     },
 
     linkNotice,
@@ -1812,7 +1846,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       // window, and still resolves only once every window has flushed (`runQuitSequence`'s order).
       const wins = [...live].filter(([, win]) => !win.isDestroyed())
       for (const [id, win] of wins) {
-        if (!readOnlyWins.has(id)) commitBounds(id, win)
+        if (!readOnlyWins.has(id)) commitBounds(id, win, windowShims.has(id))
       }
       // Transient read-only windows must never persist to yaseendocs.json or reopen writable on next launch (YAZ-4502).
       for (const id of [...readOnlyWins]) store.removeWindow(id)

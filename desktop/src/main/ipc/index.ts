@@ -79,6 +79,10 @@ export type IpcPlaces = ShareIpcPlaces & {
   onGithubAuthChange?: () => void
   /** macOS Vault App launcher backend (YAZ-5967, YAZ-6374); omitted falls back to unsupported stub. */
   vaultLauncher?: VaultLauncherBackend
+  /** Optional macOS App Shim hook for in-app vault opens (`window:open-recent`, `window:open-alone`, YAZ-6620 D3). */
+  onOpenVaultShim?: (path: string) => boolean
+  /** Optional macOS App Shim hook for in-app workspace opens (`window:open-set`, YAZ-6620 D3). */
+  onOpenWorkspaceShim?: (workspaceId: string) => import('@shared/types').OpenSetResult | null
 }
 
 export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; githubAuth: GithubAuthManager; secrets: Secrets; lsp: LspPool; libraryMoves: LibraryMoves } {
@@ -106,13 +110,15 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerWindowIpc(store, windows, {
     onRemoveVaultSet: (workspaceId) =>
       cleanupWorkspaceLauncher(store, launcherBackend, workspaceId),
+    onOpenVaultShim: places.onOpenVaultShim,
+    onOpenWorkspaceShim: places.onOpenWorkspaceShim,
   })
   registerStorageIpc(store)
   registerPictureFoldersIpc(store, pickedPictureFolders)
   registerSoundIpc()
   registerHomeIpc()
   registerCardFormatsIpc(userData)
-  registerVaultLauncherIpc(store, userData, launcherBackend, undefined, undefined, isTransientReadOnly)
+  registerVaultLauncherIpc(store, userData, launcherBackend, undefined, isTransientReadOnly)
   // The code tabs' language helpers (YAZ-3454, YAZ-3455): the quit sequence stops them (`stopAllLanguageServers`).
   // They run only while Settings › Code › "Jump across files" is on, and are a download in `<userData>/lsp`
   // (YAZ-3500). A dev build also takes the `node_modules` copies, unless YASEEN_DOCS_LSP_DOWNLOAD_ONLY=1

@@ -5,8 +5,9 @@
  * events, menu builder, `shell.openPath`, and Dock show/hide callbacks so every security check,
  * lifecycle transition, handoff, and shim-first routing rule unit-tests cleanly under vitest.
  */
+import { realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
-import { parseFileLink, type LinkOpenTarget } from '@shared/links'
+import { fileLink, parseFileLink, type LinkOpenTarget } from '@shared/links'
 import { stripSlash } from '@shared/types'
 import { LAUNCHER_BUNDLE_ID_PREFIX, resolveLauncherAppDirs, type LauncherPlistInfo } from './vaultLauncher'
 import type { Store } from './store'
@@ -86,10 +87,21 @@ export function parseWorkspaceShimKey(shimKey: string): string | null {
   return id.length > 0 ? id : null
 }
 
+function canonicalDir(p: string, platform: NodeJS.Platform = process.platform): string {
+  let resolved: string
+  try {
+    resolved = realpathSync(p)
+  } catch {
+    resolved = resolve(p)
+  }
+  return platform === 'darwin' ? resolved.toLowerCase() : resolved
+}
+
 /**
  * Validate an incoming App Shim connection (YAZ-6625 D5, fail-closed):
  * - `bundleId` starts with `LAUNCHER_BUNDLE_ID_PREFIX` and contains only `[a-zA-Z0-9._-]`.
- * - `bundlePath` is an `.app` directly inside one of `allowedDirs` (normalized; no `..` traversal).
+ * - `bundlePath` is an `.app` directly inside one of `allowedDirs` (canonicalized via `realpathSync`
+ *   when present so `/tmp` <-> `/private/tmp` and macOS APFS case differences match while symlink escapes fail).
  * - `plist` is present, matches `shim.bundleId`, and carries non-empty `vaultPath` + `vaultUrl`.
  * - `shim.satisfiesCodeRequirement('identifier "<bundleId>"') === true` (throws fail closed).
  */
@@ -97,6 +109,7 @@ export function validateShimConnection(
   shim: Pick<AppShimLike, 'bundleId' | 'bundlePath' | 'satisfiesCodeRequirement'>,
   plist: LauncherPlistInfo | null,
   allowedDirs: readonly string[],
+  platform: NodeJS.Platform = process.platform,
 ): ShimValidationResult {
   const { bundleId, bundlePath } = shim
   if (
@@ -122,8 +135,16 @@ export function validateShimConnection(
     return { ok: false, reason: `bundlePath is not a .app bundle: ${bundlePath}` }
   }
 
-  const parentDir = dirname(normalizedBundlePath)
-  const inAllowedDir = allowedDirs.some((dir) => resolve(dir) === parentDir)
+  // Canonicalize the real bundle path (catches symlinks inside /Applications pointing outside,
+  // and normalizes /tmp -> /private/tmp on macOS).
+  let realBundlePath: string
+  try {
+    realBundlePath = realpathSync(normalizedBundlePath)
+  } catch {
+    realBundlePath = normalizedBundlePath
+  }
+  const parentDir = canonicalDir(dirname(realBundlePath), platform)
+  const inAllowedDir = allowedDirs.some((dir) => canonicalDir(dir, platform) === parentDir)
   if (!inAllowedDir) {
     return { ok: false, reason: `bundlePath not directly inside allowed dirs: ${normalizedBundlePath}` }
   }
@@ -169,9 +190,7 @@ export interface AppShimControllerDeps<MenuT = unknown> {
   store: Pick<Store, 'get'>
   windows: Pick<
     WindowManager,
-    | 'openWindow'
     | 'openVaultSet'
-    | 'openAlone'
     | 'routeToFile'
     | 'windowsForShim'
     | 'regularWindowCount'
@@ -180,7 +199,7 @@ export interface AppShimControllerDeps<MenuT = unknown> {
     | 'findHostWindowForWorkspace'
     | 'handoffWindowToShim'
     | 'flushAndCloseWindows'
-    | 'appNotice'
+    | 'linkNotice'
   >
   readPlist: (bundlePath: string) => Promise<LauncherPlistInfo | null>
   allowedDirs?: () => readonly string[]
@@ -197,6 +216,7 @@ export interface AppShimControllerDeps<MenuT = unknown> {
   now?: () => number
   warn?: (message: string) => void
   onShimsChanged?: () => void
+  onShimDisconnected?: (shimKey: string) => void
 }
 
 export interface AppShimController<MenuT = unknown> {
@@ -401,6 +421,15 @@ export function createAppShimController<MenuT = unknown>(deps: AppShimController
         quitting: false,
         opening: true,
       }
+      const prior = connected.get(entry.shimKey)
+      if (prior !== undefined && prior.shim !== shim) {
+        prior.quitting = true
+        try {
+          if (prior.shim.isConnected()) prior.shim.quit()
+        } catch {
+          // ignore disconnect error on displaced duplicate shim
+        }
+      }
       connected.set(entry.shimKey, entry)
       shim.setApplicationMenu(deps.buildMenuForShim(entry.shimKey, shim))
 
@@ -431,7 +460,11 @@ export function createAppShimController<MenuT = unknown>(deps: AppShimController
       shim.on('open-file', (event, filePath) => {
         event.preventDefault()
         if (entry.quitting || quittingAll) return
-        deps.windows.routeToFile(filePath, undefined, undefined, isPathInShim(entry, filePath) ? entry.shimKey : undefined)
+        if (isPathInShim(entry, filePath)) {
+          deps.windows.routeToFile(filePath, undefined, undefined, entry.shimKey)
+        } else {
+          deps.handleLink(fileLink(filePath))
+        }
       })
 
       shim.on('open-url', (event, url) => {
@@ -443,6 +476,7 @@ export function createAppShimController<MenuT = unknown>(deps: AppShimController
       shim.on('disconnected', () => {
         if (connected.get(entry.shimKey) !== entry) return
         connected.delete(entry.shimKey)
+        deps.onShimDisconnected?.(entry.shimKey)
         deps.onShimsChanged?.()
         syncHostDock()
       })
@@ -486,7 +520,7 @@ export function createAppShimController<MenuT = unknown>(deps: AppShimController
     handleVersionMismatch(bundlePath) {
       const name = basename(bundlePath, '.app') || 'Vault App'
       warn(`[appShims] version mismatch for ${bundlePath}`)
-      deps.windows.appNotice(`${name} needs to restart to match the updated Yaseen Docs app`)
+      deps.windows.linkNotice(`${name} needs to restart to match the updated Yaseen Docs app`)
     },
 
     onWindowOpened(_windowId, _shimKey) {
