@@ -13,6 +13,8 @@ import { getZoomedItemPos } from './outline/zoom'
 import { CELL_NOTES_ATTR, cellNotesMarkdown, copySerializer } from './table/cellNoteClipboard'
 import { isCellNote } from './table/cellNotes'
 import { cellColor, cellValign, type TableColor } from './table/tableComment'
+import { isTextColorName, TEXT_COLOR_HEX } from './marks/textColor'
+import { isHighlightHex } from '@shared/types'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 
 export const CLIPBOARD_EMPTY_PARAGRAPH = 'data-mdapp-empty-paragraph'
@@ -194,6 +196,22 @@ function styleTables(dom: DocumentFragment): void {
 }
 
 /**
+ * Inline light-mode styles on copied text-color and alpha-highlight spans (YAZ-6694 D2, D8): external apps
+ * (Google Docs, Mail) read inline styles; pasting back into Yaseen Docs reads `data-text-color` / `data-highlight`
+ * first so named theme-adaptive colours and alpha highlights round-trip losslessly.
+ */
+function styleInlineMarks(dom: DocumentFragment): void {
+  for (const span of dom.querySelectorAll<HTMLElement>('span[data-text-color]')) {
+    const color = span.getAttribute('data-text-color')
+    if (span.style.color === '' && isTextColorName(color)) span.style.color = TEXT_COLOR_HEX[color]
+  }
+  for (const mark of dom.querySelectorAll<HTMLElement>('mark[data-highlight]')) {
+    const bg = mark.getAttribute('data-highlight')
+    if (isHighlightHex(bg) && bg.length === 9) mark.style.backgroundColor = copyHexFill(bg)
+  }
+}
+
+/**
  * Copied CELLS are rows: ProseMirror wraps them in a `<table>` of its own after the serializer (its
  * `wrapMap`), made by the detached document it hands the serializer for this one copy. So that
  * document's tables are made collapsed too. Never the page's own document.
@@ -246,7 +264,10 @@ export const clipboardCopyOut = $prose((ctx) => {
       // The copied cells' cell notes, as Markdown in one attribute (YAZ-4206 D13): a paste in the app adds them.
       const cellNotes = ctx.isInjected(editorViewCtx) ? cellNotesMarkdown(fragment, ctx.get(editorViewCtx).state.doc, copySerializer(ctx)) : null
       if (cellNotes !== null) dom.firstElementChild?.setAttribute(CELL_NOTES_ATTR, cellNotes)
-      if (dom instanceof DocumentFragment) styleTables(dom)
+      if (dom instanceof DocumentFragment) {
+        styleTables(dom)
+        styleInlineMarks(dom)
+      }
       collapseTablesOf(options?.document)
       return dom
     }

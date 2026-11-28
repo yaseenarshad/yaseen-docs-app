@@ -53,7 +53,7 @@ describe('when the toolbar shows', () => {
     expect(items).toEqual([
       'label Fill', 'Fill yellow', 'Fill green', 'Fill blue', 'Fill colours',
       'label Text', 'Red text', 'Blue text', 'Green text', 'Text colours', 'divider',
-      'Bold', 'Italic', 'Strikethrough', 'divider',
+      'Bold', 'Italic', 'Strikethrough', 'Text size', 'divider',
       'Align left', 'Align center', 'Align right', 'divider',
       'Merge cells', 'divider',
       'Clear cells',
@@ -466,5 +466,40 @@ describe('each button acts on every selected cell, in one undo step', () => {
     expect(cellAttr(view, 1, 0, 'fill')).toBe('green')
     undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  it('Text size applies to every selected cell in one undo step, supports stepper/input/Default, and shows mixed as — (YAZ-6695 #1)', async () => {
+    const { crepe, view } = await mount(TABLE)
+    const before = getMarkdownForSave(crepe)
+    await select(view, [1, 0], [2, 1])
+    expect(button(view, 'Text size').textContent).toContain('16')
+    button(view, 'Text size').click()
+    expect(isOpen(view, 'Text size')).toBe(true)
+    const palette = paletteOf(view, 'Text size')
+    palette.querySelector<HTMLButtonElement>('button[data-size="24"]')!.click()
+    const big = getMarkdownForSave(crepe)
+    for (const text of ['a', 'b', 'c', 'd']) expect(big).toContain(`<span style="font-size: 24px">${text}</span>`)
+    expect(big).not.toContain('<span style="font-size: 24px">h1</span>')
+    expect(button(view, 'Text size').textContent).toContain('24')
+    expect(view.state.selection).toBeInstanceOf(CellSelection)
+    // Step +1 -> 25px
+    palette.querySelector<HTMLButtonElement>('button[aria-label="Increase text size"]')!.click()
+    expect(getMarkdownForSave(crepe)).toContain('<span style="font-size: 25px">a</span>')
+    // Type 18 and press Enter
+    const input = palette.querySelector<HTMLInputElement>('input[aria-label="Font size in pixels"]')!
+    input.value = '18'
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(getMarkdownForSave(crepe)).toContain('<span style="font-size: 18px">a</span>')
+    // Mixed sizes across header + body show —
+    await select(view, [0, 0], [1, 1])
+    expect(button(view, 'Text size').textContent).toContain('—')
+    // Default removes font_size cleanly
+    await select(view, [1, 0], [2, 1])
+    button(view, 'Text size').click()
+    paletteOf(view, 'Text size').querySelector<HTMLButtonElement>('button[aria-label="Default text size"]')!.click()
+    expect(getMarkdownForSave(crepe)).toBe(before)
+    // Undo restores 18 -> 25 -> 24 -> before
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toContain('<span style="font-size: 18px">a</span>')
   })
 })

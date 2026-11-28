@@ -234,8 +234,8 @@ export class ColourPanel<C extends string | null> {
     pencil.setAttribute('aria-expanded', 'false')
     this.#pencil = pencil
     this.#hexField.append(hash, input, div('highlight-panel__hex-divider'), pencil)
-    // Note: once `ColourBox` gains `showAlpha?: boolean` on merge, pass `{ showAlpha: this.spec.allowAlpha }` here.
     this.#box = new ColourBox(doc, {
+      showAlpha: this.spec.allowAlpha,
       preview: (color) => {
         if (doc.activeElement !== this.#hexInput) this.#hexInput.value = color.slice(1)
       },

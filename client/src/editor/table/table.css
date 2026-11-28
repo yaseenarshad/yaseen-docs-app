@@ -655,6 +655,24 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
+.milkdown .cell-toolbar .cell-toolbar__size-btn {
+  width: auto;
+  min-width: 34px;
+  padding: 0 6px;
+}
+
+.milkdown .cell-toolbar .cell-toolbar__size-btn[aria-expanded='true'] {
+  background: var(--crepe-color-selected);
+}
+
+.milkdown .cell-toolbar__palette.cell-toolbar__size-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 124px;
+  padding: 8px;
+}
+
 .milkdown .cell-toolbar__palette[hidden] {
   display: none;
 }

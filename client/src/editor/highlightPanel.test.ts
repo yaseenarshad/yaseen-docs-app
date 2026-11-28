@@ -570,4 +570,25 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     expect(key('x').defaultPrevented).toBe(false)
     expect(isOpen()).toBe(false)
   })
+
+  it('Highlight ColourBox shows an Opacity slider that saves #rrggbbaa, while Text colour has no Opacity slider (YAZ-6695 D8)', async () => {
+    const { crepe, view } = await mount('hello world\n')
+    await select(view, 'world')
+    await press('highlight-more')
+    clickPencil()
+    const alpha = box().querySelector<HTMLInputElement>('input[aria-label="Opacity"]')
+    expect(alpha).not.toBeNull()
+    expect(alpha!.value).toBe('100')
+    alpha!.value = '50'
+    alpha!.dispatchEvent(new Event('change', { bubbles: true }))
+    await settle()
+    expect(getMarkdownForSave(crepe)).toBe('hello <mark style="background-color: #ffd50080">world</mark>\n')
+    expect(hexInput().value).toBe('ffd50080')
+    // Text colour panel uses the same ColourPanel with allowAlpha: false (no Opacity slider).
+    await press('text-color')
+    const tcPanel = document.querySelector<HTMLElement>('.highlight-panel[data-panel="text-color"]')!
+    expect(tcPanel.hidden).toBe(false)
+    tcPanel.querySelector<HTMLButtonElement>('.highlight-panel__pencil')!.click()
+    expect(tcPanel.querySelector('input[aria-label="Opacity"]')).toBeNull()
+  })
 })

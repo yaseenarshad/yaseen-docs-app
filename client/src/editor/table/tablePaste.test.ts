@@ -296,6 +296,25 @@ describe('copy cells to Google Docs with their lines (YAZ-3802, demo round 1 dec
     expect(translucent.style.backgroundColor).toBe(overWhite(`rgba(0, 0, 0, ${128 / 255})`))
   })
 
+  it('inline named text_color and alpha custom highlight copy with light-mode inline colours and paste back cleanly (YAZ-6694 D2, D8)', async () => {
+    const view = await mountTable('<span class="text-color-red">alert</span> <mark style="background-color: #ff000080">soft</mark>\n')
+    view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)))
+    const { html } = copy(view)
+    const box = document.createElement('div')
+    box.innerHTML = html
+    const span = box.querySelector<HTMLElement>('span[data-text-color="red"]')!
+    expect(span.style.color).toBe(computed('#c0392b'))
+    const mark = box.querySelector<HTMLElement>('mark[data-highlight="#ff000080"]')!
+    expect(mark.style.backgroundColor).toBe(overWhite(`rgba(255, 0, 0, ${128 / 255})`))
+    // Parsing back into Yaseen Docs still preserves named `red` and exact `#ff000080`.
+    const parsed = PMDOMParser.fromSchema(view.state.schema).parse(box)
+    const marks: string[] = []
+    parsed.descendants((node) => {
+      if (node.isText) for (const m of node.marks) marks.push(`${m.type.name}:${String(m.attrs.color)}`)
+    })
+    expect(marks).toEqual(['text_color:red', 'highlight:#ff000080'])
+  })
+
   it('a cell\'s own alignment copies as its `text-align`; the others keep their column\'s (YAZ-3819)', async () => {
     const view = await mountTable()
     setCell(view, 1, 0, { align: 'center' })

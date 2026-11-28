@@ -190,6 +190,28 @@ describe('renderCard: the table look the page saved (YAZ-5867)', () => {
     expect(el.querySelector('img, [onerror]')).toBeNull()
     expect(el.querySelector<HTMLElement>('tbody td')!.style.textAlign).toBe('center')
   })
+
+  it('renders inline text colour, font size, and custom highlights safely on Desktop and Mobile cards (YAZ-6694 #5)', async () => {
+    const { cardSafety } = await import('./cardSafety')
+    const md = '<span class="text-color-red">named</span> <span style="color: #123456">hex</span> <span style="font-size: 24px">big</span> <mark style="background-color: #ff0000">solid</mark> <span style="background: url(https://evil.test/x)">safe</span>'
+    const desktop = renderCard(md)
+    expect(desktop.querySelector('span.text-color-red')?.textContent).toBe('named')
+    expect(desktop.querySelector<HTMLElement>('span[style*="color"]')?.style.color).toBe('rgb(18, 52, 86)')
+    expect(desktop.querySelector<HTMLElement>('span[style*="font-size"]')?.style.fontSize).toBe('24px')
+    expect(desktop.querySelector<HTMLElement>('mark')?.style.backgroundColor).toBe('rgb(255, 0, 0)')
+
+    cardSafety.local = true
+    try {
+      const mobile = renderCard(md)
+      expect(mobile.querySelector('span.text-color-red')?.textContent).toBe('named')
+      expect(mobile.querySelector<HTMLElement>('span[style*="color"]')?.style.color).toBe('rgb(18, 52, 86)')
+      expect(mobile.querySelector<HTMLElement>('span[style*="font-size"]')?.style.fontSize).toBe('24px')
+      expect(mobile.querySelector<HTMLElement>('mark')?.style.backgroundColor).toBe('rgb(255, 0, 0)')
+      expect(mobile.innerHTML).not.toContain('evil.test')
+    } finally {
+      cardSafety.local = false
+    }
+  })
 })
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
