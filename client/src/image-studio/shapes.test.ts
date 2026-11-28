@@ -24,19 +24,23 @@ import {
   type SmartShapeApi,
 } from './shapes'
 
-const definition = (over: Partial<SmartShapeDefinition> = {}): SmartShapeDefinition => ({
-  id: 'arrow-right' as SmartShapeId,
-  title: 'Arrow right',
-  kind: 'filled-arrow',
-  width: 200,
-  height: 100,
-  closed: true,
-  roundness: null,
-  defaults: { shaftRatio: 0.5 },
-  limits: { shaftRatio: [0.1, 0.9] },
-  handles: ['shaft'],
-  ...over,
-})
+const definition = (over: Partial<SmartShapeDefinition> = {}): SmartShapeDefinition => {
+  const kind = over.kind ?? 'filled-arrow'
+  return {
+    id: 'arrow-right' as SmartShapeId,
+    title: 'Arrow right',
+    kind,
+    category: smartShapeCategory(kind),
+    width: 200,
+    height: 100,
+    closed: true,
+    roundness: null,
+    defaults: { shaftRatio: 0.5 },
+    limits: { shaftRatio: [0.1, 0.9] },
+    handles: ['shaft'],
+    ...over,
+  }
+}
 
 /** The three values `@excalidraw/element` would have supplied, as arithmetic we can predict. */
 function fakeSmart(definitions: SmartShapeDefinition[] = [definition()]): SmartShapeApi {
@@ -262,8 +266,9 @@ describe('the smart shapes, which need the element package', () => {
 
   it('prefers definition.category when the engine provides it, falling back to smartShapeCategory', () => {
     const withCategory = { ...definition({ kind: 'filled-arrow' }), category: 'banners' as ShapeCategory } as SmartShapeDefinition
+    const withoutCategory = { ...definition({ kind: 'callout' }), category: undefined as unknown as ShapeCategory } as SmartShapeDefinition
     expect(smartShapeCatalog(fakeSmart([withCategory]))[0].category).toBe('banners')
-    expect(smartShapeCatalog(fakeSmart([definition({ kind: 'callout' })]))[0].category).toBe('callouts')
+    expect(smartShapeCatalog(fakeSmart([withoutCategory]))[0].category).toBe('callouts')
   })
 })
 
