@@ -327,11 +327,12 @@ async function clearSyncedVaultApp(root: string, appId: string | undefined, isRe
       onDisk.state === 'ok' && isRecord(onDisk.value) && typeof onDisk.value.version === 'number' && Number.isFinite(onDisk.value.version)
         ? Math.max(VAULT_SETTINGS_VERSION, onDisk.value.version)
         : VAULT_SETTINGS_VERSION
-    if (appId !== undefined && onDisk.state === 'ok' && isRecord(onDisk.value)) {
+    if (appId !== undefined) {
+      if (onDisk.state !== 'ok' || !isRecord(onDisk.value)) return
       let existing = sanitizeVaultAppsList(onDisk.value.vaultApps)
       if (existing.length === 0) {
         const legacy = sanitizeVaultLauncherPreset(onDisk.value.launcher)
-        if (legacy !== null) existing = [{ id: 'default', ...legacy }]
+        if (legacy !== null) existing = [legacy]
       }
       const removed = existing.find((p) => (p.id ?? 'default') === appId)
       const remaining = existing.filter((p) => (p.id ?? 'default') !== appId)
@@ -347,10 +348,10 @@ async function clearSyncedVaultApp(root: string, appId: string | undefined, isRe
         },
         LAUNCHER_SETTINGS_KEYS,
       )
-      if (removed?.iconFile !== undefined) {
-        await rm(join(root, VAULT_CONFIG_DIR, removed.iconFile), { force: true }).catch(() => undefined)
-      } else {
-        await rm(join(root, VAULT_CONFIG_DIR, vaultIconFileFor(appId)), { force: true }).catch(() => undefined)
+      const iconToRemove = removed?.iconFile ?? vaultIconFileFor(appId)
+      const stillReferenced = remaining.some((p) => p.iconFile === iconToRemove)
+      if (!stillReferenced) {
+        await rm(join(root, VAULT_CONFIG_DIR, iconToRemove), { force: true }).catch(() => undefined)
       }
       return
     }

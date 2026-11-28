@@ -285,7 +285,7 @@ update.state/0: invoke update:state []; => "answer"; !> {"code":"NOT_FOUND","mes
 vaultConfig.onChange/1: on vaultConfig:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off vaultConfig:changed
 vaultConfig.read/2: invoke vaultConfig:read ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultConfig.write/4: invoke vaultConfig:write ["a0","a1","a2",null]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-vaultLauncher.clearSynced/1: invoke vault-launcher:clear-synced ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.clearSynced/2: invoke vault-launcher:clear-synced ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.clearSyncedWorkspace/1: invoke vault-launcher:clear-synced-workspace ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.create/1: invoke vault-launcher:create ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.createWorkspace/1: invoke vault-launcher:create-workspace ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

@@ -935,4 +935,67 @@ describe('VaultSwitcher & Welcome launcher icons', () => {
       sidebarStart: wsStart,
     }))
   })
+
+  it('YAZ-6747 & YAZ-6748: clears ONLY primary synced app with appId="default", and installs primary after secondary with appId="default"', async () => {
+    const b1 = { kind: 'emoji' as const, value: '💼', color: '#007AFF' }
+    const b2 = { kind: 'emoji' as const, value: '🎯', color: '#34C759' }
+    const svg = 'data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E'
+
+    // Scenario A (YAZ-6747): 2 synced apps, click "Clear synced" on the 1st (primary) card -> must pass 'default' (NOT wipe all).
+    mockStatus.mockResolvedValue({
+      supported: true,
+      launcher: null,
+      exists: false,
+      iconDataUrl: null,
+      synced: { name: 'Primary App', badge: b1 },
+      syncedIconDataUrl: svg,
+      syncedApps: [
+        { preset: { name: 'Primary App', badge: b1 }, iconDataUrl: svg },
+        { preset: { id: 'sec12345', name: 'Secondary App', badge: b2 }, iconDataUrl: svg },
+      ],
+    })
+    mockClearSynced.mockResolvedValue(undefined)
+    const el1 = await render(<VaultLauncherControl root={ROOT} defaultName="Work" />)
+    const clearButtons = [...el1.querySelectorAll<HTMLButtonElement>('button')].filter((b) => b.textContent === 'Clear synced')
+    expect(clearButtons).toHaveLength(2)
+    await act(async () => clearButtons[0].click())
+    expect(mockClearSynced).toHaveBeenCalledWith(ROOT, 'default')
+    expect(el1.textContent).not.toContain('Primary App.app')
+    expect(el1.textContent).toContain('Secondary App.app')
+
+    // Scenario B (YAZ-6748): Secondary app is already installed locally; installing primary synced app MUST pass appId: 'default'.
+    mockCreate.mockReset()
+    mockStatus.mockResolvedValue({
+      supported: true,
+      launcher: { id: 'sec12345', name: 'Secondary App', appPath: '/Applications/Secondary App.app', iconPath: '/tmp/s.png', badge: b2 },
+      exists: true,
+      iconDataUrl: FAKE_PNG_DATA_URL,
+      launchers: [
+        { launcher: { id: 'sec12345', name: 'Secondary App', appPath: '/Applications/Secondary App.app', iconPath: '/tmp/s.png', badge: b2 }, exists: true, iconDataUrl: FAKE_PNG_DATA_URL },
+      ],
+      synced: { name: 'Primary App', badge: b1 },
+      syncedIconDataUrl: svg,
+      syncedApps: [
+        { preset: { name: 'Primary App', badge: b1 }, iconDataUrl: svg },
+        { preset: { id: 'sec12345', name: 'Secondary App', badge: b2 }, iconDataUrl: svg },
+      ],
+    })
+    mockCreate.mockResolvedValue({
+      supported: true,
+      exists: true,
+      iconDataUrl: FAKE_PNG_DATA_URL,
+      launcher: { id: 'default', name: 'Primary App', appPath: '/Applications/Primary App.app', iconPath: '/tmp/p.png', badge: b1 },
+      launchers: [
+        { launcher: { id: 'default', name: 'Primary App', appPath: '/Applications/Primary App.app', iconPath: '/tmp/p.png', badge: b1 }, exists: true, iconDataUrl: FAKE_PNG_DATA_URL },
+        { launcher: { id: 'sec12345', name: 'Secondary App', appPath: '/Applications/Secondary App.app', iconPath: '/tmp/s.png', badge: b2 }, exists: true, iconDataUrl: FAKE_PNG_DATA_URL },
+      ],
+    })
+    const el2 = await render(<VaultLauncherControl root={ROOT} defaultName="Work" />)
+    await act(async () => buttonByText(el2, 'Add app to this Mac')?.click())
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({
+      root: ROOT,
+      appId: 'default',
+      name: 'Primary App',
+    }))
+  })
 })

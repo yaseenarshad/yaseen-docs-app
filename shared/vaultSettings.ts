@@ -342,7 +342,7 @@ export function readVaultAppsPresets(raw: unknown): VaultLauncherPreset[] {
   const list = sanitizeVaultAppsList(raw.vaultApps)
   if (list.length > 0) return list
   const single = sanitizeVaultLauncherPreset(raw.launcher)
-  return single !== null ? [{ id: 'default', ...single }] : []
+  return single !== null ? [single] : []
 }
 
 /**

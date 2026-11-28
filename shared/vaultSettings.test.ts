@@ -13,6 +13,7 @@ import {
   isVaultSettingsDocEmpty,
   mergeLegacyFilesIntoDoc,
   patchVaultSettingsDoc,
+  readVaultAppsPresets,
   readVaultSection,
   readWorkspaceChrome,
   resolveVaultSettings,
@@ -159,5 +160,20 @@ describe('shared/vaultSettings (YAZ-6546)', () => {
     })
     expect(extracted.rowDates).toEqual({ files: true, focus: false, favorites: false, search: true })
     expect(extracted.goTo).toBeUndefined()
+  })
+
+  it('YAZ-6743: readVaultAppsPresets reads vaultApps array and falls back to legacy single launcher', () => {
+    const legacy = { version: 1, launcher: { name: 'Legacy', badge: { kind: 'emoji', value: '📘', color: '#007AFF' } } }
+    expect(readVaultAppsPresets(legacy)).toEqual([{ name: 'Legacy', badge: { kind: 'emoji', value: '📘', color: '#007AFF' } }])
+
+    const multi = {
+      version: 1,
+      vaultApps: [
+        { name: 'Primary', badge: { kind: 'emoji', value: '📘', color: '#007AFF' } },
+        { id: 'sec12345', name: 'Focus', iconFile: 'vault-icon-sec12345.png', sidebarStart: { tab: 'focus', onlyFolder: true } },
+      ],
+    }
+    expect(readVaultAppsPresets(multi)).toHaveLength(2)
+    expect(readVaultAppsPresets(multi)[1]).toMatchObject({ id: 'sec12345', name: 'Focus' })
   })
 })

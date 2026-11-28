@@ -1040,14 +1040,31 @@ describe('multiple Vault Apps per vault & sidebarStart IPC (YAZ-6681, YAZ-6682)'
     expect(mac2Status.value.syncedApps?.[0].iconDataUrl).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
     expect(mac2Status.value.syncedApps?.[1].iconDataUrl).toBe(`data:image/png;base64,${VALID_PNG_B64}`)
 
-    // clearSynced(root, secId) removes ONLY the 2nd app and its custom PNG, keeping Work Main.
+    // clearSynced(root, 'default') removes ONLY the primary app while keeping secondary, and malformed settings.json never unlinks PNG on single clear.
+    await registered(CONTRACT.vaultLauncher.clearSynced)(undefined, vaultRoot, 'default')
+    const afterPrimaryClear = (await registered(CONTRACT.vaultLauncher.status)(undefined, vaultRoot)) as {
+      ok: true
+      value: { syncedApps?: Array<{ preset: { id?: string; name: string } }> }
+    }
+    expect(afterPrimaryClear.value.syncedApps?.map((x) => x.preset.name)).toEqual(['Work Daily'])
+    expect(existsSync(path.join(vaultRoot, '.yaseendocs', `vault-icon-${secId}.png`))).toBe(true)
+
+    // clearSynced(root, secId) removes the remaining 2nd app and its custom PNG cleanly.
     await registered(CONTRACT.vaultLauncher.clearSynced)(undefined, vaultRoot, secId)
     expect(existsSync(path.join(vaultRoot, '.yaseendocs', `vault-icon-${secId}.png`))).toBe(false)
     const afterSingleClear = (await registered(CONTRACT.vaultLauncher.status)(undefined, vaultRoot)) as {
       ok: true
       value: { syncedApps?: Array<{ preset: { name: string } }> }
     }
-    expect(afterSingleClear.value.syncedApps?.map((x) => x.preset.name)).toEqual(['Work Main'])
+    expect(afterSingleClear.value.syncedApps).toBeUndefined()
+
+    // Malformed settings.json + clearSynced(root, appId) must NOT fall through to clear-all and unlink vault-icon.png (YAZ-6747).
+    const malformedRoot = path.join(dir, 'malformed-clear-single')
+    await mkdir(path.join(malformedRoot, '.yaseendocs'), { recursive: true })
+    await writeFile(path.join(malformedRoot, '.yaseendocs', 'settings.json'), '{bad', 'utf8')
+    await writeFile(path.join(malformedRoot, '.yaseendocs', 'vault-icon.png'), VALID_PNG)
+    await registered(CONTRACT.vaultLauncher.clearSynced)(undefined, malformedRoot, 'default')
+    expect(existsSync(path.join(malformedRoot, '.yaseendocs', 'vault-icon.png'))).toBe(true)
 
     // Workspace badge + sidebarStart syncs in SettingsState.workspaceLaunchers.
     const ws = store.saveVaultSet('Synced WS', ['/vaults/a', '/vaults/b'], 100)!

@@ -68,8 +68,7 @@ function isPresetInstalled(preset: VaultLauncherPreset, installed: readonly Vaul
   const presetName = preset.name.trim().toLowerCase()
   return installed.some((item) => {
     const localId = item.launcher.id ?? 'default'
-    if (preset.id !== undefined && localId === presetId) return true
-    if (preset.id === undefined && localId === 'default' && installed.length === 1) return true
+    if (localId === presetId) return true
     return item.launcher.name.trim().toLowerCase() === presetName
   })
 }
@@ -154,6 +153,7 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
           exists: false,
           iconDataUrl: null,
           ...(prev.synced != null ? { synced: prev.synced, syncedIconDataUrl: prev.syncedIconDataUrl ?? null } : {}),
+          ...(prev.syncedApps !== undefined ? { syncedApps: prev.syncedApps } : {}),
         }
       })
       onChanged?.()
@@ -178,6 +178,7 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
       throw new Error('Synced app icon image is unavailable.')
     }
     const pngBase64 = pngDataUrl.replace(/^data:image\/png;base64,/, '')
+    const resolvedPresetAppId = preset.id ?? (items.length > 0 ? 'default' : undefined)
     return isWorkspace
       ? api.vaultLauncher.createWorkspace({
           workspaceId,
@@ -188,7 +189,7 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
         })
       : api.vaultLauncher.create({
           root: root!,
-          ...(preset.id !== undefined ? { appId: preset.id } : {}),
+          ...(resolvedPresetAppId !== undefined ? { appId: resolvedPresetAppId } : {}),
           name: preset.name,
           pngBase64,
           ...(preset.target !== undefined ? { target: preset.target } : {}),
@@ -223,11 +224,14 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
     if (pendingSynced.length === 0) return
     setBusy(true)
     setError(null)
+    let latest: VaultLauncherStatus | null = null
     try {
-      let latest: VaultLauncherStatus | null = null
       for (const entry of pendingSynced) {
         latest = await installOneSynced(entry)
       }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
       if (latest !== null) {
         setStatus((prev) => ({
           ...latest!,
@@ -238,11 +242,8 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
             ? { syncedApps: prev.syncedApps }
             : {}),
         }))
+        onChanged?.()
       }
-      onChanged?.()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
       setBusy(false)
     }
   }
@@ -251,16 +252,17 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
     setBusy(true)
     setError(null)
     try {
-      const clearSingle = !isWorkspace && appId !== undefined && allSynced.length > 1
+      const targetId = appId ?? 'default'
+      const clearSingle = !isWorkspace && allSynced.length > 1
       await (isWorkspace
         ? api.vaultLauncher.clearSyncedWorkspace(workspaceId)
         : clearSingle
-          ? api.vaultLauncher.clearSynced(root!, appId)
+          ? api.vaultLauncher.clearSynced(root!, targetId)
           : api.vaultLauncher.clearSynced(root!))
       setStatus((prev) => {
         if (prev === null) return null
         if (clearSingle && prev.syncedApps !== undefined) {
-          const remaining = prev.syncedApps.filter((e) => (e.preset.id ?? 'default') !== appId)
+          const remaining = prev.syncedApps.filter((e) => (e.preset.id ?? 'default') !== targetId)
           const first = remaining[0] ?? null
           return {
             ...prev,
@@ -470,7 +472,7 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
               !isWorkspace
                 ? modal.mode === 'edit'
                   ? (modal.item.launcher.id ?? 'default')
-                  : modal.syncedEntry?.preset.id
+                  : (modal.syncedEntry?.preset.id ?? (modal.syncedEntry !== null && items.length > 0 ? 'default' : undefined))
                 : undefined
             }
             defaultName={defaultName}
