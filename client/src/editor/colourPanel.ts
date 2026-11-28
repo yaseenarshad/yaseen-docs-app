@@ -181,7 +181,6 @@ class ColourPanel<C extends string | null> {
     if (by === 'keyboard') this.#grid.move(this.#grid.rows[0]?.[0]?.id ?? null)
     this.#place()
     this.#anchor()?.setAttribute('aria-expanded', 'true')
-    previewColourSelection(this.view)
     doc.addEventListener('keydown', this.#key, true)
     doc.addEventListener('pointerdown', this.#outside, true)
     doc.addEventListener('mousedown', this.#outside, true)
@@ -196,7 +195,6 @@ class ColourPanel<C extends string | null> {
     this.#grid.closeCustom()
     this.#grid.move(null)
     this.#anchor()?.removeAttribute('aria-expanded')
-    clearColourPreview(this.view)
     doc.removeEventListener('keydown', this.#key, true)
     doc.removeEventListener('pointerdown', this.#outside, true)
     doc.removeEventListener('mousedown', this.#outside, true)
@@ -255,6 +253,7 @@ class ColourPanel<C extends string | null> {
     const since = this.#renders
     this.spec.apply(ctx, color)(view.state, (tr) => view.dispatch(closeHistory(tr)))
     this.spec.onCommit?.(view, color)
+    previewColourSelection(view)
     this.#renderOnce(since)
   }
 
@@ -262,15 +261,14 @@ class ColourPanel<C extends string | null> {
     const { view, ctx } = this
     const since = this.#renders
     this.spec.remove(ctx)(view.state, (tr) => view.dispatch(closeHistory(tr)))
+    clearColourPreview(view)
     this.#renderOnce(since)
   }
 
   update(view: EditorView, prev: EditorState): void {
     const selectionChanged = !prev.selection.eq(view.state.selection) || view.state.selection.empty
-    if (!this.open) {
-      if (selectionChanged && view.dom.hasAttribute('data-colour-preview')) clearColourPreview(view)
-      return
-    }
+    if (selectionChanged && view.dom.hasAttribute('data-colour-preview')) clearColourPreview(view)
+    if (!this.open) return
     if (selectionChanged) this.close()
     else if (prev.doc !== view.state.doc) this.#render()
   }

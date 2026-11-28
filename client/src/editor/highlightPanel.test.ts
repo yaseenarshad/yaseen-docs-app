@@ -262,14 +262,26 @@ describe('highlight buttons and the unified Google Docs 10×8 ColourGrid panel (
     expect(tcPanel.querySelector('input[aria-label="Opacity"]')).toBeNull()
   })
 
-  it('sets data-colour-preview while a colour panel is open or after a quick highlight click, and clears on close or selection change (YAZ-6728)', async () => {
+  it('keeps blue selection on panel open, hides it on colour pick, and restores it on No highlight / toggle off / selection change (YAZ-6728)', async () => {
     const { view } = await mount('hello world\n')
     await select(view, 'world')
     expect(view.dom.hasAttribute('data-colour-preview')).toBe(false)
+    // Opening the panel keeps the blue selection visible so you see which word will change.
     await press('highlight-more')
-    expect(view.dom.hasAttribute('data-colour-preview')).toBe(true)
-    key('Escape')
     expect(view.dom.hasAttribute('data-colour-preview')).toBe(false)
+    // Picking a colour hides the blue wash to preview cleanly.
+    await click('Red')
+    expect(view.dom.hasAttribute('data-colour-preview')).toBe(true)
+    // Clearing via No highlight restores the blue selection immediately.
+    await click('No highlight')
+    expect(view.dom.hasAttribute('data-colour-preview')).toBe(false)
+    key('Escape')
+    // Quick button ON hides blue wash; clicking again to toggle OFF restores blue selection.
+    await press('highlight')
+    expect(view.dom.hasAttribute('data-colour-preview')).toBe(true)
+    await press('highlight')
+    expect(view.dom.hasAttribute('data-colour-preview')).toBe(false)
+    // Changing selection always clears preview.
     await press('highlight')
     expect(view.dom.hasAttribute('data-colour-preview')).toBe(true)
     await select(view, 'hello')

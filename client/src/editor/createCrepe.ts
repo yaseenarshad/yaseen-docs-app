@@ -293,7 +293,7 @@ import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHigh
 import { getQuickHighlightColorsForView, QUICK_HIGHLIGHT_BUTTON_IDS, quickSlotToHighlightColor } from './highlightQuick'
 import { textColor, textColorSchema, toolbarTextColor } from './marks/textColor'
 import { fontSize, fontSizeSchema, selectionFontSize } from './marks/fontSize'
-import { previewColourSelection, TEXT_COLOR_KEY, textColorPanelPlugin, toggleTextColorPanel } from './colourPanel'
+import { clearColourPreview, previewColourSelection, TEXT_COLOR_KEY, textColorPanelPlugin, toggleTextColorPanel } from './colourPanel'
 import { FONT_SIZE_KEY, fontSizePanel, toggleFontSizePanel } from './fontSizePanel'
 import { highlightPanel, MORE_KEY, panelColour, toggleHighlightPanel } from './highlightPanel'
 import { showMoreColour, showToolbarSize } from './toolbarHost'
@@ -621,8 +621,10 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
       },
       onRun: (ctx) => {
         const view = ctx.get(editorViewCtx)
-        ctx.get(commandsCtx).call(setHighlightCommand.key, quickSlotToHighlightColor(getQuickHighlightColorsForView(view)[idx]))
-        previewColourSelection(view)
+        const color = quickSlotToHighlightColor(getQuickHighlightColorsForView(view)[idx])
+        ctx.get(commandsCtx).call(setHighlightCommand.key, color)
+        if (rangeHasHighlight(view.state, highlightSchema.type(ctx), color)) previewColourSelection(view)
+        else clearColourPreview(view)
       },
     })
   }
