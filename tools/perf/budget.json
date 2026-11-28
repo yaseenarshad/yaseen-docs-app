@@ -38,12 +38,12 @@
       "$comment": "Unbundled node_modules files inside app.asar (must stay 0)."
     },
     "rendererEagerJsBytes": {
-      "max": 3115000,
-      "$comment": "Renderer entry JS static import closure bytes (measured 3,100,948 B with YAZ-6567 customizable menu icons + menuIconsStore; raised from 3,090,000 B with Yasin's OK)."
+      "max": 3150000,
+      "$comment": "Renderer entry JS static import closure bytes (measured 3,132,400 B with YAZ-6687 unified text_color, font_size, shared ColourPanel, Opacity slider, multi-cell size, and Docs paste; raised from 3,115,000 B with Yasin's approval)."
     },
     "rendererEagerCssBytes": {
-      "max": 314000,
-      "$comment": "Renderer entry CSS static closure bytes (measured 310,459 B with YAZ-6580 external web-link CSS vars & mark rules; raised from 308,000 B with Yasin's OK)."
+      "max": 322000,
+      "$comment": "Renderer entry CSS static closure bytes (measured 316,192 B with YAZ-6687 text-color, font-size popover, and Opacity slider CSS; raised from 314,000 B with Yasin's approval)."
     },
     "rendererTotalBytes": {
       "max": 32100000,

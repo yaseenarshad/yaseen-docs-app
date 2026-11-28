@@ -850,8 +850,11 @@ button {
    primary-coloured icon" cue only reached the square's faint outline); Yasin: "i like this box … add that for the
    other ones also": T on a plain line, B on bold text, a list button on its list. YAZ-4445: the color tiles and their
    ▾ have the board's own lit look instead (`editor/swatchTile.css`). */
-.milkdown .milkdown-toolbar .toolbar-item.active:not(:has(.swatch-tile, .swatch-more, .toolbar-text-color)) {
+.milkdown .milkdown-toolbar .toolbar-item.active:not(:has(.swatch-tile, .swatch-more, .toolbar-text-color, .toolbar-size)) {
   box-shadow: inset 0 0 0 2px var(--crepe-color-primary);
+}
+.milkdown .milkdown-toolbar .toolbar-item.active .toolbar-size {
+  color: var(--crepe-color-primary);
 }
 
 /* The highlight ▾ panel (YAZ-4348 demo round 2, `editor/highlightPanel.ts`): the board's colour popup in the page's

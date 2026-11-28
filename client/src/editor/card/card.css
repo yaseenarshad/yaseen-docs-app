@@ -426,6 +426,10 @@
   pointer-events: none;
 }
 /* The render (`renderCard`): the sides, a thin rule between two. */
+.card__side mark {
+  background: var(--mark-bg);
+  color: inherit;
+}
 .card__side > :first-child {
   margin-top: 0;
 }

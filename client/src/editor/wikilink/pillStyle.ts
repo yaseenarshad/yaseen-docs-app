@@ -28,7 +28,7 @@ const TEXT_MARKS = [
   ['strike_through', 'Strikethrough'],
 ] as const
 /** The marks "Back to the vault's look" takes off. */
-const STYLE_MARKS = ['strong', 'emphasis', 'underline', 'strike_through', 'text_color', 'highlight'] as const
+const STYLE_MARKS = ['strong', 'emphasis', 'underline', 'strike_through', 'font_size', 'text_color', 'highlight'] as const
 
 /** The mark of `type` that EVERY letter of `from`..`to` has, the same on all, or null (none, or not on all). */
 function markOver(doc: ProseNode, from: number, to: number, type: MarkType): Mark | null {
