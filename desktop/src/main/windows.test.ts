@@ -3266,4 +3266,145 @@ describe('createWindowManager: App Shim ownership, bounds memory, handoff, and f
     expect(store.get().windows.map((w) => w.id)).toEqual([idB])
     expect(idA).not.toBe(idB)
   })
+
+  it('YAZ-6679 D1: focusShimWindows reveals non-minimized non-hidden shim windows oldest->newest when allWindows is true, and only primary when false', () => {
+    const order: string[] = []
+    const base = makeHost([AREA], () => false, (p) => p === '/v/a' || p === '/v/b')
+    const host: WindowHost = {
+      ...base.host,
+      focusWindow(win) {
+        if (win.isMinimized()) win.restore()
+        win.focus()
+        order.push(`focus:${win.webContents.id}`)
+      },
+    }
+    const manager = createWindowManager(store, host)
+
+    manager.openWindow({ root: '/v/a', file: null }, '/v/a')
+    manager.openWindow({ root: '/v/a', file: null }, '/v/a')
+    manager.openWindow({ root: '/v/a', file: null }, '/v/a')
+    manager.openWindow({ root: '/v/b', file: null }, '/v/b')
+    const [w1, w2, w3, wOther] = base.created.map((c) => c.win)
+    // Add showInactive on w1 & w2 (w3 uses moveTop fallback when not primary).
+    const showInactive1 = vi.fn(() => order.push(`showInactive:${w1.webContents.id}`))
+    const showInactive2 = vi.fn(() => order.push(`showInactive:${w2.webContents.id}`))
+    ;(w1 as unknown as { showInactive?: () => void }).showInactive = showInactive1
+    ;(w2 as unknown as { showInactive?: () => void }).showInactive = showInactive2
+    // Hidden board window on /v/a must be skipped.
+    const hiddenId = manager.openBehind(store.get().windows[0])
+    const wHidden = base.created.find((c) => c.entry.id === hiddenId)!.win
+    const showInactiveHidden = vi.fn()
+    ;(wHidden as unknown as { showInactive?: () => void }).showInactive = showInactiveHidden
+
+    // Focus order: w3 (newest), w2, w1 (oldest).
+    w1.emit('focus')
+    w2.emit('focus')
+    w3.emit('focus')
+    order.length = 0
+
+    // Minimize w2 -> w2 stays minimized, w1 raised inactive, w3 focused last.
+    w2.minimized = true
+    expect(manager.focusShimWindows('/v/a', true)).toBe(true)
+    expect(order).toEqual([`showInactive:${w1.webContents.id}`, `focus:${w3.webContents.id}`])
+    expect(showInactive2).not.toHaveBeenCalled()
+    expect(showInactiveHidden).not.toHaveBeenCalled()
+    expect(wOther.focusCount).toBe(1)
+
+    // allWindows = false -> only primary (w3) is focused; w1 is NOT raised.
+    order.length = 0
+    showInactive1.mockClear()
+    w2.minimized = false
+    expect(manager.focusShimWindows('/v/a', false)).toBe(true)
+    expect(order).toEqual([`focus:${w3.webContents.id}`])
+    expect(showInactive1).not.toHaveBeenCalled()
+    expect(showInactive2).not.toHaveBeenCalled()
+
+    // Fallback to moveTop when showInactive is absent + un-minimizes primary if all are minimized.
+    delete (w1 as unknown as { showInactive?: () => void }).showInactive
+    const moveTop1 = vi.spyOn(w1, 'moveTop').mockImplementation(() => {
+      order.push(`moveTop:${w1.webContents.id}`)
+    })
+    order.length = 0
+    expect(manager.focusShimWindows('/v/a', true)).toBe(true)
+    expect(order).toEqual([`moveTop:${w1.webContents.id}`, `showInactive:${w2.webContents.id}`, `focus:${w3.webContents.id}`])
+    moveTop1.mockRestore()
+
+    w1.minimized = true
+    w2.minimized = true
+    w3.minimized = true
+    order.length = 0
+    expect(manager.focusShimWindows('/v/a', true)).toBe(true)
+    expect(w3.minimized).toBe(false)
+    expect(w1.minimized).toBe(true)
+    expect(w2.minimized).toBe(true)
+    expect(order).toEqual([`focus:${w3.webContents.id}`])
+
+    // Unknown shimKey with 0 windows returns false.
+    expect(manager.focusShimWindows('/v/none', true)).toBe(false)
+  })
+
+  it('YAZ-6681 D4: secondary Vault App shim remembers and restores independent per-app lastBounds', () => {
+    vi.useFakeTimers()
+    try {
+      store.upsertVaultLauncher('/v/a', { id: 'default', name: 'A', appPath: '/Applications/A.app', iconPath: '/i/a.png' })
+      store.upsertVaultLauncher('/v/a', { id: 'app2', name: 'A Today', appPath: '/Applications/A Today.app', iconPath: '/i/a-app2.png', target: 'today' })
+      store.setFolderBounds('/v/a', { x: 40, y: 40, width: 1000, height: 700 })
+
+      const { host, created } = makeHost([AREA], () => false, (p) => p === '/v/a')
+      const manager = createWindowManager(store, host)
+
+      // First open of secondary app falls back to vault FolderState.lastBounds.
+      manager.openWindow({ root: '/v/a', file: null }, '/v/a::app2')
+      const winSec = created.at(-1)!.win
+      expect(created.at(-1)!.entry.bounds).toEqual({ x: 40, y: 40, width: 1000, height: 700 })
+
+      // Moving secondary app saves onto launchers[1].lastBounds without overwriting FolderState.lastBounds.
+      winSec.bounds = { x: 300, y: 150, width: 820, height: 620 }
+      winSec.emit('move')
+      vi.advanceTimersByTime(BOUNDS_DEBOUNCE_MS)
+      expect(store.get().folders['/v/a']?.lastBounds).toEqual({ x: 40, y: 40, width: 1000, height: 700 })
+      expect(store.get().folders['/v/a']?.launchers?.[1]?.lastBounds).toEqual({ x: 300, y: 150, width: 820, height: 620 })
+      winSec.destroy()
+
+      // Reopening secondary app restores its own bounds; primary app still gets vault bounds.
+      manager.openWindow({ root: '/v/a', file: null }, '/v/a::app2')
+      expect(created.at(-1)!.entry.bounds).toEqual({ x: 300, y: 150, width: 820, height: 620 })
+      manager.openWindow({ root: '/v/a', file: null }, '/v/a')
+      expect(created.at(-1)!.entry.bounds).toEqual({ x: 40, y: 40, width: 1000, height: 700 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('YAZ-6682 D5: routeToFile, openVaultSet, and sendSidebarStart deliver link:sidebar-start held until link:ready', () => {
+    const ws = store.saveVaultSet('Suite', ['/v/a', '/v/b'], 1)!
+    const { host, created } = makeHost([AREA], () => false, (p) => p === '/v/a' || p === '/v/b')
+    const manager = createWindowManager(store, host)
+
+    const start = { tab: 'focus' as const, folderKind: 'collection' as const, folderId: 'col-1', onlyFolder: true }
+    manager.routeToFile('/v/a', null, 'today', '/v/a::app2', start)
+    const winVault = created[0].win
+    expect(winVault.webContents.send).not.toHaveBeenCalled()
+    manager.handleLinkReady(winVault.webContents)
+    expect(winVault.webContents.send.mock.calls).toEqual([
+      [CONTRACT.link.onOpenTarget.channel, { root: '/v/a', target: 'today' }],
+      [CONTRACT.link.onSidebarStart.channel, { root: '/v/a', sidebarStart: start }],
+    ])
+
+    const wsStart = { tab: 'favorites' as const, folderKind: 'disk' as const, folderPath: 'Projects', onlyFolder: true }
+    expect(manager.openVaultSet(ws.id, undefined, `workspace:${ws.id}`, wsStart)).toEqual({ opened: true, missing: [] })
+    const winWs = created[1].win
+    manager.handleLinkReady(winWs.webContents)
+    expect(winWs.webContents.send.mock.calls).toEqual([
+      [CONTRACT.link.onSidebarStart.channel, { sidebarStart: wsStart }],
+    ])
+
+    // Direct sendSidebarStart on live window delivers immediately after link:ready; missing id returns false.
+    expect(manager.sendSidebarStart(created[0].entry.id, { root: '/v/a', sidebarStart: { tab: 'files' } })).toBe(true)
+    expect(winVault.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onSidebarStart.channel, {
+      root: '/v/a',
+      sidebarStart: { tab: 'files' },
+    })
+    expect(manager.sendSidebarStart('non-existent', { sidebarStart: { tab: 'files' } })).toBe(false)
+  })
 })

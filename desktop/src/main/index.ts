@@ -158,7 +158,9 @@ function handleLink(url: string): void {
   if (process.platform === 'darwin' && !hiddenE2E && shims !== undefined) {
     const isDir = manager.isDir(parsed.path)
     // Directory links match only exact vault shims so opening a subfolder does not hijack into an ancestor vault's shim.
-    const route = isDir ? shims.resolveShimForVault(parsed.path) : shims.resolveShimForPath(parsed.path, parsed.root)
+    const route = isDir
+      ? shims.resolveShimForVault(parsed.path, parsed.open)
+      : shims.resolveShimForPath(parsed.path, parsed.root, parsed.open)
     if (route.mode === 'connected') {
       if (parsed.open !== undefined) manager.routeToFile(parsed.path, parsed.root, parsed.open, route.shimKey)
       else manager.routeToFile(parsed.path, parsed.root, undefined, route.shimKey)
@@ -862,6 +864,7 @@ app.whenReady().then(() => {
                 vaultUrl: params.vaultUrl,
                 iconPng: params.png,
                 openTarget: params.target === 'inbox' || params.target === 'today' ? params.target : undefined,
+                appId: params.appId,
                 previousAppPath: params.previousAppPath,
                 binaryPath,
                 hostBundlePath,
@@ -988,7 +991,7 @@ app.whenReady().then(() => {
     if (link === null) return []
     const isDir = manager.isDir(link.path)
     if (process.platform === 'darwin' && !hiddenE2E && shims !== undefined) {
-      const route = isDir ? shims.resolveShimForVault(link.path) : shims.resolveShimForPath(link.path, link.root)
+      const route = isDir ? shims.resolveShimForVault(link.path, link.open) : shims.resolveShimForPath(link.path, link.root, link.open)
       if (route.mode !== 'host') {
         shimRoutedCount++
         return []

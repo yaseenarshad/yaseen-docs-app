@@ -1,14 +1,19 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { CONTRACT } from '@shared/ipc'
 import { isRecord } from '@shared/guards'
 import { workspaceLink } from '@shared/links'
 import {
+  cleanVaultAppSidebarStart,
   cleanVaultLauncher,
   cleanVaultName,
+  vaultLaunchersOf,
   VAULT_CONFIG_DIR,
+  type FolderState,
   type LauncherListItem,
+  type VaultAppSidebarStart,
+  type VaultAppSummary,
   type VaultLauncherBadge,
   type VaultLauncherInfo,
   type VaultLauncherStatus,
@@ -42,6 +47,7 @@ const LAUNCHER_SETTINGS_KEYS = ['version', 'launcher'] as const
 export interface VaultLauncherInstallParams {
   root: string
   vaultUrl?: string
+  appId?: string
   name: string
   png: Buffer
   iconPath: string
@@ -63,10 +69,12 @@ export interface VaultLauncherBackend {
   removeOrphan?: (appPath: string) => Promise<void>
 }
 
-/** Deterministic cached icon path under `<userData>/vault-icons/<sha256(root).slice(0,16)>.png`. */
-export function vaultLauncherIconPath(userData: string, root: string): string {
+/** Deterministic cached icon path under `<userData>/vault-icons/<sha256(root).slice(0,16)>[-<appId>].png` (YAZ-6681). */
+export function vaultLauncherIconPath(userData: string, root: string, appId?: string): string {
   const hash = createHash('sha256').update(root).digest('hex').slice(0, 16)
-  return join(userData, 'vault-icons', `${hash}.png`)
+  const cleanId = appId?.trim()
+  const suffix = cleanId && cleanId !== 'default' ? `-${cleanId}` : ''
+  return join(userData, 'vault-icons', `${hash}${suffix}.png`)
 }
 
 /** Deterministic cached icon path under `<userData>/vault-icons/ws-<sha256(id).slice(0,16)>.png`. */
@@ -114,6 +122,48 @@ function parseOptionalTarget(raw: unknown): VaultLauncherTarget | undefined {
     throw new BridgeFailure('BAD_REQUEST', "'target' must be 'normal', 'inbox', or 'today'")
   }
   return raw as VaultLauncherTarget
+}
+
+const APP_ID_RE = /^[a-z0-9_-]{1,64}$/i
+
+function parseOptionalAppId(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null) return undefined
+  if (typeof raw !== 'string') {
+    throw new BridgeFailure('BAD_REQUEST', "'appId' must be a string")
+  }
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  if (!APP_ID_RE.test(trimmed)) {
+    throw new BridgeFailure('BAD_REQUEST', "'appId' contains invalid characters")
+  }
+  return trimmed
+}
+
+function parseOptionalSidebarStart(raw: unknown): VaultAppSidebarStart | undefined {
+  if (raw === undefined || raw === null) return undefined
+  const clean = cleanVaultAppSidebarStart(raw)
+  if (clean === null) {
+    throw new BridgeFailure('BAD_REQUEST', "'sidebarStart' must be a valid VaultAppSidebarStart")
+  }
+  return clean
+}
+
+function findVaultLauncher(folder: FolderState | undefined, appId?: string): VaultLauncherInfo | null {
+  const list = vaultLaunchersOf(folder)
+  if (list.length === 0) return null
+  if (appId !== undefined) {
+    return list.find((l) => (l.id ?? 'default') === appId) ?? null
+  }
+  return list.find((l) => (l.id ?? 'default') === 'default') ?? list[0]
+}
+
+function generateVaultAppId(existing: readonly VaultLauncherInfo[]): string {
+  const taken = new Set(existing.map((l) => l.id ?? 'default'))
+  for (let i = 0; i < 16; i++) {
+    const candidate = randomBytes(4).toString('hex')
+    if (!taken.has(candidate)) return candidate
+  }
+  return randomUUID().replace(/-/g, '').slice(0, 8)
 }
 
 function parseOptionalBadge(raw: unknown): VaultLauncherBadge | undefined {
@@ -302,17 +352,33 @@ export function registerVaultLauncherIpc(
   onChanged: () => void = () => broadcastAll(CONTRACT.vaultLauncher.onChanged.channel),
   isReadOnlyRoot: (root: string) => boolean = () => false,
 ): void {
-  handle(CONTRACT.vaultLauncher.status, async (rawRoot: unknown): Promise<VaultLauncherStatus> => {
+  const buildLaunchersStatusList = async (folder: FolderState | undefined) => {
+    const list = vaultLaunchersOf(folder)
+    return Promise.all(
+      list.map(async (entry) => ({
+        launcher: entry,
+        exists: backend.exists(entry.appPath),
+        iconDataUrl: await readIconDataUrl(entry.iconPath),
+      })),
+    )
+  }
+
+  handle(CONTRACT.vaultLauncher.status, async (rawRoot: unknown, rawAppId?: unknown): Promise<VaultLauncherStatus> => {
     const root = requireAbsPath(rawRoot, 'root')
-    const launcher = store.get().folders[root]?.launcher ?? null
-    const exists = launcher !== null && backend.exists(launcher.appPath)
-    const iconDataUrl = launcher !== null ? await readIconDataUrl(launcher.iconPath) : null
+    const appId = parseOptionalAppId(rawAppId)
+    const folder = store.get().folders[root]
+    const all = await buildLaunchersStatusList(folder)
+    const match =
+      appId !== undefined
+        ? (all.find((item) => (item.launcher.id ?? 'default') === appId) ?? null)
+        : (all.find((item) => (item.launcher.id ?? 'default') === 'default') ?? all[0] ?? null)
     const syncedRes = await readSyncedVaultLauncher(root)
     return {
       supported: backend.supported,
-      launcher,
-      exists,
-      iconDataUrl,
+      launcher: match?.launcher ?? null,
+      exists: match?.exists ?? false,
+      iconDataUrl: match?.iconDataUrl ?? null,
+      ...(all.length > 0 ? { launchers: all } : {}),
       ...(syncedRes !== null ? { synced: syncedRes.synced, syncedIconDataUrl: syncedRes.syncedIconDataUrl } : {}),
     }
   })
@@ -325,6 +391,7 @@ export function registerVaultLauncherIpc(
       throw new BridgeFailure('BAD_REQUEST', 'request must be an object')
     }
     const root = requireAbsPath(rawReq.root, 'root')
+    const requestedAppId = parseOptionalAppId(rawReq.appId)
     const name = cleanVaultName(rawReq.name)
     if (name === null) {
       throw new BridgeFailure('BAD_REQUEST', "'name' must be a non-empty string")
@@ -332,11 +399,20 @@ export function registerVaultLauncherIpc(
     const png = decodeLauncherPng(rawReq.pngBase64)
     const target = parseOptionalTarget(rawReq.target)
     const badge = parseOptionalBadge(rawReq.badge)
+    const sidebarStart = parseOptionalSidebarStart(rawReq.sidebarStart)
 
-    const iconPath = vaultLauncherIconPath(userData, root)
-    const previousAppPath = store.get().folders[root]?.launcher?.appPath
+    const existingList = vaultLaunchersOf(store.get().folders[root])
+    const existing =
+      requestedAppId !== undefined
+        ? existingList.find((l) => (l.id ?? 'default') === requestedAppId)
+        : undefined
+    const appId = requestedAppId ?? (existingList.length === 0 ? 'default' : generateVaultAppId(existingList))
+
+    const iconPath = vaultLauncherIconPath(userData, root, appId)
+    const previousAppPath = existing?.appPath
     const installed = await backend.install({
       root,
+      appId,
       name,
       png,
       iconPath,
@@ -348,50 +424,60 @@ export function registerVaultLauncherIpc(
 
     const installedName = installed.name !== undefined ? (cleanVaultName(installed.name) ?? name) : name
     const launcher: VaultLauncherInfo | null = cleanVaultLauncher({
+      id: appId,
       name: installedName,
       appPath: installed.appPath,
       iconPath,
       ...(target !== undefined ? { target } : {}),
       ...(badge !== undefined ? { badge } : {}),
+      ...(sidebarStart !== undefined ? { sidebarStart } : {}),
+      ...(existing?.lastBounds !== undefined ? { lastBounds: existing.lastBounds } : {}),
     })
     if (launcher === null) {
       throw new BridgeFailure('IO_ERROR', 'Installed launcher metadata was invalid')
     }
 
-    store.setFolder(root, { launcher })
+    store.upsertVaultLauncher(root, launcher)
 
-    // Best-effort sync of the portable launcher preset into `<root>/.yaseendocs/settings.json` (+ `vault-icon.png` for custom images).
-    const preset: VaultLauncherPreset = {
-      name: installedName,
-      ...(target !== undefined ? { target } : {}),
-      ...(badge !== undefined ? { badge } : { iconFile: VAULT_ICON_FILE }),
-    }
-    try {
-      await writeSyncedVaultLauncher(root, preset, badge === undefined ? png : null, isReadOnlyRoot)
-    } catch (err) {
-      console.warn(`[vaultLauncher] failed to persist synced launcher preset in ${root}: ${String(err)}`)
+    // Best-effort sync of the portable launcher preset into `<root>/.yaseendocs/settings.json` for the primary app only.
+    const updatedList = vaultLaunchersOf(store.get().folders[root])
+    const isPrimary = appId === 'default' || updatedList[0]?.id === appId
+    if (isPrimary) {
+      const preset: VaultLauncherPreset = {
+        name: installedName,
+        ...(target !== undefined ? { target } : {}),
+        ...(badge !== undefined ? { badge } : { iconFile: VAULT_ICON_FILE }),
+      }
+      try {
+        await writeSyncedVaultLauncher(root, preset, badge === undefined ? png : null, isReadOnlyRoot)
+      } catch (err) {
+        console.warn(`[vaultLauncher] failed to persist synced launcher preset in ${root}: ${String(err)}`)
+      }
     }
 
     onChanged()
 
+    const all = await buildLaunchersStatusList(store.get().folders[root])
     return {
       supported: backend.supported,
       launcher,
       exists: backend.exists(installed.appPath),
       iconDataUrl: `data:image/png;base64,${png.toString('base64')}`,
+      launchers: all,
     }
   })
 
-  handle(CONTRACT.vaultLauncher.remove, async (rawRoot: unknown): Promise<void> => {
+  handle(CONTRACT.vaultLauncher.remove, async (rawRoot: unknown, rawAppId?: unknown): Promise<void> => {
     const root = requireAbsPath(rawRoot, 'root')
-    const launcher = store.get().folders[root]?.launcher ?? null
+    const appId = parseOptionalAppId(rawAppId)
+    const launcher = findVaultLauncher(store.get().folders[root], appId)
     if (launcher === null) return
 
     if (backend.exists(launcher.appPath)) {
       await backend.remove(launcher.appPath, root)
     }
     await rm(launcher.iconPath, { force: true }).catch(() => undefined)
-    store.setFolder(root, { launcher: null })
+    store.removeVaultLauncher(root, launcher.id ?? 'default')
     onChanged()
   })
 
@@ -401,18 +487,20 @@ export function registerVaultLauncherIpc(
     onChanged()
   })
 
-  handle(CONTRACT.vaultLauncher.reveal, async (rawRoot: unknown): Promise<void> => {
+  handle(CONTRACT.vaultLauncher.reveal, async (rawRoot: unknown, rawAppId?: unknown): Promise<void> => {
     const root = requireAbsPath(rawRoot, 'root')
-    const launcher = store.get().folders[root]?.launcher ?? null
+    const appId = parseOptionalAppId(rawAppId)
+    const launcher = findVaultLauncher(store.get().folders[root], appId)
     if (launcher === null || !backend.exists(launcher.appPath)) {
       throw new BridgeFailure('NOT_FOUND', 'Vault launcher app not found', { path: launcher?.appPath })
     }
     await backend.reveal(launcher.appPath)
   })
 
-  handle(CONTRACT.vaultLauncher.test, async (rawRoot: unknown): Promise<void> => {
+  handle(CONTRACT.vaultLauncher.test, async (rawRoot: unknown, rawAppId?: unknown): Promise<void> => {
     const root = requireAbsPath(rawRoot, 'root')
-    const launcher = store.get().folders[root]?.launcher ?? null
+    const appId = parseOptionalAppId(rawAppId)
+    const launcher = findVaultLauncher(store.get().folders[root], appId)
     if (launcher === null || !backend.exists(launcher.appPath)) {
       throw new BridgeFailure('NOT_FOUND', 'Vault launcher app not found', { path: launcher?.appPath })
     }
@@ -429,8 +517,8 @@ export function registerVaultLauncherIpc(
     }
     await Promise.all(
       [...knownRoots].map(async (root) => {
-        const launcher = state.folders[root]?.launcher
-        if (launcher !== undefined) {
+        const launcher = findVaultLauncher(state.folders[root])
+        if (launcher !== null) {
           if (!backend.exists(launcher.appPath)) return
           const dataUrl = await readIconDataUrl(launcher.iconPath)
           if (dataUrl !== null) out[root] = dataUrl
@@ -441,6 +529,22 @@ export function registerVaultLauncherIpc(
         if (syncedRes !== null) out[root] = syncedRes.syncedIconDataUrl
       }),
     )
+    return out
+  })
+
+  handle(CONTRACT.vaultLauncher.vaultApps, async (): Promise<Record<string, VaultAppSummary[]>> => {
+    const state = store.get()
+    const out: Record<string, VaultAppSummary[]> = {}
+    for (const [root, folder] of Object.entries(state.folders)) {
+      const list = vaultLaunchersOf(folder)
+      if (list.length === 0) continue
+      out[root] = list.map((l) => ({
+        id: l.id ?? 'default',
+        name: l.name,
+        ...(l.target !== undefined ? { target: l.target } : {}),
+        ...(l.sidebarStart !== undefined ? { sidebarStart: l.sidebarStart } : {}),
+      }))
+    }
     return out
   })
 
@@ -478,6 +582,7 @@ export function registerVaultLauncherIpc(
     }
     const png = decodeLauncherPng(rawReq.pngBase64)
     const badge = parseOptionalBadge(rawReq.badge)
+    const sidebarStart = parseOptionalSidebarStart(rawReq.sidebarStart)
 
     const iconPath = workspaceLauncherIconPath(userData, workspaceId)
     const previousAppPath = set.launcher?.appPath
@@ -497,6 +602,7 @@ export function registerVaultLauncherIpc(
       appPath: installed.appPath,
       iconPath,
       ...(badge !== undefined ? { badge } : {}),
+      ...(sidebarStart !== undefined ? { sidebarStart } : {}),
     })
     if (launcher === null) {
       throw new BridgeFailure('IO_ERROR', 'Installed launcher metadata was invalid')
@@ -601,21 +707,27 @@ export function registerVaultLauncherIpc(
     const registeredPaths = new Set<string>()
     const items: LauncherListItem[] = []
 
-    const vaultEntries = Object.entries(state.folders).filter(([, folder]) => folder.launcher !== undefined)
-    const vaultItems = await Promise.all(
-      vaultEntries.map(async ([root, folder]): Promise<LauncherListItem> => {
-        const launcher = folder.launcher!
+    const vaultPairs: Array<{ root: string; folder: FolderState; launcher: VaultLauncherInfo }> = []
+    for (const [root, folder] of Object.entries(state.folders)) {
+      for (const launcher of vaultLaunchersOf(folder)) {
         registeredPaths.add(normalizeAppKey(launcher.appPath))
+        vaultPairs.push({ root, folder, launcher })
+      }
+    }
+    const vaultItems = await Promise.all(
+      vaultPairs.map(async ({ root, folder, launcher }): Promise<LauncherListItem> => {
         const iconDataUrl = await readIconDataUrl(launcher.iconPath)
         return {
           kind: 'vault',
           id: root,
+          appId: launcher.id ?? 'default',
           name: launcher.name,
           appPath: launcher.appPath,
           exists: backend.exists(launcher.appPath),
           iconDataUrl,
           targetName: folder.name ?? basename(root),
           ...(launcher.target !== undefined ? { target: launcher.target } : {}),
+          ...(launcher.sidebarStart !== undefined ? { sidebarStart: launcher.sidebarStart } : {}),
         }
       }),
     )
@@ -635,6 +747,7 @@ export function registerVaultLauncherIpc(
           exists: backend.exists(launcher.appPath),
           iconDataUrl,
           targetName: set.name,
+          ...(launcher.sidebarStart !== undefined ? { sidebarStart: launcher.sidebarStart } : {}),
         }
       }),
     )

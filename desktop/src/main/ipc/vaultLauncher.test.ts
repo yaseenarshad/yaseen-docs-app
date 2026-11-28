@@ -90,19 +90,28 @@ describe('vaultLauncher IPC (YAZ-6374)', () => {
     })
 
     const expectedIconPath = vaultLauncherIconPath(dir, ROOT)
+    const expectedLauncher = {
+      id: 'default',
+      name: 'Work Docs',
+      appPath: '/Applications/Work Docs.app',
+      iconPath: expectedIconPath,
+      target: 'inbox',
+      badge: { kind: 'emoji', value: '🚀', color: '#2563eb' },
+    }
     expect(res).toEqual({
       ok: true,
       value: {
         supported: true,
-        launcher: {
-          name: 'Work Docs',
-          appPath: '/Applications/Work Docs.app',
-          iconPath: expectedIconPath,
-          target: 'inbox',
-          badge: { kind: 'emoji', value: '🚀', color: '#2563eb' },
-        },
+        launcher: expectedLauncher,
         exists: true,
         iconDataUrl: `data:image/png;base64,${VALID_PNG_B64}`,
+        launchers: [
+          {
+            launcher: expectedLauncher,
+            exists: true,
+            iconDataUrl: `data:image/png;base64,${VALID_PNG_B64}`,
+          },
+        ],
       },
     })
 
@@ -110,24 +119,20 @@ describe('vaultLauncher IPC (YAZ-6374)', () => {
     expect(existsSync(expectedIconPath)).toBe(true)
     expect(await readFile(expectedIconPath)).toEqual(VALID_PNG)
 
-    // Store persisted launcher metadata.
-    expect(store.get().folders[ROOT]?.launcher).toEqual({
-      name: 'Work Docs',
-      appPath: '/Applications/Work Docs.app',
-      iconPath: expectedIconPath,
-      target: 'inbox',
-      badge: { kind: 'emoji', value: '🚀', color: '#2563eb' },
-    })
+    // Store persisted canonical launchers list.
+    expect(store.get().folders[ROOT]?.launchers).toEqual([expectedLauncher])
 
-    // Re-creating passes previousAppPath to backend.install.
+    // Re-creating with appId: 'default' updates in place and passes previousAppPath to backend.install.
     await registered(CONTRACT.vaultLauncher.create)(undefined, {
       root: ROOT,
+      appId: 'default',
       name: 'Work HQ',
       pngBase64: VALID_PNG_B64,
     })
     expect(backend.install).toHaveBeenLastCalledWith(
       expect.objectContaining({
         root: ROOT,
+        appId: 'default',
         name: 'Work HQ',
         previousAppPath: '/Applications/Work Docs.app',
       }),
@@ -183,9 +188,16 @@ describe('vaultLauncher IPC (YAZ-6374)', () => {
       ok: true,
       value: {
         supported: true,
-        launcher: expect.objectContaining({ name: 'Work', appPath: '/Applications/Work.app' }),
+        launcher: expect.objectContaining({ id: 'default', name: 'Work', appPath: '/Applications/Work.app' }),
         exists: false,
         iconDataUrl: `data:image/png;base64,${VALID_PNG_B64}`,
+        launchers: [
+          {
+            launcher: expect.objectContaining({ id: 'default', name: 'Work', appPath: '/Applications/Work.app' }),
+            exists: false,
+            iconDataUrl: `data:image/png;base64,${VALID_PNG_B64}`,
+          },
+        ],
       },
     })
   })
@@ -523,6 +535,7 @@ describe('launcher lifecycle & All Launchers IPC (YAZ-6447)', () => {
         {
           kind: 'vault',
           id: rootA,
+          appId: 'default',
           name: 'Daily Vault',
           appPath: '/Applications/Daily Vault.app',
           exists: true,
@@ -533,6 +546,7 @@ describe('launcher lifecycle & All Launchers IPC (YAZ-6447)', () => {
         {
           kind: 'vault',
           id: rootB,
+          appId: 'default',
           name: 'Ghost Vault',
           appPath: '/Applications/Ghost Vault.app',
           exists: false,
@@ -823,5 +837,153 @@ describe('synced vault & workspace launcher presets (YAZ-6560)', () => {
     // Must not overwrite corrupt settings.json or unlink vault-icon.png.
     expect(await readFile(path.join(vaultRoot, '.yaseendocs', 'settings.json'), 'utf8')).toBe('{not-valid-json')
     expect(existsSync(path.join(vaultRoot, '.yaseendocs', 'vault-icon.png'))).toBe(true)
+  })
+})
+
+describe('multiple Vault Apps per vault & sidebarStart IPC (YAZ-6681, YAZ-6682)', () => {
+  it('creates multiple apps with distinct appIds and icon paths, updates/reveals/tests/removes by appId, exposes vaultApps, and prevents secondary orphans in listAll', async () => {
+    const vaultRoot = path.join(dir, 'multi-app-vault')
+    await mkdir(vaultRoot, { recursive: true })
+    store.setFolder(vaultRoot, { name: 'Multi Vault' })
+
+    // 1st app -> id: 'default', synced preset written to settings.json.
+    const first = (await registered(CONTRACT.vaultLauncher.create)(undefined, {
+      root: vaultRoot,
+      name: 'Multi Main',
+      pngBase64: VALID_PNG_B64,
+      badge: { kind: 'emoji', value: '📓', color: '#2563eb' },
+    })) as { ok: true; value: { launcher: { id: string; iconPath: string }; launchers: unknown[] } }
+    expect(first.ok).toBe(true)
+    expect(first.value.launcher.id).toBe('default')
+    expect(first.value.launcher.iconPath).toBe(vaultLauncherIconPath(dir, vaultRoot))
+
+    // 2nd app (appId omitted) -> fresh 8-char hex id, distinct icon path, sidebarStart persisted, primary synced preset untouched!
+    const sidebarStart = { tab: 'focus' as const, folderKind: 'collection' as const, folderId: 'focus-1', onlyFolder: true }
+    const second = (await registered(CONTRACT.vaultLauncher.create)(undefined, {
+      root: vaultRoot,
+      name: 'Multi Focus',
+      pngBase64: VALID_PNG_B64,
+      target: 'today',
+      sidebarStart,
+      badge: { kind: 'emoji', value: '🎯', color: '#16a34a' },
+    })) as { ok: true; value: { launcher: { id: string; iconPath: string; sidebarStart?: unknown }; launchers: unknown[] } }
+    expect(second.ok).toBe(true)
+    const secId = second.value.launcher.id
+    expect(secId).toMatch(/^[0-9a-f]{8}$/)
+    expect(second.value.launcher.iconPath).toBe(vaultLauncherIconPath(dir, vaultRoot, secId))
+    expect(second.value.launcher.sidebarStart).toEqual(sidebarStart)
+    expect(second.value.launchers).toHaveLength(2)
+
+    // Primary synced preset in .yaseendocs/settings.json stayed 'Multi Main'.
+    const syncedDoc = JSON.parse(await readFile(path.join(vaultRoot, '.yaseendocs', 'settings.json'), 'utf8')) as {
+      launcher?: { name?: string }
+    }
+    expect(syncedDoc.launcher?.name).toBe('Multi Main')
+
+    // status(root, secId) returns secondary app as `launcher` AND both apps in `launchers`.
+    const secStatus = (await registered(CONTRACT.vaultLauncher.status)(undefined, vaultRoot, secId)) as {
+      ok: true
+      value: { launcher: { id: string; name: string }; launchers: Array<{ launcher: { id: string } }> }
+    }
+    expect(secStatus.ok).toBe(true)
+    expect(secStatus.value.launcher.id).toBe(secId)
+    expect(secStatus.value.launcher.name).toBe('Multi Focus')
+    expect(secStatus.value.launchers.map((x) => x.launcher.id)).toEqual(['default', secId])
+
+    // reveal & test target the requested appId.
+    await registered(CONTRACT.vaultLauncher.reveal)(undefined, vaultRoot, secId)
+    expect(backend.reveal).toHaveBeenLastCalledWith('/Applications/Multi Focus.app')
+    await registered(CONTRACT.vaultLauncher.test)(undefined, vaultRoot, secId)
+    expect(backend.launch).toHaveBeenLastCalledWith('/Applications/Multi Focus.app')
+
+    // vaultApps returns compact summaries keyed by vault root.
+    const appsRes = await registered(CONTRACT.vaultLauncher.vaultApps)(undefined)
+    expect(appsRes).toEqual({
+      ok: true,
+      value: {
+        [vaultRoot]: [
+          { id: 'default', name: 'Multi Main' },
+          { id: secId, name: 'Multi Focus', target: 'today', sidebarStart },
+        ],
+      },
+    })
+
+    // listAll emits both apps with appId & sidebarStart and does NOT classify secondary app as an orphan.
+    scannedApps = [
+      {
+        appPath: '/Applications/Multi Main.app',
+        name: 'Multi Main',
+        info: { bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}m1`, vaultPath: vaultRoot, vaultUrl: `yaseendocs://${vaultRoot}`, bundleVersion: 3 },
+      },
+      {
+        appPath: '/Applications/Multi Focus.app',
+        name: 'Multi Focus',
+        info: { bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}m2`, vaultPath: vaultRoot, vaultUrl: `yaseendocs://${vaultRoot}?open=today`, bundleVersion: 3, appId: secId },
+      },
+    ]
+    const listed = (await registered(CONTRACT.vaultLauncher.listAll)(undefined)) as { ok: true; value: Array<Record<string, unknown>> }
+    expect(listed.ok).toBe(true)
+    expect(listed.value).toHaveLength(2)
+    expect(listed.value.map((item) => [item.kind, item.appId, item.name])).toEqual([
+      ['vault', 'default', 'Multi Main'],
+      ['vault', secId, 'Multi Focus'],
+    ])
+    expect(listed.value[1].sidebarStart).toEqual(sidebarStart)
+
+    // Updating secondary app by appId passes its previousAppPath and preserves lastBounds.
+    store.setVaultLauncherBounds(vaultRoot, secId, { x: 100, y: 120, width: 900, height: 650 })
+    await registered(CONTRACT.vaultLauncher.create)(undefined, {
+      root: vaultRoot,
+      appId: secId,
+      name: 'Multi Focus Renamed',
+      pngBase64: VALID_PNG_B64,
+      target: 'today',
+      sidebarStart,
+    })
+    expect(backend.install).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        appId: secId,
+        previousAppPath: '/Applications/Multi Focus.app',
+      }),
+    )
+    expect(store.get().folders[vaultRoot]?.launchers?.find((l) => l.id === secId)?.lastBounds).toEqual({
+      x: 100,
+      y: 120,
+      width: 900,
+      height: 650,
+    })
+
+    // Removing secondary app leaves primary intact and deletes only secondary icon.
+    await registered(CONTRACT.vaultLauncher.remove)(undefined, vaultRoot, secId)
+    expect(existsSync(vaultLauncherIconPath(dir, vaultRoot, secId))).toBe(false)
+    expect(existsSync(vaultLauncherIconPath(dir, vaultRoot))).toBe(true)
+    expect(store.get().folders[vaultRoot]?.launchers?.map((l) => l.id)).toEqual(['default'])
+  })
+
+  it('persists sidebarStart on workspace apps and rejects invalid sidebarStart / appId', async () => {
+    const ws = store.saveVaultSet('Start Suite', ['/vaults/a', '/vaults/b'], 100)!
+    const wsStart = { tab: 'favorites' as const, folderKind: 'disk' as const, folderPath: 'Specs', onlyFolder: true }
+
+    const res = await registered(CONTRACT.vaultLauncher.createWorkspace)(undefined, {
+      workspaceId: ws.id,
+      name: 'Start Suite',
+      pngBase64: VALID_PNG_B64,
+      sidebarStart: wsStart,
+    })
+    expect(res).toMatchObject({ ok: true, value: { launcher: { sidebarStart: wsStart } } })
+    expect(store.get().vaultSets.find((s) => s.id === ws.id)?.launcher?.sidebarStart).toEqual(wsStart)
+
+    // Rejects invalid sidebarStart and invalid appId.
+    expect(
+      await registered(CONTRACT.vaultLauncher.create)(undefined, {
+        root: '/Users/yasin/Vaults/Bad',
+        name: 'Bad',
+        pngBase64: VALID_PNG_B64,
+        sidebarStart: { tab: 'invalid-lens' },
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+    expect(
+      await registered(CONTRACT.vaultLauncher.status)(undefined, '/Users/yasin/Vaults/Bad', '../bad'),
+    ).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
   })
 })
