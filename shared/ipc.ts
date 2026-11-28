@@ -898,7 +898,7 @@ export const CONTRACT = {
     status: invoke<[root: string, appId?: string], VaultLauncherStatus>('vault-launcher:status', 2),
     create: invoke<[req: CreateVaultLauncherRequest], VaultLauncherStatus>('vault-launcher:create', 1),
     remove: invoke<[root: string, appId?: string], void>('vault-launcher:remove', 2),
-    clearSynced: invoke<[root: string], void>('vault-launcher:clear-synced', 1),
+    clearSynced: invoke<[root: string, appId?: string], void>('vault-launcher:clear-synced', 2),
     reveal: invoke<[root: string, appId?: string], void>('vault-launcher:reveal', 2),
     test: invoke<[root: string, appId?: string], void>('vault-launcher:test', 2),
     icons: invoke<[], Record<string, string>>('vault-launcher:icons', 0),

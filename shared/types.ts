@@ -3981,6 +3981,8 @@ export interface VaultLauncherStatus {
   synced?: VaultLauncherPreset | null
   /** Preview data URL for `synced` (SVG for badge presets, PNG for custom `.yaseendocs/vault-icon.png`). */
   syncedIconDataUrl?: string | null
+  /** All portable synced Vault Apps from `<vault>/.yaseendocs/settings.json` (YAZ-6743). */
+  syncedApps?: Array<{ preset: VaultLauncherPreset; iconDataUrl: string | null }>
 }
 
 /** Request payload for `vaultLauncher.create` (YAZ-6374, YAZ-6681, YAZ-6682). */

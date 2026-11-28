@@ -20,10 +20,13 @@ import {
   type VaultLauncherTarget,
 } from '@shared/types'
 import {
+  MAX_SYNCED_VAULT_APPS,
   renderBadgeSvgDataUrl,
+  sanitizeVaultAppsList,
   sanitizeVaultLauncherBadge,
   sanitizeVaultLauncherPreset,
   VAULT_ICON_FILE,
+  vaultIconFileFor,
   workspaceLauncherKey,
   type VaultLauncherPreset,
 } from '@shared/vaultIcon'
@@ -42,7 +45,7 @@ const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const VALID_TARGETS = new Set<string>(['normal', 'inbox', 'today'])
 const DATA_URL_PREFIX = /^data:image\/png;base64,/i
 const READ_ONLY_FILE = 'read-only.json'
-const LAUNCHER_SETTINGS_KEYS = ['version', 'launcher'] as const
+const LAUNCHER_SETTINGS_KEYS = ['version', 'launcher', 'vaultApps'] as const
 
 export interface VaultLauncherInstallParams {
   root: string
@@ -194,23 +197,14 @@ async function isVaultWritableForSync(root: string, isReadOnlyRoot: (root: strin
   return true
 }
 
-/** Read a synced vault launcher preset + preview icon from `<root>/.yaseendocs/settings.json` (and optional `vault-icon.png`). */
-async function readSyncedVaultLauncher(root: string): Promise<{ synced: VaultLauncherPreset; syncedIconDataUrl: string } | null> {
-  let res: Awaited<ReturnType<typeof readConfigDetailed>>
-  try {
-    res = await readConfigDetailed(root, VAULT_SETTINGS_FILE)
-  } catch {
-    return null
+/** Read one synced preset's preview icon (badge SVG or `.yaseendocs/<iconFile>` PNG). */
+async function resolveSyncedPresetIcon(root: string, preset: VaultLauncherPreset): Promise<string | null> {
+  if (preset.badge !== undefined) {
+    return renderBadgeSvgDataUrl(preset.badge)
   }
-  if (res.state !== 'ok' || !isRecord(res.value)) return null
-  const synced = sanitizeVaultLauncherPreset(res.value.launcher)
-  if (synced === null) return null
-  if (synced.badge !== undefined) {
-    return { synced, syncedIconDataUrl: renderBadgeSvgDataUrl(synced.badge) }
-  }
-  if (synced.iconFile === VAULT_ICON_FILE) {
+  if (preset.iconFile !== undefined) {
     try {
-      const iconFilePath = join(root, VAULT_CONFIG_DIR, VAULT_ICON_FILE)
+      const iconFilePath = join(root, VAULT_CONFIG_DIR, preset.iconFile)
       const info = await stat(iconFilePath)
       if (!info.isFile() || info.size < PNG_MAGIC.length || info.size > MAX_LAUNCHER_ICON_BYTES) {
         return null
@@ -219,7 +213,7 @@ async function readSyncedVaultLauncher(root: string): Promise<{ synced: VaultLau
       if (buf.length > MAX_LAUNCHER_ICON_BYTES || buf.length < PNG_MAGIC.length || !buf.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) {
         return null
       }
-      return { synced, syncedIconDataUrl: `data:image/png;base64,${buf.toString('base64')}` }
+      return `data:image/png;base64,${buf.toString('base64')}`
     } catch {
       return null
     }
@@ -227,8 +221,47 @@ async function readSyncedVaultLauncher(root: string): Promise<{ synced: VaultLau
   return null
 }
 
-/** Save a portable launcher preset to `<root>/.yaseendocs/settings.json` (+ `vault-icon.png` for custom images) on writable vaults. */
-async function writeSyncedVaultLauncher(
+/**
+ * Read all synced Vault App presets + preview icons from `<root>/.yaseendocs/settings.json` (`vaultApps`,
+ * falling back to legacy single `launcher` so older vaults and Mobile stay 100% compatible, YAZ-6743).
+ */
+async function readSyncedVaultApps(root: string): Promise<Array<{ preset: VaultLauncherPreset; iconDataUrl: string }>> {
+  let res: Awaited<ReturnType<typeof readConfigDetailed>>
+  try {
+    res = await readConfigDetailed(root, VAULT_SETTINGS_FILE)
+  } catch {
+    return []
+  }
+  if (res.state !== 'ok' || !isRecord(res.value)) return []
+  let presets = sanitizeVaultAppsList(res.value.vaultApps)
+  if (presets.length === 0) {
+    const legacy = sanitizeVaultLauncherPreset(res.value.launcher)
+    if (legacy !== null) presets = [legacy]
+  }
+  const out: Array<{ preset: VaultLauncherPreset; iconDataUrl: string }> = []
+  for (const preset of presets) {
+    const iconDataUrl = await resolveSyncedPresetIcon(root, preset)
+    if (iconDataUrl !== null) out.push({ preset, iconDataUrl })
+  }
+  return out
+}
+
+/** Read the primary synced vault launcher preset + preview icon (used by icon fallbacks). */
+async function readSyncedVaultLauncher(root: string): Promise<{ synced: VaultLauncherPreset; syncedIconDataUrl: string } | null> {
+  const all = await readSyncedVaultApps(root)
+  const first = all[0]
+  return first !== undefined ? { synced: first.preset, syncedIconDataUrl: first.iconDataUrl } : null
+}
+
+/** Strip machine-local `folderRoot` from a single-vault Start View so it travels cleanly across Macs. */
+function portableVaultSidebarStart(start: VaultAppSidebarStart | undefined): VaultAppSidebarStart | undefined {
+  if (start === undefined) return undefined
+  const { folderRoot: _omit, ...rest } = start
+  return rest
+}
+
+/** Upsert one portable Vault App preset into `<root>/.yaseendocs/settings.json` (`vaultApps` + mirrored primary `launcher`, YAZ-6743). */
+async function upsertSyncedVaultApp(
   root: string,
   preset: VaultLauncherPreset,
   customPng: Buffer | null,
@@ -245,9 +278,36 @@ async function writeSyncedVaultLauncher(
       onDisk.state === 'ok' && isRecord(onDisk.value) && typeof onDisk.value.version === 'number' && Number.isFinite(onDisk.value.version)
         ? Math.max(VAULT_SETTINGS_VERSION, onDisk.value.version)
         : VAULT_SETTINGS_VERSION
-    await writeConfigUnlocked(root, VAULT_SETTINGS_FILE, { version: existingVersion, launcher: preset }, LAUNCHER_SETTINGS_KEYS)
-    const iconFilePath = join(root, VAULT_CONFIG_DIR, VAULT_ICON_FILE)
-    if (customPng !== null && preset.iconFile === VAULT_ICON_FILE) {
+    let existing = onDisk.state === 'ok' && isRecord(onDisk.value) ? sanitizeVaultAppsList(onDisk.value.vaultApps) : []
+    if (existing.length === 0 && onDisk.state === 'ok' && isRecord(onDisk.value)) {
+      const legacy = sanitizeVaultLauncherPreset(onDisk.value.launcher)
+      if (legacy !== null) existing = [legacy]
+    }
+    const targetKey = preset.id ?? 'default'
+    const { id: _rawId, ...restPreset } = preset
+    const normalized: VaultLauncherPreset = targetKey === 'default' ? restPreset : { id: targetKey, ...restPreset }
+    const idx = existing.findIndex((p) => (p.id ?? 'default') === targetKey)
+    const nextList = idx >= 0
+      ? existing.map((p, i) => (i === idx ? normalized : p))
+      : targetKey === 'default'
+        ? [normalized, ...existing]
+        : [...existing, normalized]
+    const trimmed = nextList.slice(0, MAX_SYNCED_VAULT_APPS)
+    const primary = trimmed.find((p) => (p.id ?? 'default') === 'default') ?? trimmed[0]
+    const needsArray = trimmed.length >= 2 || (trimmed.length === 1 && trimmed[0]!.id !== undefined)
+    await writeConfigUnlocked(
+      root,
+      VAULT_SETTINGS_FILE,
+      {
+        version: existingVersion,
+        ...(primary !== undefined ? { launcher: primary } : {}),
+        ...(needsArray ? { vaultApps: trimmed } : {}),
+      },
+      LAUNCHER_SETTINGS_KEYS,
+    )
+    const expectedIconFile = vaultIconFileFor(targetKey)
+    const iconFilePath = join(root, VAULT_CONFIG_DIR, expectedIconFile)
+    if (customPng !== null && preset.iconFile === expectedIconFile) {
       await atomicWriteBuffer(iconFilePath, customPng)
     } else {
       await rm(iconFilePath, { force: true }).catch(() => undefined)
@@ -255,22 +315,56 @@ async function writeSyncedVaultLauncher(
   })
 }
 
-/** Remove the synced launcher preset from `<root>/.yaseendocs/settings.json` and unlink `.yaseendocs/vault-icon.png`. */
-async function clearSyncedVaultLauncher(root: string, isReadOnlyRoot: (root: string) => boolean): Promise<void> {
+/** Remove one synced Vault App preset (when `appId` is given) or all synced presets from `<root>/.yaseendocs/settings.json`. */
+async function clearSyncedVaultApp(root: string, appId: string | undefined, isReadOnlyRoot: (root: string) => boolean): Promise<void> {
   if (isReadOnlyRoot(root) || (await isReadOnlyVaultOnDisk(root))) {
     throw new BridgeFailure('FORBIDDEN', 'Cannot clear synced launcher icon in a read-only vault')
   }
   if (!(await isExistingDirectory(root))) return
   await withConfigLock(root, VAULT_SETTINGS_FILE, async () => {
     const onDisk = await readConfigDetailed(root, VAULT_SETTINGS_FILE)
-    if (onDisk.state === 'ok' && isRecord(onDisk.value) && Object.hasOwn(onDisk.value, 'launcher')) {
-      const existingVersion =
-        typeof onDisk.value.version === 'number' && Number.isFinite(onDisk.value.version)
-          ? Math.max(VAULT_SETTINGS_VERSION, onDisk.value.version)
-          : VAULT_SETTINGS_VERSION
+    const existingVersion =
+      onDisk.state === 'ok' && isRecord(onDisk.value) && typeof onDisk.value.version === 'number' && Number.isFinite(onDisk.value.version)
+        ? Math.max(VAULT_SETTINGS_VERSION, onDisk.value.version)
+        : VAULT_SETTINGS_VERSION
+    if (appId !== undefined) {
+      if (onDisk.state !== 'ok' || !isRecord(onDisk.value)) return
+      let existing = sanitizeVaultAppsList(onDisk.value.vaultApps)
+      if (existing.length === 0) {
+        const legacy = sanitizeVaultLauncherPreset(onDisk.value.launcher)
+        if (legacy !== null) existing = [legacy]
+      }
+      const removed = existing.find((p) => (p.id ?? 'default') === appId)
+      const remaining = existing.filter((p) => (p.id ?? 'default') !== appId)
+      const primary = remaining.find((p) => (p.id ?? 'default') === 'default') ?? remaining[0]
+      const needsArray = remaining.length >= 2 || (remaining.length === 1 && remaining[0]!.id !== undefined)
+      await writeConfigUnlocked(
+        root,
+        VAULT_SETTINGS_FILE,
+        {
+          version: existingVersion,
+          ...(primary !== undefined ? { launcher: primary } : {}),
+          ...(needsArray ? { vaultApps: remaining } : {}),
+        },
+        LAUNCHER_SETTINGS_KEYS,
+      )
+      const iconToRemove = removed?.iconFile ?? vaultIconFileFor(appId)
+      const stillReferenced = remaining.some((p) => p.iconFile === iconToRemove)
+      if (!stillReferenced) {
+        await rm(join(root, VAULT_CONFIG_DIR, iconToRemove), { force: true }).catch(() => undefined)
+      }
+      return
+    }
+    const existingAll = onDisk.state === 'ok' && isRecord(onDisk.value) ? sanitizeVaultAppsList(onDisk.value.vaultApps) : []
+    if (onDisk.state === 'ok' && isRecord(onDisk.value) && (Object.hasOwn(onDisk.value, 'launcher') || Object.hasOwn(onDisk.value, 'vaultApps'))) {
       await writeConfigUnlocked(root, VAULT_SETTINGS_FILE, { version: existingVersion }, LAUNCHER_SETTINGS_KEYS)
     }
     await rm(join(root, VAULT_CONFIG_DIR, VAULT_ICON_FILE), { force: true }).catch(() => undefined)
+    for (const p of existingAll) {
+      if (p.iconFile !== undefined) {
+        await rm(join(root, VAULT_CONFIG_DIR, p.iconFile), { force: true }).catch(() => undefined)
+      }
+    }
   })
 }
 
@@ -372,14 +466,16 @@ export function registerVaultLauncherIpc(
       appId !== undefined
         ? (all.find((item) => (item.launcher.id ?? 'default') === appId) ?? null)
         : (all.find((item) => (item.launcher.id ?? 'default') === 'default') ?? all[0] ?? null)
-    const syncedRes = await readSyncedVaultLauncher(root)
+    const syncedApps = await readSyncedVaultApps(root)
+    const firstSynced = syncedApps[0] ?? null
     return {
       supported: backend.supported,
       launcher: match?.launcher ?? null,
       exists: match?.exists ?? false,
       iconDataUrl: match?.iconDataUrl ?? null,
       ...(all.length > 0 ? { launchers: all } : {}),
-      ...(syncedRes !== null ? { synced: syncedRes.synced, syncedIconDataUrl: syncedRes.syncedIconDataUrl } : {}),
+      ...(firstSynced !== null ? { synced: firstSynced.preset, syncedIconDataUrl: firstSynced.iconDataUrl } : {}),
+      ...(syncedApps.length > 0 ? { syncedApps } : {}),
     }
   })
 
@@ -439,31 +535,34 @@ export function registerVaultLauncherIpc(
 
     store.upsertVaultLauncher(root, launcher)
 
-    // Best-effort sync of the portable launcher preset into `<root>/.yaseendocs/settings.json` for the primary app only.
-    const updatedList = vaultLaunchersOf(store.get().folders[root])
-    const isPrimary = appId === 'default' || updatedList[0]?.id === appId
-    if (isPrimary) {
-      const preset: VaultLauncherPreset = {
-        name: installedName,
-        ...(target !== undefined ? { target } : {}),
-        ...(badge !== undefined ? { badge } : { iconFile: VAULT_ICON_FILE }),
-      }
-      try {
-        await writeSyncedVaultLauncher(root, preset, badge === undefined ? png : null, isReadOnlyRoot)
-      } catch (err) {
-        console.warn(`[vaultLauncher] failed to persist synced launcher preset in ${root}: ${String(err)}`)
-      }
+    // Best-effort sync of every Vault App preset (name, icon, target, and portable Start View) into `<root>/.yaseendocs/settings.json` (YAZ-6743).
+    const portableStart = portableVaultSidebarStart(sidebarStart)
+    const preset: VaultLauncherPreset = {
+      ...(appId !== 'default' ? { id: appId } : {}),
+      name: installedName,
+      ...(target !== undefined ? { target } : {}),
+      ...(badge !== undefined ? { badge } : { iconFile: vaultIconFileFor(appId) }),
+      ...(portableStart !== undefined ? { sidebarStart: portableStart } : {}),
+    }
+    try {
+      await upsertSyncedVaultApp(root, preset, badge === undefined ? png : null, isReadOnlyRoot)
+    } catch (err) {
+      console.warn(`[vaultLauncher] failed to persist synced launcher preset in ${root}: ${String(err)}`)
     }
 
     onChanged()
 
     const all = await buildLaunchersStatusList(store.get().folders[root])
+    const syncedApps = await readSyncedVaultApps(root)
+    const firstSynced = syncedApps[0] ?? null
     return {
       supported: backend.supported,
       launcher,
       exists: backend.exists(installed.appPath),
       iconDataUrl: `data:image/png;base64,${png.toString('base64')}`,
       launchers: all,
+      ...(firstSynced !== null ? { synced: firstSynced.preset, syncedIconDataUrl: firstSynced.iconDataUrl } : {}),
+      ...(syncedApps.length > 0 ? { syncedApps } : {}),
     }
   })
 
@@ -481,9 +580,10 @@ export function registerVaultLauncherIpc(
     onChanged()
   })
 
-  handle(CONTRACT.vaultLauncher.clearSynced, async (rawRoot: unknown): Promise<void> => {
+  handle(CONTRACT.vaultLauncher.clearSynced, async (rawRoot: unknown, rawAppId?: unknown): Promise<void> => {
     const root = requireAbsPath(rawRoot, 'root')
-    await clearSyncedVaultLauncher(root, isReadOnlyRoot)
+    const appId = parseOptionalAppId(rawAppId)
+    await clearSyncedVaultApp(root, appId, isReadOnlyRoot)
     onChanged()
   })
 
@@ -621,7 +721,11 @@ export function registerVaultLauncherIpc(
       const currentSettings = store.get().settings
       const nextLaunchers = { ...currentSettings.workspaceLaunchers }
       if (badge !== undefined) {
-        nextLaunchers[wsKey] = { name: installedName, badge }
+        nextLaunchers[wsKey] = {
+          name: installedName,
+          badge,
+          ...(sidebarStart !== undefined ? { sidebarStart } : {}),
+        }
         store.setSettings({ ...currentSettings, workspaceLaunchers: nextLaunchers })
       } else if (Object.hasOwn(nextLaunchers, wsKey)) {
         delete nextLaunchers[wsKey]

@@ -10,10 +10,13 @@
  * - Workspaces: `SettingsState.workspaceLaunchers[workspaceLauncherKey(name)]` (badge presets only).
  */
 import { isRecord } from './guards'
-import type { VaultLauncherBadge, VaultLauncherTarget } from './types'
+import type { SidebarLens, VaultAppSidebarStart, VaultLauncherBadge, VaultLauncherTarget } from './types'
 
-/** Relative filename inside `<vault>/.yaseendocs/` for a custom uploaded launcher PNG. */
+/** Relative filename inside `<vault>/.yaseendocs/` for the primary custom uploaded launcher PNG. */
 export const VAULT_ICON_FILE = 'vault-icon.png'
+
+/** Maximum number of synced Vault Apps stored in `<vault>/.yaseendocs/settings.json` (`vaultApps`, YAZ-6743). */
+export const MAX_SYNCED_VAULT_APPS = 20
 
 /** Maximum number of synced workspace launcher presets stored in `SettingsState.workspaceLaunchers`. */
 export const MAX_WORKSPACE_LAUNCHERS = 50
@@ -25,17 +28,76 @@ const MAX_PRESET_NAME_LEN = 80
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i
 const SVG_PATH_D_RE = /^[0-9a-zA-Z.,\s+\-]+$/
 const SVG_VIEWBOX_RE = /^-?\d+(?:\.\d+)?\s+-?\d+(?:\.\d+)?\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?$/
+const APP_ID_RE = /^[a-z0-9_-]{1,64}$/i
+const VAULT_ICON_FILE_RE = /^vault-icon(?:-[a-z0-9_-]{1,64})?\.png$/i
+const VALID_SIDEBAR_LENSES = new Set<string>(['files', 'favorites', 'focus', 'recents', 'sessions'])
 
 const isTarget = (v: unknown): v is VaultLauncherTarget => v === 'normal' || v === 'inbox' || v === 'today'
 const isBadgeKind = (v: unknown): v is VaultLauncherBadge['kind'] => v === 'emoji' || v === 'letters' || v === 'material'
 
-/** Portable launcher preset synced in `<vault>/.yaseendocs/settings.json` (`launcher`) or `SettingsState.workspaceLaunchers`. */
+/** Custom PNG filename inside `<vault>/.yaseendocs/` for a given Vault App id (`'default'` -> `'vault-icon.png'`, extra -> `'vault-icon-<id>.png'`). */
+export function vaultIconFileFor(appId?: string): string {
+  const clean = appId?.trim()
+  if (!clean || clean === 'default' || !APP_ID_RE.test(clean)) return VAULT_ICON_FILE
+  return `vault-icon-${clean}.png`
+}
+
+/** Strict allowlist for custom Vault App icon filenames inside `<vault>/.yaseendocs/` (blocks path traversal). */
+export function sanitizeVaultIconFile(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const trimmed = raw.trim()
+  return VAULT_ICON_FILE_RE.test(trimmed) ? trimmed : undefined
+}
+
+/** Portable Start View sanitizer (zero runtime imports from `shared/types` to keep Mobile bundle lean). */
+export function sanitizeSyncedSidebarStart(raw: unknown): VaultAppSidebarStart | undefined {
+  if (!isRecord(raw)) return undefined
+  if (typeof raw.tab !== 'string' || !VALID_SIDEBAR_LENSES.has(raw.tab)) return undefined
+  const out: VaultAppSidebarStart = { tab: raw.tab as SidebarLens }
+  if (raw.folderKind === 'collection' || raw.folderKind === 'disk') {
+    out.folderKind = raw.folderKind
+  }
+  if (typeof raw.folderId === 'string') {
+    const id = raw.folderId.trim()
+    if (id.length > 0 && id.length <= 200 && !id.includes('\0')) out.folderId = id
+  }
+  if (typeof raw.folderPath === 'string') {
+    const fp = raw.folderPath.trim()
+    if (
+      fp.length > 0 &&
+      !fp.startsWith('/') &&
+      !fp.startsWith('\\') &&
+      !fp.includes('\0') &&
+      !fp.split(/[\\/]/).includes('..')
+    ) {
+      out.folderPath = fp
+    }
+  }
+  if (typeof raw.folderName === 'string') {
+    const fn = raw.folderName.trim()
+    if (fn.length > 0 && fn.length <= 200 && !fn.includes('\0')) out.folderName = fn
+  }
+  if (typeof raw.folderRoot === 'string') {
+    const fr = raw.folderRoot.trim().replace(/[\\/]+$/, '')
+    if (fr.length > 0 && fr.length <= 1024 && !fr.includes('\0')) out.folderRoot = fr
+  }
+  if (typeof raw.onlyFolder === 'boolean') {
+    out.onlyFolder = raw.onlyFolder
+  }
+  return out
+}
+
+/** Portable launcher preset synced in `<vault>/.yaseendocs/settings.json` (`launcher` / `vaultApps`) or `SettingsState.workspaceLaunchers`. */
 export interface VaultLauncherPreset {
+  /** Stable per-vault app id (`'default'` or 8-char hex) so Mac #2 installs with the same id (YAZ-6743). */
+  id?: string
   name: string
   target?: VaultLauncherTarget
   badge?: VaultLauncherBadge
-  /** Present (`'vault-icon.png'`) when a vault uses a custom uploaded PNG instead of a badge recipe. */
-  iconFile?: typeof VAULT_ICON_FILE
+  /** Present (`'vault-icon.png'` or `'vault-icon-<id>.png'`) when a vault app uses a custom uploaded PNG instead of a badge recipe. */
+  iconFile?: string
+  /** Portable Start View (sidebar tab, folder, and Hide everything else; YAZ-6743). */
+  sidebarStart?: VaultAppSidebarStart
 }
 
 /** Default 1–2 letter monogram initials from a vault name (e.g. "Business Wiki" -> "BW", "Notes" -> "NO"). */
@@ -118,15 +180,38 @@ export function sanitizeVaultLauncherPreset(raw: unknown): VaultLauncherPreset |
   if (name === null) return null
 
   const badge = sanitizeVaultLauncherBadge(raw.badge)
-  const iconFile = badge === undefined && raw.iconFile === VAULT_ICON_FILE ? VAULT_ICON_FILE : undefined
+  const iconFile = badge === undefined ? sanitizeVaultIconFile(raw.iconFile) : undefined
   if (badge === undefined && iconFile === undefined) return null
 
   const out: VaultLauncherPreset = { name }
+  if (typeof raw.id === 'string') {
+    const cleanId = raw.id.trim()
+    if (APP_ID_RE.test(cleanId)) out.id = cleanId
+  }
   if (isTarget(raw.target)) {
     out.target = raw.target
   }
   if (badge !== undefined) out.badge = badge
   else if (iconFile !== undefined) out.iconFile = iconFile
+  const sidebarStart = sanitizeSyncedSidebarStart(raw.sidebarStart)
+  if (sidebarStart !== undefined) out.sidebarStart = sidebarStart
+  return out
+}
+
+/** Pure: validate and deduplicate an array of synced Vault App presets from `<vault>/.yaseendocs/settings.json` (`vaultApps`). */
+export function sanitizeVaultAppsList(raw: unknown): VaultLauncherPreset[] {
+  if (!Array.isArray(raw)) return []
+  const out: VaultLauncherPreset[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    if (out.length >= MAX_SYNCED_VAULT_APPS) break
+    const clean = sanitizeVaultLauncherPreset(item)
+    if (clean === null) continue
+    const key = clean.id ?? 'default'
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(clean)
+  }
   return out
 }
 

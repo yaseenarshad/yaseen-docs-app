@@ -841,4 +841,161 @@ describe('VaultSwitcher & Welcome launcher icons', () => {
     await act(async () => buttonByText(el, 'Clear synced icon')?.click())
     expect(mockClearSyncedWorkspace).toHaveBeenCalledWith('ws-1')
   })
+
+  it('YAZ-6743: shows multiple uninstalled synced Vault Apps with Start View badges, Install all, and per-app Clear synced', async () => {
+    const b1 = { kind: 'emoji' as const, value: '💼', color: '#007AFF' }
+    const b2 = { kind: 'emoji' as const, value: '🎯', color: '#34C759' }
+    const start1 = { tab: 'files' as const, folderKind: 'disk' as const, folderPath: 'Projects', onlyFolder: true }
+    const start2 = { tab: 'focus' as const, folderKind: 'collection' as const, folderId: 'f1', folderName: 'Sprint', onlyFolder: true }
+    const svg = 'data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E'
+
+    mockStatus.mockResolvedValue({
+      supported: true,
+      launcher: null,
+      exists: false,
+      iconDataUrl: null,
+      synced: { name: 'Work Main', badge: b1, sidebarStart: start1 },
+      syncedIconDataUrl: svg,
+      syncedApps: [
+        { preset: { name: 'Work Main', badge: b1, sidebarStart: start1 }, iconDataUrl: svg },
+        { preset: { id: 'a1b2c3d4', name: 'Work Sprint', target: 'today', badge: b2, sidebarStart: start2 }, iconDataUrl: svg },
+      ],
+    })
+    mockCreate
+      .mockResolvedValueOnce({
+        supported: true,
+        exists: true,
+        iconDataUrl: FAKE_PNG_DATA_URL,
+        launcher: { id: 'default', name: 'Work Main', appPath: '/Applications/Work Main.app', iconPath: '/tmp/1.png', badge: b1, sidebarStart: start1 },
+        launchers: [
+          { launcher: { id: 'default', name: 'Work Main', appPath: '/Applications/Work Main.app', iconPath: '/tmp/1.png', badge: b1, sidebarStart: start1 }, exists: true, iconDataUrl: FAKE_PNG_DATA_URL },
+        ],
+      })
+      .mockResolvedValueOnce({
+        supported: true,
+        exists: true,
+        iconDataUrl: FAKE_PNG_DATA_URL,
+        launcher: { id: 'a1b2c3d4', name: 'Work Sprint', appPath: '/Applications/Work Sprint.app', iconPath: '/tmp/2.png', target: 'today', badge: b2, sidebarStart: start2 },
+        launchers: [
+          { launcher: { id: 'default', name: 'Work Main', appPath: '/Applications/Work Main.app', iconPath: '/tmp/1.png', badge: b1, sidebarStart: start1 }, exists: true, iconDataUrl: FAKE_PNG_DATA_URL },
+          { launcher: { id: 'a1b2c3d4', name: 'Work Sprint', appPath: '/Applications/Work Sprint.app', iconPath: '/tmp/2.png', target: 'today', badge: b2, sidebarStart: start2 }, exists: true, iconDataUrl: FAKE_PNG_DATA_URL },
+        ],
+      })
+
+    const el = await render(<VaultLauncherControl root={ROOT} defaultName="Work" />)
+    expect(el.textContent).toContain('Install all 2 synced apps')
+    expect(el.textContent).toContain('Work Main.app')
+    expect(el.textContent).toContain('Work Sprint.app')
+    expect(el.textContent).toContain('Projects')
+    expect(el.textContent).toContain('Sprint')
+
+    await act(async () => buttonByText(el, 'Install all 2 synced apps')?.click())
+    expect(mockCreate).toHaveBeenCalledTimes(2)
+    expect(mockCreate).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      root: ROOT,
+      name: 'Work Main',
+      badge: b1,
+      sidebarStart: start1,
+    }))
+    expect(mockCreate).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      root: ROOT,
+      appId: 'a1b2c3d4',
+      name: 'Work Sprint',
+      target: 'today',
+      badge: b2,
+      sidebarStart: start2,
+    }))
+  })
+
+  it('YAZ-6743: forwards sidebarStart when 1-click installing a synced workspace app', async () => {
+    const wsBadge = { kind: 'letters' as const, value: 'WS', color: '#0D9488' }
+    const wsStart = { tab: 'favorites' as const, folderKind: 'collection' as const, folderId: 'fav-1', folderName: 'Core', onlyFolder: true }
+    mockWorkspaceStatus.mockResolvedValue({
+      supported: true,
+      launcher: null,
+      exists: false,
+      iconDataUrl: null,
+      synced: { name: 'All Work', badge: wsBadge, sidebarStart: wsStart },
+      syncedIconDataUrl: 'data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E',
+    })
+    mockCreateWorkspace.mockResolvedValue({
+      supported: true,
+      exists: true,
+      iconDataUrl: FAKE_PNG_DATA_URL,
+      launcher: { name: 'All Work', appPath: '/Applications/All Work.app', iconPath: '/tmp/ws.png', badge: wsBadge, sidebarStart: wsStart },
+    })
+
+    const el = await render(<VaultLauncherControl workspaceId="ws-1" defaultName="All Work" />)
+    expect(el.textContent).toContain('Core')
+    await act(async () => buttonByText(el, 'Add app to this Mac')?.click())
+    expect(mockCreateWorkspace).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'ws-1',
+      name: 'All Work',
+      badge: wsBadge,
+      sidebarStart: wsStart,
+    }))
+  })
+
+  it('YAZ-6747 & YAZ-6748: clears ONLY primary synced app with appId="default", and installs primary after secondary with appId="default"', async () => {
+    const b1 = { kind: 'emoji' as const, value: '💼', color: '#007AFF' }
+    const b2 = { kind: 'emoji' as const, value: '🎯', color: '#34C759' }
+    const svg = 'data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E'
+
+    // Scenario A (YAZ-6747): 2 synced apps, click "Clear synced" on the 1st (primary) card -> must pass 'default' (NOT wipe all).
+    mockStatus.mockResolvedValue({
+      supported: true,
+      launcher: null,
+      exists: false,
+      iconDataUrl: null,
+      synced: { name: 'Primary App', badge: b1 },
+      syncedIconDataUrl: svg,
+      syncedApps: [
+        { preset: { name: 'Primary App', badge: b1 }, iconDataUrl: svg },
+        { preset: { id: 'sec12345', name: 'Secondary App', badge: b2 }, iconDataUrl: svg },
+      ],
+    })
+    mockClearSynced.mockResolvedValue(undefined)
+    const el1 = await render(<VaultLauncherControl root={ROOT} defaultName="Work" />)
+    const clearButtons = [...el1.querySelectorAll<HTMLButtonElement>('button')].filter((b) => b.textContent === 'Clear synced')
+    expect(clearButtons).toHaveLength(2)
+    await act(async () => clearButtons[0].click())
+    expect(mockClearSynced).toHaveBeenCalledWith(ROOT, 'default')
+    expect(el1.textContent).not.toContain('Primary App.app')
+    expect(el1.textContent).toContain('Secondary App.app')
+
+    // Scenario B (YAZ-6748): Secondary app is already installed locally; installing primary synced app MUST pass appId: 'default'.
+    mockCreate.mockReset()
+    mockStatus.mockResolvedValue({
+      supported: true,
+      launcher: { id: 'sec12345', name: 'Secondary App', appPath: '/Applications/Secondary App.app', iconPath: '/tmp/s.png', badge: b2 },
+      exists: true,
+      iconDataUrl: FAKE_PNG_DATA_URL,
+      launchers: [
+        { launcher: { id: 'sec12345', name: 'Secondary App', appPath: '/Applications/Secondary App.app', iconPath: '/tmp/s.png', badge: b2 }, exists: true, iconDataUrl: FAKE_PNG_DATA_URL },
+      ],
+      synced: { name: 'Primary App', badge: b1 },
+      syncedIconDataUrl: svg,
+      syncedApps: [
+        { preset: { name: 'Primary App', badge: b1 }, iconDataUrl: svg },
+        { preset: { id: 'sec12345', name: 'Secondary App', badge: b2 }, iconDataUrl: svg },
+      ],
+    })
+    mockCreate.mockResolvedValue({
+      supported: true,
+      exists: true,
+      iconDataUrl: FAKE_PNG_DATA_URL,
+      launcher: { id: 'default', name: 'Primary App', appPath: '/Applications/Primary App.app', iconPath: '/tmp/p.png', badge: b1 },
+      launchers: [
+        { launcher: { id: 'default', name: 'Primary App', appPath: '/Applications/Primary App.app', iconPath: '/tmp/p.png', badge: b1 }, exists: true, iconDataUrl: FAKE_PNG_DATA_URL },
+        { launcher: { id: 'sec12345', name: 'Secondary App', appPath: '/Applications/Secondary App.app', iconPath: '/tmp/s.png', badge: b2 }, exists: true, iconDataUrl: FAKE_PNG_DATA_URL },
+      ],
+    })
+    const el2 = await render(<VaultLauncherControl root={ROOT} defaultName="Work" />)
+    await act(async () => buttonByText(el2, 'Add app to this Mac')?.click())
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({
+      root: ROOT,
+      appId: 'default',
+      name: 'Primary App',
+    }))
+  })
 })
