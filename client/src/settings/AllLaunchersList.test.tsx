@@ -165,11 +165,11 @@ const ORPHAN_ITEM: LauncherListItem = {
 }
 
 describe('AllLaunchersList', () => {
-  it('renders clean empty state when no launchers exist', async () => {
+  it('renders clean empty state when no apps exist', async () => {
     mockListAll.mockResolvedValue([])
     const el = await render(<AllLaunchersList />)
     expect(mockListAll).toHaveBeenCalledTimes(1)
-    expect(el.textContent).toContain('No launchers created yet.')
+    expect(el.textContent).toContain('No vault or workspace apps created yet.')
     expect(el.querySelector('.all-launchers__list')).toBeNull()
   })
 
@@ -239,7 +239,7 @@ describe('AllLaunchersList', () => {
     expect(mockRemoveOrphan).toHaveBeenCalledWith(ORPHAN_ITEM.appPath)
     expect(mockListAll).toHaveBeenCalledTimes(2)
     expect(onChanged).toHaveBeenCalledTimes(1)
-    expect(el.textContent).toContain('No launchers created yet.')
+    expect(el.textContent).toContain('No vault or workspace apps created yet.')
   })
 
   it('wires Reveal, Test, Remove, and Clear for vault and workspace launchers', async () => {
@@ -282,12 +282,59 @@ describe('AllLaunchersList', () => {
     expect(mockRemoveWorkspace).toHaveBeenCalledWith(WORKSPACE_ITEM.id)
     expect(onChanged).toHaveBeenCalledTimes(2)
 
-    // Clear missing vault launcher
+    // Clear missing vault app
     rows = [...el.querySelectorAll('.all-launchers__item')]
     await act(async () => buttonIn(rows[0], 'Clear')?.click())
     expect(mockRemove).toHaveBeenCalledWith(MISSING_ITEM.id)
     expect(onChanged).toHaveBeenCalledTimes(3)
-    expect(el.textContent).toContain('No launchers created yet.')
+    expect(el.textContent).toContain('No vault or workspace apps created yet.')
+  })
+
+  it('supports multiple apps per vault using appId and displays sidebarStart badges (YAZ-6683)', async () => {
+    const app1: LauncherListItem = {
+      ...VAULT_ITEM,
+      appId: 'default',
+      sidebarStart: { tab: 'files', folderKind: 'disk', folderPath: 'engineering', onlyFolder: true },
+    }
+    const app2: LauncherListItem = {
+      ...VAULT_ITEM,
+      appId: 'f0e1d2c3',
+      name: 'Notes Favorites',
+      appPath: '/Applications/Notes Favorites.app',
+      target: undefined,
+      sidebarStart: { tab: 'favorites', onlyFolder: true },
+    }
+    mockListAll.mockResolvedValue([app1, app2])
+    mockReveal.mockResolvedValue(undefined)
+    mockTest.mockResolvedValue(undefined)
+    mockRemove.mockResolvedValue(undefined)
+    mockStatus.mockResolvedValue({
+      supported: true,
+      exists: true,
+      iconDataUrl: FAKE_PNG,
+      launcher: { id: 'f0e1d2c3', name: 'Notes Favorites', appPath: app2.appPath, iconPath: '/tmp/fav.png' },
+    })
+
+    const el = await render(<AllLaunchersList />)
+    const rows = [...el.querySelectorAll('.all-launchers__item')]
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain('Files · engineering · Only')
+    expect(rows[1].textContent).toContain('Favorites · Only')
+
+    await act(async () => buttonIn(rows[1], 'Reveal')?.click())
+    expect(mockReveal).toHaveBeenCalledWith(app2.id, 'f0e1d2c3')
+
+    await act(async () => buttonIn(rows[1], 'Test')?.click())
+    expect(mockTest).toHaveBeenCalledWith(app2.id, 'f0e1d2c3')
+
+    await import('./VaultLauncherModal')
+    await act(async () => buttonIn(rows[1], 'Edit…')?.click())
+    await act(async () => { await Promise.resolve() })
+    expect(mockStatus).toHaveBeenCalledWith(app2.id, 'f0e1d2c3')
+    await act(async () => el.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())
+
+    await act(async () => buttonIn(rows[1], 'Remove')?.click())
+    expect(mockRemove).toHaveBeenCalledWith(app2.id, 'f0e1d2c3')
   })
 
   it('refreshes automatically when vaultLauncher.onChanged fires and unsubscribes on unmount', async () => {
@@ -295,7 +342,7 @@ describe('AllLaunchersList', () => {
 
     const el = await render(<AllLaunchersList />)
     expect(mockOnChanged).toHaveBeenCalledTimes(1)
-    expect(el.textContent).toContain('No launchers created yet.')
+    expect(el.textContent).toContain('No vault or workspace apps created yet.')
 
     await act(async () => {
       for (const listener of [...changeListeners]) listener()
@@ -427,7 +474,7 @@ describe('AllLaunchersList', () => {
     expect(el.querySelector('[role="alert"]')?.textContent).toContain('Refusing to remove third-party app')
   })
 
-  it('appears in SettingsDialog › General › Vault app on macOS and stays hidden on non-macOS', async () => {
+  it('appears in SettingsDialog › General › Vault apps on macOS and stays hidden on non-macOS', async () => {
     mockListAll.mockResolvedValue([ORPHAN_ITEM])
     const origPlatform = Object.getOwnPropertyDescriptor(Navigator.prototype, 'platform')
     Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true })
@@ -442,7 +489,7 @@ describe('AllLaunchersList', () => {
       await act(async () => {
         await Promise.resolve()
       })
-      expect(macEl.textContent).toContain('All launchers')
+      expect(macEl.textContent).toContain('All vault & workspace apps')
       expect(macEl.textContent).toContain('Work Demo.app')
 
       // Switch to non-macOS and re-render
@@ -456,7 +503,7 @@ describe('AllLaunchersList', () => {
           onClose={vi.fn()}
         />,
       )
-      expect(winEl.textContent).not.toContain('All launchers')
+      expect(winEl.textContent).not.toContain('All vault & workspace apps')
     } finally {
       if (origPlatform) Object.defineProperty(Navigator.prototype, 'platform', origPlatform)
     }

@@ -144,7 +144,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 
 /** The rows of each page with no vault open, in registry order (registry.tsx). */
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
-const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'confirmBeforeQuit', 'vaultOpensOn']
+const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'confirmBeforeQuit', ...(/Mac/i.test(navigator.platform) ? ['vaultAppActivateAllWindows'] : []), 'vaultOpensOn']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
 const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'tabWidth', 'inactiveTabWidth', 'menuIcons', 'exploreWidth', 'explorePageZoom', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
@@ -3283,5 +3283,39 @@ describe('Derived Global tab (YAZ-6680)', () => {
     // Searching for "Theme" returns exactly one hit (no duplicate from Global)
     type(searchInput(el), 'Theme')
     expect(el.querySelectorAll('[data-setting="theme"]')).toHaveLength(1)
+  })
+
+  it('shows vaultAppActivateAllWindows in General and in the Global tab on macOS, writes through onChange, and hides on non-macOS (YAZ-6683)', () => {
+    const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
+    try {
+      const { el, onChange } = mount()
+      // Present in General
+      const generalRow = row(el, 'vaultAppActivateAllWindows')
+      expect(generalRow).not.toBeNull()
+      expect(generalRow?.querySelector('.setting__label')?.textContent).toBe('Reveal all windows when opening a Vault App')
+
+      // Toggle Off writes through onChange
+      const offBtn = rowButtons(el, 'vaultAppActivateAllWindows').find((b) => b.textContent === 'Off')!
+      act(() => offBtn.click())
+      expect(onChange).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, vaultAppActivateAllWindows: false })
+
+      // Also appears in the Global tab
+      clickNav(el, 'Global')
+      expect(row(el, 'vaultAppActivateAllWindows')).not.toBeNull()
+    } finally {
+      platformSpy.mockRestore()
+    }
+
+    // Hidden on non-macOS
+    const winSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('Win32')
+    try {
+      unmount()
+      const { el } = mount()
+      expect(row(el, 'vaultAppActivateAllWindows')).toBeNull()
+      clickNav(el, 'Global')
+      expect(row(el, 'vaultAppActivateAllWindows')).toBeNull()
+    } finally {
+      winSpy.mockRestore()
+    }
   })
 })

@@ -424,7 +424,7 @@ describe('SettingsDialog scope switcher (YAZ-6546, YAZ-6556)', () => {
       throw new Error(`Registry item not found: ${id}`)
     }
 
-    for (const id of ['theme', 'confirmBeforeQuit', 'allLaunchers', 'confirmDelete']) {
+    for (const id of ['theme', 'confirmBeforeQuit', 'vaultAppActivateAllWindows', 'allLaunchers', 'confirmDelete']) {
       const { item, section, group } = findRegistryEntry(id)
       expect(isGlobalOnlyRow(item, section, group), id).toBe(true)
     }

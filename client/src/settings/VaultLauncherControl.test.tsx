@@ -154,13 +154,13 @@ describe('VaultLauncherControl', () => {
     expect(el.querySelector('.vault-launcher')).toBeNull()
   })
 
-  it('shows "Make a launcher…" when supported and no launcher exists', async () => {
+  it('shows "Make a vault app…" when supported and no app exists', async () => {
     mockStatus.mockResolvedValue({ supported: true, launcher: null, exists: false, iconDataUrl: null })
     const el = await render(<VaultLauncherControl root={ROOT} defaultName="Notes" />)
-    expect(buttonByText(el, 'Make a launcher…')).toBeDefined()
+    expect(buttonByText(el, 'Make a vault app…')).toBeDefined()
   })
 
-  it('shows active launcher details, target badge, and wires Reveal, Test, and Remove', async () => {
+  it('shows active app details, target badge, "+ Add another vault app…", and wires Reveal, Test, and Remove', async () => {
     const onChanged = vi.fn()
     mockStatus.mockResolvedValue({
       supported: true,
@@ -184,6 +184,7 @@ describe('VaultLauncherControl', () => {
     expect(el.textContent).toContain('My Notes.app')
     expect(el.textContent).toContain('/Applications/My Notes.app')
     expect(el.textContent).toContain('Opens on Cards Inbox')
+    expect(buttonByText(el, '+ Add another vault app…')).toBeDefined()
 
     await act(async () => buttonByText(el, 'Reveal')?.click())
     expect(mockReveal).toHaveBeenCalledWith(ROOT)
@@ -194,7 +195,84 @@ describe('VaultLauncherControl', () => {
     await act(async () => buttonByText(el, 'Remove')?.click())
     expect(mockRemove).toHaveBeenCalledWith(ROOT)
     expect(onChanged).toHaveBeenCalledTimes(1)
-    expect(buttonByText(el, 'Make a launcher…')).toBeDefined()
+    expect(buttonByText(el, 'Make a vault app…')).toBeDefined()
+  })
+
+  it('renders multiple stacked vault app cards with Primary and sidebarStart badges, passes appId, and supports "+ Add another vault app…" (YAZ-6683)', async () => {
+    const onChanged = vi.fn()
+    const primaryApp = {
+      id: 'default',
+      name: 'Notes',
+      appPath: '/Applications/Notes.app',
+      iconPath: '/tmp/notes.png',
+      target: 'today' as const,
+      sidebarStart: { tab: 'files' as const, folderKind: 'disk' as const, folderPath: 'engineering', onlyFolder: true },
+    }
+    const extraApp = {
+      id: 'a1b2c3d4',
+      name: 'Notes Favorites',
+      appPath: '/Applications/Notes Favorites.app',
+      iconPath: '/tmp/fav.png',
+      sidebarStart: { tab: 'favorites' as const, folderKind: 'collection' as const, folderId: 'col-1', onlyFolder: true },
+    }
+    mockStatus.mockResolvedValue({
+      supported: true,
+      exists: true,
+      iconDataUrl: FAKE_PNG_DATA_URL,
+      launcher: primaryApp,
+      launchers: [
+        { launcher: primaryApp, exists: true, iconDataUrl: FAKE_PNG_DATA_URL },
+        { launcher: extraApp, exists: true, iconDataUrl: FAKE_PNG_DATA_URL },
+      ],
+    })
+    mockReveal.mockResolvedValue(undefined)
+    mockTest.mockResolvedValue(undefined)
+    mockRemove.mockResolvedValue(undefined)
+
+    const el = await render(<VaultLauncherControl root={ROOT} defaultName="Notes" onChanged={onChanged} />)
+    const cards = [...el.querySelectorAll('.vault-launcher__card')]
+    expect(cards).toHaveLength(2)
+
+    // Primary card
+    expect(cards[0].textContent).toContain('Notes.app')
+    expect(cards[0].textContent).toContain('Primary')
+    expect(cards[0].textContent).toContain("Opens on Today's Daily Page")
+    expect(cards[0].textContent).toContain('Files · engineering · Only')
+
+    // Secondary card
+    expect(cards[1].textContent).toContain('Notes Favorites.app')
+    expect(cards[1].textContent).not.toContain('Primary')
+    expect(cards[1].textContent).toContain('Favorites · Only')
+
+    // Actions pass the exact appId
+    const secondButtons = [...cards[1].querySelectorAll('button')]
+    await act(async () => secondButtons.find((b) => b.textContent?.trim() === 'Reveal')?.click())
+    expect(mockReveal).toHaveBeenCalledWith(ROOT, 'a1b2c3d4')
+
+    await act(async () => secondButtons.find((b) => b.textContent?.trim() === 'Test')?.click())
+    expect(mockTest).toHaveBeenCalledWith(ROOT, 'a1b2c3d4')
+
+    // Clicking Edit… on secondary card opens modal prefilled with that app's name
+    await import('./VaultLauncherModal')
+    await act(async () => secondButtons.find((b) => b.textContent?.trim() === 'Edit…')?.click())
+    await act(async () => { await Promise.resolve() })
+    expect(el.querySelector<HTMLInputElement>('input[aria-label="App name"]')?.value).toBe('Notes Favorites')
+    await act(async () => el.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())
+
+    // Clicking "+ Add another vault app…" opens modal in create mode with defaultName
+    await act(async () => buttonByText(el, '+ Add another vault app…')?.click())
+    await act(async () => { await Promise.resolve() })
+    expect(el.querySelector<HTMLInputElement>('input[aria-label="App name"]')?.value).toBe('Notes')
+    expect(el.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Make a vault launcher')
+    await act(async () => el.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())
+
+    // Removing the secondary card leaves the primary card intact
+    await act(async () => secondButtons.find((b) => b.textContent?.trim() === 'Remove')?.click())
+    expect(mockRemove).toHaveBeenCalledWith(ROOT, 'a1b2c3d4')
+    expect(onChanged).toHaveBeenCalledTimes(1)
+    expect(el.querySelectorAll('.vault-launcher__card')).toHaveLength(1)
+    expect(el.textContent).toContain('Notes.app')
+    expect(el.textContent).not.toContain('Notes Favorites.app')
   })
 
   it('shows removed-in-Finder notice with Recreate and Clear buttons when app bundle is missing', async () => {
@@ -215,14 +293,14 @@ describe('VaultLauncherControl', () => {
 
     const el = await render(<VaultLauncherControl root={ROOT} defaultName="Notes" onChanged={onChanged} />)
 
-    expect(el.textContent).toContain('Launcher was removed in Finder.')
+    expect(el.textContent).toContain('App was removed in Finder.')
     expect(buttonByText(el, 'Recreate')).toBeDefined()
     expect(buttonByText(el, 'Clear')).toBeDefined()
 
     await act(async () => buttonByText(el, 'Clear')?.click())
     expect(mockRemove).toHaveBeenCalledWith(ROOT)
     expect(onChanged).toHaveBeenCalledTimes(1)
-    expect(buttonByText(el, 'Make a launcher…')).toBeDefined()
+    expect(buttonByText(el, 'Make a vault app…')).toBeDefined()
   })
 
   it('supports Workspace mode: calls workspaceStatus, revealWorkspace, testWorkspace, and removeWorkspace', async () => {
@@ -246,6 +324,7 @@ describe('VaultLauncherControl', () => {
     const el = await render(<VaultLauncherControl workspaceId="ws-1" defaultName="Work Suite" onChanged={onChanged} />)
     expect(mockWorkspaceStatus).toHaveBeenCalledWith('ws-1')
     expect(el.textContent).toContain('Work Suite.app')
+    expect(buttonByText(el, '+ Add another vault app…')).toBeUndefined()
 
     await act(async () => buttonByText(el, 'Reveal')?.click())
     expect(mockRevealWorkspace).toHaveBeenCalledWith('ws-1')
@@ -256,7 +335,7 @@ describe('VaultLauncherControl', () => {
     await act(async () => buttonByText(el, 'Remove')?.click())
     expect(mockRemoveWorkspace).toHaveBeenCalledWith('ws-1')
     expect(onChanged).toHaveBeenCalledTimes(1)
-    expect(buttonByText(el, 'Make a launcher…')).toBeDefined()
+    expect(buttonByText(el, 'Make a workspace app…')).toBeDefined()
   })
 
   it('renders clear "Vault: <name>" and "Workspace: <name>" target headings in empty, active, and missing states', async () => {
@@ -506,8 +585,8 @@ describe('VaultLauncherModal', () => {
   })
 })
 
-describe('SettingsDialog › General › Vault app', () => {
-  it('shows the Vault app group when vaultLauncher context is provided', async () => {
+describe('SettingsDialog › General › Vault apps', () => {
+  it('shows the Vault apps group when vaultLauncher context is provided', async () => {
     mockStatus.mockResolvedValue({ supported: true, launcher: null, exists: false, iconDataUrl: null })
     const el = await render(
       <SettingsDialog
@@ -520,10 +599,10 @@ describe('SettingsDialog › General › Vault app', () => {
       />,
     )
     const titles = [...el.querySelectorAll('.settings-group__title')].map((h) => h.textContent)
-    expect(titles).toContain('Vault app')
+    expect(titles).toContain('Vault apps')
   })
 
-  it('shows the Workspace launcher row when workspaceLauncher context is provided', async () => {
+  it('shows the Workspace app row when workspaceLauncher context is provided', async () => {
     mockStatus.mockResolvedValue({ supported: true, launcher: null, exists: false, iconDataUrl: null })
     mockWorkspaceStatus.mockResolvedValue({ supported: true, launcher: null, exists: false, iconDataUrl: null })
     const el = await render(
@@ -537,7 +616,7 @@ describe('SettingsDialog › General › Vault app', () => {
         onClose={vi.fn()}
       />,
     )
-    expect(el.textContent).toContain('Workspace launcher')
+    expect(el.textContent).toContain('Workspace app')
     expect(mockWorkspaceStatus).toHaveBeenCalledWith('ws-1')
   })
 })
@@ -626,7 +705,7 @@ describe('VaultSwitcher & Welcome launcher icons', () => {
     await act(async () => {
       listener?.()
     })
-    expect(el.textContent).toContain('Make a launcher…')
+    expect(el.textContent).toContain('Make a vault app…')
     expect(mockStatus).toHaveBeenCalledTimes(2)
   })
 
@@ -666,7 +745,7 @@ describe('VaultSwitcher & Welcome launcher icons', () => {
     expect(el.querySelector<HTMLImageElement>('.vault-launcher__icon')?.src).toBe(syncedSvg)
 
     // 1-click install without opening modal!
-    await act(async () => buttonByText(el, 'Add launcher to this Mac')?.click())
+    await act(async () => buttonByText(el, 'Add app to this Mac')?.click())
     expect(mockCreate).toHaveBeenCalledWith({
       root: ROOT,
       name: 'Daily Note Vault',
@@ -679,7 +758,7 @@ describe('VaultSwitcher & Welcome launcher icons', () => {
     // Removing the local .app transitions cleanly back to the synced cross-Mac card (preserving synced icon).
     await act(async () => buttonByText(el, 'Remove')?.click())
     expect(mockRemove).toHaveBeenCalledWith(ROOT)
-    expect(buttonByText(el, 'Add launcher to this Mac')).toBeDefined()
+    expect(buttonByText(el, 'Add app to this Mac')).toBeDefined()
 
     // Customize… opens modal pre-filled with synced name & badge.
     await act(async () => buttonByText(el, 'Customize…')?.click())
@@ -687,10 +766,10 @@ describe('VaultSwitcher & Welcome launcher icons', () => {
     expect(nameInput?.value).toBe('Daily Note Vault')
     await act(async () => el.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())
 
-    // Clear synced icon removes the synced preset and falls back to "Make a launcher…".
+    // Clear synced icon removes the synced preset and falls back to "Make a vault app…".
     await act(async () => buttonByText(el, 'Clear synced icon')?.click())
     expect(mockClearSynced).toHaveBeenCalledWith(ROOT)
-    expect(buttonByText(el, 'Make a launcher…')).toBeDefined()
+    expect(buttonByText(el, 'Make a vault app…')).toBeDefined()
   })
 
   it('1-click installs custom PNG synced vault preset directly without canvas re-render (YAZ-6560)', async () => {
@@ -714,7 +793,7 @@ describe('VaultSwitcher & Welcome launcher icons', () => {
     })
 
     const el = await render(<VaultLauncherControl root={ROOT} defaultName="trevor-yaseen-docs" />)
-    await act(async () => buttonByText(el, 'Add launcher to this Mac')?.click())
+    await act(async () => buttonByText(el, 'Add app to this Mac')?.click())
     expect(mockCreate).toHaveBeenCalledWith({
       root: ROOT,
       name: 'Trevor Yaseen Docs',
@@ -748,7 +827,7 @@ describe('VaultSwitcher & Welcome launcher icons', () => {
     const el = await render(<VaultLauncherControl workspaceId="ws-1" defaultName="All Folders" />)
     expect(el.textContent).toContain('Saved for this workspace on another Mac — not installed on this Mac yet.')
 
-    await act(async () => buttonByText(el, 'Add launcher to this Mac')?.click())
+    await act(async () => buttonByText(el, 'Add app to this Mac')?.click())
     expect(mockCreateWorkspace).toHaveBeenCalledWith({
       workspaceId: 'ws-1',
       name: 'All Folders',

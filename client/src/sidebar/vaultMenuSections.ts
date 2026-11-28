@@ -1,9 +1,9 @@
 import { createElement, type ReactNode } from 'react'
 import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { CopyIcon, FolderIcon, PencilIcon } from '../views/view/icons'
-import type { KeyedVault } from '@shared/types'
+import type { KeyedVault, VaultAppSummary } from '@shared/types'
 import type { NoticeKind, NoticeType } from '../lib/notice'
-import { errorText, type MenuAction, type MenuSection } from './menuSections'
+import { errorText, type MenuAction, type MenuItem, type MenuSection } from './menuSections'
 
 /**
  * The vault right-click menu AS DATA (YAZ-1798 D2/D7): GitHub Desktop's repository menu, kept to
@@ -73,9 +73,15 @@ export interface VaultMenuHandlers {
   onResetName: (path: string) => void
   /** Give the vault a number, 1–9, or `null` for none (YAZ-2555 D2); the store takes it from the vault that had it. */
   onSetKey: (path: string, key: number | null) => void
-  /** Open the macOS Vault Launcher modal for this vault. Absent on non-macOS. */
+  /** Installed macOS Vault Apps for this vault (YAZ-6683). */
+  vaultApps?: readonly VaultAppSummary[]
+  /** Open the macOS Vault App modal to create a new app for this vault (YAZ-6683). */
+  onAddVaultApp?: (path: string) => void
+  /** Open the macOS Vault App modal to edit an existing app by id (YAZ-6683). */
+  onEditVaultApp?: (path: string, appId: string) => void
+  /** Legacy/fallback: open the macOS Vault App modal for this vault. Absent on non-macOS. */
   onLauncher?: (path: string) => void
-  /** True when this vault already has a launcher (shows "Edit launcher…" instead of "Make a launcher…"). */
+  /** True when this vault already has a Vault App (fallback when `vaultApps` is omitted). */
   hasLauncher?: boolean
   onReveal: (path: string) => void
   onOpenVsCode: (path: string) => void
@@ -95,10 +101,60 @@ export interface VaultSetMenuHandlers {
   onRename: (id: string) => void
   /** Forget the workspace: no confirm. */
   onRemove: (id: string) => void
-  /** Open the macOS Workspace Launcher modal for this workspace. Absent on non-macOS. */
+  /** Open the macOS Workspace App modal for this workspace. Absent on non-macOS. */
   onLauncher?: (id: string) => void
-  /** True when this workspace already has a launcher (shows "Edit launcher…" instead of "Make a launcher…"). */
+  /** True when this workspace already has a Workspace App (shows "Edit workspace app…" instead of "Make a workspace app…"). */
   hasLauncher?: boolean
+}
+
+/** Adaptive macOS Vault App menu items for a vault (YAZ-6683): 0 apps → Make, 1 app → Edit + Add another, 2+ apps → submenu. */
+function buildVaultAppMenuItems(path: string, h: VaultMenuHandlers): MenuItem[] {
+  const canAct = h.onAddVaultApp !== undefined || h.onEditVaultApp !== undefined || h.onLauncher !== undefined
+  if (!canAct) return []
+
+  const addApp = () => (h.onAddVaultApp ?? h.onLauncher)?.(path)
+  const editApp = (appId: string) => (h.onEditVaultApp !== undefined ? h.onEditVaultApp(path, appId) : h.onLauncher?.(path))
+
+  if (h.vaultApps !== undefined) {
+    if (h.vaultApps.length === 0) {
+      return [{ id: 'launcher', label: 'Make a vault app…', onSelect: addApp }]
+    }
+    if (h.vaultApps.length === 1) {
+      const app = h.vaultApps[0]
+      return [
+        { id: 'launcher', label: 'Edit vault app…', onSelect: () => editApp(app.id) },
+        { id: 'launcher-add', label: 'Add another vault app…', onSelect: addApp },
+      ]
+    }
+    return [
+      {
+        id: 'vault-apps',
+        label: 'Vault apps',
+        children: [
+          h.vaultApps.map((app) => ({
+            id: `vault-app-${app.id}`,
+            label: `Edit ${app.name}…`,
+            onSelect: () => editApp(app.id),
+          })),
+          [
+            {
+              id: 'vault-app-add',
+              label: '+ Add another vault app…',
+              onSelect: addApp,
+            },
+          ],
+        ],
+      },
+    ]
+  }
+
+  if (h.hasLauncher) {
+    return [
+      { id: 'launcher', label: 'Edit vault app…', onSelect: () => editApp('default') },
+      ...(h.onAddVaultApp !== undefined ? [{ id: 'launcher-add', label: 'Add another vault app…', onSelect: addApp }] : []),
+    ]
+  }
+  return [{ id: 'launcher', label: 'Make a vault app…', onSelect: addApp }]
 }
 
 /** A clipboard copy that says what it did — or why it could not. */
@@ -141,9 +197,7 @@ export function buildVaultMenuSections({ path, name, isCurrent, isAloneHere, ren
           keyed.some((v) => v.path === path) ? [{ id: 'key-none', label: 'No shortcut', onSelect: () => h.onSetKey(path, null) }] : [],
         ],
       },
-      ...(h.onLauncher !== undefined
-        ? [{ id: 'launcher', label: h.hasLauncher ? 'Edit launcher…' : 'Make a launcher…', onSelect: () => h.onLauncher?.(path) }]
-        : []),
+      ...buildVaultAppMenuItems(path, h),
     ],
     [copyItem('copy-name', 'vault name', name, h), copyItem('copy-path', 'path', path, h, createElement(CopyIcon))],
     [
@@ -158,7 +212,7 @@ export function buildVaultSetMenuSections(id: string, h: VaultSetMenuHandlers): 
   return [
     [
       ...(h.onLauncher !== undefined
-        ? [{ id: 'launcher-set', label: h.hasLauncher ? 'Edit launcher…' : 'Make a launcher…', onSelect: () => h.onLauncher?.(id) }]
+        ? [{ id: 'launcher-set', label: h.hasLauncher ? 'Edit workspace app…' : 'Make a workspace app…', onSelect: () => h.onLauncher?.(id) }]
         : []),
       { id: 'rename-set', label: 'Rename', icon: createElement(PencilIcon), onSelect: () => h.onRename(id) },
       { id: 'remove-set', label: 'Remove from workspaces', onSelect: () => h.onRemove(id) },
