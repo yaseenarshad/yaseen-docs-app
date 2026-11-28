@@ -38,6 +38,12 @@ export const moreIcon = '<span class="swatch-more">▾</span>'
 /** A highlight button (YAZ-4348 demo round 2): a dark "A" on the mark's wash token. */
 const highlightIcon = (color: HighlightName | null): string => swatchTile('on-color', `var(${color ? `--mark-bg-${color}` : '--mark-bg'})`)
 
+/** Compact `[16 ▾]` text size button (YAZ-6695 D5). */
+export const fontSizeIcon = '<span class="toolbar-size"><span class="toolbar-size__value">16</span><span class="toolbar-caret">▾</span></span>'
+
+/** Compact `A̲▾` text colour button (YAZ-6695 D6). */
+export const textColorIcon = '<span class="toolbar-text-color"><span class="toolbar-text-color__letter">A</span><span class="toolbar-caret">▾</span></span>'
+
 /** The app's own buttons' icons, and Crepe's once a toolbar has built (`recordCrepeIcons`). */
 export const TOOLBAR_ICONS: Partial<Record<ToolbarButtonId, string>> = {
   h1: glyphIcon('H1'),
@@ -45,6 +51,8 @@ export const TOOLBAR_ICONS: Partial<Record<ToolbarButtonId, string>> = {
   h3: glyphIcon('H3'),
   text: glyphIcon('T'),
   underline: glyphIcon('U', true),
+  'font-size': fontSizeIcon,
+  'text-color': textColorIcon,
   highlight: highlightIcon(null),
   'highlight-green': highlightIcon('green'),
   'highlight-blue': highlightIcon('blue'),
@@ -74,6 +82,8 @@ export const TOOLBAR_LABELS: Record<ToolbarButtonId, string> = {
   italic: 'Italic',
   underline: 'Underline',
   strikethrough: 'Strikethrough',
+  'font-size': 'Text size',
+  'text-color': 'Text colour',
   highlight: 'Highlight yellow',
   'highlight-green': 'Highlight green',
   'highlight-blue': 'Highlight blue',

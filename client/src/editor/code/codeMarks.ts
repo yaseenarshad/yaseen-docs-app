@@ -227,8 +227,8 @@ const setSpans = StateEffect.define<readonly CodeSpan[]>()
 function decorationOf(span: CodeSpan): Decoration {
   if (span.kind !== 'highlight') return Decoration.mark({ class: `cm-code-mark-${span.kind}` })
   if (span.color === null) return Decoration.mark({ class: 'cm-code-mark-highlight' })
-  // A custom colour: the page's wash (`customWash`, alpha 0.4), written as `#rrggbb66`.
-  if (span.color.startsWith('#')) return Decoration.mark({ class: 'cm-code-mark-highlight', attributes: { 'data-highlight': span.color, style: `--code-mark-bg: ${span.color}66` } })
+  // A custom colour (D8): solid `#rrggbb` or custom opacity `#rrggbbaa` directly.
+  if (span.color.startsWith('#')) return Decoration.mark({ class: 'cm-code-mark-highlight', attributes: { 'data-highlight': span.color, style: `--code-mark-bg: ${span.color}` } })
   return Decoration.mark({ class: `cm-code-mark-highlight highlight-${span.color}` })
 }
 

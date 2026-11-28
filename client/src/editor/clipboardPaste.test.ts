@@ -534,3 +534,32 @@ describe('image bytes on the clipboard (YAZ-1656 / YAZ-1662)', () => {
     expect(view.state.doc.firstChild?.textContent).toBe('code')
   })
 })
+
+describe('Google Docs / rich HTML paste preserves non-default text color & font size (YAZ-6695 #4)', () => {
+  it('preserves non-default inline color and pt/px font-size while filtering default black and default body sizes', async () => {
+    const { crepe, view } = await mount()
+    pasteHtml(
+      view,
+      '<b id="docs-internal-guid-1" style="font-weight:normal">' +
+        '<p><span style="color:#000000;font-size:11pt">plain11</span> ' +
+        '<span style="color:rgb(0, 0, 0);font-size:12pt">plain12</span> ' +
+        '<span style="font-size:14.6667px">plain14</span> ' +
+        '<span style="font-size:15px">plain15</span> ' +
+        '<span style="font-size:16px">plain16</span></p>' +
+        '<p><span style="color:#e03131;font-size:18pt">big red</span> ' +
+        '<span style="color:rgb(25, 113, 194);font-size:200pt">clamped blue</span> ' +
+        '<span style="font-size:4pt">tiny</span></p></b>',
+      'plain11 plain12 plain14 plain15 plain16\nbig red clamped blue tiny',
+    )
+    const saved = getMarkdownForSave(crepe)
+    expect(saved).toContain('plain11 plain12 plain14 plain15 plain16')
+    expect(saved).not.toContain('#000000')
+    expect(saved).not.toContain('font-size: 15px')
+    expect(saved).not.toContain('font-size: 16px')
+    expect(saved).toContain('color: #e03131')
+    expect(saved).toContain('font-size: 24px')
+    expect(saved).toContain('color: #1971c2')
+    expect(saved).toContain('font-size: 96px')
+    expect(saved).toContain('font-size: 8px')
+  })
+})

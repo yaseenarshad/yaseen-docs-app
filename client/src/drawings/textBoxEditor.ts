@@ -46,7 +46,7 @@ export const textBoxFeatures: Record<CrepeFeature, boolean> = {
 
 /** The toolbar buttons and the `/` rows of what a box cannot hold (D4): headings, numbered lists, code, quotes, … */
 export const TEXT_BOX_HIDDEN = {
-  toolbar: ['h1', 'h2', 'h3', 'numberedList', 'code', 'link'],
+  toolbar: ['h1', 'h2', 'h3', 'numberedList', 'font-size', 'text-color', 'code', 'link'],
   slash: [...HIDDEN_IN_CELL, 'ordered-list'],
 } as const
 

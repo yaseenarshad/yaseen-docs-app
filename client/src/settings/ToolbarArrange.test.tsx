@@ -49,7 +49,7 @@ describe('Settings › Editor › Selection toolbar (YAZ-3806 T7, 4B YAZ-3856)',
     expect(preview()).toEqual([
       'Heading 1', 'Heading 2', 'Heading 3', 'Text', '|',
       'Checklist', 'Bullet list', 'Numbered list', '|',
-      'Bold', 'Italic', 'Underline', 'Strikethrough', 'Highlight yellow', 'Highlight green', 'Highlight blue', 'More highlight colours', '|',
+      'Bold', 'Italic', 'Underline', 'Strikethrough', 'Text size', 'Text colour', 'Highlight yellow', 'Highlight green', 'Highlight blue', 'More highlight colours', '|',
       'Inline code', 'Link',
     ])
     expect([...row().querySelectorAll('.toolbar-arrange__group-name')].map((n) => n.textContent)).toEqual(['Line type', 'Lists', 'Text style', 'Code and link'])
@@ -72,7 +72,7 @@ describe('Settings › Editor › Selection toolbar (YAZ-3806 T7, 4B YAZ-3856)',
   it('the preview follows the setting: a hidden button leaves it, a group with none shown takes its divider, the order is the strip\'s', async () => {
     const prefs = { ...DEFAULT_TOOLBAR, groups: ['insert', 'lineType', 'lists', 'textStyle'] as typeof DEFAULT_TOOLBAR.groups, hidden: ['checklist', 'bulletList', 'numberedList', 'bold'] as typeof DEFAULT_TOOLBAR.hidden }
     await mountEditorPage({ ...DEFAULT_SETTINGS, selectionToolbar: prefs }, vi.fn())
-    expect(preview()).toEqual(['Inline code', 'Link', '|', 'Heading 1', 'Heading 2', 'Heading 3', 'Text', '|', 'Italic', 'Underline', 'Strikethrough', 'Highlight yellow', 'Highlight green', 'Highlight blue', 'More highlight colours'])
+    expect(preview()).toEqual(['Inline code', 'Link', '|', 'Heading 1', 'Heading 2', 'Heading 3', 'Text', '|', 'Italic', 'Underline', 'Strikethrough', 'Text size', 'Text colour', 'Highlight yellow', 'Highlight green', 'Highlight blue', 'More highlight colours'])
     expect(square('bold').classList.contains('toolbar-arrange__square--off')).toBe(true)
     expect(square('bold').getAttribute('aria-checked')).toBe('false')
   })

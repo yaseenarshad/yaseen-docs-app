@@ -28,7 +28,7 @@ import { classifyCharacter } from 'micromark-util-classify-character'
 import { resolveAll } from 'micromark-util-resolve-all'
 import type { Event, Extension, Resolver, State, Token, TokenizeContext, Tokenizer } from 'micromark-util-types'
 import { isHighlightHex } from '@shared/types'
-import { rgbOf, solidHex } from '../../lib/colour'
+import { toHex } from '../../lib/colour'
 import { codeColorsIn, codeMarkCommand, codeSelection } from '../code/codeMarks'
 import { visibleRangeHasMark, visibleRanges } from '../lineSelection'
 import { wrapHtmlPairs, type HtmlPairSpec } from './htmlPairs'
@@ -36,17 +36,8 @@ import { HIGHLIGHT_COLORS, HIGHLIGHT_HEX, type CustomHighlight, type HighlightCo
 
 export { QUICK_HIGHLIGHTS, MORE_HIGHLIGHTS, HIGHLIGHT_COLORS, HIGHLIGHT_HEX, type HighlightName, type CustomHighlight, type HighlightColor } from './highlightColours'
 
-/** A custom colour as the mark keeps it: exactly lowercase `#rrggbb` (the setting's own test, `@shared/types`). */
+/** A custom colour as the mark keeps it: lowercase `#rrggbb` or `#rrggbbaa` (the setting's own test, `@shared/types`). */
 export const isCustomHighlight: (value: unknown) => value is CustomHighlight = isHighlightHex
-
-/** How strong a custom colour's wash is: the named colours' 0.35–0.4, so text on it stays readable in both themes. */
-export const CUSTOM_WASH = 0.4
-
-/** A custom colour's see-through wash, `rgba(r, g, b, 0.4)`. */
-export function customWash(hex: CustomHighlight): string {
-  const [r, g, b] = rgbOf(hex)
-  return `rgba(${r}, ${g}, ${b}, ${CUSTOM_WASH})`
-}
 
 /** mdast node for a highlight; registered with mdast so remark-stringify's `Handlers` knows the type. */
 export interface Highlight extends Parent {
@@ -171,7 +162,7 @@ highlightHandle.peek = (node: Highlight) => (node.color ? '<' : '=')
 
 /** The coloured half: inline HTML, read through the same walk underline uses. Each form only exactly as written, so it reads back byte for byte. */
 const MARK_OPEN = new RegExp(`^<mark class="highlight-(${HIGHLIGHT_COLORS.join('|')})">$`)
-const MARK_CUSTOM_OPEN = /^<mark style="background-color: (#[0-9a-f]{6})">$/
+const MARK_CUSTOM_OPEN = /^<mark style="background-color: (#[0-9a-f]{6}(?:[0-9a-f]{2})?)">$/
 const HIGHLIGHT_PAIRS: HtmlPairSpec<{ color: HighlightColor }> = {
   open: (value) => {
     if (value === '<mark>') return { color: null }
@@ -217,12 +208,13 @@ function colorOf(dom: HTMLElement): HighlightColor {
   if (isCustomHighlight(own)) return own
   const named = HIGHLIGHT_COLORS.find((c) => dom.classList.contains(`highlight-${c}`))
   if (named !== undefined) return named
-  return solidHex(dom.style.backgroundColor)
+  const hex = toHex(dom.style.backgroundColor)
+  return hex !== undefined && isCustomHighlight(hex) ? hex : null
 }
 
-/** A highlight's DOM: a named colour's class; a custom colour's wash inline, with its exact value to read back. */
+/** A highlight's DOM: a named colour's class; a custom colour painted directly (solid `#rrggbb` or custom alpha `#rrggbbaa`, D8). */
 const domAttrs = (color: HighlightColor): Record<string, string> =>
-  color === null ? {} : isCustomHighlight(color) ? { 'data-highlight': color, style: `background-color: ${customWash(color)}` } : { class: `highlight-${color}` }
+  color === null ? {} : isCustomHighlight(color) ? { 'data-highlight': color, style: `background-color: ${color}` } : { class: `highlight-${color}` }
 
 export const highlightSchema = $markSchema('highlight', () => ({
   attrs: { color: { default: null } },

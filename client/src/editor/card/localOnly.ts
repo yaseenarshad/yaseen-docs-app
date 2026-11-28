@@ -112,8 +112,64 @@ const MARK_PREFIX = `data-m${SECRET}-`
 /** `data-<name>` as a renderer of the app writes it into the HTML it gives `cleanLocal`. */
 export const localMark = (name: string): string => `${MARK_PREFIX}${name.replace(/^data-/, '')}`
 
+const SAFE_COLOR_TAG = /<span style="color: (#[0-9a-f]{6})">/g
+const SAFE_SIZE_TAG = /<span style="font-size: ([1-9]\d?)px">/g
+const SAFE_BG_TAG = /<mark style="background-color: (#[0-9a-f]{6}(?:[0-9a-f]{2})?)">/g
+
+const SAFE_COLOR_VALUE = /^#[0-9a-f]{6}$/
+const SAFE_BG_VALUE = /^#[0-9a-f]{6}([0-9a-f]{2})?$/
+
+/**
+ * Safe inline style bridge (YAZ-6694 #5): BEFORE DOMPurify strips all `style` attributes, lift ONLY exact safe
+ * `<span style="color: #rrggbb">`, `<span style="font-size: Npx">` (8–96), and `<mark style="background-color: #rrggbb[aa]">`
+ * into `localMark(...)` data attributes. Any other `style` (including `url(...)` or arbitrary CSS) is untouched and
+ * stripped by DOMPurify. Exported so `cardRender.ts` can reuse the same bridge.
+ */
+export function markSafeInlineStyles(html: string, markAttr: (name: string) => string = localMark): string {
+  if (!html.includes('style="')) return html
+  return html
+    .replace(SAFE_COLOR_TAG, (_, hex: string) => `<span ${markAttr('inline-color')}="${hex}">`)
+    .replace(SAFE_SIZE_TAG, (full, digits: string) => {
+      const n = Number(digits)
+      return n >= 8 && n <= 96 ? `<span ${markAttr('inline-size')}="${n}">` : full
+    })
+    .replace(SAFE_BG_TAG, (_, hex: string) => `<mark ${markAttr('inline-bg')}="${hex}">`)
+}
+
+/**
+ * Restore exact safe inline styles (`color`, `fontSize`, `backgroundColor`) onto DOM elements AFTER DOMPurify.
+ * Re-validates tag name and value before writing `el.style`.
+ */
+export function restoreSafeInlineStyles(root: DocumentFragment, prefix: string = MARK_PREFIX): void {
+  const colorAttr = `${prefix}inline-color`
+  const sizeAttr = `${prefix}inline-size`
+  const bgAttr = `${prefix}inline-bg`
+  for (const el of root.querySelectorAll<HTMLElement>('*')) {
+    if (el.tagName === 'SPAN') {
+      const color = el.getAttribute(colorAttr)
+      if (color !== null) {
+        el.removeAttribute(colorAttr)
+        if (SAFE_COLOR_VALUE.test(color)) el.style.color = color
+      }
+      const size = el.getAttribute(sizeAttr)
+      if (size !== null) {
+        el.removeAttribute(sizeAttr)
+        const n = Number(size)
+        if (Number.isInteger(n) && n >= 8 && n <= 96) el.style.fontSize = `${n}px`
+      }
+    } else if (el.tagName === 'MARK') {
+      const bg = el.getAttribute(bgAttr)
+      if (bg !== null) {
+        el.removeAttribute(bgAttr)
+        if (SAFE_BG_VALUE.test(bg)) el.style.backgroundColor = bg
+      }
+    }
+  }
+}
+
 /** Each mark of the app gets its real name back (`data-<name>`), after the clean. */
 function restoreMarks(root: DocumentFragment): void {
+  restoreSafeInlineStyles(root, MARK_PREFIX)
   for (const el of root.querySelectorAll('*'))
     for (const { name, value } of [...el.attributes])
       if (name.startsWith(MARK_PREFIX)) {
@@ -281,7 +337,7 @@ export function cleanLocal(html: string): DocumentFragment {
       if (node.nodeType === 1) keepLocal(node as Element)
     })
   }
-  const root = purifier.sanitize(plainSwallowers(html), CONFIG)
+  const root = purifier.sanitize(markSafeInlineStyles(plainSwallowers(html)), CONFIG)
   finish(root)
   restoreMarks(root)
   return root

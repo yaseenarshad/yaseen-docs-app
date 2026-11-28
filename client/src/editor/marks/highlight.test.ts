@@ -30,7 +30,6 @@ import {
   unmountAll,
 } from './markTestKit'
 import {
-  CUSTOM_WASH,
   HIGHLIGHT_COLORS,
   HIGHLIGHT_HEX,
   highlightColorsIn,
@@ -610,16 +609,20 @@ describe('coloured highlights (YAZ-1480)', () => {
  * `<mark style>` keeps its bytes; the old forms read and write exactly as before.
  */
 describe('custom highlights (YAZ-4348 demo round 2)', () => {
-  it('loads `<mark style="background-color: #rrggbb">` as that colour, paints its wash, and saves identical bytes', async () => {
-    const src = 'a <mark style="background-color: #ff8800">b</mark> c\n'
+  it('loads `<mark style="background-color: #rrggbb">` solid and `#rrggbbaa` at custom opacity, saving identical bytes (D8)', async () => {
+    const src = 'a <mark style="background-color: #ff8800">b</mark> <mark style="background-color: #ff880080">half</mark> c\n'
     const { crepe, root } = await mount(src)
     expect(colorOn(crepe, 'b')).toBe('#ff8800')
-    const el = root.querySelector<HTMLElement>('.milkdown mark')!
-    expect(el.textContent).toBe('b')
-    expect(el.getAttribute('data-highlight')).toBe('#ff8800')
-    // A see-through wash, as the named colours: the text keeps its own colour in both themes.
-    expect(el.style.backgroundColor).toBe(`rgba(255, 136, 0, ${CUSTOM_WASH})`)
-    expect(el.className).toBe('')
+    expect(colorOn(crepe, 'half')).toBe('#ff880080')
+    const [solid, alpha] = [...root.querySelectorAll<HTMLElement>('.milkdown mark')]
+    expect(solid.textContent).toBe('b')
+    expect(solid.getAttribute('data-highlight')).toBe('#ff8800')
+    // D8: custom #rrggbb paints 100% solid (no forced 40% wash); #rrggbbaa paints custom opacity.
+    expect(solid.style.backgroundColor).toBe('rgb(255, 136, 0)')
+    expect(solid.className).toBe('')
+    expect(alpha.textContent).toBe('half')
+    expect(alpha.getAttribute('data-highlight')).toBe('#ff880080')
+    expect(alpha.style.backgroundColor).toMatch(/rgba\(255,\s*136,\s*0,\s*0\.5/)
     expect(md(crepe)).toBe(src)
   })
 

@@ -1380,7 +1380,7 @@ export const TOOLBAR_LAYOUT = {
   // `highlight-more` (YAZ-4348 demo round 2): the ▾ of the highlight colour panel. Last, so a saved order (the loader
   // appends a new button) puts it right after the highlight buttons too. Pink left the strip for the panel (demo round
   // 2, Yasin): a saved setting that still names `highlight-pink` loses it on load, as any unknown name.
-  textStyle: ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more'],
+  textStyle: ['bold', 'italic', 'underline', 'strikethrough', 'font-size', 'text-color', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more'],
   insert: ['code', 'link'],
 } as const
 export type ToolbarGroupId = keyof typeof TOOLBAR_LAYOUT
@@ -1407,8 +1407,8 @@ export interface HighlightCustomColor {
 export const HIGHLIGHT_CUSTOM_COLORS_KEPT = 10
 /** How many the highlight panel's "Most used custom colours" row shows: one row of its grid. */
 export const HIGHLIGHT_CUSTOM_COLORS_SHOWN = 5
-/** A custom highlight colour exactly as the page's mark and this setting keep it: lowercase `#rrggbb`. */
-export const isHighlightHex = (v: unknown): v is `#${string}` => typeof v === 'string' && /^#[0-9a-f]{6}$/.test(v)
+/** A custom highlight colour exactly as the page's mark and this setting keep it: lowercase `#rrggbb` or `#rrggbbaa`. */
+export const isHighlightHex = (v: unknown): v is `#${string}` => typeof v === 'string' && /^#[0-9a-f]{6}([0-9a-f]{2})?$/.test(v)
 /** A kept entry: a lowercase `#rrggbb` and a whole count of one or more. */
 export const isHighlightCustomColor = (v: unknown): v is HighlightCustomColor =>
   typeof v === 'object' && v !== null && isHighlightHex((v as HighlightCustomColor).color) &&

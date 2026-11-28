@@ -12,6 +12,8 @@ import type { Parent, PhrasingContent, RootContent } from 'mdast'
 export interface HtmlPairSpec<A> {
   /** Returns the attrs for an opening html node, or null when this html node is not an opener for this mark. */
   open: (html: string) => A | null
+  /** Optional predicate for sibling opening tags that share `close` and should nest depth (e.g. any `<span …>`). */
+  nest?: (html: string) => boolean
   /** The exact closing html value, e.g. `</u>` or `</mark>`. */
   close: string
   /** Build the mdast node from the matched attrs and the in-between siblings. */
@@ -22,13 +24,13 @@ export interface HtmlPairSpec<A> {
 const openerAttrs = <A>(child: RootContent, spec: HtmlPairSpec<A>): A | null =>
   child.type === 'html' ? spec.open(child.value) : null
 
-/** Index of the closing tag matching the opener at `open` (any opener of this spec nests), or -1. */
+/** Index of the closing tag matching the opener at `open` (any opener or `nest` tag increments depth), or -1. */
 const findClose = <A>(children: RootContent[], open: number, spec: HtmlPairSpec<A>): number => {
   let depth = 0
   for (let i = open + 1; i < children.length; i++) {
     const child = children[i]
     if (child.type !== 'html') continue
-    if (spec.open(child.value) !== null) depth++
+    if (spec.open(child.value) !== null || spec.nest?.(child.value) === true) depth++
     else if (child.value === spec.close) {
       if (depth === 0) return i
       depth--
