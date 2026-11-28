@@ -38,6 +38,8 @@ const h = vi.hoisted(() => {
     getAppMetrics: vi.fn(() => []),
     quit: vi.fn(),
     exit: vi.fn(log('exit')),
+    startAppShimServer: vi.fn(),
+    stopAppShimServer: vi.fn(),
   }
   const manager = {
     // A path under `/gone` cannot open: the manager says it has no vault (YAZ-2589 A6).
@@ -522,5 +524,13 @@ describe('the CLI connection in index.ts (YAZ-4502)', () => {
     h.s.order.length = 0
     h.s.on.get('before-quit')!(event()); await settle(); await settle()
     expect(h.s.order.slice(0, 2)).toEqual(['cli.close', 'flushAllForQuit'])
+  })
+
+  it('calls app.startAppShimServer with 0 arguments when no isolated profile server name is set (YAZ-6620)', async () => {
+    if (process.platform !== 'darwin') return
+    h.s.ready()
+    await settle()
+    expect(h.app.startAppShimServer).toHaveBeenCalledOnce()
+    expect(h.app.startAppShimServer.mock.calls[0]).toEqual([])
   })
 })

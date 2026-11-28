@@ -5,20 +5,20 @@
   "ratchetedTo": "yaz-6008-speed",
   "size": {
     "appBytes": {
-      "max": 321500000,
-      "$comment": "Packaged macOS .app total bytes (measured 320.19 MB on yaz-6008-speed)."
+      "max": 340000000,
+      "$comment": "Packaged macOS .app total bytes (measured 336.74 MB with Electron 45.5.0 for YAZ-6620; raised from 321,500,000 with Yasin's approval)."
     },
     "frameworksBytes": {
-      "max": 240920243,
-      "$comment": "Electron Framework.framework bytes inside .app."
+      "max": 258000000,
+      "$comment": "Electron Framework.framework bytes inside .app (measured 254.81 MB with Electron 45.5.0 for YAZ-6620; raised from 240,920,243 with Yasin's approval)."
     },
     "asarBytes": {
-      "max": 77800000,
-      "$comment": "app.asar bytes inside .app (measured 76.97 MB on yaz-6008-speed)."
+      "max": 79000000,
+      "$comment": "app.asar bytes inside .app (measured 77.88 MB with YAZ-6620; raised from 77,800,000 with Yasin's approval)."
     },
     "dmgBytes": {
-      "max": 107000000,
-      "$comment": "Compressed arm64 DMG bytes (measured 105.64 MB on yaz-6008-speed)."
+      "max": 118000000,
+      "$comment": "Compressed arm64 DMG bytes (measured 115.64 MB with Electron 45.5.0 for YAZ-6620; raised from 107,000,000 with Yasin's approval)."
     },
     "chromiumLocaleCount": {
       "max": 8,

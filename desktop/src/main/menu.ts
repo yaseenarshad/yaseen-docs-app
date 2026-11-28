@@ -497,9 +497,11 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
         target.send(SPECIAL.menuPasteAs, { mode, text, ...(html !== undefined ? { html } : {}) } satisfies ClipboardPasteRequest)
         return
       }
-      void Promise.all([text, html]).then(([resolvedText, resolvedHtml]) => {
-        target.send(SPECIAL.menuPasteAs, { mode, text: resolvedText, ...(resolvedHtml !== undefined ? { html: resolvedHtml } : {}) } satisfies ClipboardPasteRequest)
-      })
+      void Promise.all([text, html])
+        .then(([resolvedText, resolvedHtml]) => {
+          target.send(SPECIAL.menuPasteAs, { mode, text: resolvedText, ...(resolvedHtml !== undefined ? { html: resolvedHtml } : {}) } satisfies ClipboardPasteRequest)
+        })
+        .catch(() => undefined)
     },
     newItem() {
       host.focusedWebContents()?.send(CONTRACT.menu.onNewItem.channel)
