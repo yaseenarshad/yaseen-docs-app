@@ -18,6 +18,7 @@ import { getFrameChildren } from "./frame";
 
 import { LinearElementEditor } from "./linearElementEditor";
 import { selectGroupsForSelectedElements } from "./groups";
+import { getSmartShapeMetadata } from "./smartShape";
 
 import { isNonDeletedElement } from ".";
 
@@ -257,7 +258,7 @@ const _getLinearElementEditor = (
       (el) => el.id === linear.id || boundElements.includes(el.id),
     );
 
-    if (onlySingleLinearSelected) {
+    if (onlySingleLinearSelected && !getSmartShapeMetadata(linear)) {
       return new LinearElementEditor(linear, arrayToMap(allElements));
     }
   }

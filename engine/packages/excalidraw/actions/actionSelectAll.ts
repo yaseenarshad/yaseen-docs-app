@@ -1,6 +1,10 @@
 import { getNonDeletedElements } from "@excalidraw/element";
 import { LinearElementEditor } from "@excalidraw/element";
-import { isLinearElement, isTextElement } from "@excalidraw/element";
+import {
+  getSmartShapeMetadata,
+  isLinearElement,
+  isTextElement,
+} from "@excalidraw/element";
 
 import { arrayToMap, KEYS } from "@excalidraw/common";
 
@@ -41,6 +45,12 @@ export const actionSelectAll = register({
         return map;
       }, {});
 
+    const selectedIds = Object.keys(selectedElementIds);
+    const singleSelected =
+      selectedIds.length === 1
+        ? elements.find((el) => el.id === selectedIds[0])
+        : undefined;
+
     return {
       appState: {
         ...appState,
@@ -55,10 +65,11 @@ export const actionSelectAll = register({
         ),
         selectedLinearElement:
           // single linear element selected
-          Object.keys(selectedElementIds).length === 1 &&
-          isLinearElement(elements[0])
+          singleSelected &&
+          isLinearElement(singleSelected) &&
+          !getSmartShapeMetadata(singleSelected)
             ? new LinearElementEditor(
-                elements[0] as NonDeleted<ExcalidrawLinearElement>,
+                singleSelected as NonDeleted<ExcalidrawLinearElement>,
                 arrayToMap(elements),
               )
             : null,

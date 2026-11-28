@@ -108,7 +108,7 @@ export function insertShape(
   const selectedElementIds = Object.fromEntries(elements.map((element) => [element.id, true as const]))
   api.updateScene({
     elements: [...api.getSceneElementsIncludingDeleted(), ...elements],
-    appState: { selectedElementIds },
+    appState: { selectedElementIds, selectedLinearElement: null },
     captureUpdate: engine.CaptureUpdateAction.IMMEDIATELY,
   })
   return elements

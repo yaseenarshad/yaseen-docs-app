@@ -5397,6 +5397,7 @@ class App extends React.Component<AppProps, AppState> {
           this.state,
           this,
         ),
+        selectedLinearElement: null,
       },
       () => {
         if (opts.files) {
@@ -6801,7 +6802,10 @@ class App extends React.Component<AppProps, AppState> {
         if (selectedElements.length === 1) {
           const selectedElement = selectedElements[0];
           if (event[KEYS.CTRL_OR_CMD] || isLineElement(selectedElement)) {
-            if (isLinearElement(selectedElement)) {
+            if (
+              isLinearElement(selectedElement) &&
+              !getSmartShapeMetadata(selectedElement)
+            ) {
               if (
                 !this.state.selectedLinearElement?.isEditing ||
                 this.state.selectedLinearElement.elementId !==
@@ -8447,6 +8451,7 @@ class App extends React.Component<AppProps, AppState> {
       if (
         ((event[KEYS.CTRL_OR_CMD] && isSimpleArrow(selectedLinearElement)) ||
           isLineElement(selectedLinearElement)) &&
+        !getSmartShapeMetadata(selectedLinearElement) &&
         (!this.state.selectedLinearElement?.isEditing ||
           this.state.selectedLinearElement.elementId !==
             selectedLinearElement.id)
@@ -14400,7 +14405,7 @@ class App extends React.Component<AppProps, AppState> {
                           newSelectedElements[0],
                           this.scene.getNonDeletedElementsMap(),
                         )
-                      : prevState.selectedLinearElement,
+                      : null,
                 };
               });
             }

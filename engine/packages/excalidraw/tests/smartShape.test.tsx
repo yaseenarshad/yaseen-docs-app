@@ -3,6 +3,7 @@ import {
   createSmartShapeMetadata,
   generateSmartShapePoints,
   getElementAbsoluteCoords,
+  getSelectionStateForElements,
   getSmartShapeHandles,
   getSmartShapeMetadata,
   newElementWith,
@@ -16,6 +17,12 @@ import {
   actionFlipHorizontal,
   actionFlipVertical,
 } from "../actions/actionFlip";
+import {
+  actionToggleLinearEditor,
+  actionTogglePolygon,
+} from "../actions/actionLinearEditor";
+import { actionSelectAll } from "../actions/actionSelectAll";
+import { getShapeActionPredicates } from "../components/shapeActionPredicates";
 import { Excalidraw } from "../index";
 
 import { API } from "./helpers/api";
@@ -468,5 +475,78 @@ describe("Smart Shape canvas handles, parametric resize, and flips", () => {
     );
     expect(px1).toBeCloseTo(-50, 4);
     expect(px2).toBeCloseTo(100, 4);
+  });
+
+  it("never attaches LinearElementEditor or crashes on Enter/double-click/Edit-line/Cmd+A/Cmd+D for Smart Shapes (YAZ-6705)", async () => {
+    const { container } = await render(<Excalidraw handleKeyboardGlobally={true} />);
+    const meta = createSmartShapeMetadata("arrow-right");
+    const arrow = newElementWith(
+      API.createElement({
+        type: "line",
+        x: 100,
+        y: 125,
+        width: 200,
+        height: 100,
+        points: generateSmartShapePoints(
+          "arrow-right",
+          200,
+          100,
+          meta.parameters,
+        ),
+      }),
+      { customData: { yasinSmartShape: meta } },
+    );
+    act(() => {
+      API.setElements([arrow]);
+      API.setSelectedElements([arrow]);
+    });
+
+    // getSelectionStateForElements (Cmd+D / duplicate) never attaches LinearElementEditor
+    const dupSelection = getSelectionStateForElements([arrow], [arrow], h.state);
+    expect(dupSelection.selectedLinearElement).toBeNull();
+
+    // actionSelectAll (Cmd+A on single Smart Shape) keeps selectedLinearElement null
+    act(() => {
+      h.app.actionManager.executeAction(actionSelectAll);
+    });
+    expect(h.state.selectedLinearElement).toBeNull();
+
+    // Linear editor & polygon predicates are false on Smart Shapes
+    expect(
+      actionToggleLinearEditor.predicate?.(h.elements, h.state, h.app.props, h.app),
+    ).toBe(false);
+    expect(
+      actionTogglePolygon.predicate?.(h.elements, h.state, h.app.props, h.app),
+    ).toBe(false);
+    const predicates = getShapeActionPredicates(
+      h.state,
+      [arrow],
+      h.app.scene.getNonDeletedElementsMap(),
+      h.app,
+    );
+    expect(predicates.lineEditor).toBe(false);
+
+    // Direct actionToggleLinearEditor execution, Enter, and double-click never throw
+    expect(() => {
+      act(() => {
+        h.app.actionManager.executeAction(actionToggleLinearEditor);
+      });
+    }).not.toThrow();
+    expect(h.state.selectedLinearElement).toBeNull();
+
+    expect(() => {
+      fireEvent.keyDown(document, { key: "Enter" });
+    }).not.toThrow();
+    expect(h.state.selectedLinearElement).toBeNull();
+
+    const canvas = container.querySelector("canvas.interactive")!;
+    expect(() => {
+      fireEvent.doubleClick(canvas, {
+        clientX: 200,
+        clientY: 175,
+        button: 0,
+      });
+    }).not.toThrow();
+    expect(h.state.selectedLinearElement).toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 import {
+  getSmartShapeMetadata,
   isElbowArrow,
   isLinearElement,
   isLineElement,
@@ -46,7 +47,8 @@ export const actionToggleLinearEditor = register({
       !appState.selectedLinearElement?.isEditing &&
       selectedElements.length === 1 &&
       isLinearElement(selectedElements[0]) &&
-      !isElbowArrow(selectedElements[0])
+      !isElbowArrow(selectedElements[0]) &&
+      !getSmartShapeMetadata(selectedElements[0])
     ) {
       return true;
     }
@@ -58,11 +60,14 @@ export const actionToggleLinearEditor = register({
       includeBoundTextElement: true,
     })[0] as ExcalidrawLinearElement;
 
-    invariant(selectedElement, "No selected element found");
-    invariant(
-      appState.selectedLinearElement,
-      "No selected linear element found",
-    );
+    if (
+      !selectedElement ||
+      getSmartShapeMetadata(selectedElement) ||
+      !appState.selectedLinearElement
+    ) {
+      return false;
+    }
+
     invariant(
       selectedElement.id === appState.selectedLinearElement.elementId,
       "Selected element ID and linear editor elementId does not match",
@@ -136,14 +141,22 @@ export const actionTogglePolygon = register({
     return (
       selectedElements.length > 0 &&
       selectedElements.every(
-        (element) => isLineElement(element) && element.points.length >= 4,
+        (element) =>
+          isLineElement(element) &&
+          element.points.length >= 4 &&
+          !getSmartShapeMetadata(element),
       )
     );
   },
   perform(elements, appState, _, app) {
     const selectedElements = app.scene.getSelectedElements(appState);
 
-    if (selectedElements.some((element) => !isLineElement(element))) {
+    if (
+      selectedElements.some(
+        (element) =>
+          !isLineElement(element) || Boolean(getSmartShapeMetadata(element)),
+      )
+    ) {
       return false;
     }
 
@@ -181,6 +194,7 @@ export const actionTogglePolygon = register({
       selectedElements.some(
         (element) =>
           !isLineElement(element) ||
+          Boolean(getSmartShapeMetadata(element)) ||
           // only show polygon button if every selected element is already
           // a polygon, effectively showing this button only to allow for
           // disabling the polygon state

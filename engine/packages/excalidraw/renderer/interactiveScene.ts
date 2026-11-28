@@ -1663,7 +1663,7 @@ const _renderInteractiveScene = ({
     }
   });
 
-  if (editingLinearElement) {
+  if (editingLinearElement && !getSmartShapeMetadata(editingLinearElement)) {
     renderLinearPointHandles(
       context,
       appState,
@@ -1780,7 +1780,8 @@ const _renderInteractiveScene = ({
   if (
     selectedElements.length === 1 &&
     appState.selectedLinearElement?.isEditing &&
-    appState.selectedLinearElement.elementId === selectedElements[0].id
+    appState.selectedLinearElement.elementId === selectedElements[0].id &&
+    !getSmartShapeMetadata(selectedElements[0])
   ) {
     renderLinearPointHandles(
       context,
