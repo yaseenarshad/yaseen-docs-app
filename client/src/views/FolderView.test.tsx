@@ -30,7 +30,12 @@ import tocCss from '../editor/toc/toc.css?inline'
 /** The page with Settings › Folder pages › Confirm changes off (YAZ-3746 13AN): these tests pin where a write goes, not the ask before it. */
 const renderNoAsk: typeof renderFolderView = (props) => renderFolderView({ folderPages: { ...DEFAULT_FOLDER_PAGES, confirmChanges: false }, ...props })
 
-vi.mock('./writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn(), writeRouted: vi.fn(), transformFile: vi.fn() }))
+/** The real writers, loaded once with the file: a `vi.importActual` in a `beforeEach` hit the 10 s hook timeout on a loaded CI runner. */
+const realWriters = vi.hoisted(() => ({ module: null as unknown as typeof import('./writeProperty') }))
+vi.mock('./writeProperty', async (importOriginal) => {
+  realWriters.module = await importOriginal<typeof import('./writeProperty')>()
+  return { writeProperty: vi.fn(), writeProperties: vi.fn(), writeRouted: vi.fn(), transformFile: vi.fn() }
+})
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: { readFile: vi.fn(), writeFile: vi.fn(), createFile: vi.fn(), mintPageId: vi.fn(), tree: vi.fn() },
@@ -1490,9 +1495,9 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
   const SUB_ID = 'a1b2c3d4e5f6'
   const disk = new Map<string, string>()
 
-  beforeEach(async () => {
+  beforeEach(() => {
     disk.clear()
-    const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+    const real = realWriters.module
     writeValues.mockImplementation(real.writeRouted)
     transform.mockImplementation(real.transformFile)
     readFile.mockImplementation(async (path) => {
@@ -1574,7 +1579,7 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
     const IN_ORDERS = '/vault/schema/orders/Orders table.md'
     const IN_ARCHIVE = '/vault/archive/Orders table.md'
     const domain = { kind: 'select' as const, options: ['Billing', 'Payments'] }
-    const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+    const real = realWriters.module
     write.mockImplementation(real.writeProperty) // the settings door writes the disk too
     disk.set(`${SCHEMA}/.folder.md`, `---\nid: ${SUB_ID}\ntitle: Schema\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n---\n`)
     disk.set(IN_ORDERS, '---\ntitle: Orders table\n---\n')
@@ -1793,7 +1798,7 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
     })
 
     it('C6, 7A 4: "Use Schema’s" removes Orders’ own Domain with the real writers; Undo declares it on Orders again', async () => {
-      const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+      const real = realWriters.module
       write.mockImplementation(real.writeProperty) // the settings door writes the disk too
       disk.set(`${ORDERS}/.folder.md`, '---\nfolder_settings:\n  columns:\n    domain:\n      kind: select\n      options: [Orders only]\n  views:\n    - type: table\n      name: Orders\n---\n')
       const onNotice = await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_PAGE])
@@ -1827,7 +1832,7 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
     })
 
     it('CHECKER B2: "Separate value for Orders" on, then off, on Schema’s Domain gives Orders Schema’s column back (no hidden copy on Orders)', async () => {
-      const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+      const real = realWriters.module
       write.mockImplementation(real.writeProperty) // the settings door writes the disk too: Off removes Orders' declaration
       await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_PAGE])
       const shown = captured.folder!.settings.columns.domain
@@ -1841,7 +1846,7 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
     })
 
     it('1B: Orders’ own Domain ("Changed on Orders only") stays Orders’ own after "Separate value for Orders" goes on, then off', async () => {
-      const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+      const real = realWriters.module
       write.mockImplementation(real.writeProperty)
       disk.set(`${ORDERS}/.folder.md`, '---\nfolder_settings:\n  columns:\n    domain:\n      kind: select\n      options: [Orders only]\n  views:\n    - type: table\n      name: Orders\n---\n')
       await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_PAGE])
@@ -2064,8 +2069,8 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
       press(byLabel(el, `Edit ${key}`), 'Escape')
       return offered
     }
-    beforeEach(async () => {
-      const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+    beforeEach(() => {
+      const real = realWriters.module
       write.mockImplementation(real.writeProperty)
       disk.set(`${SCHEMA}/.folder.md`, schemaFile)
       disk.set(PAGE, '---\ntitle: Orders table\n---\n')
@@ -2318,8 +2323,8 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
     const OWN = [rec(LEAD, { owner: 'Ana', id: 'k3m9x2pq7abc', also_in: [ARCHIVE_ID] }), rec(SALES, { order: 1 }), rec(DEEP, { title: 'mine', order: 500, in: { [ARCHIVE_ID]: { order: 30 }, [STAGES_ID]: { order: 3 } } })]
     const headers = (el: ParentNode): string[] => texts(el, '.view-table thead th:not(.view-table__gutter)')
 
-    beforeEach(async () => {
-      const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
+    beforeEach(() => {
+      const real = realWriters.module
       writeOwn.mockImplementation(real.writeProperties)
       write.mockImplementation(real.writeProperty)
     })
