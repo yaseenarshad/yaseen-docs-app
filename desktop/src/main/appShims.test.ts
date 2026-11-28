@@ -9,6 +9,7 @@ import {
   allowedShimDirs,
   createAppShimController,
   isAppShimHostLaunch,
+  parseVaultShimKey,
   validateShimConnection,
   vaultShimKey,
   workspaceShimKey,
@@ -107,6 +108,8 @@ function makeHarness(opts: {
     windowsForShim: vi.fn((shimKey: string) => [...(shimWindows.get(shimKey) ?? [])]),
     regularWindowCount: vi.fn(() => regularCount),
     focusWindowById: vi.fn(() => true),
+    focusShimWindows: vi.fn((shimKey: string, _allWindows: boolean) => (shimWindows.get(shimKey)?.length ?? 0) > 0),
+    sendSidebarStart: vi.fn(() => true),
     findHostWindowForVault: vi.fn((root: string) => hostVaultWins.get(root)),
     findHostWindowForWorkspace: vi.fn((roots: readonly string[]) => hostWorkspaceWins.get(roots.join('|'))),
     handoffWindowToShim: vi.fn(async (windowId: string, shimKey: string) => {
@@ -205,6 +208,7 @@ describe('validateShimConnection (D5)', () => {
       vaultPath: VAULT,
       vaultUrl: fileLink(VAULT),
       workspaceId: null,
+      appId: 'default',
       displayName: 'Work',
     })
     expect(shim.checkedRequirements).toEqual([`identifier "${BUNDLE_ID}"`])
@@ -221,8 +225,36 @@ describe('validateShimConnection (D5)', () => {
       vaultPath: 'workspace:ws-1',
       vaultUrl: workspaceLink('ws-1'),
       workspaceId: 'ws-1',
+      appId: 'default',
       displayName: 'Suite',
     })
+
+    // Secondary Vault App carries YaseenDocsAppId -> distinct vaultShimKey.
+    const secShim = new FakeShim(`${LAUNCHER_BUNDLE_ID_PREFIX}work-today-cafebabe`, '/Applications/Work Today.app')
+    const secRes = validateShimConnection(
+      secShim,
+      validPlist({ bundleId: secShim.bundleId, vaultPath: `${VAULT}/`, vaultUrl: `${fileLink(VAULT)}?open=today`, appId: 'cafebabe' }),
+      dirs,
+    )
+    expect(secRes).toEqual({
+      ok: true,
+      shimKey: `${VAULT}::cafebabe`,
+      vaultPath: VAULT,
+      vaultUrl: `${fileLink(VAULT)}?open=today`,
+      workspaceId: null,
+      appId: 'cafebabe',
+      displayName: 'Work Today',
+    })
+  })
+
+  it('vaultShimKey and parseVaultShimKey round-trip primary, secondary, and reject workspace keys (YAZ-6681)', () => {
+    expect(vaultShimKey(`${VAULT}/`)).toBe(VAULT)
+    expect(vaultShimKey(`${VAULT}/`, 'default')).toBe(VAULT)
+    expect(vaultShimKey(`${VAULT}/`, 'a1b2c3d4')).toBe(`${VAULT}::a1b2c3d4`)
+    expect(parseVaultShimKey(VAULT)).toEqual({ root: VAULT, appId: 'default' })
+    expect(parseVaultShimKey(`${VAULT}::a1b2c3d4`)).toEqual({ root: VAULT, appId: 'a1b2c3d4' })
+    expect(parseVaultShimKey('workspace:ws-1')).toBeNull()
+    expect(parseVaultShimKey('')).toBeNull()
   })
 
   it('rejects bad bundleId prefix or disallowed characters', () => {
@@ -374,7 +406,7 @@ describe('createAppShimController', () => {
     h.controller.dispose()
   })
 
-  it('activate focuses most recently focused window of shim, or reopens vault when 0 windows remain', async () => {
+  it('activate calls focusShimWindows with vaultAppActivateAllWindows, or reopens vault when 0 windows remain (YAZ-6679)', async () => {
     const h = makeHarness()
     const shim = new FakeShim()
     await h.controller.handleConnected(shim)
@@ -382,7 +414,14 @@ describe('createAppShimController', () => {
 
     h.shimWindows.set(VAULT, ['w-top', 'w-back'])
     shim.emitEvent('activate', true)
-    expect(h.windows.focusWindowById).toHaveBeenCalledExactlyOnceWith('w-top')
+    expect(h.windows.focusShimWindows).toHaveBeenCalledExactlyOnceWith(VAULT, true)
+    expect(h.windows.routeToFile).not.toHaveBeenCalled()
+
+    // Turning off vaultAppActivateAllWindows passes false to focusShimWindows.
+    h.windows.focusShimWindows.mockClear()
+    h.state.settings.vaultAppActivateAllWindows = false
+    shim.emitEvent('activate', true)
+    expect(h.windows.focusShimWindows).toHaveBeenCalledExactlyOnceWith(VAULT, false)
     expect(h.windows.routeToFile).not.toHaveBeenCalled()
 
     h.shimWindows.set(VAULT, [])
@@ -541,6 +580,8 @@ describe('createAppShimController', () => {
       windowsForShim: vi.fn(() => ['win-1']),
       regularWindowCount: vi.fn(() => 0),
       focusWindowById: vi.fn(() => true),
+      focusShimWindows: vi.fn(() => true),
+      sendSidebarStart: vi.fn(() => true),
       findHostWindowForVault: vi.fn(() => undefined),
       findHostWindowForWorkspace: vi.fn(() => undefined),
       handoffWindowToShim: vi.fn(async () => null),
@@ -588,5 +629,153 @@ describe('createAppShimController', () => {
     expect(windows.flushAndCloseWindows).toHaveBeenCalledWith(['win-1'])
     expect(shim.quitCount).toBe(1)
     controller.dispose()
+  })
+
+  it('YAZ-6681 D4: multiple Vault Apps for one vault coexist and smart-route by openTarget & onlyFolder', async () => {
+    const state = defaultAppState()
+    state.folders[VAULT] = {
+      ...defaultFolderState(),
+      launchers: [
+        {
+          id: 'default',
+          name: 'Work Focused',
+          appPath: '/Applications/Work Focused.app',
+          iconPath: '/icons/f.png',
+          target: 'normal',
+          sidebarStart: { tab: 'files', folderKind: 'disk', folderPath: 'Clients', onlyFolder: true },
+        },
+        {
+          id: 'norm1111',
+          name: 'Work Main',
+          appPath: '/Applications/Work Main.app',
+          iconPath: '/icons/m.png',
+          target: 'normal',
+        },
+        {
+          id: 'tod22222',
+          name: 'Work Today',
+          appPath: '/Applications/Work Today.app',
+          iconPath: '/icons/t.png',
+          target: 'today',
+        },
+        {
+          id: 'inb33333',
+          name: 'Work Inbox',
+          appPath: '/Applications/Work Inbox.app',
+          iconPath: '/icons/i.png',
+          target: 'inbox',
+        },
+      ],
+    }
+
+    const todayBundleId = `${LAUNCHER_BUNDLE_ID_PREFIX}work-today-22222222`
+    const mainBundleId = `${LAUNCHER_BUNDLE_ID_PREFIX}work-main-11111111`
+    const h = makeHarness({
+      state,
+      plists: {
+        '/Applications/Work Main.app': validPlist({ bundleId: mainBundleId, appId: 'norm1111' }),
+        '/Applications/Work Today.app': validPlist({
+          bundleId: todayBundleId,
+          vaultUrl: `${fileLink(VAULT)}?open=today`,
+          appId: 'tod22222',
+        }),
+      },
+    })
+
+    // Smart routing before any shim is connected:
+    expect(h.controller.resolveShimForVault(VAULT, 'today')).toEqual({
+      mode: 'launch',
+      appPath: '/Applications/Work Today.app',
+      shimKey: `${VAULT}::tod22222`,
+    })
+    expect(h.controller.resolveShimForVault(VAULT, 'inbox')).toEqual({
+      mode: 'launch',
+      appPath: '/Applications/Work Inbox.app',
+      shimKey: `${VAULT}::inb33333`,
+    })
+    // Normal open skips onlyFolder app and picks the unconstrained Normal app!
+    expect(h.controller.resolveShimForVault(VAULT)).toEqual({
+      mode: 'launch',
+      appPath: '/Applications/Work Main.app',
+      shimKey: `${VAULT}::norm1111`,
+    })
+    expect(h.controller.resolveShimForPath(`${VAULT}/notes/a.md`)).toEqual({
+      mode: 'launch',
+      appPath: '/Applications/Work Main.app',
+      shimKey: `${VAULT}::norm1111`,
+    })
+    expect(h.controller.resolveShimForPath(`${VAULT}/notes/a.md`, null, 'today')).toEqual({
+      mode: 'launch',
+      appPath: '/Applications/Work Today.app',
+      shimKey: `${VAULT}::tod22222`,
+    })
+
+    // Connect two shims for the SAME vault simultaneously: both stay registered under distinct shimKeys.
+    const shimMain = new FakeShim(mainBundleId, '/Applications/Work Main.app', 5001)
+    const shimToday = new FakeShim(todayBundleId, '/Applications/Work Today.app', 5002)
+    expect(await h.controller.handleConnected(shimMain)).toBe(true)
+    expect(await h.controller.handleConnected(shimToday)).toBe(true)
+    expect(h.controller.connectedCount()).toBe(2)
+    expect(h.controller.resolveShimForVault(VAULT)).toEqual({ mode: 'connected', shimKey: `${VAULT}::norm1111` })
+    expect(h.controller.resolveShimForVault(VAULT, 'today')).toEqual({ mode: 'connected', shimKey: `${VAULT}::tod22222` })
+    h.controller.dispose()
+  })
+
+  it('YAZ-6682 D5: delivers sidebarStart on initial connect and handoff (vault & workspace), never on activate with live windows', async () => {
+    const startVault = { tab: 'focus' as const, folderKind: 'collection' as const, folderId: 'c1', onlyFolder: true }
+    const startWs = { tab: 'favorites' as const, folderKind: 'disk' as const, folderPath: 'Shared', onlyFolder: true }
+    const state = defaultAppState()
+    state.folders[VAULT] = {
+      ...defaultFolderState(),
+      launchers: [
+        { id: 'default', name: 'Work', appPath: BUNDLE_PATH, iconPath: '/icons/w.png', sidebarStart: startVault },
+      ],
+    }
+    state.vaultSets = [
+      {
+        id: 'ws-1',
+        name: 'Suite',
+        roots: ['/v/a', '/v/b'],
+        lastUsed: 1,
+        launcher: { name: 'Suite', appPath: '/Applications/Suite.app', iconPath: '/icons/ws.png', sidebarStart: startWs },
+      },
+    ]
+    const wsBundleId = `${LAUNCHER_BUNDLE_ID_PREFIX}suite-9999aaaa`
+    const h = makeHarness({
+      state,
+      plists: {
+        [BUNDLE_PATH]: validPlist(),
+        '/Applications/Suite.app': validPlist({ bundleId: wsBundleId, vaultPath: 'workspace:ws-1', vaultUrl: workspaceLink('ws-1') }),
+      },
+    })
+
+    // Fresh vault shim connect passes sidebarStart to routeToFile.
+    const shim = new FakeShim()
+    await h.controller.handleConnected(shim)
+    expect(h.windows.routeToFile).toHaveBeenCalledExactlyOnceWith(VAULT, null, undefined, VAULT, startVault)
+
+    // Plain activate while window is open does NOT re-send sidebarStart!
+    h.windows.routeToFile.mockClear()
+    h.windows.sendSidebarStart.mockClear()
+    shim.emitEvent('activate', true)
+    expect(h.windows.focusShimWindows).toHaveBeenCalledWith(VAULT, true)
+    expect(h.windows.routeToFile).not.toHaveBeenCalled()
+    expect(h.windows.sendSidebarStart).not.toHaveBeenCalled()
+
+    // Fresh workspace shim connect passes sidebarStart to openVaultSet.
+    const wsShim = new FakeShim(wsBundleId, '/Applications/Suite.app', 5010)
+    await h.controller.handleConnected(wsShim)
+    expect(h.windows.openVaultSet).toHaveBeenCalledExactlyOnceWith('ws-1', undefined, 'workspace:ws-1', startWs)
+
+    // Handoff from existing host window delivers sidebarStart via sendSidebarStart.
+    shim.quit()
+    h.windows.routeToFile.mockClear()
+    h.windows.sendSidebarStart.mockClear()
+    h.hostVaultWins.set(VAULT, 'host-1')
+    const shim2 = new FakeShim()
+    await h.controller.handleConnected(shim2)
+    expect(h.windows.handoffWindowToShim).toHaveBeenCalledWith('host-1', VAULT)
+    expect(h.windows.sendSidebarStart).toHaveBeenCalledExactlyOnceWith('handed-host-1', { root: VAULT, sidebarStart: startVault })
+    h.controller.dispose()
   })
 })

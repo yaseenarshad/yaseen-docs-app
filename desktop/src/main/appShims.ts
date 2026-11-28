@@ -8,7 +8,7 @@
 import { realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { fileLink, parseFileLink, type LinkOpenTarget } from '@shared/links'
-import { stripSlash } from '@shared/types'
+import { stripSlash, vaultLaunchersOf, type VaultAppSidebarStart } from '@shared/types'
 import { LAUNCHER_BUNDLE_ID_PREFIX, resolveLauncherAppDirs, type LauncherPlistInfo } from './vaultLauncher'
 import type { Store } from './store'
 import type { WindowManager } from './windows'
@@ -46,7 +46,7 @@ export interface AppShimLike<MenuT = unknown> {
 }
 
 export type ShimValidationResult =
-  | { ok: true; shimKey: string; vaultPath: string; vaultUrl: string; workspaceId: string | null; displayName: string }
+  | { ok: true; shimKey: string; vaultPath: string; vaultUrl: string; workspaceId: string | null; appId: string; displayName: string }
   | { ok: false; reason: string }
 
 export type ShimRouteDecision =
@@ -70,9 +70,26 @@ export function allowedShimDirs(env: NodeJS.ProcessEnv = process.env): string[] 
   return resolveLauncherAppDirs(env).map((entry) => resolve(entry))
 }
 
-/** Canonical shim key for a single vault root path. */
-export function vaultShimKey(root: string): string {
-  return stripSlash(root)
+/** Canonical shim key for a single vault root path and optional per-vault app id (YAZ-6681). */
+export function vaultShimKey(root: string, appId?: string): string {
+  const clean = stripSlash(root)
+  const id = appId?.trim()
+  return id !== undefined && id.length > 0 && id !== 'default' ? `${clean}::${id}` : clean
+}
+
+/** Parses a vault shim key back into `{ root, appId }` (returns `null` for `workspace:*` or empty keys; YAZ-6681). */
+export function parseVaultShimKey(shimKey: string): { root: string; appId: string } | null {
+  if (shimKey.length === 0 || shimKey.startsWith(WORKSPACE_KEY_PREFIX)) return null
+  const sep = shimKey.lastIndexOf('::')
+  if (sep !== -1) {
+    const root = stripSlash(shimKey.slice(0, sep))
+    const appId = shimKey.slice(sep + 2).trim()
+    if (root.length > 0 && appId.length > 0 && !appId.includes('/')) {
+      return { root, appId }
+    }
+  }
+  const root = stripSlash(shimKey)
+  return root.length > 0 ? { root, appId: 'default' } : null
 }
 
 /** Canonical shim key for a saved workspace (`VaultSet`) id. */
@@ -174,10 +191,11 @@ export function validateShimConnection(
   }
 
   const workspaceId = parseWorkspaceShimKey(rawVaultPath)
-  const shimKey = workspaceId !== null ? workspaceShimKey(workspaceId) : vaultShimKey(rawVaultPath)
+  const appId = plist.appId?.trim() || 'default'
+  const shimKey = workspaceId !== null ? workspaceShimKey(workspaceId) : vaultShimKey(rawVaultPath, appId)
   const vaultPath = workspaceId !== null ? rawVaultPath : stripSlash(rawVaultPath)
   const displayName = plist.displayName?.trim() || basename(normalizedBundlePath, '.app') || 'Vault App'
-  return { ok: true, shimKey, vaultPath, vaultUrl: rawVaultUrl, workspaceId, displayName }
+  return { ok: true, shimKey, vaultPath, vaultUrl: rawVaultUrl, workspaceId, appId, displayName }
 }
 
 const pathInRoot = (root: string, target: string): boolean => {
@@ -196,6 +214,8 @@ export interface AppShimControllerDeps<MenuT = unknown> {
     | 'windowsForShim'
     | 'regularWindowCount'
     | 'focusWindowById'
+    | 'focusShimWindows'
+    | 'sendSidebarStart'
     | 'findHostWindowForVault'
     | 'findHostWindowForWorkspace'
     | 'handoffWindowToShim'
@@ -231,12 +251,12 @@ export interface AppShimController<MenuT = unknown> {
   onWindowOpened(windowId: string, shimKey: string | undefined): void
   /** Notify controller that a window closed (quits shim if its last window closed; syncs host Dock / headless exit). */
   onWindowClosed(windowId: string, shimKey: string | undefined): void
-  /** Decide whether a vault should route to a connected shim, launch a stopped shim, or stay in host (D3). */
-  resolveShimForVault(root: string): ShimRouteDecision
+  /** Decide whether a vault should route to a connected shim, launch a stopped shim, or stay in host (D3, YAZ-6681 smart routing). */
+  resolveShimForVault(root: string, openTarget?: LinkOpenTarget): ShimRouteDecision
   /** Decide whether a workspace should route to a connected shim, launch a stopped shim, or stay in host (D3). */
   resolveShimForWorkspace(workspaceId: string): ShimRouteDecision
-  /** Find the most specific vault shim owning `path` (file or vault folder), honoring `rootOverride` when present. */
-  resolveShimForPath(path: string, rootOverride?: string | null): ShimRouteDecision
+  /** Find the most specific vault shim owning `path` (file or vault folder), honoring `rootOverride` and `openTarget` when present. */
+  resolveShimForPath(path: string, rootOverride?: string | null, openTarget?: LinkOpenTarget): ShimRouteDecision
   /** Queue a file/target open for a stopped shim that is launching; consumed on connect within TTL. */
   queuePendingOpen(shimKey: string, req: PendingShimOpen): void
   /** Launch a stopped shim `.app` via the injected `launchApp` callback. */
@@ -266,6 +286,7 @@ interface ConnectedShimEntry<MenuT> {
   vaultPath: string
   vaultUrl: string
   workspaceId: string | null
+  appId: string
   quitting: boolean
   confirming: boolean
   opening: boolean
@@ -343,26 +364,115 @@ export function createAppShimController<MenuT = unknown>(deps: AppShimController
     return pathInRoot(entry.vaultPath, filePath)
   }
 
-  const openDefaultForShim = (entry: ConnectedShimEntry<MenuT>, openTarget?: LinkOpenTarget): void => {
+  const sidebarStartForShim = (entry: ConnectedShimEntry<MenuT>): VaultAppSidebarStart | undefined => {
+    const state = deps.store.get()
     if (entry.workspaceId !== null) {
-      deps.windows.openVaultSet(entry.workspaceId, undefined, entry.shimKey)
+      return (state.vaultSets ?? []).find((s) => s.id === entry.workspaceId)?.launcher?.sidebarStart
+    }
+    const folders = state.folders ?? {}
+    const folder = folders[entry.vaultPath] ?? folders[stripSlash(entry.vaultPath)]
+    return vaultLaunchersOf(folder).find((l) => (l.id ?? 'default') === entry.appId)?.sidebarStart
+  }
+
+  const openDefaultForShim = (entry: ConnectedShimEntry<MenuT>, openTarget?: LinkOpenTarget): void => {
+    const sidebarStart = sidebarStartForShim(entry)
+    if (entry.workspaceId !== null) {
+      if (sidebarStart !== undefined) deps.windows.openVaultSet(entry.workspaceId, undefined, entry.shimKey, sidebarStart)
+      else deps.windows.openVaultSet(entry.workspaceId, undefined, entry.shimKey)
       return
     }
     const target = openTarget ?? parseFileLink(entry.vaultUrl)?.open
-    deps.windows.routeToFile(entry.vaultPath, null, target, entry.shimKey)
+    if (sidebarStart !== undefined) deps.windows.routeToFile(entry.vaultPath, null, target, entry.shimKey, sidebarStart)
+    else deps.windows.routeToFile(entry.vaultPath, null, target, entry.shimKey)
   }
 
-  const resolveShimForVault = (root: string): ShimRouteDecision => {
-    const key = vaultShimKey(root)
-    const liveEntry = connected.get(key)
-    if (liveEntry !== undefined && liveEntry.shim.isConnected() && !liveEntry.quitting) {
-      return { mode: 'connected', shimKey: key }
-    }
+  const resolveShimForVault = (root: string, openTarget?: LinkOpenTarget): ShimRouteDecision => {
+    const cleanRoot = stripSlash(root)
     const folders = deps.store.get().folders ?? {}
-    const appPath = folders[key]?.launcher?.appPath ?? folders[root]?.launcher?.appPath
-    if (appPath !== undefined && deps.exists(appPath)) {
-      return { mode: 'launch', appPath, shimKey: key }
+    const folder = folders[cleanRoot] ?? folders[root]
+    const installed = vaultLaunchersOf(folder)
+
+    type Candidate = {
+      appId: string
+      shimKey: string
+      target: 'normal' | 'inbox' | 'today'
+      onlyFolder: boolean
+      connected: boolean
+      appPath?: string
+      order: number
     }
+    const byKey = new Map<string, Candidate>()
+    installed.forEach((launcher, idx) => {
+      const appId = launcher.id ?? 'default'
+      const shimKey = vaultShimKey(cleanRoot, appId)
+      const liveEntry = connected.get(shimKey)
+      const isConnected = liveEntry !== undefined && liveEntry.shim.isConnected() && !liveEntry.quitting
+      const hasBundle = deps.exists(launcher.appPath)
+      if (!isConnected && !hasBundle) return
+      byKey.set(shimKey, {
+        appId,
+        shimKey,
+        target: launcher.target ?? 'normal',
+        onlyFolder: launcher.sidebarStart?.onlyFolder === true,
+        connected: isConnected,
+        appPath: launcher.appPath,
+        order: idx,
+      })
+    })
+    let extraOrder = installed.length
+    for (const entry of connected.values()) {
+      if (entry.workspaceId !== null || entry.quitting || !entry.shim.isConnected()) continue
+      if (stripSlash(entry.vaultPath) !== cleanRoot) continue
+      if (byKey.has(entry.shimKey)) continue
+      const urlTarget = parseFileLink(entry.vaultUrl)?.open
+      byKey.set(entry.shimKey, {
+        appId: entry.appId,
+        shimKey: entry.shimKey,
+        target: urlTarget ?? 'normal',
+        onlyFolder: sidebarStartForShim(entry)?.onlyFolder === true,
+        connected: true,
+        order: extraOrder++,
+      })
+    }
+
+    const candidates = [...byKey.values()]
+    if (candidates.length === 0) return { mode: 'host' }
+
+    const pickBest = (list: Candidate[]): Candidate | undefined => {
+      if (list.length === 0) return undefined
+      return [...list].sort((a, b) => {
+        if (a.connected !== b.connected) return a.connected ? -1 : 1
+        const aPrimary = a.appId === 'default'
+        const bPrimary = b.appId === 'default'
+        if (aPrimary !== bPrimary) return aPrimary ? -1 : 1
+        return a.order - b.order
+      })[0]
+    }
+
+    let chosen: Candidate | undefined
+    if (openTarget === 'today') {
+      chosen =
+        pickBest(candidates.filter((c) => c.target === 'today')) ??
+        pickBest(candidates.filter((c) => c.target === 'normal' && !c.onlyFolder)) ??
+        pickBest(candidates.filter((c) => c.appId === 'default')) ??
+        pickBest(candidates)
+    } else if (openTarget === 'inbox') {
+      chosen =
+        pickBest(candidates.filter((c) => c.target === 'inbox')) ??
+        pickBest(candidates.filter((c) => c.target === 'normal' && !c.onlyFolder)) ??
+        pickBest(candidates.filter((c) => c.appId === 'default')) ??
+        pickBest(candidates)
+    } else {
+      chosen =
+        pickBest(candidates.filter((c) => c.target === 'normal' && !c.onlyFolder)) ??
+        pickBest(candidates.filter((c) => c.appId === 'default')) ??
+        pickBest(candidates.filter((c) => c.target === 'normal')) ??
+        pickBest(candidates)
+    }
+
+    if (chosen === undefined) return { mode: 'host' }
+    if (chosen.connected) return { mode: 'connected', shimKey: chosen.shimKey }
+    if (chosen.appPath !== undefined) return { mode: 'launch', appPath: chosen.appPath, shimKey: chosen.shimKey }
     return { mode: 'host' }
   }
 
@@ -380,9 +490,9 @@ export function createAppShimController<MenuT = unknown>(deps: AppShimController
     return { mode: 'host' }
   }
 
-  const resolveShimForPath = (path: string, rootOverride?: string | null): ShimRouteDecision => {
+  const resolveShimForPath = (path: string, rootOverride?: string | null, openTarget?: LinkOpenTarget): ShimRouteDecision => {
     if (rootOverride != null && pathInRoot(rootOverride, path)) {
-      const overrideDecision = resolveShimForVault(rootOverride)
+      const overrideDecision = resolveShimForVault(rootOverride, openTarget)
       if (overrideDecision.mode !== 'host') return overrideDecision
     }
     // Check all connected vault shims and installed vault launchers, preferring the most specific root.
@@ -391,14 +501,14 @@ export function createAppShimController<MenuT = unknown>(deps: AppShimController
       if (entry.workspaceId === null && entry.shim.isConnected() && !entry.quitting) candidates.add(entry.vaultPath)
     }
     for (const [root, folder] of Object.entries(deps.store.get().folders ?? {})) {
-      if (folder.launcher !== undefined) candidates.add(stripSlash(root))
+      if (vaultLaunchersOf(folder).length > 0) candidates.add(stripSlash(root))
     }
     let bestRoot: string | null = null
     for (const root of candidates) {
       if (!pathInRoot(root, path)) continue
       if (bestRoot === null || root.length > bestRoot.length) bestRoot = root
     }
-    return bestRoot === null ? { mode: 'host' } : resolveShimForVault(bestRoot)
+    return bestRoot === null ? { mode: 'host' } : resolveShimForVault(bestRoot, openTarget)
   }
 
   return {
@@ -424,6 +534,7 @@ export function createAppShimController<MenuT = unknown>(deps: AppShimController
         vaultPath: check.vaultPath,
         vaultUrl: check.vaultUrl,
         workspaceId: check.workspaceId,
+        appId: check.appId,
         quitting: false,
         confirming: false,
         opening: true,
@@ -442,11 +553,8 @@ export function createAppShimController<MenuT = unknown>(deps: AppShimController
 
       shim.on('activate', () => {
         if (entry.quitting || quittingAll || !shim.isConnected()) return
-        const liveIds = deps.windows.windowsForShim(entry.shimKey)
-        if (liveIds.length > 0) {
-          deps.windows.focusWindowById(liveIds[0])
-          return
-        }
+        const revealAll = deps.store.get().settings.vaultAppActivateAllWindows
+        if (deps.windows.focusShimWindows(entry.shimKey, revealAll)) return
         openDefaultForShim(entry)
       })
 
@@ -518,11 +626,18 @@ export function createAppShimController<MenuT = unknown>(deps: AppShimController
         }
 
         if (hostWinId !== undefined) {
-          await deps.windows.handoffWindowToShim(hostWinId, entry.shimKey)
+          const handedId = await deps.windows.handoffWindowToShim(hostWinId, entry.shimKey)
+          const sidebarStart = sidebarStartForShim(entry)
           if (pending?.filePath !== undefined) {
             deps.windows.routeToFile(pending.filePath, pending.rootOverride, pending.openTarget, entry.shimKey)
           } else if (openTarget !== undefined && entry.workspaceId === null) {
-            deps.windows.routeToFile(entry.vaultPath, null, openTarget, entry.shimKey)
+            if (sidebarStart !== undefined) deps.windows.routeToFile(entry.vaultPath, null, openTarget, entry.shimKey, sidebarStart)
+            else deps.windows.routeToFile(entry.vaultPath, null, openTarget, entry.shimKey)
+          } else if (handedId !== null && sidebarStart !== undefined) {
+            deps.windows.sendSidebarStart(handedId, {
+              ...(entry.workspaceId === null ? { root: entry.vaultPath } : {}),
+              sidebarStart,
+            })
           }
         } else if (pending?.filePath !== undefined) {
           deps.windows.routeToFile(pending.filePath, pending.rootOverride, pending.openTarget, entry.shimKey)
