@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { VaultAppSummary } from '@shared/types'
 import { useVaultLauncherIcons } from './useVaultLauncherIcons'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -13,12 +14,20 @@ const ICON_A = 'data:image/png;base64,AAA'
 const ICON_B = 'data:image/png;base64,BBB'
 const WS_ICON_1 = 'data:image/png;base64,WS1'
 const WS_ICON_2 = 'data:image/png;base64,WS2'
+const APPS_1: Record<string, VaultAppSummary[]> = { '/vaults/a': [{ id: 'default', name: 'Vault A' }] }
+const APPS_2: Record<string, VaultAppSummary[]> = {
+  '/vaults/a': [
+    { id: 'default', name: 'Vault A' },
+    { id: 'a1b2c3d4', name: 'Vault A Favorites', sidebarStart: { tab: 'favorites', onlyFolder: true } },
+  ],
+}
 
 let reactRoot: Root | null = null
 let host: HTMLElement | null = null
 
 let mockIcons: ReturnType<typeof vi.fn<() => Promise<Record<string, string>>>>
 let mockWorkspaceIcons: ReturnType<typeof vi.fn<() => Promise<Record<string, string>>>>
+let mockVaultApps: ReturnType<typeof vi.fn<() => Promise<Record<string, VaultAppSummary[]>>>>
 let mockOnChanged: ReturnType<typeof vi.fn<(listener: () => void) => () => void>>
 let unsubscribe: ReturnType<typeof vi.fn<() => void>>
 let changeListeners: Set<() => void>
@@ -34,6 +43,7 @@ beforeEach(() => {
   unsubscribe = vi.fn()
   mockIcons = vi.fn(async () => ({ '/vaults/a': ICON_A }))
   mockWorkspaceIcons = vi.fn(async () => ({ 'ws-1': WS_ICON_1 }))
+  mockVaultApps = vi.fn(async () => APPS_1)
   mockOnChanged = vi.fn((listener: () => void) => {
     changeListeners.add(listener)
     return () => {
@@ -46,6 +56,7 @@ beforeEach(() => {
     vaultLauncher: {
       icons: mockIcons,
       workspaceIcons: mockWorkspaceIcons,
+      vaultApps: mockVaultApps,
       onChanged: mockOnChanged,
     },
   }
@@ -60,7 +71,7 @@ afterEach(() => {
 })
 
 describe('useVaultLauncherIcons', () => {
-  it('fetches icons on mount, re-fetches on onChanged, and unsubscribes on unmount', async () => {
+  it('fetches icons and vaultApps on mount, re-fetches on onChanged, and unsubscribes on unmount', async () => {
     let latest: ReturnType<typeof useVaultLauncherIcons> | null = null
     host = document.createElement('div')
     document.body.appendChild(host)
@@ -72,13 +83,16 @@ describe('useVaultLauncherIcons', () => {
 
     expect(mockIcons).toHaveBeenCalledTimes(1)
     expect(mockWorkspaceIcons).toHaveBeenCalledTimes(1)
+    expect(mockVaultApps).toHaveBeenCalledTimes(1)
     expect(mockOnChanged).toHaveBeenCalledTimes(1)
     expect(latest!.launcherIcons).toEqual({ '/vaults/a': ICON_A })
     expect(latest!.workspaceIcons).toEqual({ 'ws-1': WS_ICON_1 })
+    expect(latest!.vaultApps).toEqual(APPS_1)
 
-    // Simulate another window creating/editing/removing a launcher.
+    // Simulate another window creating/editing/removing an app.
     mockIcons.mockResolvedValueOnce({ '/vaults/a': ICON_A, '/vaults/b': ICON_B })
     mockWorkspaceIcons.mockResolvedValueOnce({ 'ws-1': WS_ICON_2 })
+    mockVaultApps.mockResolvedValueOnce(APPS_2)
 
     await act(async () => {
       for (const listener of [...changeListeners]) listener()
@@ -86,8 +100,10 @@ describe('useVaultLauncherIcons', () => {
 
     expect(mockIcons).toHaveBeenCalledTimes(2)
     expect(mockWorkspaceIcons).toHaveBeenCalledTimes(2)
+    expect(mockVaultApps).toHaveBeenCalledTimes(2)
     expect(latest!.launcherIcons).toEqual({ '/vaults/a': ICON_A, '/vaults/b': ICON_B })
     expect(latest!.workspaceIcons).toEqual({ 'ws-1': WS_ICON_2 })
+    expect(latest!.vaultApps).toEqual(APPS_2)
 
     // Unmount cleans up the IPC listener.
     expect(unsubscribe).not.toHaveBeenCalled()
@@ -99,7 +115,7 @@ describe('useVaultLauncherIcons', () => {
     expect(changeListeners.size).toBe(0)
   })
 
-  it('works without throwing when onChanged is absent on the bridge', async () => {
+  it('works without throwing when onChanged and vaultApps are absent on the bridge', async () => {
     ;(window as unknown as { yaseenDocs: Record<string, unknown> }).yaseenDocs = {
       vaultLauncher: {
         icons: mockIcons,
@@ -120,5 +136,6 @@ describe('useVaultLauncherIcons', () => {
     expect(mockWorkspaceIcons).toHaveBeenCalledTimes(1)
     expect(latest!.launcherIcons).toEqual({ '/vaults/a': ICON_A })
     expect(latest!.workspaceIcons).toEqual({ 'ws-1': WS_ICON_1 })
+    expect(latest!.vaultApps).toEqual({})
   })
 })

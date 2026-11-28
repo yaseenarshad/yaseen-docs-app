@@ -1107,6 +1107,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         // YAZ-6641: confirmation popup before Cmd+Q / Alfred Quit All closes a Vault App or Yaseen Docs (default ON).
+        // YAZ-6683: macOS Vault App activation behavior (Global-only).
         title: 'When quitting',
         items: [
           {
@@ -1116,6 +1117,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['quit', 'confirm', 'cmd+q', 'alfred', 'close', 'popup', 'dialog', 'prompt'],
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.confirmBeforeQuit} onChange={(confirmBeforeQuit) => onChange({ ...settings, confirmBeforeQuit })} ariaLabel="Confirm before quitting" />
+            ),
+          },
+          {
+            id: 'vaultAppActivateAllWindows',
+            label: 'Reveal all windows when opening a Vault App',
+            hint: 'Opening a running Vault App from Alfred, Spotlight, or the Dock brings all of its open windows to the front.',
+            keywords: ['vault app', 'alfred', 'spotlight', 'dock', 'windows', 'all windows', 'reveal', 'activate', 'monitor', 'launcher'],
+            available: () => /Mac/i.test(navigator.platform),
+            render: ({ settings, onChange }) => (
+              <Segmented
+                options={ON_OFF_OPTIONS}
+                value={settings.vaultAppActivateAllWindows}
+                onChange={(vaultAppActivateAllWindows) => onChange({ ...settings, vaultAppActivateAllWindows })}
+                ariaLabel="Reveal all windows when opening a Vault App"
+              />
             ),
           },
         ],
@@ -1136,15 +1152,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-5967, YAZ-6375: per-vault macOS `.app` launcher (hidden on non-macOS or when no vault is open).
-        title: 'Vault app',
-        hint: 'Create a macOS launcher app for Alfred, Spotlight, and the Dock.',
+        // YAZ-5967, YAZ-6375, YAZ-6683: standalone macOS Vault Apps and Workspace Apps.
+        title: 'Vault apps',
+        hint: 'Create standalone macOS apps for Alfred, Spotlight, and the Dock.',
         vault: true,
         items: [
           {
             id: 'workspaceLauncher',
-            label: 'Workspace launcher',
-            hint: 'Opens all vaults in this workspace together in one window and updates the Dock icon when focused.',
+            label: 'Workspace app',
+            hint: 'Runs all vaults in this workspace as a standalone macOS app with its own Dock icon and menu bar.',
             keywords: ['workspace', 'app', 'launcher', 'alfred', 'spotlight', 'dock', 'icon', 'badge', 'macos'],
             wide: true,
             available: (ctx) => ctx.workspaceLauncher !== undefined,
@@ -1157,8 +1173,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
           {
             id: 'vaultLauncher',
-            label: 'Vault launcher',
-            hint: 'Opens this vault alone in its own window (never inside a workspace) and updates the Dock icon when focused.',
+            label: 'Vault app',
+            hint: 'Runs this vault as a standalone macOS app with its own Dock icon, Cmd+Tab slot, and menu bar.',
             keywords: ['vault', 'app', 'launcher', 'alfred', 'spotlight', 'dock', 'icon', 'badge', 'macos'],
             wide: true,
             available: (ctx) => ctx.vaultLauncher !== undefined,
@@ -1171,8 +1187,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
           {
             id: 'allLaunchers',
-            label: 'All launchers',
-            hint: 'Every vault launcher, workspace launcher, and leftover .app bundle found on this Mac.',
+            label: 'All vault & workspace apps',
+            hint: 'Every vault app, workspace app, and leftover .app bundle found on this Mac.',
             keywords: ['launcher', 'launchers', 'all', 'orphan', 'orphaned', 'cleanup', 'applications', 'vault', 'workspace', 'macos'],
             wide: true,
             available: () => /Mac/i.test(navigator.platform) && typeof window.yaseenDocs?.vaultLauncher?.listAll === 'function',

@@ -102,7 +102,7 @@
  */
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { MAX_VAULT_SETS, cleanVaultName, sameVaults, type VaultEntry, type VaultLauncherStatus, type VaultSet } from '@shared/types'
+import { MAX_VAULT_SETS, cleanVaultName, sameVaults, type VaultAppSummary, type VaultEntry, type VaultLauncherStatus, type VaultSet } from '@shared/types'
 import { api } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { matchLinkCandidates } from '../links/completion'
@@ -146,11 +146,13 @@ export interface VaultSwitcherProps {
   onOpenSetHere?: (id: string) => Promise<boolean>
   /** `settings.hotkeys` (YAZ-3397 D2): the vault menu's "Open in Files window" names its key as it is now (YAZ-3410). */
   hotkeys: HotkeyOverrides
-  /** Per-vault macOS launcher icon data URLs (YAZ-5967, YAZ-6375). */
+  /** Per-vault macOS app icon data URLs (YAZ-5967, YAZ-6375). */
   vaultIcons?: Record<string, string>
-  /** Per-workspace macOS launcher icon data URLs. */
+  /** Per-workspace macOS app icon data URLs. */
   workspaceIcons?: Record<string, string>
-  /** Called when a workspace launcher is saved so App can refresh launcher icons. */
+  /** Per-vault installed macOS Vault Apps (YAZ-6683). */
+  vaultApps?: Record<string, VaultAppSummary[]>
+  /** Called when a vault or workspace app is saved so App can refresh icons and summaries. */
   onLauncherChanged?: () => void
 }
 
@@ -216,7 +218,7 @@ export function defaultHighlight(matches: readonly { path: string }[], query: st
 /** The trigger's text (YAZ-2602 S15): one vault's name; two joined with " + "; more as the first two, then "+ N more". */
 export const vaultsLabel = (names: readonly string[]): string => (names.length <= 2 ? names.join(' + ') : `${names[0]} + ${names[1]} + ${names.length - 2} more`)
 
-export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, onOpenHere, onAddHere, onOpenFolderPage, onReveal, onOpenVsCode, onNotice, onOpenSetHere, hotkeys, vaultIcons, workspaceIcons, onLauncherChanged }: VaultSwitcherProps) {
+export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, onOpenHere, onAddHere, onOpenFolderPage, onReveal, onOpenVsCode, onNotice, onOpenSetHere, hotkeys, vaultIcons, workspaceIcons, vaultApps, onLauncherChanged }: VaultSwitcherProps) {
   // The first vault: the one a window with one vault has, and so the one the trigger's own menu and rename are about.
   const root = roots[0]
   const multi = roots.length > 1
@@ -419,13 +421,18 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
     setPanel((p) => (p === null ? p : { ...p, sets: p.sets.filter((s) => s.id !== id) }))
     inputRef.current?.focus()
   }
-  const openVaultLauncher = (path: string): void => {
+  const openEditVaultApp = (path: string, appId: string): void => {
     const defaultName = storage.vaultName(path)
     closePanel()
-    void api.vaultLauncher.status(path).then(
+    void api.vaultLauncher.status(path, appId).then(
       (status) => setLauncherModal({ kind: 'vault', root: path, defaultName, status }),
       () => setLauncherModal({ kind: 'vault', root: path, defaultName, status: null }),
     )
+  }
+  const openAddVaultApp = (path: string): void => {
+    const defaultName = storage.vaultName(path)
+    closePanel()
+    setLauncherModal({ kind: 'vault', root: path, defaultName, status: null })
   }
   const openWorkspaceLauncher = (id: string): void => {
     const set = panel?.sets.find((s) => s.id === id) ?? storage.getVaultSets().find((s) => s.id === id)
@@ -787,7 +794,9 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
               onSetKey: saveKey,
               ...(canVaultLauncher
                 ? {
-                    onLauncher: openVaultLauncher,
+                    vaultApps: vaultApps?.[vaultMenu.path],
+                    onEditVaultApp: openEditVaultApp,
+                    onAddVaultApp: openAddVaultApp,
                     hasLauncher: vaultIcons?.[vaultMenu.path] !== undefined,
                   }
                 : {}),
@@ -813,7 +822,7 @@ export function VaultSwitcher({ roots, onPickFolder, pickDisabled, openRequest, 
                       ? [
                           {
                             id: 'launcher-set',
-                            label: workspaceIcons?.[matchedSetId] !== undefined ? 'Edit workspace launcher…' : 'Make workspace launcher…',
+                            label: workspaceIcons?.[matchedSetId] !== undefined ? 'Edit workspace app…' : 'Make a workspace app…',
                             onSelect: () => openWorkspaceLauncher(matchedSetId),
                           },
                         ]

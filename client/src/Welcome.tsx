@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useReducer, useState, useSyncExternalStore, type MouseEvent } from 'react'
-import { MAX_RECENT_ROOTS, cleanVaultName, type RecentRoots, type VaultLauncherStatus, type VaultSet } from '@shared/types'
+import { MAX_RECENT_ROOTS, cleanVaultName, type RecentRoots, type VaultAppSummary, type VaultLauncherStatus, type VaultSet } from '@shared/types'
 import { api, BridgeRequestError } from './api'
 import appIcon from './assets/welcome-icon.png'
 import { basename } from './lib/paths'
@@ -54,18 +54,20 @@ interface WelcomeProps {
   picking: boolean
   /** App's passive notice: what a menu item did, or why it could not. */
   onNotice: VaultMenuHandlers['onNotice']
-  /** Per-vault macOS launcher icon data URLs (YAZ-5967, YAZ-6375). */
+  /** Per-vault macOS app icon data URLs (YAZ-5967, YAZ-6375). */
   vaultIcons?: Record<string, string>
-  /** Per-workspace macOS launcher icon data URLs. */
+  /** Per-workspace macOS app icon data URLs. */
   workspaceIcons?: Record<string, string>
-  /** Called when a vault or workspace launcher is saved so App can refresh launcher icons. */
+  /** Per-vault installed macOS Vault Apps (YAZ-6683). */
+  vaultApps?: Record<string, VaultAppSummary[]>
+  /** Called when a vault or workspace app is saved so App can refresh icons and summaries. */
   onLauncherChanged?: () => void
 }
 
 /** A row's menu or inline name field: a folder row's (its path) or a workspace row's (its id). */
 type RowRef = { kind: 'folder' | 'set'; key: string }
 
-export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, picking, onNotice, vaultIcons, workspaceIcons, onLauncherChanged }: WelcomeProps) {
+export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, picking, onNotice, vaultIcons, workspaceIcons, vaultApps, onLauncherChanged }: WelcomeProps) {
   const [rows, setRows] = useState(() => recents.slice(0, MAX_RECENT_ROOTS))
   const [workspaces, setWorkspaces] = useState(() => sets)
   /**
@@ -128,12 +130,16 @@ export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, 
     void api.window.removeSet(id).catch(failed('remove the workspace'))
     setWorkspaces((prev) => prev.filter((s) => s.id !== id))
   }
-  const openVaultLauncher = (path: string): void => {
+  const openEditVaultApp = (path: string, appId: string): void => {
     const defaultName = storage.vaultName(path)
-    void api.vaultLauncher.status(path).then(
+    void api.vaultLauncher.status(path, appId).then(
       (status) => setLauncherModal({ kind: 'vault', root: path, defaultName, status }),
       () => setLauncherModal({ kind: 'vault', root: path, defaultName, status: null }),
     )
+  }
+  const openAddVaultApp = (path: string): void => {
+    const defaultName = storage.vaultName(path)
+    setLauncherModal({ kind: 'vault', root: path, defaultName, status: null })
   }
   const openWorkspaceLauncher = (id: string): void => {
     const set = liveWorkspaces.find((s) => s.id === id) ?? storage.getVaultSets().find((s) => s.id === id)
@@ -254,7 +260,9 @@ export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, 
                 onSetKey: (path, key) => storage.setVaultKey(path, key),
                 ...(canVaultLauncher
                   ? {
-                      onLauncher: openVaultLauncher,
+                      vaultApps: vaultApps?.[menu.key],
+                      onEditVaultApp: openEditVaultApp,
+                      onAddVaultApp: openAddVaultApp,
                       hasLauncher: vaultIcons?.[menu.key] !== undefined,
                     }
                   : {}),

@@ -1859,7 +1859,7 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
     expect(panel(el)).toBeNull()
   })
 
-  it('renders workspace launcher icon and opens Workspace launcher modal from workspace context menu on macOS', async () => {
+  it('renders workspace app icon and opens Workspace app modal from workspace context menu on macOS', async () => {
     const ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
     const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
     const workspaceStatus = vi.fn(async () => ({ supported: true, launcher: null, exists: false, iconDataUrl: null }))
@@ -1875,8 +1875,8 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
       expect(wsIcon?.height).toBe(18)
 
       rightClick(wsRow)
-      expect(menuLabels()).toContain('Edit launcher…')
-      pick('Edit launcher…')
+      expect(menuLabels()).toContain('Edit workspace app…')
+      pick('Edit workspace app…')
       await vi.waitFor(() => {
         expect(workspaceStatus).toHaveBeenCalledWith('set-work')
         expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace launcher')
@@ -1886,35 +1886,68 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
     }
   })
 
-  it('right-clicking a vault row on macOS shows Make/Edit launcher… and opens VaultLauncherModal for that vault', async () => {
+  it('right-clicking a vault row on macOS adapts for 0, 1, and 2+ vault apps (YAZ-6683)', async () => {
     const ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
     const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
-    const status = vi.fn(async () => ({ supported: true, launcher: null, exists: false, iconDataUrl: null }))
+    const status = vi.fn(async (_root: string, appId?: string) => ({
+      supported: true,
+      launcher: appId ? { id: appId, name: 'Notes', appPath: '/Applications/Notes.app', iconPath: '/tmp/notes.png' } : null,
+      exists: Boolean(appId),
+      iconDataUrl: null,
+    }))
     ;(window.yaseenDocs as unknown as Record<string, unknown>).vaultLauncher = { status }
     try {
-      const { el } = render({ vaultIcons: { [ROOT]: ICON } })
+      const { el, rerender } = render({
+        vaultIcons: { [ROOT]: ICON },
+        vaultApps: {
+          [ARCHIVE]: [],
+          [ROOT]: [{ id: 'default', name: 'Notes' }],
+        },
+      })
       openPanel(el)
 
-      // Vault without launcher shows "Make a launcher…"
+      // 0 apps → "Make a vault app…" opens modal in create mode directly
       rightClick(rowOf(el, ARCHIVE))
-      expect(menuLabels()).toContain('Make a launcher…')
-      pick('Make a launcher…')
+      expect(menuLabels()).toContain('Make a vault app…')
+      pick('Make a vault app…')
       await vi.waitFor(() => {
-        expect(status).toHaveBeenCalledWith(ARCHIVE)
         expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Make a vault launcher')
       })
+      expect(status).not.toHaveBeenCalled()
 
-      // Close modal and check vault with launcher shows "Edit launcher…"
+      // 1 app → "Edit vault app…" (calls status with appId) + "Add another vault app…"
       act(() => void document.body.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())
       openPanel(el)
       rightClick(rowOf(el, ROOT))
-      expect(menuLabels()).toContain('Edit launcher…')
+      expect(menuLabels()).toContain('Edit vault app…')
+      expect(menuLabels()).toContain('Add another vault app…')
+      pick('Edit vault app…')
+      await vi.waitFor(() => {
+        expect(status).toHaveBeenCalledWith(ROOT, 'default')
+        expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Edit vault launcher')
+      })
+
+      // 2+ apps → "Vault apps" submenu
+      act(() => void document.body.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())
+      rerender({
+        vaultIcons: { [ROOT]: ICON },
+        vaultApps: {
+          [ROOT]: [
+            { id: 'default', name: 'Notes' },
+            { id: 'a1b2c3d4', name: 'Notes Favorites' },
+          ],
+        },
+      })
+      openPanel(el)
+      rightClick(rowOf(el, ROOT))
+      expect(menuLabels()).toContain('Vault apps')
+      expect(menuLabels()).not.toContain('Edit vault app…')
     } finally {
       platformSpy.mockRestore()
     }
   })
 
-  it('right-clicking a saved-workspace sidebar header on macOS shows Make/Edit workspace launcher… alongside Save as workspace…', async () => {
+  it('right-clicking a saved-workspace sidebar header on macOS shows Make/Edit workspace app… alongside Save as workspace…', async () => {
     const ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
     const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
     const workspaceStatus = vi.fn(async () => ({ supported: true, launcher: null, exists: false, iconDataUrl: null }))
@@ -1922,27 +1955,27 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
     try {
       act(() => broadcast(seeded({ vaultSets: [{ id: 'set-work', name: 'Work', roots: [ROOT, ARCHIVE], lastUsed: NOW }] })))
 
-      // Without existing workspace launcher
+      // Without existing workspace app
       const { el, rerender } = render({ roots: [ROOT, ARCHIVE] })
       rightClick(trigger(el))
-      expect(menuLabels()).toEqual([SAVE_SET_TEXT, 'Make workspace launcher…'])
-      pick('Make workspace launcher…')
+      expect(menuLabels()).toEqual([SAVE_SET_TEXT, 'Make a workspace app…'])
+      pick('Make a workspace app…')
       await vi.waitFor(() => {
         expect(workspaceStatus).toHaveBeenCalledWith('set-work')
         expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace launcher')
       })
 
-      // Close modal and verify label flips to "Edit workspace launcher…" when icon exists
+      // Close modal and verify label flips to "Edit workspace app…" when icon exists
       act(() => void document.body.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())
       rerender({ workspaceIcons: { 'set-work': ICON } })
       rightClick(trigger(el))
-      expect(menuLabels()).toEqual([SAVE_SET_TEXT, 'Edit workspace launcher…'])
+      expect(menuLabels()).toEqual([SAVE_SET_TEXT, 'Edit workspace app…'])
     } finally {
       platformSpy.mockRestore()
     }
   })
 
-  it('hides launcher menu items on non-macOS platforms', () => {
+  it('hides vault and workspace app menu items on non-macOS platforms', () => {
     const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('Win32')
     const status = vi.fn(async () => ({ supported: false, launcher: null, exists: false, iconDataUrl: null }))
     const workspaceStatus = vi.fn(async () => ({ supported: false, launcher: null, exists: false, iconDataUrl: null }))
@@ -1951,16 +1984,16 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
       act(() => broadcast(seeded({ vaultSets: [{ id: 'set-work', name: 'Work', roots: [ROOT, ARCHIVE], lastUsed: NOW }] })))
       const { el } = render({ roots: [ROOT, ARCHIVE] })
 
-      // Saved-workspace header hides workspace launcher item
+      // Saved-workspace header hides workspace app item
       rightClick(trigger(el))
       expect(menuLabels()).toEqual([SAVE_SET_TEXT])
 
-      // Vault row hides vault launcher item
+      // Vault row hides vault app item
       openPanel(el)
       const archiveRow = rows(el).find((r) => r.querySelector('.vault-switcher__name')?.textContent === 'Archive')!
       rightClick(archiveRow)
-      expect(menuLabels()).not.toContain('Make a launcher…')
-      expect(menuLabels()).not.toContain('Edit launcher…')
+      expect(menuLabels()).not.toContain('Make a vault app…')
+      expect(menuLabels()).not.toContain('Edit vault app…')
     } finally {
       platformSpy.mockRestore()
     }
