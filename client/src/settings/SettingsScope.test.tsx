@@ -20,8 +20,8 @@ import { DEFAULT_SETTINGS, DEFAULT_SIDEBAR_TABS, type SettingsState } from '@sha
 import type { VaultOverrideKey, VaultSettingsOverrides, WorkspaceChromeOverrides } from '@shared/vaultSettings'
 import { NO_TEXT_FORMATTING } from './useTextFormatting'
 import { NO_NEW_PLACES } from './useVaultNewPlaces'
-import { buildScopedSettings, type SettingsScopeCtx, type SettingsScopeMode, type SettingsScopeVault } from './settingsScope'
-import type { SettingDef, SettingsGroup, SettingsSection, SettingsSectionId } from './registry'
+import { buildScopedSettings, isGlobalOnlyRow, type SettingsScopeCtx, type SettingsScopeMode, type SettingsScopeVault } from './settingsScope'
+import { SETTINGS_SECTIONS, type SettingDef, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
 import { SettingsDialog } from './SettingsDialog'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -411,5 +411,91 @@ describe('SettingsDialog scope switcher (YAZ-6546, YAZ-6556)', () => {
     } finally {
       Element.prototype.scrollIntoView = origScroll
     }
+  })
+
+  it('isGlobalOnlyRow classifies global-only rows vs per-vault/workspace rows (YAZ-6680)', () => {
+    const findRegistryEntry = (id: string) => {
+      for (const section of SETTINGS_SECTIONS) {
+        for (const group of section.groups) {
+          const item = group.items.find((i) => i.id === id)
+          if (item !== undefined) return { item, section, group }
+        }
+      }
+      throw new Error(`Registry item not found: ${id}`)
+    }
+
+    for (const id of ['theme', 'confirmBeforeQuit', 'allLaunchers', 'confirmDelete']) {
+      const { item, section, group } = findRegistryEntry(id)
+      expect(isGlobalOnlyRow(item, section, group), id).toBe(true)
+    }
+
+    // Even inside a vault: true group, vaultAppActivateAllWindows and allLaunchers are Global-only
+    const generalSection = SETTINGS_SECTIONS.find((s) => s.id === 'general')!
+    const vaultAppGroup: SettingsGroup = { title: 'Vault app', vault: true, items: [] }
+    const activateAllItem: SettingDef = { id: 'vaultAppActivateAllWindows', label: 'Activate all windows', render: () => null }
+    expect(isGlobalOnlyRow(activateAllItem, generalSection, vaultAppGroup)).toBe(true)
+
+    for (const id of ['contentWidth', 'vaultOpensOn', 'vaultLauncher', 'workspaceLauncher', 'dailyPages']) {
+      const { item, section, group } = findRegistryEntry(id)
+      expect(isGlobalOnlyRow(item, section, group), id).toBe(false)
+    }
+
+    // Standalone sections and searchOnly pointer rows are never global-only rows
+    const standaloneSection: SettingsSection = { id: 'memory', title: 'Memory', standalone: true, groups: [] }
+    const plainItem: SettingDef = { id: 'plainGlobal', label: 'Plain', render: () => null }
+    const searchOnlyItem: SettingDef = { id: 'pointerRow', label: 'Pointer', searchOnly: true, render: () => null }
+    expect(isGlobalOnlyRow(plainItem, standaloneSection, { items: [plainItem] })).toBe(false)
+    expect(isGlobalOnlyRow(searchOnlyItem, generalSection, { items: [searchOnlyItem] })).toBe(false)
+  })
+
+  it('Global tab appears right after General, hides the scope bar, excludes per-vault rows, writes to global settings even after vault scope, and does not duplicate search hits (YAZ-6680)', () => {
+    const vault = makeScopeVault('/v', 'Personal', { contentWidth: 'medium' })
+    const { el, onChangeGlobal } = mountScoped({ vaults: [vault] })
+
+    const navTitles = [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].map((b) => b.textContent)
+    expect(navTitles[0]).toBe('General')
+    expect(navTitles[1]).toBe('Global')
+
+    // Switch to This vault scope first
+    clickScopeTab(el, 'This vault')
+    expect(el.querySelector('.settings-scope-bar')?.getAttribute('data-scope-mode')).toBe('vault')
+
+    // Click Global tab: scope bar hides, banner shows, grouped global rows render, per-vault rows absent
+    clickNav(el, 'Global')
+    expect(el.querySelector('.settings-scope-bar')).toBeNull()
+    expect(el.querySelector('.settings-global-banner')?.textContent).toContain('Global settings')
+    const groupHeadings = [...el.querySelectorAll('.settings-group__title')].map((h) => h.textContent)
+    expect(groupHeadings).toContain('General')
+    expect(groupHeadings).toContain('Appearance')
+    expect(groupHeadings).toContain('Files')
+    // Left-nav sub-TOC lists the source section names
+    const subToc = [...el.querySelectorAll('.settings-nav__sub')].map((b) => b.textContent)
+    expect(subToc).toEqual(groupHeadings)
+
+    // Global-only rows are present; per-vault items are not
+    expect(el.querySelector('[data-setting="theme"]')).not.toBeNull()
+    expect(el.querySelector('[data-setting="confirmBeforeQuit"]')).not.toBeNull()
+    expect(el.querySelector('[data-setting="confirmDelete"]')).not.toBeNull()
+    expect(el.querySelector('[data-setting="contentWidth"]')).toBeNull()
+    expect(el.querySelector('[data-setting="vaultOpensOn"]')).toBeNull()
+    expect(el.querySelector('[data-setting="dailyPages"]')).toBeNull()
+
+    // Editing a global setting on Global after previously being in vault scope writes to global settings
+    const themeRow = el.querySelector('[data-setting="theme"]')!
+    const darkBtn = [...themeRow.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Dark')
+    act(() => darkBtn?.click())
+    expect(onChangeGlobal).toHaveBeenCalledTimes(1)
+    expect((onChangeGlobal.mock.calls[0][0] as SettingsState).theme).toBe('dark')
+    expect(vault.vaultSettings.setOverrides).not.toHaveBeenCalled()
+
+    // Searching for "Theme" returns only one hit (no duplicate from Global)
+    const search = el.querySelector<HTMLInputElement>('input[aria-label="Search settings"]')!
+    const setVal = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    act(() => {
+      setVal?.call(search, 'Theme')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const themeHits = el.querySelectorAll('[data-setting="theme"]')
+    expect(themeHits).toHaveLength(1)
   })
 })

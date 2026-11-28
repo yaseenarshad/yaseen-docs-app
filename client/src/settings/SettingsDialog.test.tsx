@@ -26,7 +26,8 @@ import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexRespo
 import { UNIT_WORDS, unitTextOf } from '../vault/unitWord'
 import { idsAskMessage, idsLettersAsk, KEEP_OTHER_ASK, keepIdsAskMessage, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
 import { HOTKEYS_SECTION } from './hotkeysSection'
-import { groupsOf, SETTINGS_SECTIONS, type SettingsCtx } from './registry'
+import { availableSections, groupsOf, isAvailable, SETTINGS_SECTIONS, type SettingsCtx } from './registry'
+import { isGlobalOnlyRow } from './settingsScope'
 import { SettingsDialog } from './SettingsDialog'
 import { NEXT_HIDDEN_SWATCH } from './options'
 
@@ -363,13 +364,13 @@ describe('SettingsDialog shell (D1)', () => {
 describe('SettingsDialog: a page for each section (YAZ-2709, amending the one long page)', () => {
   it('the nav: the settings pages (Review only with a vault, Sync only with the engine), a divider, then the Hotkeys reference page', () => {
     const { el } = mount()
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings & diagrams', 'Images', 'Files', 'Folder pages', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Global', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings & diagrams', 'Images', 'Files', 'Folder pages', '—', 'Memory', 'Hotkeys'])
     unmount()
     const withSync = mount({ ...DEFAULT_SETTINGS }, status())
-    expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings & diagrams', 'Images', 'Files', 'Folder pages', 'Sync', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(withSync.el)).toEqual(['General', 'Global', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings & diagrams', 'Images', 'Files', 'Folder pages', 'Sync', '—', 'Memory', 'Hotkeys'])
     unmount()
     const withVault = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON)
-    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings & diagrams', 'Images', 'Files', 'Folder pages', 'Cards', 'Sync', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(withVault.el)).toEqual(['General', 'Global', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings & diagrams', 'Images', 'Files', 'Folder pages', 'Cards', 'Sync', '—', 'Memory', 'Hotkeys'])
   })
 
   it('the registry order once both YAZ-3028 halves land: canvas and images after Editor (YAZ-3037, YAZ-3038), storage and sharing after Sync (YAZ-3039, YAZ-3040), Hotkeys last', () => {
@@ -398,9 +399,23 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
         current: navButtons(el).filter((b) => b.getAttribute('aria-current') !== null).map((b) => [b.textContent, b.getAttribute('aria-current')]),
       }
     })
+    const withVaultCtx: SettingsCtx = {
+      settings: { ...DEFAULT_SETTINGS },
+      onChange: () => undefined,
+      sync: { status: status(), setEnabled: () => undefined },
+      review: { settings: REVIEW_ON, save: () => undefined },
+    }
+    const GLOBAL_ROWS = availableSections(withVaultCtx)
+      .filter((s) => s.standalone !== true)
+      .flatMap((s) =>
+        groupsOf(s, withVaultCtx).flatMap((g) =>
+          g.items.filter((item) => isAvailable(item, withVaultCtx) && isGlobalOnlyRow(item, s, g)).map((item) => item.id),
+        ),
+      )
     const page = (title: string, anchor: string, rows: string[]) => [title, { headings: [title], anchors: [anchor], rows, current: [[title, 'page']] }]
     expect(seen).toEqual([
       page('General', 'settings-general', GENERAL_ROWS),
+      page('Global', 'settings-global', GLOBAL_ROWS),
       page('Appearance', 'settings-appearance', APPEARANCE_ROWS),
       page('Sidebar', 'settings-sidebar', SIDEBAR_ROWS_REVIEW),
       page('Notifications', 'settings-notifications', NOTIFICATIONS_ROWS),
@@ -470,6 +485,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     const pages = onEachPage(el, () => [...el.querySelectorAll('.settings-section__note')].map((n) => [n.closest('[data-section]')?.id, n.textContent]))
     expect(pages).toEqual([
       ['General', []],
+      ['Global', []],
       ['Appearance', []],
       ['Sidebar', []],
       ['Notifications', []],
@@ -497,6 +513,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     // The same muted lines the dialog already has: a group's hint, a section's page.
     expect(lines(el)).toEqual([
       ['General', []],
+      ['Global', []],
       ['Appearance', []],
       ['Sidebar', []],
       ['Notifications', []],
@@ -581,7 +598,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     clickNav(el, 'Sync')
     expect(currentNav(el)).toBe('Sync')
     act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange }} onClose={onClose} />))
-    expect(navShape(el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings & diagrams', 'Images', 'Files', 'Folder pages', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(el)).toEqual(['General', 'Global', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings & diagrams', 'Images', 'Files', 'Folder pages', '—', 'Memory', 'Hotkeys'])
     expect(headings(el)).toEqual(['General'])
     expect(currentNav(el)).toBe('General')
     expect(navButtons(el).filter((b) => b.getAttribute('aria-current') !== null)).toHaveLength(1)
@@ -1785,7 +1802,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     const { el } = mount()
     expect(navByTitle(el, 'Cards')).toBeUndefined()
     const found = onEachPage(el, () => [el.querySelector('#settings-cards'), row(el, 'enabled'), row(el, 'weights')])
-    expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings & diagrams', 'Images', 'Files', 'Folder pages', 'Memory', 'Hotkeys'])
+    expect(found.map(([title]) => title)).toEqual(['General', 'Global', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings & diagrams', 'Images', 'Files', 'Folder pages', 'Memory', 'Hotkeys'])
     for (const [, nodes] of found) expect(nodes).toEqual([null, null, null])
   })
 
@@ -3232,5 +3249,39 @@ describe('YAZ-5154: Cards change only once IDs saved', () => {
     await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Turn on both')!.click())
     expect(setIds).toHaveBeenCalledExactlyOnceWith(true, 'BUS')
     expect(save).not.toHaveBeenCalled()
+  })
+})
+
+describe('Derived Global tab (YAZ-6680)', () => {
+  it('places Global right after General, renders grouped global-only rows with banner and sub-TOC, excludes per-vault rows, and keeps search free of duplicates', () => {
+    const { el } = mount()
+    expect(navShape(el).slice(0, 3)).toEqual(['General', 'Global', 'Appearance'])
+
+    clickNav(el, 'Global')
+    expect(currentNav(el)).toBe('Global')
+    expect(headings(el)).toEqual(['Global'])
+    expect(el.querySelector('.settings-global-banner')?.textContent).toBe(
+      'Global settings — these apply to every vault and workspace on this Mac.',
+    )
+
+    const groups = groupTitles(el)
+    expect(groups).toContain('General')
+    expect(groups).toContain('Appearance')
+    expect(groups).toContain('Sidebar')
+    expect(groups).toContain('Files')
+    // Left-nav sub-TOC matches the source section groups
+    expect([...el.querySelectorAll('.settings-nav__sub')].map((b) => b.textContent)).toEqual(groups)
+
+    // Global-only rows show; per-vault/override rows do not
+    expect(row(el, 'theme')).not.toBeNull()
+    expect(row(el, 'confirmBeforeQuit')).not.toBeNull()
+    expect(row(el, 'confirmDelete')).not.toBeNull()
+    expect(row(el, 'contentWidth')).toBeNull()
+    expect(row(el, 'vaultOpensOn')).toBeNull()
+    expect(row(el, 'dailyPages')).toBeNull()
+
+    // Searching for "Theme" returns exactly one hit (no duplicate from Global)
+    type(searchInput(el), 'Theme')
+    expect(el.querySelectorAll('[data-setting="theme"]')).toHaveLength(1)
   })
 })

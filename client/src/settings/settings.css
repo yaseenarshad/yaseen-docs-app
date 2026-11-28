@@ -236,6 +236,18 @@
   color: var(--fg-muted);
 }
 
+/* Derived Global tab banner (YAZ-6680): compact note showing these settings apply everywhere on this Mac. */
+.settings-global-banner {
+  margin: -4px 0 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-side);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--fg-muted);
+}
+
 /* Major group divider (YAZ-6488): clearly thicker and higher-contrast than 1px in-card row hairlines. */
 .settings-group + .settings-group {
   margin-top: 26px;

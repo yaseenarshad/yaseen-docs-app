@@ -143,12 +143,19 @@ export function overrideKeyOf(item: SettingDef): VaultOverrideKey | undefined {
 }
 
 function isLegacyVaultRow(item: SettingDef, section: SettingsSection, group: SettingsGroup): boolean {
+  if (item.id === 'allLaunchers' || item.id === 'vaultAppActivateAllWindows') return false
   if (section.vault === true || group.vault === true) return true
   if (section.id === 'tables') return true
   if (section.id === 'folderPages') return !GLOBAL_ONLY_FOLDER_PAGE_IDS.has(item.id)
   if (section.id === 'cards') return !GLOBAL_ONLY_CARD_IDS.has(item.id) && item.id !== 'cardSkillInSidebar'
   if (item.id.startsWith('sidebarIconColors.')) return true
   return LEGACY_VAULT_ROW_IDS.has(item.id)
+}
+
+export function isGlobalOnlyRow(item: SettingDef, section: SettingsSection, group: SettingsGroup): boolean {
+  if (section.standalone === true || item.searchOnly === true || item.id === 'workspaceLauncher') return false
+  if (overrideKeyOf(item) !== undefined) return false
+  return !isLegacyVaultRow(item, section, group)
 }
 
 function withVaultContext(given: SettingsCtx, scope: SettingsScopeCtx, vault: SettingsScopeVault): SettingsCtx {
