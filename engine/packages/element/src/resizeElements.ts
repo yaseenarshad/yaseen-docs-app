@@ -67,6 +67,7 @@ import {
 import { isInGroup } from "./groups";
 import { normalizeCornerRadius } from "./utils";
 import { getElementStyleScale } from "./screenScale";
+import { resizeSmartShapePoints } from "./smartShape";
 
 import type { Scene } from "./Scene";
 
@@ -990,12 +991,18 @@ export const resizeSingleElement = (
     }
   }
 
-  const rescaledPoints = rescalePointsInElement(
+  const smartResize = resizeSmartShapePoints(
     origElement,
     nextWidth,
     nextHeight,
-    true,
+    {
+      flipByX: nextWidth < 0,
+      flipByY: nextHeight < 0,
+    },
   );
+  const rescaledPoints = smartResize
+    ? { points: smartResize.points }
+    : rescalePointsInElement(origElement, nextWidth, nextHeight, true);
 
   let previousOrigin = pointFrom<GlobalPoint>(origElement.x, origElement.y);
 
@@ -1026,15 +1033,24 @@ export const resizeSingleElement = (
     newOrigin.x += offsetX;
     newOrigin.y += offsetY;
 
-    const scaledX = rescaledPoints.points[0][0];
-    const scaledY = rescaledPoints.points[0][1];
+    if (smartResize) {
+      const origMinX = Math.min(...origElement.points.map(([x]) => x));
+      const origMinY = Math.min(...origElement.points.map(([, y]) => y));
+      const nextMinX = Math.min(...smartResize.points.map(([x]) => x));
+      const nextMinY = Math.min(...smartResize.points.map(([, y]) => y));
+      newOrigin.x += origMinX - nextMinX;
+      newOrigin.y += origMinY - nextMinY;
+    } else {
+      const scaledX = rescaledPoints.points[0][0];
+      const scaledY = rescaledPoints.points[0][1];
 
-    newOrigin.x += scaledX;
-    newOrigin.y += scaledY;
+      newOrigin.x += scaledX;
+      newOrigin.y += scaledY;
 
-    rescaledPoints.points = rescaledPoints.points.map((p) =>
-      pointFrom<LocalPoint>(p[0] - scaledX, p[1] - scaledY),
-    );
+      rescaledPoints.points = rescaledPoints.points.map((p) =>
+        pointFrom<LocalPoint>(p[0] - scaledX, p[1] - scaledY),
+      );
+    }
   }
 
   // flipping
@@ -1080,12 +1096,21 @@ export const resizeSingleElement = (
       nextHeight,
       { mode: "single" },
     );
+    const mergedCustomData = smartResize
+      ? {
+          ...("customData" in sizeRelativeUpdates
+            ? sizeRelativeUpdates.customData
+            : origElement.customData),
+          yasinSmartShape: smartResize.customData?.yasinSmartShape,
+        }
+      : undefined;
     let updates: ElementUpdate<ExcalidrawElement> = {
       ...newOrigin,
       width: Math.abs(nextWidth),
       height: Math.abs(nextHeight),
       ...rescaledPoints,
       ...sizeRelativeUpdates,
+      ...(mergedCustomData ? { customData: mergedCustomData } : {}),
     };
 
     if (isBindingElement(latestElement)) {
@@ -1565,21 +1590,48 @@ export const resizeMultipleElements = (
         (orig.angle * flipFactorX * flipFactorY) as Radians,
       );
 
-      const isLinearOrFreeDraw =
-        isLinearElement(orig) || isFreeDrawElement(orig);
-      const offsetX = orig.x - anchorX;
-      const offsetY = orig.y - anchorY;
-      const shiftX = flipByX && !isLinearOrFreeDraw ? width : 0;
-      const shiftY = flipByY && !isLinearOrFreeDraw ? height : 0;
-      const x = anchorX + flipFactorX * (offsetX * scaleX + shiftX);
-      const y = anchorY + flipFactorY * (offsetY * scaleY + shiftY);
+      const smartResize = resizeSmartShapePoints(orig, width, height, {
+        flipByX,
+        flipByY,
+      });
 
-      const rescaledPoints = rescalePointsInElement(
-        orig,
-        width * flipFactorX,
-        height * flipFactorY,
-        false,
-      );
+      let x: number;
+      let y: number;
+      let rescaledPoints: { points?: ExcalidrawLinearElement["points"] };
+
+      if (smartResize && isLinearElement(orig)) {
+        const origMinX = Math.min(...orig.points.map(([px]) => px));
+        const origMinY = Math.min(...orig.points.map(([, py]) => py));
+        const nextMinX = Math.min(...smartResize.points.map(([px]) => px));
+        const nextMinY = Math.min(...smartResize.points.map(([, py]) => py));
+        const boxOffsetX = orig.x + origMinX - anchorX;
+        const boxOffsetY = orig.y + origMinY - anchorY;
+        const nextBoxLeft =
+          anchorX +
+          flipFactorX * (boxOffsetX * scaleX + (flipByX ? width : 0));
+        const nextBoxTop =
+          anchorY +
+          flipFactorY * (boxOffsetY * scaleY + (flipByY ? height : 0));
+        x = nextBoxLeft - nextMinX;
+        y = nextBoxTop - nextMinY;
+        rescaledPoints = { points: smartResize.points };
+      } else {
+        const isLinearOrFreeDraw =
+          isLinearElement(orig) || isFreeDrawElement(orig);
+        const offsetX = orig.x - anchorX;
+        const offsetY = orig.y - anchorY;
+        const shiftX = flipByX && !isLinearOrFreeDraw ? width : 0;
+        const shiftY = flipByY && !isLinearOrFreeDraw ? height : 0;
+        x = anchorX + flipFactorX * (offsetX * scaleX + shiftX);
+        y = anchorY + flipFactorY * (offsetY * scaleY + shiftY);
+
+        rescaledPoints = rescalePointsInElement(
+          orig,
+          width * flipFactorX,
+          height * flipFactorY,
+          false,
+        );
+      }
 
       const update: typeof elementsAndUpdates[0]["update"] = {
         x,
@@ -1590,13 +1642,24 @@ export const resizeMultipleElements = (
         ...rescaledPoints,
       };
 
-      Object.assign(
-        update,
-        getSizeRelativeResizeUpdates(orig, width, height, {
+      const sizeRelativeUpdates = getSizeRelativeResizeUpdates(
+        orig,
+        width,
+        height,
+        {
           mode: "group",
           groupScale: Math.min(scaleX, scaleY),
-        }),
+        },
       );
+      Object.assign(update, sizeRelativeUpdates);
+      if (smartResize) {
+        update.customData = {
+          ...("customData" in sizeRelativeUpdates
+            ? sizeRelativeUpdates.customData
+            : orig.customData),
+          yasinSmartShape: smartResize.customData?.yasinSmartShape,
+        };
+      }
 
       if (isElbowArrow(orig)) {
         // Mirror fixed point binding for elbow arrows
@@ -1628,10 +1691,11 @@ export const resizeMultipleElements = (
           };
         }
         if (orig.fixedSegments && rescaledPoints.points) {
+          const nextPoints = rescaledPoints.points;
           update.fixedSegments = orig.fixedSegments.map((segment) => ({
             ...segment,
-            start: rescaledPoints.points[segment.index - 1],
-            end: rescaledPoints.points[segment.index],
+            start: nextPoints[segment.index - 1],
+            end: nextPoints[segment.index],
           }));
         }
       }

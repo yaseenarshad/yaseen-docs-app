@@ -1,8 +1,9 @@
 import {
   CaptureUpdateAction,
-  SMART_SHAPE_HANDLE_PARAMETERS,
   getSmartShapeDefinition,
+  getSmartShapeHandleParameter,
   getSmartShapeMetadata,
+  readSmartShapeParameter,
   updateSmartShapeParameter,
 } from "@excalidraw/element";
 
@@ -20,12 +21,16 @@ type SmartShapeActionData = {
 
 const labels: Record<SmartShapeParameterName, string> = {
   shaftRatio: "Shaft thickness",
+  headAspect: "Arrowhead length",
   headLengthRatio: "Arrowhead length",
   thicknessRatio: "Thickness",
   tailPositionRatio: "Tail position",
   bendRatio: "Bend",
   gapRatio: "Gap",
   openingRatio: "Opening",
+  cuspRatio: "Tip position",
+  skewRatio: "Skew",
+  topWidthRatio: "Top width",
 };
 
 export const actionChangeSmartShape = register<SmartShapeActionData>({
@@ -59,7 +64,7 @@ export const actionChangeSmartShape = register<SmartShapeActionData>({
     const definition = metadata
       ? getSmartShapeDefinition(metadata.id)
       : undefined;
-    if (!metadata || !definition) {
+    if (!metadata || !definition || definition.handles.length === 0) {
       return null;
     }
 
@@ -67,13 +72,16 @@ export const actionChangeSmartShape = register<SmartShapeActionData>({
       <fieldset>
         <legend>Smart shape</legend>
         {definition.handles.map((handle) => {
-          const parameter = SMART_SHAPE_HANDLE_PARAMETERS[handle];
+          const parameter = getSmartShapeHandleParameter(definition, handle);
           // Each slider spans its parameter's own limits (YAZ-4356), as a handle drag does.
           const [min, max] = definition.limits[parameter] ?? [0.1, 0.9];
-          const value =
-            metadata.parameters[parameter] ??
-            definition.defaults[parameter] ??
-            min;
+          const value = readSmartShapeParameter(
+            metadata.id,
+            selected[0].width,
+            selected[0].height,
+            metadata.parameters,
+            parameter,
+          );
           return (
             <Range
               key={parameter}

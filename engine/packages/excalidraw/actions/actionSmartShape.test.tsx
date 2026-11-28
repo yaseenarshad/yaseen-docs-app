@@ -54,8 +54,9 @@ describe("actionChangeSmartShape", () => {
       updated.type === "line" && Math.min(...updated.points.map(([, y]) => y)),
     ).toBe(-37.5);
   });
+
   // YAZ-4356: each slider spans its parameter's own limits, as a handle drag does.
-  it("gives each slider its parameter's limits", async () => {
+  it("gives each slider its parameter's limits on curved-arrow", async () => {
     await render(<Excalidraw handleKeyboardGlobally={true} />);
     const metadata = createSmartShapeMetadata("curved-arrow");
     const curved = newElementWith(
@@ -75,7 +76,6 @@ describe("actionChangeSmartShape", () => {
     API.setElements([curved]);
     API.setSelectedElements([curved]);
 
-    // The board's own properties panel shows the sliders for the selected shape.
     const range = (parameter: string) =>
       document.querySelector(
         `[data-testid="smart-shape-${parameter}"]`,
@@ -94,5 +94,87 @@ describe("actionChangeSmartShape", () => {
       range("headLengthRatio").min,
       range("headLengthRatio").max,
     ]).toEqual(["10", "40"]);
+  });
+
+  it("exposes headAspect (>100% range), cuspRatio, and legacy headLengthRatio sliders, and hides panel for handle-less shapes", async () => {
+    await render(<Excalidraw handleKeyboardGlobally={true} />);
+
+    // Filled arrow uses headAspect [25..250], default 80
+    const arrowMeta = createSmartShapeMetadata("arrow-right");
+    const arrow = newElementWith(
+      API.createElement({
+        type: "line",
+        width: 200,
+        height: 100,
+        points: generateSmartShapePoints(
+          "arrow-right",
+          200,
+          100,
+          arrowMeta.parameters,
+        ),
+      }),
+      { customData: { yasinSmartShape: arrowMeta } },
+    );
+    API.setElements([arrow]);
+    API.setSelectedElements([arrow]);
+
+    const range = (parameter: string) =>
+      document.querySelector(
+        `[data-testid="smart-shape-${parameter}"]`,
+      ) as HTMLInputElement | null;
+
+    await waitFor(() => expect(range("headAspect")).not.toBeNull());
+    expect([range("headAspect")!.min, range("headAspect")!.max]).toEqual([
+      "25",
+      "250",
+    ]);
+    expect(range("headAspect")!.value).toBe("80");
+
+    // Curly brace exposes cuspRatio [15..85], default 50
+    const braceMeta = createSmartShapeMetadata("brace-left");
+    const brace = newElementWith(
+      API.createElement({
+        type: "line",
+        width: 36,
+        height: 200,
+        points: generateSmartShapePoints(
+          "brace-left",
+          36,
+          200,
+          braceMeta.parameters,
+        ),
+      }),
+      { customData: { yasinSmartShape: braceMeta } },
+    );
+    API.setElements([brace]);
+    API.setSelectedElements([brace]);
+
+    await waitFor(() => expect(range("cuspRatio")).not.toBeNull());
+    expect([range("cuspRatio")!.min, range("cuspRatio")!.max]).toEqual([
+      "15",
+      "85",
+    ]);
+    expect(range("cuspRatio")!.value).toBe("50");
+
+    // Handle-less shape (cloud) does not render an empty Smart shape fieldset
+    const cloudMeta = createSmartShapeMetadata("cloud");
+    const cloud = newElementWith(
+      API.createElement({
+        type: "line",
+        width: 200,
+        height: 130,
+        points: generateSmartShapePoints("cloud", 200, 130, {}),
+      }),
+      { customData: { yasinSmartShape: cloudMeta } },
+    );
+    API.setElements([cloud]);
+    API.setSelectedElements([cloud]);
+
+    await waitFor(() => expect(range("cuspRatio")).toBeNull());
+    expect(
+      Array.from(document.querySelectorAll("legend")).some(
+        (el) => el.textContent === "Smart shape",
+      ),
+    ).toBe(false);
   });
 });

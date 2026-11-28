@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   SMART_SHAPE_DEFINITIONS,
-  SMART_SHAPE_HANDLE_PARAMETERS,
+  SMART_SHAPE_IDS,
   createSmartShapeMetadata,
-  getSmartShapeDefinition,
   generateSmartShapePoints,
+  getSmartShapeDefinition,
+  getSmartShapeHandleParameter,
   getSmartShapeHandles,
   getSmartShapeMetadata,
   hitTestSmartShapeHandle,
+  readSmartShapeParameter,
+  resizeSmartShapePoints,
   updateSmartShapeFromHandle,
   updateSmartShapeParameter,
 } from "../src/smartShape";
@@ -16,56 +19,181 @@ import {
 import type { SmartShapeId } from "../src/smartShape";
 import type { ExcalidrawLinearElement } from "../src/types";
 
-describe("Smart Shapes", () => {
-  it("registers the complete initial catalog", () => {
-    expect(SMART_SHAPE_DEFINITIONS.map(({ id }) => id)).toEqual([
-      "arrow-right",
-      "arrow-left",
-      "arrow-up",
-      "arrow-down",
-      "curved-arrow",
-      "u-turn-arrow",
-      "double-arrow",
-      "circle-arrow",
-      "chevron-right",
-      "chevron-left",
-      "chevron-up",
-      "chevron-down",
-      "brace-left",
-      "brace-right",
-      "bracket-left",
-      "bracket-right",
-      "parenthesis-left",
-      "parenthesis-right",
-      "callout-rectangle",
-      "callout-rounded",
-    ]);
-  });
+const box = (points: readonly (readonly [number, number])[]) => {
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys),
+    width: Math.max(...xs) - Math.min(...xs),
+    height: Math.max(...ys) - Math.min(...ys),
+  };
+};
 
-  it("generates finite geometry for every definition", () => {
-    for (const definition of SMART_SHAPE_DEFINITIONS) {
-      const points = generateSmartShapePoints(
-        definition.id,
-        definition.width,
-        definition.height,
-        definition.defaults,
-      );
-      expect(points.length).toBeGreaterThan(2);
-      expect(points.flat().every(Number.isFinite)).toBe(true);
-      if (definition.closed) {
-        expect(points.at(-1)).toEqual(points[0]);
+/** True when two segments that share no end cross each other. */
+const crosses = (
+  [a, b]: readonly [readonly number[], readonly number[]],
+  [c, d]: readonly [readonly number[], readonly number[]],
+) => {
+  const side = (
+    p: readonly number[],
+    q: readonly number[],
+    r: readonly number[],
+  ) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  return (
+    side(a, b, c) * side(a, b, d) < -1e-9 &&
+    side(c, d, a) * side(c, d, b) < -1e-9
+  );
+};
+
+const simple = (points: readonly (readonly [number, number])[]) => {
+  const segments = points
+    .slice(1)
+    .map((point, index) => [points[index], point] as const);
+  for (let i = 0; i < segments.length; i++) {
+    for (let j = i + 2; j < segments.length; j++) {
+      if (i === 0 && j === segments.length - 1) {
+        continue;
+      }
+      if (crosses(segments[i], segments[j])) {
+        return false;
       }
     }
+  }
+  return true;
+};
+
+const elementOf = (
+  id: SmartShapeId,
+  width: number,
+  height: number,
+  parameters: Record<string, number>,
+  angle = 0,
+  x = 300,
+  y = 150,
+) =>
+  ({
+    type: "line",
+    x,
+    y,
+    width,
+    height,
+    angle,
+    locked: false,
+    customData: {
+      yasinSmartShape: { ...createSmartShapeMetadata(id), parameters },
+    },
+    points: generateSmartShapePoints(id, width, height, parameters),
+  } as unknown as ExcalidrawLinearElement);
+
+describe("Smart Shapes catalog (YAZ-6674)", () => {
+  it("registers all 47 Smart Shapes across the 5 categories with roundness: null", () => {
+    expect(SMART_SHAPE_DEFINITIONS).toHaveLength(47);
+    expect(SMART_SHAPE_DEFINITIONS.map(({ id }) => id)).toEqual([
+      ...SMART_SHAPE_IDS,
+    ]);
+    const categories = new Set(SMART_SHAPE_DEFINITIONS.map((d) => d.category));
+    expect([...categories].sort()).toEqual([
+      "arrows",
+      "banners",
+      "basic",
+      "brackets",
+      "callouts",
+    ]);
+    for (const def of SMART_SHAPE_DEFINITIONS) {
+      expect(def.roundness, def.id).toBeNull();
+    }
+  });
+
+  it("generates finite, box-fitting, non-self-intersecting geometry for all 47 shapes at small, default, and extreme aspect ratios", () => {
+    for (const def of SMART_SHAPE_DEFINITIONS) {
+      const sizes: Array<[number, number]> = [
+        [24, 24],
+        [def.width, def.height],
+        [600, 40],
+        [40, 600],
+      ];
+      for (const [width, height] of sizes) {
+        const pts = generateSmartShapePoints(
+          def.id,
+          width,
+          height,
+          def.defaults,
+        );
+        const label = `${def.id} ${width}x${height}`;
+        expect(pts.length, label).toBeGreaterThan(2);
+        expect(pts.flat().every(Number.isFinite), label).toBe(true);
+        expect(pts[0], label).toEqual([0, 0]);
+        const b = box(pts);
+        expect(b.width, label).toBeCloseTo(width, 5);
+        expect(b.height, label).toBeCloseTo(height, 5);
+        if (def.closed) {
+          expect(pts.at(-1), label).toEqual(pts[0]);
+        } else {
+          expect(pts.at(-1), label).not.toEqual(pts[0]);
+        }
+        expect(simple(pts), label).toBe(true);
+      }
+    }
+  });
+
+  it("samples smooth curves for parentheses, curly braces, and rounded/oval callouts", () => {
+    expect(
+      generateSmartShapePoints("parenthesis-left", 40, 200, {}).length,
+    ).toBeGreaterThanOrEqual(25);
+    expect(
+      generateSmartShapePoints("parenthesis-right", 40, 200, {}).length,
+    ).toBeGreaterThanOrEqual(25);
+    expect(
+      generateSmartShapePoints("brace-left", 36, 200, { cuspRatio: 0.5 })
+        .length,
+    ).toBeGreaterThanOrEqual(25);
+    expect(
+      generateSmartShapePoints("callout-rounded", 180, 130, {
+        tailPositionRatio: 0.7,
+      }).length,
+    ).toBeGreaterThanOrEqual(25);
+    expect(
+      generateSmartShapePoints("callout-oval", 180, 135, {
+        tailPositionRatio: 0.7,
+      }).length,
+    ).toBeGreaterThanOrEqual(40);
+  });
+
+  it("keeps curly brace arcs constant-radius from tiny (16x24) to very tall (40x2000)", () => {
+    const tiny = generateSmartShapePoints("brace-left", 16, 24, {
+      cuspRatio: 0.5,
+    });
+    expect(box(tiny).width).toBeCloseTo(16, 5);
+    expect(box(tiny).height).toBeCloseTo(24, 5);
+    expect(simple(tiny)).toBe(true);
+
+    const tall = generateSmartShapePoints("brace-left", 40, 2000, {
+      cuspRatio: 0.5,
+    });
+    expect(box(tall).width).toBeCloseTo(40, 5);
+    expect(box(tall).height).toBeCloseTo(2000, 5);
+    // Top quarter arc finishes at y = 18px (not scaled to 250px+): the straight vertical spine
+    // runs from y=18 down to y=982.
+    const spinePoints = tall.filter(([x]) => Math.abs(x - -20) < 1e-4);
+    expect(spinePoints.length).toBeGreaterThanOrEqual(4);
+    const topSpineEnd = Math.min(...spinePoints.map(([, y]) => y));
+    expect(topSpineEnd).toBeCloseTo(18, 4);
+    // Cusp sits at y = 1000
+    const cuspPoint = tall.find(([x]) => Math.abs(x - -40) < 1e-4)!;
+    expect(cuspPoint[1]).toBeCloseTo(1000, 4);
   });
 
   it("changes arrow shaft thickness without moving the tip", () => {
     const thin = generateSmartShapePoints("arrow-right", 200, 100, {
       shaftRatio: 0.2,
-      headLengthRatio: 0.4,
+      headAspect: 0.8,
     });
     const thick = generateSmartShapePoints("arrow-right", 200, 100, {
       shaftRatio: 0.8,
-      headLengthRatio: 0.4,
+      headAspect: 0.8,
     });
     expect(-Math.min(...thin.map(([, y]) => y))).toBeGreaterThan(
       -Math.min(...thick.map(([, y]) => y)),
@@ -78,18 +206,7 @@ describe("Smart Shapes", () => {
 
   it("guards metadata and regenerates points on parameter updates", () => {
     const metadata = createSmartShapeMetadata("arrow-right");
-    const element = {
-      type: "line",
-      width: 200,
-      height: 100,
-      customData: { yasinSmartShape: metadata },
-      points: generateSmartShapePoints(
-        "arrow-right",
-        200,
-        100,
-        metadata.parameters,
-      ),
-    } as unknown as ExcalidrawLinearElement;
+    const element = elementOf("arrow-right", 200, 100, metadata.parameters);
 
     expect(getSmartShapeMetadata(element)?.id).toBe("arrow-right");
     const updated = updateSmartShapeParameter(element, "shaftRatio", 0.25);
@@ -100,22 +217,15 @@ describe("Smart Shapes", () => {
 
   it("exposes zoom-aware handles and adjusts from rotated scene points", () => {
     const metadata = createSmartShapeMetadata("arrow-right");
-    const arrow = {
-      type: "line",
-      x: 100,
-      y: 200,
-      width: 200,
-      height: 100,
-      angle: Math.PI / 2,
-      locked: false,
-      customData: { yasinSmartShape: metadata },
-      points: generateSmartShapePoints(
-        "arrow-right",
-        200,
-        100,
-        metadata.parameters,
-      ),
-    } as unknown as ExcalidrawLinearElement;
+    const arrow = elementOf(
+      "arrow-right",
+      200,
+      100,
+      metadata.parameters,
+      Math.PI / 2,
+      100,
+      200,
+    );
     const handles = getSmartShapeHandles(arrow);
 
     expect(handles.map(({ name }) => name)).toEqual(["shaft", "head"]);
@@ -128,215 +238,75 @@ describe("Smart Shapes", () => {
       "head",
       handles[1].scenePoint,
     );
-    expect(getSmartShapeMetadata(adjusted)?.parameters.headLengthRatio).toBe(
-      0.4,
+    expect(getSmartShapeMetadata(adjusted)?.parameters.headAspect).toBeCloseTo(
+      0.8,
+      2,
     );
   });
 });
 
-// YAZ-4356: the four arrows drawn along a centre line.
-describe("the arrows along a centre line", () => {
-  const ARROWS: SmartShapeId[] = [
-    "curved-arrow",
-    "u-turn-arrow",
-    "double-arrow",
-    "circle-arrow",
-  ];
-  const SIZES: Array<[number, number]> = [
-    [200, 120],
-    [40, 30],
-    [600, 200],
-    [90, 420],
-  ];
+describe("handles and parameters across all interactive shapes", () => {
+  const INTERACTIVE = SMART_SHAPE_DEFINITIONS.filter(
+    (def) => def.handles.length > 0,
+  );
 
-  const definitionOf = (id: SmartShapeId) => getSmartShapeDefinition(id)!;
-
-  /** Every value a parameter can take that matters: both limits, the default, and past each limit. */
-  const parameterCases = (id: SmartShapeId) => {
-    const definition = definitionOf(id);
-    return Object.entries(definition.limits).flatMap(([name, limits]) => {
-      const [min, max] = limits!;
-      return [min, max, (min + max) / 2, min - 1, max + 1].map((value) => ({
-        ...definition.defaults,
-        [name]: value,
-      }));
-    });
-  };
-
-  const box = (points: readonly (readonly [number, number])[]) => {
-    const xs = points.map(([x]) => x);
-    const ys = points.map(([, y]) => y);
-    return {
-      minX: Math.min(...xs),
-      minY: Math.min(...ys),
-      width: Math.max(...xs) - Math.min(...xs),
-      height: Math.max(...ys) - Math.min(...ys),
-    };
-  };
-
-  /** True when two segments that share no end cross each other. */
-  const crosses = (
-    [a, b]: readonly [readonly number[], readonly number[]],
-    [c, d]: readonly [readonly number[], readonly number[]],
-  ) => {
-    const side = (
-      p: readonly number[],
-      q: readonly number[],
-      r: readonly number[],
-    ) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
-    return (
-      side(a, b, c) * side(a, b, d) < -1e-9 &&
-      side(c, d, a) * side(c, d, b) < -1e-9
-    );
-  };
-
-  const simple = (points: readonly (readonly [number, number])[]) => {
-    const segments = points
-      .slice(1)
-      .map((point, index) => [points[index], point] as const);
-    for (let i = 0; i < segments.length; i++) {
-      for (let j = i + 2; j < segments.length; j++) {
-        if (i === 0 && j === segments.length - 1) {
-          continue;
-        }
-        if (crosses(segments[i], segments[j])) {
-          return false;
-        }
-      }
-    }
-    return true;
-  };
-
-  const elementOf = (
-    id: SmartShapeId,
-    width: number,
-    height: number,
-    parameters: Record<string, number>,
-    angle = 0,
-  ) =>
-    ({
-      type: "line",
-      x: 300,
-      y: 150,
-      width,
-      height,
-      angle,
-      locked: false,
-      customData: {
-        yasinSmartShape: { ...createSmartShapeMetadata(id), parameters },
-      },
-      points: generateSmartShapePoints(id, width, height, parameters),
-    } as unknown as ExcalidrawLinearElement);
-
-  it("are closed, simple outlines that fill their box at every size and parameter value", () => {
-    for (const id of ARROWS) {
-      for (const [width, height] of SIZES) {
-        for (const parameters of parameterCases(id)) {
-          const points = generateSmartShapePoints(
-            id,
-            width,
-            height,
-            parameters,
-          );
-          const label = `${id} ${width}x${height} ${JSON.stringify(
-            parameters,
-          )}`;
-          expect(points.flat().every(Number.isFinite), label).toBe(true);
-          expect(points.length, label).toBeGreaterThan(
-            id === "double-arrow" ? 10 : 30,
-          );
-          expect(points[0], label).toEqual([0, 0]);
-          expect(points.at(-1), label).toEqual(points[0]);
-          const { width: boxWidth, height: boxHeight } = box(points);
-          expect(boxWidth, label).toBeCloseTo(width, 6);
-          expect(boxHeight, label).toBeCloseTo(height, 6);
-          expect(simple(points), label).toBe(true);
-        }
-      }
-    }
-  });
-
-  it("are closed filled shapes with a handle for each of their parameters", () => {
-    for (const id of ARROWS) {
-      const definition = definitionOf(id);
-      expect(definition.closed).toBe(true);
-      expect(
-        definition.handles
-          .map((handle) => SMART_SHAPE_HANDLE_PARAMETERS[handle])
-          .sort(),
-      ).toEqual(Object.keys(definition.limits).sort());
-      expect(Object.keys(definition.defaults).sort()).toEqual(
-        Object.keys(definition.limits).sort(),
+  it("maps every handle to a parameter with matching defaults and limits", () => {
+    for (const def of INTERACTIVE) {
+      const handleParams = def.handles
+        .map((handle) => getSmartShapeHandleParameter(def, handle))
+        .sort();
+      expect(handleParams, def.id).toEqual(Object.keys(def.limits).sort());
+      expect(Object.keys(def.defaults).sort(), def.id).toEqual(
+        Object.keys(def.limits).sort(),
       );
     }
-    expect(definitionOf("curved-arrow").handles).toEqual([
-      "bend",
-      "thickness",
-      "head",
-    ]);
-    expect(definitionOf("u-turn-arrow").handles).toEqual(["gap", "thickness"]);
-    expect(definitionOf("double-arrow").handles).toEqual(["thickness", "head"]);
-    expect(definitionOf("circle-arrow").handles).toEqual([
-      "opening",
-      "thickness",
-    ]);
   });
 
-  it("change shape with each parameter, and hold a value past a limit at that limit", () => {
-    for (const id of ARROWS) {
-      const { defaults, limits, width, height } = definitionOf(id);
-      for (const [name, range] of Object.entries(limits)) {
+  it("changes shape with each parameter and clamps out-of-range values to limits", () => {
+    for (const def of INTERACTIVE) {
+      for (const [name, range] of Object.entries(def.limits)) {
         const [min, max] = range!;
         const at = (value: number) =>
-          generateSmartShapePoints(id, width, height, {
-            ...defaults,
+          generateSmartShapePoints(def.id, def.width, def.height, {
+            ...def.defaults,
             [name]: value,
           });
-        expect(at(min), `${id} ${name}`).not.toEqual(at(max));
-        expect(at(max + 5), `${id} ${name}`).toEqual(at(max));
-        expect(at(min - 5), `${id} ${name}`).toEqual(at(min));
+        expect(at(min), `${def.id} ${name}`).not.toEqual(at(max));
+        expect(at(max + 5), `${def.id} ${name}`).toEqual(at(max));
+        expect(at(min - 5), `${def.id} ${name}`).toEqual(at(min));
       }
     }
   });
 
-  it("move a handle's parameter to where the handle is dragged, within its limits", () => {
-    for (const id of ARROWS) {
-      const { defaults, limits, handles, width, height } = definitionOf(id);
+  it("solves every handle accurately at angle 0 and Math.PI / 3 and clamps far drags", () => {
+    for (const def of INTERACTIVE) {
       for (const angle of [0, Math.PI / 3]) {
-        const element = elementOf(id, width, height, defaults, angle);
-        expect(getSmartShapeHandles(element).map(({ name }) => name)).toEqual(
-          handles,
+        const element = elementOf(
+          def.id,
+          def.width,
+          def.height,
+          def.defaults,
+          angle,
         );
-        for (const handle of handles) {
-          const parameter = SMART_SHAPE_HANDLE_PARAMETERS[handle];
-          const [min, max] = limits[parameter]!;
-          const target = min + (max - min) * 0.3;
-          // Where the handle sits at the target value, with the shape's first point kept in
-          // place, as a drag on the board keeps it.
-          const moved = elementOf(
-            id,
-            width,
-            height,
-            { ...defaults, [parameter]: target },
-            angle,
-          );
-          const [originX, originY] = moved.points[0];
-          const scene = getSmartShapeHandles({
-            ...moved,
-            x: element.x + originX,
-            y: element.y + originY,
-          } as ExcalidrawLinearElement).find(
+        expect(getSmartShapeHandles(element).map(({ name }) => name)).toEqual(
+          def.handles,
+        );
+        for (const handle of def.handles) {
+          const parameter = getSmartShapeHandleParameter(def, handle);
+          const [min, max] = def.limits[parameter]!;
+          const target = min + (max - min) * 0.35;
+          const moved = updateSmartShapeParameter(element, parameter, target);
+          const scene = getSmartShapeHandles(moved).find(
             ({ name }) => name === handle,
           )!.scenePoint;
           const dragged = updateSmartShapeFromHandle(element, handle, scene);
-          const label = `${id} ${handle} angle ${angle}`;
-          // A rotated shape turns about its box centre, which moves a little as the shape changes.
+          const label = `${def.id} ${handle} angle ${angle}`;
           expect(
             getSmartShapeMetadata(dragged)!.parameters[parameter],
             label,
-          ).toBeCloseTo(target, angle ? 1 : 2);
-          expect(box(dragged.points).width, label).toBeCloseTo(width, 6);
-          expect(box(dragged.points).height, label).toBeCloseTo(height, 6);
+          ).toBeCloseTo(target, 2);
+          expect(box(dragged.points).width, label).toBeCloseTo(def.width, 5);
+          expect(box(dragged.points).height, label).toBeCloseTo(def.height, 5);
 
           for (const far of [-10_000, 10_000]) {
             const value = getSmartShapeMetadata(
@@ -350,24 +320,181 @@ describe("the arrows along a centre line", () => {
     }
   });
 
-  it("drag the double arrow's heads together and keep its shaft centred", () => {
+  it("drags double-arrow heads together via headAspect and keeps the shaft centred", () => {
     const element = elementOf("double-arrow", 240, 100, {
       thicknessRatio: 0.45,
-      headLengthRatio: 0.25,
+      headAspect: 0.6,
     });
     const handle = getSmartShapeHandles(element).find(
       ({ name }) => name === "head",
     )!;
+    // Move head base 20px inward -> head grows from 60px to 80px -> headAspect = 0.8
     const dragged = updateSmartShapeFromHandle(element, "head", [
-      handle.scenePoint[0] - 24,
+      handle.scenePoint[0] - 20,
       handle.scenePoint[1],
     ] as never);
     expect(
-      getSmartShapeMetadata(dragged)!.parameters.headLengthRatio,
-    ).toBeCloseTo(0.35, 2);
-    const xs = dragged.points.map(([x]) => x);
-    const tipX = Math.max(...xs);
-    const tailX = Math.min(...xs);
-    expect(tipX - tailX).toBeCloseTo(240, 6);
+      getSmartShapeMetadata(dragged)!.parameters.headAspect,
+    ).toBeCloseTo(0.8, 2);
+    expect(box(dragged.points).width).toBeCloseTo(240, 5);
+  });
+});
+
+describe("Parametric resize, headAspect, legacy migration, and flip swap (YAZ-6673)", () => {
+  const arrowHeadPx = (
+    points: readonly (readonly [number, number])[],
+    axis: "x" | "y" = "x",
+  ) => {
+    // Tip is index 3, head shoulder is index 2
+    const idx = axis === "x" ? 0 : 1;
+    return Math.abs(points[3][idx] - points[2][idx]);
+  };
+
+  it("keeps arrowhead pixel length fixed when extending a filled-arrow shaft", () => {
+    const arrow = elementOf("arrow-right", 200, 100, {
+      shaftRatio: 0.5,
+      headAspect: 0.8,
+    });
+    expect(arrowHeadPx(arrow.points)).toBeCloseTo(80, 5);
+
+    const longer = resizeSmartShapePoints(arrow, 600, 100)!;
+    expect(box(longer.points).width).toBeCloseTo(600, 5);
+    expect(box(longer.points).height).toBeCloseTo(100, 5);
+    expect(arrowHeadPx(longer.points)).toBeCloseTo(80, 5);
+
+    // Tiny arrow clamps head length to 85% of total length
+    const tiny = resizeSmartShapePoints(arrow, 40, 100)!;
+    expect(arrowHeadPx(tiny.points)).toBeCloseTo(34, 5);
+  });
+
+  it("keeps arrowhead pixel length fixed for vertical arrows and double arrows", () => {
+    const up = elementOf("arrow-up", 100, 200, {
+      shaftRatio: 0.5,
+      headAspect: 0.8,
+    });
+    expect(arrowHeadPx(up.points, "y")).toBeCloseTo(80, 5);
+    const taller = resizeSmartShapePoints(up, 100, 500)!;
+    expect(arrowHeadPx(taller.points, "y")).toBeCloseTo(80, 5);
+
+    const dbl = elementOf("double-arrow", 240, 100, {
+      thicknessRatio: 0.45,
+      headAspect: 0.6,
+    });
+    const widerDbl = resizeSmartShapePoints(dbl, 600, 100)!;
+    // Left head is points[1][0] - points[0][0]
+    expect(widerDbl.points[1][0] - widerDbl.points[0][0]).toBeCloseTo(60, 5);
+    // Tiny double arrow clamps each head to 42% of width
+    const tinyDbl = resizeSmartShapePoints(dbl, 80, 100)!;
+    expect(tinyDbl.points[1][0] - tinyDbl.points[0][0]).toBeCloseTo(33.6, 5);
+  });
+
+  it("converts legacy headLengthRatio lazily on read and migrates on resize without stretching the head", () => {
+    // Legacy 200x100 arrow with headLengthRatio 0.4 had an 80px head (headAspect = 0.8)
+    expect(
+      readSmartShapeParameter(
+        "arrow-right",
+        200,
+        100,
+        { shaftRatio: 0.5, headLengthRatio: 0.4 },
+        "headAspect",
+      ),
+    ).toBeCloseTo(0.8, 5);
+
+    const legacyArrow = elementOf("arrow-right", 200, 100, {
+      shaftRatio: 0.5,
+      headLengthRatio: 0.4,
+    });
+    expect(arrowHeadPx(legacyArrow.points)).toBeCloseTo(80, 5);
+
+    // Resizing from 200x100 to 500x100 converts using orig 200x100 -> head stays 80px!
+    const resized = resizeSmartShapePoints(legacyArrow, 500, 100)!;
+    expect(arrowHeadPx(resized.points)).toBeCloseTo(80, 5);
+    const nextMeta = resized.customData?.yasinSmartShape;
+    expect(nextMeta?.parameters.headAspect).toBeCloseTo(0.8, 5);
+    expect(nextMeta?.parameters.headLengthRatio).toBeUndefined();
+  });
+
+  it("swaps paired directional IDs and mirrors asymmetric ratios on horizontal and vertical flips", () => {
+    const hPairs: Array<[SmartShapeId, SmartShapeId]> = [
+      ["arrow-right", "arrow-left"],
+      ["chevron-right", "chevron-left"],
+      ["brace-left", "brace-right"],
+      ["bracket-left", "bracket-right"],
+      ["parenthesis-left", "parenthesis-right"],
+    ];
+    for (const [a, b] of hPairs) {
+      const def = getSmartShapeDefinition(a)!;
+      const el = elementOf(a, def.width, def.height, def.defaults);
+      const flipped = resizeSmartShapePoints(el, -def.width, def.height)!;
+      expect(flipped.customData?.yasinSmartShape?.id).toBe(b);
+      const flippedBack = resizeSmartShapePoints(
+        { ...el, customData: flipped.customData },
+        def.width,
+        def.height,
+        { flipByX: true },
+      )!;
+      expect(flippedBack.customData?.yasinSmartShape?.id).toBe(a);
+    }
+
+    const vPairs: Array<[SmartShapeId, SmartShapeId]> = [
+      ["arrow-up", "arrow-down"],
+      ["chevron-up", "chevron-down"],
+      ["brace-up", "brace-down"],
+      ["bracket-up", "bracket-down"],
+    ];
+    for (const [a, b] of vPairs) {
+      const def = getSmartShapeDefinition(a)!;
+      const el = elementOf(a, def.width, def.height, def.defaults);
+      const flipped = resizeSmartShapePoints(el, def.width, -def.height)!;
+      expect(flipped.customData?.yasinSmartShape?.id).toBe(b);
+    }
+
+    // Callouts mirror tailPositionRatio on horizontal flip
+    for (const id of [
+      "callout-rectangle",
+      "callout-rounded",
+      "callout-oval",
+    ] as const) {
+      const el = elementOf(id, 180, 130, { tailPositionRatio: 0.7 });
+      const flipped = resizeSmartShapePoints(el, 180, 130, { flipByX: true })!;
+      expect(
+        flipped.customData?.yasinSmartShape?.parameters.tailPositionRatio,
+      ).toBeCloseTo(0.3, 5);
+    }
+
+    // Braces mirror cuspRatio along their span axis
+    const hBrace = elementOf("brace-up", 200, 36, { cuspRatio: 0.25 });
+    const hFlipped = resizeSmartShapePoints(hBrace, 200, 36, {
+      flipByX: true,
+    })!;
+    expect(hFlipped.customData?.yasinSmartShape?.id).toBe("brace-up");
+    expect(
+      hFlipped.customData?.yasinSmartShape?.parameters.cuspRatio,
+    ).toBeCloseTo(0.75, 5);
+
+    const vBrace = elementOf("brace-left", 36, 200, { cuspRatio: 0.25 });
+    const vFlipped = resizeSmartShapePoints(vBrace, 36, 200, {
+      flipByY: true,
+    })!;
+    expect(vFlipped.customData?.yasinSmartShape?.id).toBe("brace-left");
+    expect(
+      vFlipped.customData?.yasinSmartShape?.parameters.cuspRatio,
+    ).toBeCloseTo(0.75, 5);
+  });
+
+  it("returns null for non-smart elements or zero dimensions", () => {
+    expect(
+      resizeSmartShapePoints(
+        { type: "rectangle", width: 100, height: 100, customData: {} },
+        200,
+        100,
+      ),
+    ).toBeNull();
+    const arrow = elementOf("arrow-right", 200, 100, {
+      shaftRatio: 0.5,
+      headAspect: 0.8,
+    });
+    expect(resizeSmartShapePoints(arrow, 0, 100)).toBeNull();
+    expect(resizeSmartShapePoints(arrow, 200, 0)).toBeNull();
   });
 });

@@ -16015,6 +16015,8 @@ class App extends React.Component<AppProps, AppState> {
       pointFrom<GlobalPoint>(pointerCoords.x, pointerCoords.y),
     );
     this.scene.mutateElement(current, {
+      x: updated.x,
+      y: updated.y,
       points: updated.points,
       customData: updated.customData,
     });
