@@ -1844,11 +1844,12 @@ const _renderInteractiveScene = ({
 
     const isSingleLinearElementSelected =
       selectedElements.length === 1 && isLinearElement(selectedElements[0]);
-    // render selected linear element points
+    // render selected linear element points (never on Smart Shapes: parametric handles replace raw vertices)
     if (
       isSingleLinearElementSelected &&
       appState.selectedLinearElement?.elementId === selectedElements[0].id &&
-      !selectedElements[0].locked
+      !selectedElements[0].locked &&
+      !getSmartShapeMetadata(selectedElements[0])
     ) {
       renderLinearPointHandles(
         context,

@@ -2302,15 +2302,41 @@ export const getSmartShapeHandles = (
   }));
 };
 
+export const shouldShowSmartShapeHandles = (
+  element: Pick<
+    ExcalidrawLinearElement,
+    "width" | "height" | "locked" | "customData"
+  >,
+  zoom: { value: number },
+): boolean => {
+  if (element.locked) {
+    return false;
+  }
+  const metadata = getSmartShapeMetadata(element);
+  const def = metadata ? getSmartShapeDefinition(metadata.id) : undefined;
+  if (!metadata || !def || def.handles.length === 0) {
+    return false;
+  }
+  const screenW = Math.abs(element.width) * zoom.value;
+  const screenH = Math.abs(element.height) * zoom.value;
+  const maxDim = Math.max(screenW, screenH);
+  const minDim = Math.min(screenW, screenH);
+  return def.handles.length === 1
+    ? maxDim >= 56
+    : maxDim >= 72 && minDim >= 36;
+};
+
 export const hitTestSmartShapeHandle = (
   element: ExcalidrawLinearElement,
   scenePoint: GlobalPoint,
   zoom: { value: number },
 ): SmartShapeHandleName | null =>
-  getSmartShapeHandles(element).find(
-    ({ scenePoint: handlePoint }) =>
-      pointDistance(handlePoint, scenePoint) <= 9 / zoom.value,
-  )?.name ?? null;
+  shouldShowSmartShapeHandles(element, zoom)
+    ? getSmartShapeHandles(element).find(
+        ({ scenePoint: handlePoint }) =>
+          pointDistance(handlePoint, scenePoint) <= 9 / zoom.value,
+      )?.name ?? null
+    : null;
 
 export const updateSmartShapeFromHandle = (
   element: ExcalidrawLinearElement,

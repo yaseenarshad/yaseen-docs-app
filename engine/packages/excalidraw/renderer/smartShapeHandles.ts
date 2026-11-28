@@ -1,4 +1,7 @@
-import { getSmartShapeHandles } from "@excalidraw/element";
+import {
+  getSmartShapeHandles,
+  shouldShowSmartShapeHandles,
+} from "@excalidraw/element";
 
 import type { ExcalidrawLinearElement } from "@excalidraw/element/types";
 
@@ -9,6 +12,9 @@ export const renderSmartShapeHandles = (
   element: ExcalidrawLinearElement,
   zoom: Zoom,
 ) => {
+  if (!shouldShowSmartShapeHandles(element, zoom)) {
+    return;
+  }
   const radius = 7 / zoom.value;
   context.save();
   context.fillStyle = "#ffffff";

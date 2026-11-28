@@ -12,6 +12,7 @@ import {
   hitTestSmartShapeHandle,
   readSmartShapeParameter,
   resizeSmartShapePoints,
+  shouldShowSmartShapeHandles,
   updateSmartShapeFromHandle,
   updateSmartShapeParameter,
 } from "../src/smartShape";
@@ -710,5 +711,32 @@ describe("Parametric resize, headAspect, legacy migration, and flip swap (YAZ-66
     });
     expect(resizeSmartShapePoints(arrow, 0, 100)).toBeNull();
     expect(resizeSmartShapePoints(arrow, 200, 0)).toBeNull();
+  });
+
+  it("hides inner Smart Shape handles when a shape is small on screen (YAZ-6705)", () => {
+    const normalArrow = elementOf("arrow-right", 200, 100, {
+      shaftRatio: 0.5,
+      headAspect: 0.8,
+    });
+    expect(shouldShowSmartShapeHandles(normalArrow, { value: 1 })).toBe(true);
+    // Zoomed out or shrunk small: inner handles hide so body stays easy to grab
+    expect(shouldShowSmartShapeHandles(normalArrow, { value: 0.3 })).toBe(
+      false,
+    );
+    const smallArrow = elementOf("arrow-right", 60, 30, {
+      shaftRatio: 0.5,
+      headAspect: 0.8,
+    });
+    expect(shouldShowSmartShapeHandles(smallArrow, { value: 1 })).toBe(false);
+    const smallHandle = getSmartShapeHandles(smallArrow)[0];
+    expect(
+      hitTestSmartShapeHandle(smallArrow, smallHandle.scenePoint, { value: 1 }),
+    ).toBeNull();
+
+    // Narrow normal curly brace (40x200) keeps its single tip handle; tiny 28px brace hides it
+    const normalBrace = elementOf("brace-right", 40, 200, { cuspRatio: 0.5 });
+    expect(shouldShowSmartShapeHandles(normalBrace, { value: 1 })).toBe(true);
+    const tinyBrace = elementOf("brace-right", 24, 28, { cuspRatio: 0.5 });
+    expect(shouldShowSmartShapeHandles(tinyBrace, { value: 1 })).toBe(false);
   });
 });
