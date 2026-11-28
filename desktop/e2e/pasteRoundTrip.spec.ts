@@ -66,7 +66,17 @@ test('Select-All + copy puts readable text AND rich HTML on the clipboard; Copy 
   await expect
     .poll(async () => (await app.evaluate(({ clipboard }) => clipboard.readText())).includes('foundation'))
     .toBe(true)
-  const payload = await app.evaluate(({ clipboard }) => ({ text: clipboard.readText(), html: clipboard.readHTML() }))
+  const payload = await app.evaluate(async ({ clipboard }) => {
+    const text = await clipboard.readText()
+    let html = ''
+    for (const item of await clipboard.read()) {
+      if (item.types.includes('text/html')) {
+        html = await (await item.getType('text/html')).text()
+        break
+      }
+    }
+    return { text, html }
+  })
   // Text side (YAZ-1443): READABLE, not Markdown — `• ` bullets, two spaces per depth, the
   // `1)` left exactly as typed. Nesting survived; the fake bullets are now real ones.
   expect(payload.text).toContain('• this is the foundation to:.')

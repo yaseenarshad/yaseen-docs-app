@@ -461,9 +461,9 @@ export interface MenuHost {
    * this through `pickMenuTargetWindow` (see its comment for why macOS forces the fallback).
    */
   focusedWebContents(): { id: number; send(channel: string, ...args: unknown[]): void } | undefined
-  readClipboardText(): string
+  readClipboardText(): string | Promise<string>
   /** The clipboard's HTML, for Paste as › Cells only (YAZ-4206 D18). */
-  readClipboardHTML(): string
+  readClipboardHTML(): string | Promise<string>
   openExternal(url: string): void
   /** Check for Updates… (YAZ-2976): `index.ts` runs the check and answers for each state (S4–S6). */
   checkForUpdates(): void
@@ -490,7 +490,16 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
     },
     pasteAs(mode) {
       const target = host.focusedWebContents()
-      if (target !== undefined) target.send(SPECIAL.menuPasteAs, { mode, text: host.readClipboardText(), ...(mode === 'cells' ? { html: host.readClipboardHTML() } : {}) } satisfies ClipboardPasteRequest)
+      if (target === undefined) return
+      const text = host.readClipboardText()
+      const html = mode === 'cells' ? host.readClipboardHTML() : undefined
+      if (typeof text === 'string' && (html === undefined || typeof html === 'string')) {
+        target.send(SPECIAL.menuPasteAs, { mode, text, ...(html !== undefined ? { html } : {}) } satisfies ClipboardPasteRequest)
+        return
+      }
+      void Promise.all([text, html]).then(([resolvedText, resolvedHtml]) => {
+        target.send(SPECIAL.menuPasteAs, { mode, text: resolvedText, ...(resolvedHtml !== undefined ? { html: resolvedHtml } : {}) } satisfies ClipboardPasteRequest)
+      })
     },
     newItem() {
       host.focusedWebContents()?.send(CONTRACT.menu.onNewItem.channel)

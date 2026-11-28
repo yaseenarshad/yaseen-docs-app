@@ -2,7 +2,7 @@ import { rendererUrlFor } from './rendererUrl'
 import { startAutomationServer, type AutomationServer } from '../automation/server'
 import { prepareAutomation } from './automation'
 import { registerAutomationIpc } from './ipc/automation'
-import { app, BrowserWindow, clipboard, dialog, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, systemPreferences, webContents } from 'electron'
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, systemPreferences, webContents } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { enableCompileCache } from 'node:module'
@@ -308,7 +308,12 @@ const manager = createWindowManager(store, {
       if (dictionarySuggestions === null || win.isDestroyed()) return
       Menu.buildFromTemplate(buildContextMenuTemplate({ ...params, dictionarySuggestions }, {
         copyAs: (mode) => win.webContents.send(SPECIAL.menuCopyAs, mode),
-        pasteAs: (mode) => win.webContents.send(SPECIAL.menuPasteAs, { mode, text: clipboard.readText(), ...(mode === 'cells' ? { html: clipboard.readHTML() } : {}) } satisfies ClipboardPasteRequest),
+        pasteAs: (mode) => {
+          void Promise.all([clipboard.readText(), mode === 'cells' ? readClipboardHtml() : Promise.resolve(undefined)]).then(([text, html]) => {
+            if (win.isDestroyed()) return
+            win.webContents.send(SPECIAL.menuPasteAs, { mode, text, ...(html !== undefined ? { html } : {}) } satisfies ClipboardPasteRequest)
+          })
+        },
         replace: (s) => win.webContents.replaceMisspelling(s),
         addToDictionary: (w) => win.webContents.session.addWordToSpellCheckerDictionary(w),
         // Image rows (YAZ-1666): Chromium copies the decoded pixels at the click point; reveal
@@ -553,9 +558,9 @@ app.whenReady().then(() => {
   registerClipboardIpc(manager, {
     target: clipboardTarget,
     writeText: (text) => clipboard.writeText(text),
-    write: (data) => clipboard.write(data),
+    write: (data) => writeClipboardRich(data),
     readText: () => clipboard.readText(),
-    readHTML: () => clipboard.readHTML(),
+    readHTML: () => readClipboardHtml(),
     revealImage: (src) => revealVaultImage(src, (file) => revealItem({ path: file })),
     rendererUrl: process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html',
   })
@@ -608,19 +613,26 @@ app.whenReady().then(() => {
       return res.response === 0
     }
   }
+  let confirmingQuitAll = false
   const confirmQuitAllIfNeeded = async (): Promise<boolean> => {
     if (!shouldConfirmQuit()) return true
-    return showQuitConfirmDialog({
-      message: 'Do you want to quit all Yaseen Docs apps?',
-      detail: 'This closes every open Vault App and Yaseen Docs window. Click Cancel to keep them open.',
-      confirmLabel: 'Quit All',
-      windowId: manager.lastFocused?.(),
-    })
+    if (confirmingQuitAll) return false
+    confirmingQuitAll = true
+    try {
+      return await showQuitConfirmDialog({
+        message: 'Do you want to quit all Yaseen Docs apps?',
+        detail: 'This closes every open Vault App and Yaseen Docs window. Click Cancel to keep them open.',
+        confirmLabel: 'Quit All',
+        windowId: manager.lastFocused?.(),
+      })
+    } finally {
+      confirmingQuitAll = false
+    }
   }
   const createSharedMenuHost = (targetWc: () => Electron.WebContents | undefined, onWhatsNew: () => void) => ({
     focusedWebContents: targetWc,
     readClipboardText: () => clipboard.readText(),
-    readClipboardHTML: () => clipboard.readHTML(),
+    readClipboardHTML: () => readClipboardHtml(),
     openExternal: (url: string) => void shell.openExternal(url),
     // S4–S6: the answer shows in the window in front, with or without a sidebar (the Welcome screen,
     // a collapsed one): a notice, or for a staged or manual update the "What's new" sheet and its button.
@@ -1017,6 +1029,30 @@ app.whenReady().then(() => {
 let quitting = false
 let closingHostOnly = false
 let confirmingHostQuit = false
+const readClipboardHtml = async (): Promise<string> => {
+  try {
+    const items = await clipboard.read()
+    for (const item of items) {
+      if (item.types.includes('text/html')) {
+        const blob = await item.getType('text/html')
+        return await blob.text()
+      }
+    }
+  } catch {
+    // Clipboard unavailable or no HTML payload.
+  }
+  return ''
+}
+
+const writeClipboardRich = async (data: { text: string; html: string }): Promise<void> => {
+  await clipboard.write([
+    new ClipboardItem({
+      'text/plain': data.text,
+      'text/html': data.html,
+    }),
+  ])
+}
+
 const runHostQuitSequence = (): void => {
   if (quitting) return
   quitting = true

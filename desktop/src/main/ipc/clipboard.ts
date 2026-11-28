@@ -17,13 +17,13 @@ const isPoint = (v: unknown): v is { x: number; y: number } =>
 export interface ClipboardHost {
   target(): Pick<WebContents, 'id'> | undefined
   /** Electron clipboard.writeText replaces existing formats with text only. */
-  writeText(text: string): void
+  writeText(text: string): void | Promise<void>
   /** Copy as › Without folded lines (YAZ-3653): the text and rich HTML normal Copy writes. */
-  write(data: { text: string; html: string }): void
+  write(data: { text: string; html: string }): void | Promise<void>
   /** The clipboard's text, for the page menu's Paste as (YAZ-3653). */
-  readText(): string
+  readText(): string | Promise<string>
   /** The clipboard's HTML, for Paste as › Cells only (YAZ-4206 D18). */
-  readHTML(): string
+  readHTML(): string | Promise<string>
   /** The page menu's Reveal in Finder for an image (YAZ-3727 D22): the native menu's row (`revealVaultImage`). */
   revealImage(src: string): Promise<void>
   rendererUrl: string
@@ -48,8 +48,8 @@ export function registerClipboardIpc(windows: Pick<WindowManagerIpc, 'idFor'>, h
       throw new BridgeFailure('BAD_REQUEST', 'invalid copy target or text')
     }
     if (text === '') return
-    if (typeof html === 'string') host.write({ text, html })
-    else host.writeText(text)
+    if (typeof html === 'string') await host.write({ text, html })
+    else await host.writeText(text)
   })
   // A page's own right-click menu (YAZ-3653): each row does what the native menu's row does, on the
   // window that sent it. Only that window's own selection and clipboard commands; never other text.
@@ -73,10 +73,10 @@ export function registerClipboardIpc(windows: Pick<WindowManagerIpc, 'idFor'>, h
         return sender.send(SPECIAL.menuCopyAs, action.slice('copy-'.length))
       case 'paste-plain':
       case 'paste-markdown':
-        return sender.send(SPECIAL.menuPasteAs, { mode: action.slice('paste-'.length), text: host.readText() })
+        return sender.send(SPECIAL.menuPasteAs, { mode: action.slice('paste-'.length), text: await host.readText() })
       // Cells only (YAZ-4206 D18): the cells are the HTML's table, so the HTML goes too.
       case 'paste-cells':
-        return sender.send(SPECIAL.menuPasteAs, { mode: 'cells', text: host.readText(), html: host.readHTML() })
+        return sender.send(SPECIAL.menuPasteAs, { mode: 'cells', text: await host.readText(), html: await host.readHTML() })
       // An image's rows (YAZ-3727 D22), as the native image menu's: Chromium copies the decoded pixels at the point
       // right-clicked, in the window's px (the page's px times the App size); Reveal takes only a vault image's `src`.
       case 'copy-image':

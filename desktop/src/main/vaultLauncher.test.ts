@@ -1,7 +1,9 @@
 import { execFile as nodeExecFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { homedir, tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -30,12 +32,9 @@ import {
 
 const execFileAsync = promisify(nodeExecFile)
 
-const REAL_APP_SHIM_LOADER = resolve(
-  import.meta.dirname,
-  '..',
-  '..',
-  'node_modules',
-  'electron',
+const requireFromHere = createRequire(import.meta.url)
+const REAL_APP_SHIM_LOADER = join(
+  dirname(requireFromHere.resolve('electron/package.json')),
   'dist',
   'Electron.app',
   'Contents',
@@ -651,7 +650,7 @@ describe('installVaultLauncher & removeVaultLauncher', () => {
     expect(trashItem).toHaveBeenCalledWith(res.appPath)
   })
 
-  it.skipIf(process.platform !== 'darwin')(
+  it.skipIf(process.platform !== 'darwin' || !existsSync(REAL_APP_SHIM_LOADER))(
     'produces a codesign-verified, plutil-valid v3 .app bundle with real Electron app_shim_loader on macOS',
     async () => {
       const res = await installVaultLauncher(
@@ -1128,7 +1127,7 @@ describe('refreshOutdatedLaunchers (YAZ-6605, YAZ-6624 v1/v2 -> v3)', () => {
     }
   })
 
-  it.skipIf(process.platform !== 'darwin')(
+  it.skipIf(process.platform !== 'darwin' || !existsSync(REAL_APP_SHIM_LOADER))(
     'upgraded v2 Swift bundle passes plutil and strict codesign verification with real Electron app_shim_loader on macOS',
     async () => {
       const appPath = await writeLegacySwiftBundle({

@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { clipboard } from 'electron'
+import { clipboard, ClipboardItem } from 'electron'
 
 /**
  * The file list on the macOS system clipboard (YAZ-3265 D13): what Finder's Copy writes and its
@@ -14,6 +14,8 @@ import { clipboard } from 'electron'
  * the app's own clip (`fileClip`) always stands.
  */
 export const FILENAMES_TYPE = 'NSFilenamesPboardType'
+/** Electron 45+ W3C Clipboard custom OS-format MIME wrapper for `NSFilenamesPboardType`. */
+export const FILENAMES_MIME = `electron application/osclipboard;format="${FILENAMES_TYPE}"`
 
 const XML_OUT: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;' }
 const XML_IN: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
@@ -45,10 +47,19 @@ const inE2E = (): boolean => process.env.YASEEN_DOCS_FAKE_CLIPBOARD === '1'
  * The files on the system clipboard, absolute and in order; empty when it holds no files (text or a picture, say).
  * Null when the app cannot know (YAZ-4372): off macOS, or when the read fails. Then the app's own clip stands.
  */
-export function osFiles(): string[] | null {
+export async function osFiles(): Promise<string[] | null> {
   if (process.platform !== 'darwin') return null
   try {
-    return parseFilenamesPlist(inE2E() ? (e2e.e2eOsFiles ?? '') : clipboard.read(FILENAMES_TYPE))
+    if (inE2E()) return parseFilenamesPlist(e2e.e2eOsFiles ?? '')
+    const items = await clipboard.read()
+    for (const item of items) {
+      if (item.types.includes(FILENAMES_MIME)) {
+        const payload = await item.getType(FILENAMES_MIME)
+        const xml = typeof payload === 'string' ? payload : await (payload as Blob).text()
+        return parseFilenamesPlist(xml)
+      }
+    }
+    return []
   } catch (err) {
     console.warn(`[osFileClipboard] read failed: ${String(err)}`)
     return null
@@ -56,16 +67,16 @@ export function osFiles(): string[] | null {
 }
 
 /** The files on the system clipboard, absolute and in order; empty off macOS, when it holds no files (text, say), or when the read fails. */
-export function readOsFiles(): string[] {
-  return osFiles() ?? []
+export async function readOsFiles(): Promise<string[]> {
+  return (await osFiles()) ?? []
 }
 
 /**
  * Empties the system clipboard when it still holds exactly `paths` (YAZ-3265): a Cut the app pasted
  * moved them, so Finder's Paste would find stale paths. Anything copied there since is left alone.
  */
-export function clearOsFiles(paths: readonly string[]): void {
-  const now = readOsFiles()
+export async function clearOsFiles(paths: readonly string[]): Promise<void> {
+  const now = await readOsFiles()
   if (now.length === 0 || now.length !== paths.length || now.some((p, i) => p !== paths[i])) return
   try {
     if (inE2E()) delete e2e.e2eOsFiles
@@ -79,12 +90,12 @@ export function clearOsFiles(paths: readonly string[]): void {
  * Puts `paths` on the system clipboard as Finder's Copy would, in place of what was there. Answers whether the
  * system clipboard now holds them (YAZ-4372): false off macOS and when the write fails.
  */
-export function writeOsFiles(paths: readonly string[]): boolean {
+export async function writeOsFiles(paths: readonly string[]): Promise<boolean> {
   if (process.platform !== 'darwin') return false
   const plist = filenamesPlist(paths)
   try {
     if (inE2E()) e2e.e2eOsFiles = plist
-    else clipboard.writeBuffer(FILENAMES_TYPE, Buffer.from(plist, 'utf8'))
+    else await clipboard.write([new ClipboardItem({ [FILENAMES_MIME]: new Blob([plist]) })])
     return true
   } catch (err) {
     console.warn(`[osFileClipboard] write failed: ${String(err)}`)

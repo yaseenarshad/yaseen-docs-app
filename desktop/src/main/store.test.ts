@@ -379,6 +379,19 @@ describe('createStore: loading', () => {
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, cardTips: 'off' })).toMatchObject({ cardTips: true })
   })
 
+  it('Confirm before quitting (YAZ-6641): On by default, also in a file from before it; Off survives a restart; a wrong value reads On', async () => {
+    expect(DEFAULT_SETTINGS.confirmBeforeQuit).toBe(true)
+    const { confirmBeforeQuit: _gone, ...older } = DEFAULT_SETTINGS
+    await seed(valid({ settings: older }))
+    expect(createStore(file).get().settings.confirmBeforeQuit).toBe(true)
+    const store = createStore(file)
+    store.setSettings({ ...DEFAULT_SETTINGS, confirmBeforeQuit: false })
+    await store.flush()
+    expect(createStore(file).get().settings.confirmBeforeQuit).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, confirmBeforeQuit: 'off' })).toBe(false)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, confirmBeforeQuit: 'off' })).toMatchObject({ confirmBeforeQuit: true })
+  })
+
   it('"Jump across files" (YAZ-3500): a file from before it reads off; on survives a restart; a wrong value reads off; it stays on this Mac', async () => {
     const { codeLanguageHelpers: _a, ...legacySettings } = DEFAULT_SETTINGS
     expect(DEFAULT_SETTINGS.codeLanguageHelpers).toBe(false)

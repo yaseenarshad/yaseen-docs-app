@@ -111,9 +111,10 @@ test.afterAll(async () => {
  * (⇧⌘4) leaves behind — the case this whole feature exists for.
  */
 async function putImageOnClipboard(bytes: Buffer): Promise<void> {
-  await app.evaluate(({ clipboard, nativeImage }, b64) => {
+  await app.evaluate(async ({ clipboard, ClipboardItem }, b64) => {
     clipboard.clear()
-    clipboard.writeImage(nativeImage.createFromBuffer(Buffer.from(b64, 'base64')))
+    const png = new Blob([Buffer.from(b64, 'base64')], { type: 'image/png' })
+    await clipboard.write([new ClipboardItem({ 'image/png': png })])
   }, bytes.toString('base64'))
 }
 

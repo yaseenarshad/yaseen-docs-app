@@ -48,6 +48,7 @@
     "@milkdown/components": "file:client/vendor/milkdown-components-7.22.1-yaz1410.tgz",
     "@milkdown/crepe": "file:client/vendor/milkdown-crepe-7.22.1-yaz3550.tgz",
     "@milkdown/plugin-tooltip": "file:client/vendor/milkdown-plugin-tooltip-7.22.1-yaz2238.tgz",
+    "electron": "45.5.0",
     "esbuild": "^0.28.2",
     "jsdom": "^30.0.1",
     "oxlint": "^1.94.0",
