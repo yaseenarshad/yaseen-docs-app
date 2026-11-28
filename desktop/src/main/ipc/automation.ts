@@ -22,6 +22,7 @@ const roundBounds = (b: { x: number; y: number; width: number; height: number })
 export function registerAutomationIpc(
   store: Store,
   windows: Pick<WindowManager, 'idFor' | 'automationWindows' | 'openAutomationWindow' | 'showWindow' | 'closeWindow' | 'closeAutomationWindow'>,
+  isShimWindow?: (id: string) => boolean,
 ): NavigationHost {
   const requests = new RendererRequests(CONTRACT.automation.onRequest.channel)
   const observed = new WeakSet<Electron.WebContents>()
@@ -45,10 +46,10 @@ export function registerAutomationIpc(
     requests.reply(event.sender.id, reply)
   })
 
-  const focusWin = (win: BrowserWindow): { focused: boolean; restored: boolean } => {
+  const focusWin = (win: BrowserWindow, id: string): { focused: boolean; restored: boolean } => {
     const restored = win.isMinimized()
     if (restored) win.restore()
-    if (process.platform === 'darwin') app?.focus?.({ steal: true })
+    if (process.platform === 'darwin' && !isShimWindow?.(id)) app?.focus?.({ steal: true })
     win.show()
     win.focus()
     return { focused: true, restored }
@@ -125,7 +126,7 @@ export function registerAutomationIpc(
       }
       if (win.isMinimized()) win.restore()
       win.setBounds(bounds, false)
-      if (focus) focusWin(win)
+      if (focus) focusWin(win, id)
       const actual = roundBounds(win.getBounds())
       const display = screen.getDisplayMatching(actual)
       return {
@@ -138,7 +139,7 @@ export function registerAutomationIpc(
     focusWindow: id => {
       const win = windowOf(id)
       if (!win) throw new AutomationFailure('WINDOW_NOT_FOUND', 'The target window closed.')
-      return focusWin(win)
+      return focusWin(win, id)
     },
     minimizeWindow: id => {
       const win = windowOf(id)

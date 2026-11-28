@@ -512,6 +512,20 @@ describe('installOnExit (S21, S22)', () => {
     ])
   })
 
+  it('YAZ-6625 #5: passes reopenApps as extra positional args when reopen is true and ignores them when reopen is false', async () => {
+    const { updater, host } = fake()
+    await updater.check()
+    await until(updater, 'ready')
+    updater.installOnExit(true, ['/Applications/Work.app', '/Applications/My Vault $(touch pwned).app'])
+    updater.installOnExit(true, [])
+    updater.installOnExit(false, ['/Applications/Work.app'])
+    expect(vi.mocked(host.spawnDetached).mock.calls).toEqual([
+      ['/bin/sh', ['-c', SWAP_SCRIPT, 'sh', '4242', bundle, join(userData, 'update-refused'), '1.0.13', '1', '/Applications/Work.app', '/Applications/My Vault $(touch pwned).app']],
+      ['/bin/sh', ['-c', SWAP_SCRIPT, 'sh', '4242', bundle, join(userData, 'update-refused'), '1.0.13', '1']],
+      ['/bin/sh', ['-c', SWAP_SCRIPT, 'sh', '4242', bundle, join(userData, 'update-refused'), '1.0.13', '0']],
+    ])
+  })
+
   it('a swap that cannot start never throws: the app still exits', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const { updater } = fake({ overrides: { spawnDetached: () => { throw new Error('EAGAIN') } } })

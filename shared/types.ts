@@ -3810,6 +3810,8 @@ export interface FolderState {
    * so read-only vaults keep their own switches without writing to disk inside the vault. Absent = fall back to `settings.rowDates`.
    */
   rowDates?: RowDates
+  /** Last remembered window bounds for this vault (YAZ-6625 #3). Persisted per machine; clamped on restore. */
+  lastBounds?: WindowBounds
 }
 
 /** Optional view opened when launching a vault via its macOS `.app` launcher (YAZ-5967). */
@@ -3975,6 +3977,8 @@ export interface VaultSet {
   lastUsed: number
   /** Per-Mac macOS `.app` launcher metadata for this workspace. Absent = no launcher. */
   launcher?: VaultLauncherInfo
+  /** Last remembered window bounds for this workspace (YAZ-6625 #3). Persisted per machine; clamped on restore. */
+  lastBounds?: WindowBounds
 }
 
 /** What `window.openSet` answers (YAZ-2602 S66): `missing` is the set's vaults whose folder is gone, as absolute paths; `opened: false` = none is left, and no window opened. */
