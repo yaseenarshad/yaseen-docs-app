@@ -424,6 +424,8 @@ const updater = createUpdater(
 )
 /** "Restart to update" (S21) sets this; a plain quit with an update staged swaps and stays closed (S22). */
 let reopenAfterQuit = false
+/** True when "Quit All Yaseen Docs" (⌘⌥Q) or "Restart to update" requests exiting host + all App Shims (YAZ-6640 Option B). */
+let forceQuitAll = false
 
 /**
  * The most recently focused window's `webContents.id` (all windows, for clipboard IPC)
@@ -606,7 +608,10 @@ app.whenReady().then(() => {
       if (file !== null) shell.showItemInFolder(file)
       return file !== null
     },
-    quitAll: () => app.quit(),
+    quitAll: () => {
+      forceQuitAll = true
+      app.quit()
+    },
     routeVaultToShim,
   })
   const handlers = createMenuHandlers(manager, createSharedMenuHost(hostMenuTarget, () => handlers.whatsNew()))
@@ -651,6 +656,7 @@ app.whenReady().then(() => {
           suspendKeys: hotkeyRecording.active(),
           dailyPages: dailyInFrontFor(wc),
           isShim,
+          showQuitAll: !isShim && (shims?.connectedCount() ?? 0) > 0,
         },
         menuHandlers,
       ),
@@ -743,6 +749,7 @@ app.whenReady().then(() => {
       },
       quitHost: () => app.quit(),
       headlessStart: headlessShimHost,
+      onShimsChanged: () => applyMenu(),
       onShimDisconnected: (shimKey) => {
         shimMenuHandlers.delete(shimKey)
         shimMenuKeys.delete(shimKey)
@@ -846,6 +853,7 @@ app.whenReady().then(() => {
     openExternal: (url) => void shell.openExternal(url),
     restartToUpdate: () => {
       reopenAfterQuit = true
+      forceQuitAll = true
       app.quit()
     },
   })
@@ -953,10 +961,27 @@ app.whenReady().then(() => {
 
 // Quit: `runQuitSequence` owns the order (renderers first, YAZ-1081 D2) and `windows[]` is kept, so
 // the next launch can bring them back (YAZ-2589); then exit for real — `app.exit` re-runs no quit events.
+// Option B (YAZ-6640): plain Cmd+Q on the host while Vault Apps are open closes only regular host windows
+// and hides the host Dock icon, leaving Vault Apps running. Cmd+Opt+Q ("Quit All") or updater sets `forceQuitAll`.
 let quitting = false
+let closingHostOnly = false
 app.on('before-quit', (event) => {
   event.preventDefault()
   if (quitting) return
+  if (!forceQuitAll && (shims?.connectedCount() ?? 0) > 0) {
+    if (closingHostOnly) return
+    closingHostOnly = true
+    const regularIds = manager.regularWindowIds?.() ?? []
+    void (regularIds.length > 0 ? manager.flushAndCloseWindows(regularIds) : Promise.resolve())
+      .catch(() => undefined)
+      .finally(() => {
+        closingHostOnly = false
+        if ((manager.regularWindowCount?.() ?? 0) === 0 && (shims?.connectedCount() ?? 0) > 0) {
+          app.dock?.hide()
+        }
+      })
+    return
+  }
   quitting = true
   const activeShimBundles = shims?.activeBundlePaths() ?? []
   const hadRegularWindows = (manager.regularWindowCount?.() ?? 0) > 0

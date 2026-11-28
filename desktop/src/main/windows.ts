@@ -325,6 +325,8 @@ export interface WindowManager extends WindowLookup {
   windowsForShim(shimKey: string): string[]
   /** Count of live non-destroyed host-owned windows (including Files windows; excludes shim windows; YAZ-6625 D2). */
   regularWindowCount(): number
+  /** Live non-destroyed host-owned window ids (including Files windows; excludes shim windows; YAZ-6640 Option B). */
+  regularWindowIds(): string[]
   /** Focus live window `id` via `focusWindow`; false when not live. */
   focusWindowById(id: string): boolean
   /** Find a live regular (non-shim, non-Files, non-readOnly) host window owning exactly `root`, most recently focused first (YAZ-6625 D3). */
@@ -1539,6 +1541,14 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
         if (!win.isDestroyed() && !windowShims.has(id)) count++
       }
       return count
+    },
+
+    regularWindowIds() {
+      const ids: string[] = []
+      for (const [id, win] of live) {
+        if (!win.isDestroyed() && !windowShims.has(id)) ids.push(id)
+      }
+      return ids
     },
 
     focusWindowById(id) {

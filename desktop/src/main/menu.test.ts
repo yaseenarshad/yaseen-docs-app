@@ -1121,6 +1121,12 @@ describe('App Shim menu items and shim-first routing (YAZ-6625 #6, D3)', () => {
     const hostApp = menuOf(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: {}, isShim: false }, handlers), 'Yaseen Docs')
     expect(hostApp.find((i) => i.id === 'menu.app.quit-all')).toBeUndefined()
 
+    // Host menu shows Quit All Yaseen Docs when Vault Apps are open alongside host (YAZ-6640 Option B).
+    const hostWithShims = menuOf(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: {}, isShim: false, showQuitAll: true }, handlers), 'Yaseen Docs')
+    if (process.platform === 'darwin') {
+      expect(hostWithShims.find((i) => i.id === 'menu.app.quit-all')?.accelerator).toBe('CmdOrCtrl+Alt+Q')
+    }
+
     const shimApp = menuOf(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: {}, isShim: true }, handlers), 'Yaseen Docs')
     const quitIdx = shimApp.findIndex((i) => i.role === 'quit')
     const quitAllItem = shimApp[quitIdx + 1]

@@ -127,6 +127,8 @@ export interface MenuInputs {
   dailyPages?: boolean
   /** True when building the application menu for a macOS App Shim process (YAZ-6625 D4, #6). Adds "Quit All Yaseen Docs". */
   isShim?: boolean
+  /** True when macOS App Shims are running alongside the host app (YAZ-6640 Option B). Adds "Quit All Yaseen Docs" to the host menu too. */
+  showQuitAll?: boolean
 }
 
 /**
@@ -152,7 +154,7 @@ const menuLabel = (text: string): string => text.replace(/&/g, '&&')
  * The whole menu bar as a template. Item `id`s are stable so a live check (Playwright) can
  * drive items through `Menu.getApplicationMenu().getMenuItemById(...)`.
  */
-export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, frontKind = activeKind, hotkeys, hotkeysAside, suspendKeys = false, dailyPages = false, isShim = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
+export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, frontKind = activeKind, hotkeys, hotkeysAside, suspendKeys = false, dailyPages = false, isShim = false, showQuitAll = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
   const recentItems: MenuItemConstructorOptions[] =
     recents.length === 0
       ? [{ label: 'No Recent Folders', enabled: false }]
@@ -192,7 +194,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
           ? ([{ role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }] satisfies MenuItemConstructorOptions[])
           : []),
         { role: 'quit' },
-        ...(isMac && isShim
+        ...(isMac && (isShim || showQuitAll)
           ? ([
               {
                 id: 'menu.app.quit-all',
