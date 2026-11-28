@@ -16,6 +16,7 @@ import type { Transaction } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuRow } from '../blockHandleMenu'
 import { HIGHLIGHT_COLORS, type HighlightColor } from '../marks/highlightColours'
+import { TEXT_COLORS, textColorCss, type TextColorName } from '../marks/textColor'
 import { capital } from '../table/colours'
 import { swatchIcon } from '../table/tableRows'
 
@@ -27,7 +28,7 @@ const TEXT_MARKS = [
   ['strike_through', 'Strikethrough'],
 ] as const
 /** The marks "Back to the vault's look" takes off. */
-const STYLE_MARKS = ['strong', 'emphasis', 'underline', 'strike_through', 'highlight'] as const
+const STYLE_MARKS = ['strong', 'emphasis', 'underline', 'strike_through', 'text_color', 'highlight'] as const
 
 /** The mark of `type` that EVERY letter of `from`..`to` has, the same on all, or null (none, or not on all). */
 function markOver(doc: ProseNode, from: number, to: number, type: MarkType): Mark | null {
@@ -64,6 +65,21 @@ export function pillStyleRow(view: EditorView, from: number, to: number, keep: (
     const on = markOver(doc, from, to, type) !== null
     return [{ label, hint: on ? '✓' : undefined, run: apply((tr) => (on ? tr.removeMark(from, to, type) : tr.addMark(from, to, type.create()))) }]
   })
+  const textColor = schema.marks.text_color
+  const currentTextColor = textColor === undefined ? null : markOver(doc, from, to, textColor)
+  const textColorRow = (color: TextColorName): MenuRow => ({
+    label: capital(color),
+    icon: swatchIcon(textColorCss(color)),
+    hint: currentTextColor !== null && currentTextColor.attrs.color === color ? '✓' : undefined,
+    run: apply((tr) => tr.removeMark(from, to, textColor!).addMark(from, to, textColor!.create({ color }))),
+  })
+  const textColors: MenuRow[] =
+    textColor === undefined
+      ? []
+      : [
+          { label: 'Default', hint: !doc.rangeHasMark(from, to, textColor) ? '✓' : undefined, run: apply((tr) => tr.removeMark(from, to, textColor)) },
+          ...TEXT_COLORS.map(textColorRow),
+        ]
   const highlight = allowHighlight ? schema.marks.highlight : undefined
   const current = highlight === undefined ? null : markOver(doc, from, to, highlight)
   const colour = (color: HighlightColor): MenuRow => ({
@@ -82,11 +98,22 @@ export function pillStyleRow(view: EditorView, from: number, to: number, keep: (
     disabled: !styled(doc, from, to, types),
     run: apply((tr) => types.forEach((type) => tr.removeMark(from, to, type))),
   }
+  const headings: string[] = ['Text']
+  const children: MenuRow[][] = [text]
+  if (textColors.length > 0) {
+    headings.push('Text colour')
+    children.push(textColors)
+  }
+  if (highlights.length > 0) {
+    headings.push('Highlight')
+    children.push(highlights)
+  }
+  children.push([back])
   return {
     label: 'Pill style',
     run: () => {},
     stay: true,
-    headings: highlight === undefined ? ['Text'] : ['Text', 'Highlight'],
-    children: highlight === undefined ? [text, [back]] : [text, highlights, [back]],
+    headings,
+    children,
   }
 }

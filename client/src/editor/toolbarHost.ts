@@ -33,3 +33,14 @@ export function showMoreColour(view: EditorView, key: string, colour: string | n
   if (colour === null) toolbar.style.removeProperty(name)
   else if (toolbar.style.getPropertyValue(name) !== colour) toolbar.style.setProperty(name, colour)
 }
+
+/**
+ * Update the live size label on the `[16 ▾]` toolbar button (YAZ-6695 D5).
+ * O(1) `textContent` write only when the displayed value changes.
+ */
+export function showToolbarSize(view: EditorView, size: number | null | undefined): void {
+  const label = toolbarItemOf(view, 'font-size')?.querySelector<HTMLElement>('.toolbar-size__value')
+  if (label == null) return
+  const next = size === undefined ? '—' : String(size ?? 16)
+  if (label.textContent !== next) label.textContent = next
+}

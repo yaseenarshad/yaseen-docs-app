@@ -29,20 +29,11 @@ import { Fragment, type Node as ProseNode, type Schema, Slice } from '@milkdown/
 import { InputRule } from '@milkdown/kit/prose/inputrules'
 import { type Command, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
 import { canJoin, Mapping } from '@milkdown/kit/prose/transform'
-import { $inputRule, $markSchema, $pasteRule, $prose, $shortcut } from '@milkdown/kit/utils'
+import { $inputRule, $pasteRule, $prose, $shortcut } from '@milkdown/kit/utils'
 
-/** The marks a box draws (`textBoxDoc.ts` maps each to a run style). */
+/** The marks a box draws (`textBoxDoc.ts` maps each to a run style). `text_color` comes from `marks/textColor.ts`. */
 export const BOX_MARKS = new Set(['strong', 'emphasis', 'underline', 'strike_through', 'highlight', 'text_color'])
 const BOX_NODES = new Set(['doc', 'paragraph', 'bullet_list', 'list_item', 'text', 'hardbreak'])
-
-export const textColorSchema = $markSchema('text_color', () => ({
-  attrs: { color: { default: null } },
-  parseDOM: [{ tag: 'span[data-text-color]', getAttrs: (dom) => ({ color: (dom as HTMLElement).getAttribute('data-text-color') }) }],
-  toDOM: (mark) => ['span', { 'data-text-color': mark.attrs.color as string }, 0],
-  parseMarkdown: { match: () => false, runner: () => {} },
-  // a copy as Markdown keeps the letters and drops the color
-  toMarkdown: { match: (mark) => mark.type.name === 'text_color', runner: () => {} },
-}))
 
 /** True when the node itself, not what it holds, is something a box draws. */
 function fitsSelf(node: ProseNode): boolean {
@@ -288,7 +279,6 @@ export function lockToTextBox(crepe: Crepe): void {
       ctx.update(trailingConfig.key, (prev) => ({ ...prev, shouldAppend: () => false }))
     })
     .use(extendListItemSchemaForTask.extendSchema((prev) => (ctx) => ({ ...prev(ctx), content: 'paragraph bullet_list?' })))
-    .use(textColorSchema)
     .use(plainLineChecklist)
     .use(boxKeys)
     .use(boxPaste)

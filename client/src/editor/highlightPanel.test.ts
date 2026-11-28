@@ -113,13 +113,13 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
   })
 
   it('the lit button is the selection\'s colour (the ring); the ▾ lights for pink, a panel colour or a custom one', async () => {
-    const { view } = await mount('<mark class="highlight-blue">blue</mark> <mark class="highlight-pink">pink</mark> <mark class="highlight-orange">orange</mark> <mark style="background-color: #3366ff">mine</mark> plain\n')
+    const { view } = await mount('<mark class="highlight-blue">blue</mark> <mark class="highlight-pink">pink</mark> <mark class="highlight-orange">orange</mark> <mark style="background-color: #3366ff">mine</mark> <mark style="background-color: #3366ff80">half</mark> plain\n')
     await select(view, 'blue')
     expect(litDots()).toEqual(['highlight-blue'])
     expect(must('highlight-more').classList.contains('active')).toBe(false)
-    // YAZ-4445: as the board's ▾, a bar of that colour under it (the toolbar's `--highlight-more-colour`)
+    // YAZ-4445 + D8: bar of that colour under ▾; custom hex paints directly (solid #rrggbb or custom alpha #rrggbbaa).
     const bar = () => document.querySelector<HTMLElement>('.milkdown-toolbar')!.style.getPropertyValue('--highlight-more-colour')
-    for (const [text, colour] of [['pink', 'var(--mark-bg-pink)'], ['orange', 'var(--mark-bg-orange)'], ['mine', 'rgba(51, 102, 255, 0.4)']]) {
+    for (const [text, colour] of [['pink', 'var(--mark-bg-pink)'], ['orange', 'var(--mark-bg-orange)'], ['mine', '#3366ff'], ['half', '#3366ff80']]) {
       await select(view, text)
       expect(litDots()).toEqual([])
       expect(must('highlight-more').classList.contains('active')).toBe(true)

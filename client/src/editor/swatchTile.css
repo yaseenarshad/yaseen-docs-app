@@ -153,3 +153,61 @@
 .milkdown .milkdown-toolbar .toolbar-item[data-toolbar-item='text-color-more'] {
   --more-colour: var(--text-color-more-colour);
 }
+
+/* Compact `[16 ▾]` Text size and `A̲▾` Text colour toolbar buttons (YAZ-6695 D5, D6). */
+.toolbar-size,
+.toolbar-text-color {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  line-height: 1;
+  pointer-events: none;
+}
+.toolbar-size__value {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 1.25em;
+  text-align: center;
+}
+.toolbar-caret {
+  font-size: var(--swatch-more-size);
+  line-height: 1;
+  opacity: 0.78;
+}
+.toolbar-text-color__letter {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  padding-bottom: 3px;
+}
+.toolbar-text-color__letter::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  bottom: 0;
+  height: 2.5px;
+  border-radius: 1px;
+  background: var(--text-color-colour, currentColor);
+}
+.milkdown .milkdown-toolbar .toolbar-item:has(.toolbar-size),
+.milkdown .milkdown-toolbar .toolbar-item:has(.toolbar-text-color) {
+  width: auto;
+  min-width: 32px;
+  padding: 0 6px;
+  color: var(--crepe-color-on-background, var(--fg));
+}
+.milkdown .milkdown-toolbar .toolbar-item[aria-expanded='true']:has(.toolbar-size),
+.milkdown .milkdown-toolbar .toolbar-item[aria-expanded='true']:has(.toolbar-text-color) {
+  background: var(--crepe-color-hover);
+}
+.toolbar-arrange__svg:has(> .toolbar-size),
+.toolbar-arrange__svg:has(> .toolbar-text-color) {
+  display: grid;
+  place-items: center;
+}

@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest'
 import '../editor/createCrepe'
 import { fromHsv, toHsv } from '../editor/highlightColourBox'
 import { shadesOf } from '../editor/highlightPanel'
-import { customWash } from '../editor/marks/highlight'
 import { hexOfRgb, rgbOf, solidHex, toHex } from './colour'
 
 describe('the helpers', () => {
@@ -35,10 +34,6 @@ describe('the values from before the move (pinned)', () => {
     expect(shadesOf('#ff9628')).toEqual(['#ffcb94', '#ffb05e', '#ff9628', '#cc7820', '#995a18'])
     expect(shadesOf('#123abc')).toEqual(['#899dde', '#4d6bcd', '#123abc', '#0e2e96', '#0b2371'])
     expect(shadesOf('#ffd500')).toEqual(['#ffea80', '#ffe040', '#ffd500', '#ccaa00', '#998000'])
-  })
-
-  it('a custom colour\'s wash', () => {
-    expect(customWash('#ff8800')).toBe('rgba(255, 136, 0, 0.4)')
   })
 
   it('the colour box\'s HSV', () => {

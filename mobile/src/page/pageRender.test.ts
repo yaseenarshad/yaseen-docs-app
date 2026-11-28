@@ -361,4 +361,24 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
     await renderPage(text, slow, document.createElement('div'), run.slice)
     expect(Math.max(...run.work)).toBeGreaterThanOrEqual(150)
   })
+
+  it('YAZ-6694 #5: renders safe inline text colour, font size, and custom highlight while stripping malicious style attributes', async () => {
+    const el = await draw(
+      '<span class="text-color-blue">named</span> ' +
+        '<span style="color: #e03131"><span style="font-size: 24px">big red</span></span> ' +
+        '<mark style="background-color: #ff8800">solid</mark> ' +
+        '<mark style="background-color: #ff880080">half</mark> ' +
+        '<span style="background: url(https://evil.example/track.png)">blocked</span>',
+    )
+    expect(el.querySelector('span.text-color-blue')?.textContent).toBe('named')
+    const spans = [...el.querySelectorAll<HTMLElement>('span')]
+    const red = spans.find((s) => s.style.color === 'rgb(224, 49, 49)')!
+    expect(red).toBeDefined()
+    expect(red.querySelector<HTMLElement>('span')?.style.fontSize).toBe('24px')
+    const marks = [...el.querySelectorAll<HTMLElement>('mark')]
+    expect(marks[0].style.backgroundColor).toBe('rgb(255, 136, 0)')
+    expect(marks[1].style.backgroundColor).toMatch(/rgba\(255,\s*136,\s*0,\s*0\.5/)
+    const blocked = spans.find((s) => s.textContent === 'blocked')!
+    expect(blocked.getAttribute('style')).toBeNull()
+  })
 })

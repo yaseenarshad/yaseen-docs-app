@@ -26,6 +26,8 @@ export const PAGE_KEYS: readonly KeyRow[] = [
   page('underline', 'Underline', ['CmdOrCtrl+U']),
   page('strikethrough', 'Strikethrough', ['CmdOrCtrl+Shift+X', 'CmdOrCtrl+Alt+X']),
   page('highlight', 'Highlight', ['CmdOrCtrl+Shift+H']),
+  page('fontSizeUp', 'Increase text size', []),
+  page('fontSizeDown', 'Decrease text size', []),
   page('inlineCode', 'Inline code', ['CmdOrCtrl+E']),
   // YAZ-4277 demo round 1: as Google Docs' ⌘\; a text box's ⌘\ is the drawing's own (`drawing.clearTextFormatting`).
   page('clearFormatting', 'Clear formatting', ['CmdOrCtrl+\\'], { hint: 'Letter styles go and a heading becomes text; bullets, lists, quotes and links stay' }),

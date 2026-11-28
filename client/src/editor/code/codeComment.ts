@@ -106,7 +106,7 @@ export function formatCodeComment(look: CodeLook): string | null {
 }
 
 /** A mark part: the kind (a highlight with its colour), `line:col`, and the text as a JSON string. */
-const MARK_PART = /^(bold|italic|underline|strike|highlight(?:-([a-z]+|#[0-9a-f]{6}))?) ([1-9]\d{0,8}):([1-9]\d{0,8}) ("(?:[^"\\]|\\.)*")$/
+const MARK_PART = /^(bold|italic|underline|strike|highlight(?:-([a-z]+|#[0-9a-f]{6}(?:[0-9a-f]{2})?))?) ([1-9]\d{0,8}):([1-9]\d{0,8}) ("(?:[^"\\]|\\.)*")$/
 
 /** The text as the comment holds it: a JSON string whose `,` and `>` are escapes, so it never splits a part or ends the comment. */
 const quoteText = (text: string): string => JSON.stringify(text).replace(/,/g, '\\u002c').replace(/>/g, '\\u003e')
@@ -144,9 +144,9 @@ export interface CodeSpan {
   color: string | null
 }
 
-/** A highlight colour a mark can hold: a named one (`green`) or a lowercase `#rrggbb`; `null` is yellow. */
+/** A highlight colour a mark can hold: a named one (`green`) or a lowercase `#rrggbb` / `#rrggbbaa`; `null` is yellow. */
 const markColor = (value: unknown): value is string =>
-  typeof value === 'string' && ((HIGHLIGHT_COLORS as readonly string[]).includes(value) || /^#[0-9a-f]{6}$/.test(value))
+  typeof value === 'string' && ((HIGHLIGHT_COLORS as readonly string[]).includes(value) || /^#[0-9a-f]{6}([0-9a-f]{2})?$/.test(value))
 
 /** The offset where each line of `code` starts. */
 function lineStarts(code: string): number[] {
