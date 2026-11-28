@@ -309,10 +309,12 @@ const manager = createWindowManager(store, {
       Menu.buildFromTemplate(buildContextMenuTemplate({ ...params, dictionarySuggestions }, {
         copyAs: (mode) => win.webContents.send(SPECIAL.menuCopyAs, mode),
         pasteAs: (mode) => {
-          void Promise.all([clipboard.readText(), mode === 'cells' ? readClipboardHtml() : Promise.resolve(undefined)]).then(([text, html]) => {
-            if (win.isDestroyed()) return
-            win.webContents.send(SPECIAL.menuPasteAs, { mode, text, ...(html !== undefined ? { html } : {}) } satisfies ClipboardPasteRequest)
-          })
+          void Promise.all([clipboard.readText(), mode === 'cells' ? readClipboardHtml() : Promise.resolve(undefined)])
+            .then(([text, html]) => {
+              if (win.isDestroyed()) return
+              win.webContents.send(SPECIAL.menuPasteAs, { mode, text, ...(html !== undefined ? { html } : {}) } satisfies ClipboardPasteRequest)
+            })
+            .catch(() => undefined)
         },
         replace: (s) => win.webContents.replaceMisspelling(s),
         addToDictionary: (w) => win.webContents.session.addWordToSpellCheckerDictionary(w),
@@ -819,7 +821,9 @@ app.whenReady().then(() => {
     })
     if (typeof app.startAppShimServer === 'function') {
       try {
-        app.startAppShimServer(shimServerName ? { name: shimServerName } : undefined)
+        // Electron 45's C++ binding rejects an explicit `undefined` argument with TypeError.
+        if (shimServerName) app.startAppShimServer({ name: shimServerName })
+        else app.startAppShimServer()
       } catch (err) {
         console.warn(`[appShims] startAppShimServer failed: ${String(err)}`)
       }
