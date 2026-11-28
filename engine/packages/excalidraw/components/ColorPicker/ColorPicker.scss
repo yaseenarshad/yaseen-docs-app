@@ -586,6 +586,7 @@
 
   // Unified Google Docs 10×8 colour grid (YAZ-6730), matching client/src/editor/colourGrid.css
   .gdocs-grid {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -713,8 +714,6 @@
 
   .gdocs-grid__ctx {
     position: absolute;
-    left: 0;
-    top: calc(100% + 4px);
     z-index: 20;
     display: flex;
     flex-direction: column;

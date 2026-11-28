@@ -449,9 +449,14 @@ export class ColourGrid {
     const hostRect = this.el.getBoundingClientRect()
     const anchorRect = anchor.getBoundingClientRect()
     const relLeft = anchorRect.left - hostRect.left
-    const relTop = anchorRect.bottom - hostRect.top + 4
+    const below = anchorRect.bottom - hostRect.top + 4
+    const menuH = 98
+    const relTop =
+      hostRect.height > 0 && below + menuH > hostRect.height
+        ? Math.max(4, anchorRect.top - hostRect.top - menuH - 4)
+        : Math.max(0, below)
     menu.style.left = `${Math.max(0, Math.min(relLeft, 76))}px`
-    menu.style.top = `${Math.max(0, relTop)}px`
+    menu.style.top = `${relTop}px`
     this.el.append(menu)
     this.#removeMenu = menu
     this.doc.addEventListener('mousedown', this.#outsideRemove, true)
