@@ -225,6 +225,51 @@ describe('launcherBundleId & buildLauncherPlist (v3 App Shim)', () => {
       await rm(tmp, { recursive: true, force: true })
     }
   })
+
+  it('launcherBundleId & buildLauncherPlist support secondary appId while keeping default byte-identical (YAZ-6681)', async () => {
+    const legacyId = launcherBundleId('/Users/me/Vault', 'Work')
+    expect(launcherBundleId('/Users/me/Vault', 'Work', undefined)).toBe(legacyId)
+    expect(launcherBundleId('/Users/me/Vault', 'Work', '')).toBe(legacyId)
+    expect(launcherBundleId('/Users/me/Vault', 'Work', 'default')).toBe(legacyId)
+
+    const secondaryId = launcherBundleId('/Users/me/Vault', 'Work', 'a1b2c3d4')
+    const tertiaryId = launcherBundleId('/Users/me/Vault', 'Work', 'deadbeef')
+    expect(secondaryId).not.toBe(legacyId)
+    expect(tertiaryId).not.toBe(secondaryId)
+    expect(secondaryId).toBe(launcherBundleId('/Users/me/Vault/', 'Work', 'a1b2c3d4'))
+
+    const defaultPlist = buildLauncherPlist({
+      name: 'Work',
+      bundleId: legacyId,
+      vaultUrl: 'yaseendocs:///Users/me/Vault',
+      vaultPath: '/Users/me/Vault',
+      appId: 'default',
+    })
+    expect(defaultPlist).not.toContain('YaseenDocsAppId')
+
+    const secPlist = buildLauncherPlist({
+      name: 'Work Today',
+      bundleId: secondaryId,
+      vaultUrl: 'yaseendocs:///Users/me/Vault?open=today',
+      vaultPath: '/Users/me/Vault',
+      appId: 'a1b2c3d4',
+    })
+    expect(secPlist).toContain('<key>YaseenDocsAppId</key>\n  <string>a1b2c3d4</string>')
+
+    const tmp = await mkdtemp(join(tmpdir(), 'yd-plist-appid-'))
+    try {
+      const appPath = join(tmp, 'Work Today.app')
+      await mkdir(join(appPath, 'Contents'), { recursive: true })
+      await writeFile(join(appPath, 'Contents', 'Info.plist'), secPlist, 'utf8')
+      expect(await readLauncherPlist(appPath)).toMatchObject({
+        bundleId: secondaryId,
+        vaultPath: '/Users/me/Vault',
+        appId: 'a1b2c3d4',
+      })
+    } finally {
+      await rm(tmp, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('installVaultLauncher & removeVaultLauncher', () => {
@@ -648,6 +693,47 @@ describe('installVaultLauncher & removeVaultLauncher', () => {
     await expect(removeVaultLauncher(res.appPath, 'workspace:ws-99', { trashItem })).rejects.toThrow(/Refusing to remove/)
     await expect(removeVaultLauncher(res.appPath, 'workspace:ws-42', { trashItem })).resolves.toBe(true)
     expect(trashItem).toHaveBeenCalledWith(res.appPath)
+  })
+
+  it('installs multiple Vault Apps for the same vault with distinct bundle IDs, collision guard, and scoped rename cleanup (YAZ-6681)', async () => {
+    const trashItem = vi.fn(async () => {})
+    const deps = { appDirs: [primaryApps], trashItem, execFile: async () => {} }
+
+    const primary = await installVaultLauncher(
+      { name: 'Work', vaultPath: '/Users/me/Work', appId: 'default', iconPng: FAKE_PNG, binaryPath: fakeBinary },
+      deps,
+    )
+    const secondary = await installVaultLauncher(
+      { name: 'Work Today', vaultPath: '/Users/me/Work', appId: 'a1b2c3d4', openTarget: 'today', iconPng: FAKE_PNG, binaryPath: fakeBinary },
+      deps,
+    )
+    expect(secondary.bundleId).not.toBe(primary.bundleId)
+    expect((await readLauncherPlist(primary.appPath))?.appId).toBeUndefined()
+    expect((await readLauncherPlist(secondary.appPath))?.appId).toBe('a1b2c3d4')
+
+    // Collision guard refuses to let secondary app overwrite primary app on the same vault.
+    await expect(
+      installVaultLauncher(
+        { name: 'Work', vaultPath: '/Users/me/Work', appId: 'a1b2c3d4', iconPng: FAKE_PNG, binaryPath: fakeBinary },
+        deps,
+      ),
+    ).rejects.toThrow(/Cannot overwrite/)
+
+    // Renaming secondary app trashes ONLY secondary app's old bundle, leaving primary intact.
+    const renamedSec = await installVaultLauncher(
+      {
+        name: 'Work Daily',
+        vaultPath: '/Users/me/Work',
+        appId: 'a1b2c3d4',
+        openTarget: 'today',
+        previousAppPath: secondary.appPath,
+        iconPng: FAKE_PNG,
+        binaryPath: fakeBinary,
+      },
+      deps,
+    )
+    expect(renamedSec.appPath).toBe(join(primaryApps, 'Work Daily.app'))
+    expect(trashItem).toHaveBeenCalledExactlyOnceWith(secondary.appPath)
   })
 
   it.skipIf(process.platform !== 'darwin' || !existsSync(REAL_APP_SHIM_LOADER))(
@@ -1125,6 +1211,34 @@ describe('refreshOutdatedLaunchers (YAZ-6605, YAZ-6624 v1/v2 -> v3)', () => {
     } finally {
       warnSpy.mockRestore()
     }
+  })
+
+  it('refreshOutdatedLaunchers preserves YaseenDocsAppId on secondary Vault Apps (YAZ-6681)', async () => {
+    const appPath = join(appsDir, 'Work Secondary.app')
+    await mkdir(join(appPath, 'Contents', 'MacOS'), { recursive: true })
+    await mkdir(join(appPath, 'Contents', 'Resources'), { recursive: true })
+    const plist = buildLauncherPlist({
+      name: 'Work Secondary',
+      bundleId: launcherBundleId('/Users/me/Work', 'Work Secondary', 'cafebabe'),
+      vaultPath: '/Users/me/Work',
+      vaultUrl: 'yaseendocs:///Users/me/Work?open=inbox',
+      appId: 'cafebabe',
+      hostBundlePath: '/Old/Yaseen Docs.app',
+    })
+    await writeFile(join(appPath, 'Contents', 'Info.plist'), plist, 'utf8')
+    await writeFile(join(appPath, 'Contents', 'MacOS', APP_SHIM_EXECUTABLE), '#!/bin/sh\n', 'utf8')
+    await writeFile(join(appPath, 'Contents', 'Resources', 'AppIcon.icns'), encodeIcnsFromPng(FAKE_PNG))
+
+    const upgraded = await refreshOutdatedLaunchers(newBinary, {
+      appDirs: [appsDir],
+      hostBundlePath: '/Applications/Yaseen Docs.app',
+      execFile: async () => {},
+    })
+    expect(upgraded).toEqual([appPath])
+    expect(await readLauncherPlist(appPath)).toMatchObject({
+      appId: 'cafebabe',
+      hostPath: '/Applications/Yaseen Docs.app',
+    })
   })
 
   it.skipIf(process.platform !== 'darwin' || !existsSync(REAL_APP_SHIM_LOADER))(

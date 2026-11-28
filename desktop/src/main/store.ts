@@ -142,6 +142,7 @@ import {
   addRecentRoot,
   cleanVaultKey,
   cleanVaultLauncher,
+  vaultLaunchersOf,
   cleanRowDates,
   cleanUpNextTaken,
   cleanCardsAdded,
@@ -313,6 +314,12 @@ export interface Store {
   pushRecent(path: string, now?: number): void
   removeRecent(path: string): void
   setFolder(root: string, patch: FolderPatch): void
+  /** Upsert a Vault App entry into `folders[root].launchers` (YAZ-6681). Preserves existing per-app `lastBounds` unless overwritten. */
+  upsertVaultLauncher(root: string, launcher: VaultLauncherInfo): VaultLauncherInfo | null
+  /** Remove a Vault App entry by `appId` (or primary `'default'` / first when omitted) from `folders[root].launchers` (YAZ-6681). */
+  removeVaultLauncher(root: string, appId?: string): void
+  /** Remember last window bounds for a specific Vault App on `root` (YAZ-6681). Invalid or unchanged bounds commit nothing. */
+  setVaultLauncherBounds(root: string, appId: string, bounds: WindowBounds): void
   /** Remember last window bounds for a single vault (YAZ-6625 #3). Invalid or unchanged bounds commit nothing. */
   setFolderBounds(root: string, bounds: WindowBounds): void
   setFolds(root: string, file: string, keys: readonly string[]): void
@@ -407,8 +414,8 @@ export interface Store {
   setVaultSetLauncher(id: string, launcher: VaultLauncherInfo | null): void
   /** Remember last window bounds for a saved workspace (`VaultSet`, YAZ-6625 #3). Unknown `id`, invalid, or unchanged bounds commit nothing. */
   setVaultSetBounds(id: string, bounds: WindowBounds): void
-  /** Atomically commit a live window's bounds and (when `remember` is true) persist `lastBounds` on its vault or matching workspace in ONE commit (YAZ-6625 #3). */
-  setWindowBounds(id: string, bounds: WindowBounds, remember?: boolean): void
+  /** Atomically commit a live window's bounds and (when `remember` is true) persist `lastBounds` on its vault, secondary Vault App, or matching workspace in ONE commit (YAZ-6625 #3, YAZ-6681). */
+  setWindowBounds(id: string, bounds: WindowBounds, remember?: boolean, shimKey?: string): void
   /**
    * Save `tabs` as a session (YAZ-3147 D2) and answer it. The tabs are cut at MAX_SESSION_TABS, and only
    * the vaults of `roots` that hold a tab are kept. A new session goes to the front. With `replaceId`
@@ -849,6 +856,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   highlightCustomColors: isHighlightCustomColors,
   startupWindows: (v): v is StartupWindows => typeof v === 'string' && (STARTUP_WINDOWS as readonly string[]).includes(v),
   confirmBeforeQuit: (v): v is boolean => typeof v === 'boolean',
+  vaultAppActivateAllWindows: (v): v is boolean => typeof v === 'boolean',
   vaultOpensOn: (v): v is VaultOpensOn => typeof v === 'string' && (VAULT_OPENS_ON as readonly string[]).includes(v),
   sectionStep: (v): v is number => isFiniteNumber(v) && SECTION_STEPS.includes(v),
   sectionLines: (v): v is SectionLines => typeof v === 'string' && (SECTION_LINES as readonly string[]).includes(v),
@@ -1268,11 +1276,37 @@ function sanitizeSwitches(raw: unknown): Record<string, boolean> {
   return out
 }
 
+/** Clean and deduplicate `FolderState.launchers`, migrating legacy `FolderState.launcher` when needed (YAZ-6681). */
+function sanitizeVaultLaunchers(rawLaunchers: unknown, rawLegacy: unknown): VaultLauncherInfo[] {
+  const out: VaultLauncherInfo[] = []
+  const seen = new Set<string>()
+  if (Array.isArray(rawLaunchers)) {
+    for (const item of rawLaunchers) {
+      const clean = cleanVaultLauncher(item)
+      if (clean === null) continue
+      let id = clean.id
+      if (id === undefined) {
+        id = !seen.has('default') ? 'default' : `app-${out.length + 1}`
+      }
+      if (seen.has(id)) continue
+      seen.add(id)
+      out.push({ ...clean, id })
+    }
+  }
+  if (out.length === 0) {
+    const legacy = cleanVaultLauncher(rawLegacy)
+    if (legacy !== null) {
+      out.push({ ...legacy, id: legacy.id ?? 'default' })
+    }
+  }
+  return out
+}
+
 function sanitizeFolder(raw: unknown): FolderState | null {
   if (!isRecord(raw)) return null
   const upNext = cleanUpNextTaken(raw.upNext)
   const added = cleanCardsAdded(raw.added)
-  const launcher = cleanVaultLauncher(raw.launcher)
+  const launchers = sanitizeVaultLaunchers(raw.launchers, raw.launcher)
   const rowDates = cleanRowDates(raw.rowDates)
   const lastBounds = cleanWindowBounds(raw.lastBounds)
   return {
@@ -1298,8 +1332,8 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     ...(upNext !== null && { upNext }),
     // "Add more for today" (YAZ-5042): the day's added numbers; a junk entry is none.
     ...(added !== null && { added }),
-    // macOS Vault App launcher metadata (YAZ-5967, YAZ-6374): a junk entry is dropped.
-    ...(launcher !== null && { launcher }),
+    // Canonical macOS Vault Apps list (YAZ-6681); legacy `launcher` migrates into `launchers[0]` (`id: 'default'`).
+    ...(launchers.length > 0 && { launchers }),
     // Per-vault "Show last updated" switches (YAZ-6529): a junk entry is dropped.
     ...(rowDates !== null && { rowDates }),
     // Last remembered window bounds for this vault (YAZ-6625 #3): a junk entry is dropped.
@@ -1749,15 +1783,86 @@ export function createStore(filePath: string): Store {
         // Per-vault "Show last updated" switches (YAZ-6529): valid sets, junk changes nothing.
         ...(patch.rowDates !== undefined && cleanRowDates(patch.rowDates) !== null ? { rowDates: cleanRowDates(patch.rowDates)! } : {}),
       }
-      // macOS Vault App launcher metadata (YAZ-5967, YAZ-6374): null deletes, valid sets, junk changes nothing.
+      // macOS Vault App launcher metadata (YAZ-5967, YAZ-6374, YAZ-6681): null removes primary app, valid upserts into canonical `launchers`.
       if (patch.launcher === null) {
         delete next.launcher
+        const existing = vaultLaunchersOf(cur)
+        const primaryIdx = existing.findIndex((l) => (l.id ?? 'default') === 'default')
+        const dropIdx = primaryIdx !== -1 ? primaryIdx : 0
+        const remaining = existing.filter((_, idx) => idx !== dropIdx)
+        if (remaining.length === 0) delete next.launchers
+        else next.launchers = remaining
       } else if (patch.launcher !== undefined) {
-        const launcher = cleanVaultLauncher(patch.launcher)
-        if (launcher !== null) next.launcher = launcher
+        const cleaned = cleanVaultLauncher(patch.launcher)
+        if (cleaned !== null) {
+          delete next.launcher
+          const id = cleaned.id ?? 'default'
+          const existing = vaultLaunchersOf(cur)
+          const idx = existing.findIndex((l) => (l.id ?? 'default') === id)
+          const entry: VaultLauncherInfo = {
+            ...cleaned,
+            id,
+            ...(cleaned.lastBounds === undefined && idx !== -1 && existing[idx].lastBounds !== undefined
+              ? { lastBounds: existing[idx].lastBounds }
+              : {}),
+          }
+          next.launchers = idx !== -1 ? existing.map((l, i) => (i === idx ? entry : l)) : [...existing, entry]
+        }
       }
       // One vault per number (YAZ-2555 D2): the same commit takes it from the vault that had it.
       commit({ ...state, folders: { ...(key == null ? state.folders : freeVaultKey(state.folders, key)), [root]: next } })
+    },
+
+    upsertVaultLauncher(root, rawLauncher) {
+      const cleaned = cleanVaultLauncher(rawLauncher)
+      if (cleaned === null) return null
+      const cur = folderOf(root)
+      const existing = vaultLaunchersOf(cur)
+      const id = cleaned.id ?? 'default'
+      const idx = existing.findIndex((l) => (l.id ?? 'default') === id)
+      const entry: VaultLauncherInfo = {
+        ...cleaned,
+        id,
+        ...(cleaned.lastBounds === undefined && idx !== -1 && existing[idx].lastBounds !== undefined
+          ? { lastBounds: existing[idx].lastBounds }
+          : {}),
+      }
+      const launchers = idx !== -1 ? existing.map((l, i) => (i === idx ? entry : l)) : [...existing, entry]
+      const { launcher: _legacy, ...rest } = cur
+      commit({ ...state, folders: { ...state.folders, [root]: { ...rest, launchers } } })
+      return entry
+    },
+
+    removeVaultLauncher(root, appId) {
+      const cur = state.folders[root]
+      if (cur === undefined) return
+      const existing = vaultLaunchersOf(cur)
+      if (existing.length === 0) return
+      const idx =
+        appId !== undefined
+          ? existing.findIndex((l) => (l.id ?? 'default') === appId)
+          : (() => {
+              const defIdx = existing.findIndex((l) => (l.id ?? 'default') === 'default')
+              return defIdx !== -1 ? defIdx : 0
+            })()
+      if (idx === -1) return
+      const remaining = existing.filter((_, i) => i !== idx)
+      const { launcher: _legacy, launchers: _prev, ...rest } = cur
+      const next: FolderState = remaining.length === 0 ? rest : { ...rest, launchers: remaining }
+      commit({ ...state, folders: { ...state.folders, [root]: next } })
+    },
+
+    setVaultLauncherBounds(root, appId, rawBounds) {
+      const bounds = cleanWindowBounds(rawBounds)
+      if (bounds === null) return
+      const cur = state.folders[root]
+      if (cur === undefined) return
+      const existing = vaultLaunchersOf(cur)
+      const idx = existing.findIndex((l) => (l.id ?? 'default') === appId)
+      if (idx === -1 || sameStoredBounds(existing[idx].lastBounds, bounds)) return
+      const launchers = existing.map((l, i) => (i === idx ? { ...l, lastBounds: bounds } : l))
+      const { launcher: _legacy, ...rest } = cur
+      commit({ ...state, folders: { ...state.folders, [root]: { ...rest, launchers } } })
     },
 
     setFolderBounds(root, rawBounds) {
@@ -2157,7 +2262,7 @@ export function createStore(filePath: string): Store {
       commit({ ...state, vaultSets: state.vaultSets.map((s) => (s === set ? { ...s, lastBounds: bounds } : s)) })
     },
 
-    setWindowBounds(id, rawBounds, remember = true) {
+    setWindowBounds(id, rawBounds, remember = true, shimKey) {
       const bounds = cleanWindowBounds(rawBounds)
       if (bounds === null) return
       const entry = state.windows.find((w) => w.id === id)
@@ -2167,18 +2272,44 @@ export function createStore(filePath: string): Store {
       let vaultSets = state.vaultSets
       let memoryChanged = false
       if (remember && entry.kind !== 'files' && entry.roots.length > 0) {
-        if (entry.roots.length === 1) {
-          const root = stripSlash(entry.roots[0])
-          const cur = folderOf(root)
-          if (!sameStoredBounds(cur.lastBounds, bounds)) {
-            folders = { ...state.folders, [root]: { ...cur, lastBounds: bounds } }
-            memoryChanged = true
+        let savedSecondaryApp = false
+        if (shimKey !== undefined && !shimKey.startsWith('workspace:')) {
+          const sep = shimKey.lastIndexOf('::')
+          if (sep !== -1) {
+            const shimRoot = stripSlash(shimKey.slice(0, sep))
+            const appId = shimKey.slice(sep + 2)
+            if (shimRoot.length > 0 && appId.length > 0 && appId !== 'default') {
+              const cur = state.folders[shimRoot]
+              if (cur !== undefined) {
+                const existing = vaultLaunchersOf(cur)
+                const idx = existing.findIndex((l) => (l.id ?? 'default') === appId)
+                if (idx !== -1) {
+                  savedSecondaryApp = true
+                  if (!sameStoredBounds(existing[idx].lastBounds, bounds)) {
+                    const launchers = existing.map((l, i) => (i === idx ? { ...l, lastBounds: bounds } : l))
+                    const { launcher: _legacy, ...rest } = cur
+                    folders = { ...state.folders, [shimRoot]: { ...rest, launchers } }
+                    memoryChanged = true
+                  }
+                }
+              }
+            }
           }
-        } else {
-          const set = state.vaultSets.find((s) => sameVaults(s.roots, entry.roots))
-          if (set !== undefined && !sameStoredBounds(set.lastBounds, bounds)) {
-            vaultSets = state.vaultSets.map((s) => (s === set ? { ...s, lastBounds: bounds } : s))
-            memoryChanged = true
+        }
+        if (!savedSecondaryApp) {
+          if (entry.roots.length === 1) {
+            const root = stripSlash(entry.roots[0])
+            const cur = folderOf(root)
+            if (!sameStoredBounds(cur.lastBounds, bounds)) {
+              folders = { ...state.folders, [root]: { ...cur, lastBounds: bounds } }
+              memoryChanged = true
+            }
+          } else {
+            const set = state.vaultSets.find((s) => sameVaults(s.roots, entry.roots))
+            if (set !== undefined && !sameStoredBounds(set.lastBounds, bounds)) {
+              vaultSets = state.vaultSets.map((s) => (s === set ? { ...s, lastBounds: bounds } : s))
+              memoryChanged = true
+            }
           }
         }
       }

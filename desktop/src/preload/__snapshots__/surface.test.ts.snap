@@ -149,6 +149,7 @@ link.onOpenTarget/1: on link:open-target -> listener[[{"id":"0-0-0-0-0","ev":"ev
 link.onPopOutTab/1: on link:pop-out-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:pop-out-tab
 link.onSendTab/1: on link:send-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:send-tab
 link.onSetRoots/1: on link:set-roots -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:set-roots
+link.onSidebarStart/1: on link:sidebar-start -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:sidebar-start
 link.onTabAction/1: on link:tab-action -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:tab-action
 link.onTakeInbox/1: on link:take-inbox -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:take-inbox
 link.onTakeTab/1: on link:take-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:take-tab
@@ -291,14 +292,15 @@ vaultLauncher.createWorkspace/1: invoke vault-launcher:create-workspace ["a0"]; 
 vaultLauncher.icons/0: invoke vault-launcher:icons []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.listAll/0: invoke vault-launcher:list-all []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.onChanged/1: on vault-launcher:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off vault-launcher:changed
-vaultLauncher.remove/1: invoke vault-launcher:remove ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.remove/2: invoke vault-launcher:remove ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.removeOrphan/1: invoke vault-launcher:remove-orphan ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.removeWorkspace/1: invoke vault-launcher:remove-workspace ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-vaultLauncher.reveal/1: invoke vault-launcher:reveal ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.reveal/2: invoke vault-launcher:reveal ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.revealWorkspace/1: invoke vault-launcher:reveal-workspace ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-vaultLauncher.status/1: invoke vault-launcher:status ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-vaultLauncher.test/1: invoke vault-launcher:test ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.status/2: invoke vault-launcher:status ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.test/2: invoke vault-launcher:test ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.testWorkspace/1: invoke vault-launcher:test-workspace ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+vaultLauncher.vaultApps/0: invoke vault-launcher:vault-apps []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.workspaceIcons/0: invoke vault-launcher:workspace-icons []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 vaultLauncher.workspaceStatus/1: invoke vault-launcher:workspace-status ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 watch/2: send watch:subscribe [{"id":"0-0-0-0-0","root":"a0"}]; on watch:event -> listener[["ev"]]; off watch:event; send watch:unsubscribe ["0-0-0-0-0"]

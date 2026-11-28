@@ -15,7 +15,7 @@ import type { FoundPage } from './pageBirth'
 import type { CardSkillDuplicate, CardSkillFormats } from './cardSkillFolder'
 import type { CoursePatch } from './courseState'
 import type { CourseAudioChange, CourseAudioSound } from './courseAudio'
-import type { AddToAutoSyncResult, AutoSyncStatus, ConnectRepoResult, CopyAsMode, CopyAsRich, CreateVaultLauncherRequest, CreateWorkspaceLauncherRequest, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, GithubAuthStatus, GithubInstalledRepo, LauncherListItem, ListScope, PageMenuAction, PageMenuArg, MemoryTabFacts, VaultLauncherStatus } from './types'
+import type { AddToAutoSyncResult, AutoSyncStatus, ConnectRepoResult, CopyAsMode, CopyAsRich, CreateVaultLauncherRequest, CreateWorkspaceLauncherRequest, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, GithubAuthStatus, GithubInstalledRepo, LauncherListItem, ListScope, PageMenuAction, PageMenuArg, MemoryTabFacts, VaultAppSidebarStart, VaultAppSummary, VaultLauncherStatus } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
 import type { IconPackInfo, IconPacksRequest, IconPacksStatus } from './iconPacks'
@@ -596,6 +596,8 @@ export const CONTRACT = {
     onOpenFromFiles: push<FilesAction>('link:open-from-files'),
     /** A Vault App launcher asked this window to open a target view (`inbox` or `today`) in `root` (YAZ-5967, YAZ-6374). */
     onOpenTarget: push<{ root: string; target: 'inbox' | 'today' }>('link:open-target'),
+    /** A Vault App or Workspace App asked this newly opened window to apply its Start View (YAZ-6682). */
+    onSidebarStart: push<{ root?: string; sidebarStart: VaultAppSidebarStart }>('link:sidebar-start'),
     /** A link could not be opened (bad URL, unsupported, missing or non-regular file): show `message` unobtrusively. */
     onNotice: push<string>('link:notice'),
     /** This window's three listeners above are on (YAZ-2589 A2): main sends the pushes it held while the page loaded. */
@@ -893,13 +895,14 @@ export const CONTRACT = {
   },
   /** macOS Vault App launchers (YAZ-5967, YAZ-6374): per-vault and per-workspace `.app` bundles, cached PNG icons, and Dock icon updates. */
   vaultLauncher: {
-    status: invoke<[root: string], VaultLauncherStatus>('vault-launcher:status', 1),
+    status: invoke<[root: string, appId?: string], VaultLauncherStatus>('vault-launcher:status', 2),
     create: invoke<[req: CreateVaultLauncherRequest], VaultLauncherStatus>('vault-launcher:create', 1),
-    remove: invoke<[root: string], void>('vault-launcher:remove', 1),
+    remove: invoke<[root: string, appId?: string], void>('vault-launcher:remove', 2),
     clearSynced: invoke<[root: string], void>('vault-launcher:clear-synced', 1),
-    reveal: invoke<[root: string], void>('vault-launcher:reveal', 1),
-    test: invoke<[root: string], void>('vault-launcher:test', 1),
+    reveal: invoke<[root: string, appId?: string], void>('vault-launcher:reveal', 2),
+    test: invoke<[root: string, appId?: string], void>('vault-launcher:test', 2),
     icons: invoke<[], Record<string, string>>('vault-launcher:icons', 0),
+    vaultApps: invoke<[], Record<string, VaultAppSummary[]>>('vault-launcher:vault-apps', 0),
     workspaceStatus: invoke<[workspaceId: string], VaultLauncherStatus>('vault-launcher:workspace-status', 1),
     createWorkspace: invoke<[req: CreateWorkspaceLauncherRequest], VaultLauncherStatus>('vault-launcher:create-workspace', 1),
     removeWorkspace: invoke<[workspaceId: string], void>('vault-launcher:remove-workspace', 1),

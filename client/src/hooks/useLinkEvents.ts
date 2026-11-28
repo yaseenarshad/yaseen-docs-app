@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { FilesAction, InboxCarry, MovedTab, TabAction, TabRef } from '@shared/types'
+import type { FilesAction, InboxCarry, MovedTab, TabAction, TabRef, VaultAppSidebarStart } from '@shared/types'
 import { api } from '../api'
 
 interface UseLinkEventsOptions {
@@ -31,6 +31,8 @@ interface UseLinkEventsOptions {
   onTakeInbox?: (carry: InboxCarry) => void
   /** A macOS Vault App launcher opened a vault with a target view (YAZ-5967, YAZ-6375): Cards Inbox or Today's Daily Page. */
   onOpenTarget?: (req: { root: string; target: 'inbox' | 'today' }) => void
+  /** A macOS Vault App or Workspace App opened a window with a Start View (YAZ-6682). */
+  onSidebarStart?: (req: { root?: string; sidebarStart: VaultAppSidebarStart }) => void
 }
 
 /**
@@ -39,7 +41,7 @@ interface UseLinkEventsOptions {
  * D3, D13). Every listener is on BEFORE `link.ready`: main sends what it held at that call, and a push with no
  * listener is lost. The board's seven are optional: a window without them hears nothing of the board.
  */
-export function useLinkEvents({ onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onAddVaultAndTake, onHighlightTab, onTabAction, onOpenFromFiles, onTakeInbox, onOpenTarget }: UseLinkEventsOptions): void {
+export function useLinkEvents({ onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onAddVaultAndTake, onHighlightTab, onTabAction, onOpenFromFiles, onTakeInbox, onOpenTarget, onSidebarStart }: UseLinkEventsOptions): void {
   useEffect(() => {
     const offs = [
       api.link.onOpenFile(onOpenFile),
@@ -56,11 +58,12 @@ export function useLinkEvents({ onOpenFile, onNotice, onTakeTab, onFocusTab, onC
       ...(onOpenFromFiles === undefined ? [] : [api.link.onOpenFromFiles(onOpenFromFiles)]),
       ...(onTakeInbox === undefined ? [] : [api.link.onTakeInbox(onTakeInbox)]),
       ...(onOpenTarget === undefined || typeof window.yaseenDocs?.link?.onOpenTarget !== 'function' ? [] : [api.link.onOpenTarget(onOpenTarget)]),
+      ...(onSidebarStart === undefined || typeof window.yaseenDocs?.link?.onSidebarStart !== 'function' ? [] : [api.link.onSidebarStart(onSidebarStart)]),
     ]
     // Main holds a link push until this window can hear it (YAZ-2589 A2): a page that is still loading hears nothing.
     void api.link.ready()
     return () => {
       for (const off of offs) off()
     }
-  }, [onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onAddVaultAndTake, onHighlightTab, onTabAction, onOpenFromFiles, onTakeInbox, onOpenTarget])
+  }, [onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onAddVaultAndTake, onHighlightTab, onTabAction, onOpenFromFiles, onTakeInbox, onOpenTarget, onSidebarStart])
 }

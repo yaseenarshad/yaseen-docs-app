@@ -1,15 +1,17 @@
 /**
- * Settings › General › Vault app control (YAZ-5967, YAZ-6375).
+ * Settings › General › Vault apps control (YAZ-5967, YAZ-6375, YAZ-6683).
  *
- * Shows the current vault's macOS `.app` launcher status and actions:
+ * Shows the current vault or workspace's standalone macOS `.app` bundle(s) and actions:
  * - Unsupported (non-macOS): renders nothing.
- * - No launcher: "Make a launcher…" button.
- * - Active launcher: icon preview, `<name>.app`, path, optional target badge, Edit…, Reveal, Test, Remove.
+ * - No app: "Make a vault app…" / "Make a workspace app…" button (or synced cross-Mac install card).
+ * - Active app(s): stacked cards with icon preview, `<name>.app`, Primary badge (2+ apps),
+ *   optional target & sidebarStart badges, Edit…, Reveal, Test, Remove, plus "+ Add another vault app…".
  * - Removed in Finder: clear notice with Recreate and Clear buttons.
  */
 import { lazy, Suspense, useEffect, useState } from 'react'
-import type { VaultLauncherStatus, VaultLauncherTarget } from '@shared/types'
+import type { VaultLauncherInfo, VaultLauncherStatus, VaultLauncherTarget } from '@shared/types'
 import { api } from '../api'
+import { sidebarStartBadgeLabel } from './vaultAppStartLabel'
 
 const VaultLauncherModal = lazy(() => import('./VaultLauncherModal').then((m) => ({ default: m.VaultLauncherModal })))
 
@@ -20,16 +22,36 @@ export interface VaultLauncherControlProps {
   onChanged?: () => void
 }
 
+interface VaultAppItem {
+  launcher: VaultLauncherInfo
+  exists: boolean
+  iconDataUrl: string | null
+}
+
+type ModalState =
+  | { mode: 'create'; useSyncedPreset: boolean }
+  | { mode: 'edit'; item: VaultAppItem; recreating: boolean }
+
 function targetBadgeLabel(target?: VaultLauncherTarget): string | null {
   if (target === 'inbox') return 'Opens on Cards Inbox'
   if (target === 'today') return "Opens on Today's Daily Page"
   return null
 }
 
+function resolveAppItems(status: VaultLauncherStatus, isWorkspace: boolean): VaultAppItem[] {
+  if (!isWorkspace && status.launchers !== undefined) {
+    return status.launchers
+  }
+  if (status.launcher !== null) {
+    return [{ launcher: status.launcher, exists: status.exists, iconDataUrl: status.iconDataUrl }]
+  }
+  return []
+}
+
 export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged }: VaultLauncherControlProps) {
   const isWorkspace = workspaceId !== undefined
   const [status, setStatus] = useState<VaultLauncherStatus | null>(null)
-  const [modalOpen, setModalOpen] = useState(false)
+  const [modal, setModal] = useState<ModalState | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -64,22 +86,48 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
 
   if (status === null || !status.supported) return null
 
-  const { launcher, exists, iconDataUrl, synced = null, syncedIconDataUrl = null } = status
-  const targetLabel = isWorkspace ? null : targetBadgeLabel(launcher?.target)
+  const { synced = null, syncedIconDataUrl = null } = status
+  const items = resolveAppItems(status, isWorkspace)
   const syncedTargetLabel = isWorkspace ? null : targetBadgeLabel(synced?.target)
+  const hasExplicitDefault = items.some((entry) => entry.launcher.id === 'default')
 
-  const handleRemove = async (): Promise<void> => {
+  const handleRemove = async (appId?: string): Promise<void> => {
     setBusy(true)
     setError(null)
     try {
-      await (isWorkspace ? api.vaultLauncher.removeWorkspace(workspaceId) : api.vaultLauncher.remove(root!))
-      setStatus((prev) => ({
-        supported: true,
-        launcher: null,
-        exists: false,
-        iconDataUrl: null,
-        ...(prev?.synced != null ? { synced: prev.synced, syncedIconDataUrl: prev.syncedIconDataUrl ?? null } : {}),
-      }))
+      await (isWorkspace
+        ? api.vaultLauncher.removeWorkspace(workspaceId)
+        : appId !== undefined
+          ? api.vaultLauncher.remove(root!, appId)
+          : api.vaultLauncher.remove(root!))
+      setStatus((prev) => {
+        if (prev === null) return null
+        if (!isWorkspace && prev.launchers !== undefined) {
+          let remaining: VaultAppItem[]
+          if (appId !== undefined) {
+            remaining = prev.launchers.filter((entry) => entry.launcher.id !== appId)
+          } else {
+            const defaultIdx = prev.launchers.findIndex((entry) => entry.launcher.id === 'default')
+            const dropIdx = defaultIdx >= 0 ? defaultIdx : 0
+            remaining = prev.launchers.filter((_, idx) => idx !== dropIdx)
+          }
+          const first = remaining[0] ?? null
+          return {
+            ...prev,
+            launcher: first?.launcher ?? null,
+            exists: first?.exists ?? false,
+            iconDataUrl: first?.iconDataUrl ?? null,
+            launchers: remaining,
+          }
+        }
+        return {
+          supported: true,
+          launcher: null,
+          exists: false,
+          iconDataUrl: null,
+          ...(prev.synced != null ? { synced: prev.synced, syncedIconDataUrl: prev.syncedIconDataUrl ?? null } : {}),
+        }
+      })
       onChanged?.()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err))
@@ -102,7 +150,7 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
       } else if (syncedIconDataUrl !== null && syncedIconDataUrl.startsWith('data:image/png;base64,')) {
         pngDataUrl = syncedIconDataUrl
       } else {
-        throw new Error('Synced launcher icon image is unavailable.')
+        throw new Error('Synced app icon image is unavailable.')
       }
       const pngBase64 = pngDataUrl.replace(/^data:image\/png;base64,/, '')
       const next = isWorkspace
@@ -143,10 +191,12 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
     }
   }
 
-  const refreshAfterMissing = async (err: unknown): Promise<void> => {
+  const refreshAfterMissing = async (err: unknown, appId?: string): Promise<void> => {
     try {
       const fresh = await (isWorkspace ? api.vaultLauncher.workspaceStatus(workspaceId) : api.vaultLauncher.status(root!))
-      if (!fresh.exists) {
+      const freshItems = resolveAppItems(fresh, isWorkspace)
+      const matched = appId !== undefined ? freshItems.find((entry) => entry.launcher.id === appId) : freshItems[0]
+      if (matched !== undefined ? !matched.exists : !fresh.exists) {
         setStatus(fresh)
         return
       }
@@ -156,28 +206,36 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
     setError(err instanceof Error ? err.message : String(err))
   }
 
-  const handleReveal = async (): Promise<void> => {
+  const handleReveal = async (appId?: string): Promise<void> => {
     setError(null)
     try {
-      await (isWorkspace ? api.vaultLauncher.revealWorkspace(workspaceId) : api.vaultLauncher.reveal(root!))
+      await (isWorkspace
+        ? api.vaultLauncher.revealWorkspace(workspaceId)
+        : appId !== undefined
+          ? api.vaultLauncher.reveal(root!, appId)
+          : api.vaultLauncher.reveal(root!))
     } catch (err: unknown) {
-      await refreshAfterMissing(err)
+      await refreshAfterMissing(err, appId)
     }
   }
 
-  const handleTest = async (): Promise<void> => {
+  const handleTest = async (appId?: string): Promise<void> => {
     setError(null)
     try {
-      await (isWorkspace ? api.vaultLauncher.testWorkspace(workspaceId) : api.vaultLauncher.test(root!))
+      await (isWorkspace
+        ? api.vaultLauncher.testWorkspace(workspaceId)
+        : appId !== undefined
+          ? api.vaultLauncher.test(root!, appId)
+          : api.vaultLauncher.test(root!))
     } catch (err: unknown) {
-      await refreshAfterMissing(err)
+      await refreshAfterMissing(err, appId)
     }
   }
 
   return (
     <div className="vault-launcher">
       <div className="vault-launcher__target-title">{isWorkspace ? `Workspace: ${defaultName}` : `Vault: ${defaultName}`}</div>
-      {launcher === null ? (
+      {items.length === 0 ? (
         synced !== null ? (
           <div className="vault-launcher__card vault-launcher__card--synced">
             <div className="vault-launcher__summary">
@@ -196,9 +254,9 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
             </div>
             <div className="vault-launcher__actions">
               <button type="button" className="btn btn--primary" disabled={busy} onClick={() => void handleInstallSynced()}>
-                Add launcher to this Mac
+                Add app to this Mac
               </button>
-              <button type="button" className="btn" disabled={busy} onClick={() => setModalOpen(true)}>
+              <button type="button" className="btn" disabled={busy} onClick={() => setModal({ mode: 'create', useSyncedPreset: true })}>
                 Customize…
               </button>
               <button type="button" className="btn" disabled={busy} onClick={() => void handleClearSynced()}>
@@ -208,54 +266,80 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
           </div>
         ) : (
           <div className="vault-launcher__empty">
-            <button type="button" className="btn" onClick={() => setModalOpen(true)}>
-              Make a launcher…
+            <button type="button" className="btn" onClick={() => setModal({ mode: 'create', useSyncedPreset: false })}>
+              {isWorkspace ? 'Make a workspace app…' : 'Make a vault app…'}
             </button>
           </div>
         )
-      ) : exists ? (
-        <div className="vault-launcher__card">
-          <div className="vault-launcher__summary">
-            {iconDataUrl !== null && (
-              <img className="vault-launcher__icon" src={iconDataUrl} alt="" width={48} height={48} />
-            )}
-            <div className="vault-launcher__meta">
-              <div className="vault-launcher__name-line">
-                <span className="vault-launcher__name">{launcher.name}.app</span>
-                {targetLabel !== null && <span className="vault-launcher__target">{targetLabel}</span>}
-              </div>
-              <span className="vault-launcher__path" title={launcher.appPath}>{launcher.appPath}</span>
-            </div>
-          </div>
-          <div className="vault-launcher__actions">
-            <button type="button" className="btn" disabled={busy} onClick={() => setModalOpen(true)}>
-              Edit…
-            </button>
-            <button type="button" className="btn" disabled={busy} onClick={() => void handleReveal()}>
-              Reveal
-            </button>
-            <button type="button" className="btn" disabled={busy} onClick={() => void handleTest()}>
-              Test
-            </button>
-            <button type="button" className="btn" disabled={busy} onClick={() => void handleRemove()}>
-              Remove
-            </button>
-          </div>
-        </div>
       ) : (
-        <div className="vault-launcher__missing">
-          <p className="vault-launcher__missing-text" role="status">
-            Launcher was removed in Finder.
-          </p>
-          <div className="vault-launcher__actions">
-            <button type="button" className="btn btn--primary" disabled={busy} onClick={() => setModalOpen(true)}>
-              Recreate
-            </button>
-            <button type="button" className="btn" disabled={busy} onClick={() => void handleRemove()}>
-              Clear
-            </button>
-          </div>
-        </div>
+        <>
+          {items.map((item, index) => {
+            const key = item.launcher.id ?? item.launcher.appPath ?? String(index)
+            const targetLabel = isWorkspace ? null : targetBadgeLabel(item.launcher.target)
+            const sidebarStartLabel = sidebarStartBadgeLabel(item.launcher.sidebarStart)
+            const isPrimary = !isWorkspace && items.length >= 2 && (hasExplicitDefault ? item.launcher.id === 'default' : index === 0)
+
+            return item.exists ? (
+              <div key={key} className="vault-launcher__card">
+                <div className="vault-launcher__summary">
+                  {item.iconDataUrl !== null && (
+                    <img className="vault-launcher__icon" src={item.iconDataUrl} alt="" width={48} height={48} />
+                  )}
+                  <div className="vault-launcher__meta">
+                    <div className="vault-launcher__name-line">
+                      <span className="vault-launcher__name">{item.launcher.name}.app</span>
+                      {isPrimary && <span className="vault-launcher__badge">Primary</span>}
+                      {targetLabel !== null && <span className="vault-launcher__target">{targetLabel}</span>}
+                      {sidebarStartLabel !== null && <span className="vault-launcher__target">{sidebarStartLabel}</span>}
+                    </div>
+                    <span className="vault-launcher__path" title={item.launcher.appPath}>{item.launcher.appPath}</span>
+                  </div>
+                </div>
+                <div className="vault-launcher__actions">
+                  <button type="button" className="btn" disabled={busy} onClick={() => setModal({ mode: 'edit', item, recreating: false })}>
+                    Edit…
+                  </button>
+                  <button type="button" className="btn" disabled={busy} onClick={() => void handleReveal(item.launcher.id)}>
+                    Reveal
+                  </button>
+                  <button type="button" className="btn" disabled={busy} onClick={() => void handleTest(item.launcher.id)}>
+                    Test
+                  </button>
+                  <button type="button" className="btn" disabled={busy} onClick={() => void handleRemove(item.launcher.id)}>
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div key={key} className="vault-launcher__missing">
+                {items.length >= 2 && (
+                  <div className="vault-launcher__name-line">
+                    <span className="vault-launcher__name">{item.launcher.name}.app</span>
+                    {isPrimary && <span className="vault-launcher__badge">Primary</span>}
+                  </div>
+                )}
+                <p className="vault-launcher__missing-text" role="status">
+                  App was removed in Finder.
+                </p>
+                <div className="vault-launcher__actions">
+                  <button type="button" className="btn btn--primary" disabled={busy} onClick={() => setModal({ mode: 'edit', item, recreating: true })}>
+                    Recreate
+                  </button>
+                  <button type="button" className="btn" disabled={busy} onClick={() => void handleRemove(item.launcher.id)}>
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+          {!isWorkspace && (
+            <div className="vault-launcher__actions">
+              <button type="button" className="btn" disabled={busy} onClick={() => setModal({ mode: 'create', useSyncedPreset: false })}>
+                + Add another vault app…
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {error !== null && (
@@ -264,23 +348,35 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
         </p>
       )}
 
-      {modalOpen && (
+      {modal !== null && (
         <Suspense fallback={null}>
           <VaultLauncherModal
             root={root}
             workspaceId={workspaceId}
+            appId={!isWorkspace && modal.mode === 'edit' ? (modal.item.launcher.id ?? 'default') : undefined}
             defaultName={defaultName}
-            initial={launcher}
-            preset={launcher === null ? synced : null}
-            initialIconDataUrl={launcher !== null ? iconDataUrl : syncedIconDataUrl}
-            recreating={launcher !== null && !exists}
+            initial={modal.mode === 'edit' ? modal.item.launcher : null}
+            preset={modal.mode === 'create' && modal.useSyncedPreset ? synced : null}
+            initialIconDataUrl={
+              modal.mode === 'edit'
+                ? modal.item.iconDataUrl
+                : modal.useSyncedPreset
+                  ? syncedIconDataUrl
+                  : null
+            }
+            recreating={modal.mode === 'edit' && modal.recreating}
             onSaved={(next) => {
-              setStatus(next)
-              setModalOpen(false)
+              setStatus((prev) => ({
+                ...next,
+                ...(next.synced === undefined && prev?.synced != null
+                  ? { synced: prev.synced, syncedIconDataUrl: prev.syncedIconDataUrl ?? null }
+                  : {}),
+              }))
+              setModal(null)
               setError(null)
               onChanged?.()
             }}
-            onClose={() => setModalOpen(false)}
+            onClose={() => setModal(null)}
           />
         </Suspense>
       )}
