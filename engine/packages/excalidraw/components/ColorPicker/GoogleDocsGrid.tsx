@@ -166,12 +166,15 @@ const hexLuminance = (hex: string): number => {
 
 const isLightSwatch = (hex: string): boolean => hexLuminance(hex) >= 0.42;
 
-const RECENT_CUSTOM_KEY = "yaseen:engine-custom-colors";
+const GLOBAL_CUSTOM_KEY = "yaseen:custom-colors";
+const GLOBAL_CUSTOM_EVENT = "yaseen:custom-colors-change";
+const ENGINE_ADD_EVENT = "yaseen:engine-custom-color-add";
+const ENGINE_REMOVE_EVENT = "yaseen:engine-custom-color-remove";
 const MAX_RECENT_CUSTOM = 8;
 
 const readStoredCustom = (): string[] => {
   try {
-    const raw = window.localStorage.getItem(RECENT_CUSTOM_KEY);
+    const raw = window.localStorage.getItem(GLOBAL_CUSTOM_KEY);
     if (!raw) {
       return [];
     }
@@ -188,17 +191,36 @@ const readStoredCustom = (): string[] => {
   }
 };
 
-const recordStoredCustom = (hex: string): string[] => {
-  const norm = hex.toLowerCase();
-  const next = [norm, ...readStoredCustom().filter((c) => c !== norm)].slice(
-    0,
-    MAX_RECENT_CUSTOM,
-  );
+const writeStoredCustom = (next: string[]): string[] => {
+  const trimmed = next.slice(0, MAX_RECENT_CUSTOM);
   try {
-    window.localStorage.setItem(RECENT_CUSTOM_KEY, JSON.stringify(next));
+    window.localStorage.setItem(GLOBAL_CUSTOM_KEY, JSON.stringify(trimmed));
   } catch {
     // Ignore private-mode / sandbox storage errors.
   }
+  return trimmed;
+};
+
+const recordStoredCustom = (hex: string): string[] => {
+  const norm = hex.toLowerCase();
+  const next = writeStoredCustom([
+    norm,
+    ...readStoredCustom().filter((c) => c !== norm),
+  ]);
+  window.dispatchEvent(
+    new CustomEvent(ENGINE_ADD_EVENT, { detail: { color: norm } }),
+  );
+  return next;
+};
+
+const removeStoredCustom = (hex: string): string[] => {
+  const norm = hex.toLowerCase();
+  const next = writeStoredCustom(
+    readStoredCustom().filter((c) => c.toLowerCase() !== norm),
+  );
+  window.dispatchEvent(
+    new CustomEvent(ENGINE_REMOVE_EVENT, { detail: { color: norm } }),
+  );
   return next;
 };
 
@@ -231,13 +253,20 @@ export const GoogleDocsGrid = ({
   const [storedCustom, setStoredCustom] = useState<string[]>(() =>
     readStoredCustom(),
   );
+  const [removeTarget, setRemoveTarget] = useState<string | null>(null);
 
   const normalizedColor = color ? color.toLowerCase() : null;
   const isTransparent =
     !normalizedColor || normalizedColor === COLOR_PALETTE.transparent;
 
+  useEffect(() => {
+    const onSync = () => setStoredCustom(readStoredCustom());
+    window.addEventListener(GLOBAL_CUSTOM_EVENT, onSync);
+    return () => window.removeEventListener(GLOBAL_CUSTOM_EVENT, onSync);
+  }, []);
+
   const boardCustom =
-    type === "canvasBackground" || !palette
+    storedCustom.length > 0 || type === "canvasBackground" || !palette
       ? []
       : getMostUsedCustomColors(elements, type, palette);
   const customColors = Array.from(
@@ -255,11 +284,17 @@ export const GoogleDocsGrid = ({
   }, [setEyeDropperState]);
 
   const handleCustomChange = (nextHex: string) => {
+    setRemoveTarget(null);
     const norm = nextHex.toLowerCase();
     if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(norm) && !GDOCS_HEX_SET.has(norm)) {
       setStoredCustom(recordStoredCustom(norm));
     }
     onChange(nextHex);
+  };
+
+  const handleRemoveCustom = (hex: string) => {
+    setRemoveTarget(null);
+    setStoredCustom(removeStoredCustom(hex));
   };
 
   const renderRow = (swatches: readonly GDocsSwatch[], rowKey: string) => (
@@ -349,13 +384,37 @@ export const GoogleDocsGrid = ({
                   "is-light": isLightSwatch(hex),
                 })}
                 style={{ "--swatch": hex } as React.CSSProperties}
-                title={hex}
+                title={`${hex} · Right-click to remove`}
                 aria-label={`Custom colour ${hex}`}
                 aria-pressed={active}
                 onClick={() => handleCustomChange(hex)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setRemoveTarget((cur) => (cur === hex ? null : hex));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Backspace" || e.key === "Delete") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleRemoveCustom(hex);
+                  }
+                }}
               />
             );
           })}
+          {removeTarget && (
+            <div className="gdocs-grid__ctx" role="menu">
+              <button
+                type="button"
+                className="gdocs-grid__remove"
+                role="menuitem"
+                onClick={() => handleRemoveCustom(removeTarget)}
+              >
+                ✕ Remove {removeTarget}
+              </button>
+            </div>
+          )}
           <button
             type="button"
             className={clsx("gdocs-grid__action", { active: customOpen })}

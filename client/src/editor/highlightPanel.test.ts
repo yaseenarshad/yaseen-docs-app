@@ -306,4 +306,36 @@ describe('highlight buttons and the unified Google Docs 10×8 ColourGrid panel (
     await press('highlight')
     expect(getMarkdownForSave(pageB.crepe)).toBe('==fresh== page\n')
   })
+
+  it('auto-contrasts dark and light solid highlights via data-mark-tone, skipping <50% washes (YAZ-6733)', async () => {
+    const { view } = await mount(
+      '<mark style="background-color: #000000">dark</mark> ' +
+      '<mark style="background-color: #ffff00">light</mark> ' +
+      '<mark style="background-color: #0000004d">translucent</mark>\n',
+    )
+    const marks = [...view.dom.querySelectorAll<HTMLElement>('mark')]
+    expect(marks.map((m) => [m.textContent, m.getAttribute('data-mark-tone')])).toEqual([
+      ['dark', 'dark'],
+      ['light', 'light'],
+      ['translucent', null],
+    ])
+  })
+
+  it('right-clicking a CUSTOM circle shows Remove and deletes it from the global list (YAZ-6734)', async () => {
+    setUsedHighlightColors([{ color: '#e11d48', uses: 3 }, { color: '#0284c7', uses: 1 }])
+    const saved: unknown[] = []
+    setUsedHighlightColorsSaver((next) => saved.push(next))
+    const { view } = await mount('hello world\n')
+    await select(view, 'world')
+    await press('highlight-more')
+    const dot = panel()!.querySelector<HTMLButtonElement>('button[aria-label="#e11d48"]')!
+    expect(dot.title).toContain('Right-click to remove')
+    dot.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    const removeBtn = panel()!.querySelector<HTMLButtonElement>('.colour-grid__remove')!
+    expect(removeBtn.textContent).toContain('Remove #e11d48')
+    removeBtn.click()
+    expect(panel()!.querySelector('button[aria-label="#e11d48"]')).toBeNull()
+    expect(panel()!.querySelector('button[aria-label="#0284c7"]')).not.toBeNull()
+    expect(saved.at(-1)).toEqual([{ color: '#0284c7', uses: 1 }])
+  })
 })

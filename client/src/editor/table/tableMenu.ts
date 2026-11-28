@@ -62,6 +62,8 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { createElement } from 'react'
 import type { MenuAction, MenuItem, MenuParent, MenuSection } from '../../sidebar/menuSections'
 import { fillFlyout, type MenuRow } from '../blockHandleMenu'
+import { ColourGrid } from '../colourGrid'
+import type { Hex } from '../../lib/colour'
 import { canMoveToCellNote, moveToCellNote, openCellNote } from './cellNoteCard'
 import { deleteText, deleteWithNotes, duplicateWithNotes, type DeleteKind } from './cellNoteGuard'
 import { cellNoteLabelsIn, cellNoteOf, removeCellNote, tableAround } from './cellNotes'
@@ -479,7 +481,13 @@ export function handleKind(selection: Selection): TableMenuKind {
  * tabbed panel (`fillFlyout`, as "Header row style ›"). `children` holds the same rows as data, so a search of the menu's
  * rows finds them; the panel draws them. A pick runs and closes the menu, as the old flyouts' did.
  */
-function formatParent(align: MenuAction[][], fill: MenuParent, color: MenuParent, text: MenuParent | null): MenuParent {
+function formatParent(
+  align: MenuAction[][],
+  fill: MenuParent,
+  color: MenuParent,
+  text: MenuParent | null,
+  gridFor: (attr: 'fill' | 'color', clear: string, allowAlpha: boolean) => (host: HTMLElement, close: () => void) => void,
+): MenuParent {
   const row = (action: MenuAction): MenuRow => ({
     label: action.label,
     disabled: action.disabled,
@@ -490,8 +498,8 @@ function formatParent(align: MenuAction[][], fill: MenuParent, color: MenuParent
   const rowsOf = (groups: readonly MenuAction[][]) => groups.map((group) => group.map(row))
   const tabs: NonNullable<MenuRow['tabs']> = [
     { label: 'Align', children: rowsOf(align) },
-    { label: 'Fill', children: rowsOf(fill.children) },
-    { label: 'Text colour', children: rowsOf(color.children) },
+    { label: 'Fill', children: rowsOf(fill.children), render: gridFor('fill', 'No fill', true) },
+    { label: 'Text colour', children: rowsOf(color.children), render: gridFor('color', 'Default colour', false) },
     ...(text === null ? [] : [{ label: 'Wrap', headings: [text.label], children: rowsOf(text.children) }]),
   ]
   return {
@@ -605,8 +613,39 @@ export function tableMenuSections(view: EditorView, pointer: number | null, kind
     ...(isMerged(view.state.doc.nodeAt(cell.pos)!) ? [item('unmerge', 'Unmerge cells', () => unmergeOn(view, cell.pos))] : []),
   ]
   const align: MenuAction[][] = [CELL_ALIGNS.map((a) => item(`align-${a}`, capital(a), run(cellsAlign(a)))), VALIGNS.map((v) => item(`align-${v}`, capital(v), run(cellsValign(v))))]
-  // YAZ-4970: Format › holds Align, Fill, Text colour and, but on a row, "Text in this column" (Wrap · Clip).
-  const format = formatParent(align, palette('fill', 'Fill', 'No fill', fillSwatch), palette('color', 'Text colour', 'Default colour', textSwatch), kind === 'row' ? null : textParent)
+  const gridFor = (attr: 'fill' | 'color', clear: string, allowAlpha: boolean) => (host: HTMLElement, close: () => void) => {
+    const selectedValues = (): string[] => {
+      const c = clickedCell(view.state.doc, pointer)
+      if (c === null) return []
+      const sel = targetSelection(view.state, c)
+      const vals = new Set<string>()
+      sel.forEachCell((node) => {
+        const v = node.attrs[attr]
+        if (typeof v === 'string' && v !== '') vals.add(v)
+      })
+      return [...vals]
+    }
+    const grid = new ColourGrid(host.ownerDocument, {
+      noneLabel: clear,
+      allowAlpha,
+      defaultBoxHex: () => '#000000',
+      onPick: (value, isCustom) => {
+        runOn(view, pointer, cellsAttr(attr, value))
+        if (!isCustom) close()
+        else grid.render(selectedValues(), value.startsWith('#') ? (value as Hex) : '#000000')
+      },
+      onClear: () => {
+        runOn(view, pointer, cellsAttr(attr, null))
+        close()
+      },
+    })
+    const vals = selectedValues()
+    const firstHex = vals.find((v) => v.startsWith('#'))
+    grid.render(vals, firstHex !== undefined ? (firstHex as Hex) : '#000000')
+    host.append(grid.el)
+  }
+  // YAZ-4970 / YAZ-6735: Format › holds Align, Fill (10×8 ColourGrid), Text colour (10×8 ColourGrid), and Wrap.
+  const format = formatParent(align, palette('fill', 'Fill', 'No fill', fillSwatch), palette('color', 'Text colour', 'Default colour', textSwatch), kind === 'row' ? null : textParent, gridFor)
   // YAZ-4792: a body cell that spans rows keeps the rows where they are.
   const sort: MenuParent = {
     id: 'table-sort',

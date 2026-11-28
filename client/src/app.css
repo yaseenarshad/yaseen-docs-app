@@ -728,6 +728,13 @@ button {
 .milkdown .ProseMirror mark.highlight-purple { background: var(--mark-bg-purple); }
 .milkdown .ProseMirror mark.highlight-red { background: var(--mark-bg-red); }
 .milkdown .ProseMirror mark.highlight-gray { background: var(--mark-bg-gray); }
+/* Auto-contrast text on solid / ≥50% custom highlights (YAZ-6733); explicit text_color still wins in either nesting order. */
+.milkdown .ProseMirror mark[data-mark-tone='dark'],
+.card__sides mark[data-mark-tone='dark'] { color: #ffffff; }
+.milkdown .ProseMirror mark[data-mark-tone='light'],
+.card__sides mark[data-mark-tone='light'] { color: #111111; }
+.milkdown .ProseMirror :is([data-text-color], [class*='text-color-'], span[style*='color:']) mark[data-mark-tone],
+.card__sides :is([data-text-color], [class*='text-color-'], span[style*='color:']) mark[data-mark-tone] { color: inherit; }
 
 /* Text colour mark (YAZ-6694 D2): named colours adapt to light/dark via --table-text-* tokens. */
 .text-color-red { color: var(--table-text-red, #c0392b); }

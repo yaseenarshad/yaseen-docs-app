@@ -19,7 +19,7 @@
 import { GDOCS_BASE_HUES, GDOCS_GRAYSCALE, GDOCS_SHADES, isLightSwatch } from '@shared/palette'
 import { solidHex, type Hex } from '../lib/colour'
 import { ColourBox } from './highlightColourBox'
-import { mostUsedHighlightColors, recordHighlightColorUse } from './highlightUsed'
+import { mostUsedHighlightColors, recordHighlightColorUse, removeHighlightColorUse } from './highlightUsed'
 import './colourGrid.css'
 
 /** Parse `#rrggbb`, `rrggbb`, `#rgb`, `rgb`, and (when `allowAlpha`) `#rrggbbaa` / `rrggbbaa`. */
@@ -100,7 +100,9 @@ export class ColourGrid {
   #rows: GridItem[][] = []
   #current: string | null = null
   #dropping = false
+  #lastSelected: readonly string[] = []
   #lastStartHex: Hex = '#000000'
+  #removeMenu: HTMLElement | null = null
   #normalize: (raw: string) => Hex | null
 
   constructor(
@@ -348,11 +350,62 @@ export class ColourGrid {
     el.setAttribute('aria-pressed', String(on))
   }
 
+  #hideRemoveMenu = (): void => {
+    if (this.#removeMenu === null) return
+    this.#removeMenu.remove()
+    this.#removeMenu = null
+    this.doc.removeEventListener('mousedown', this.#outsideRemove, true)
+    this.doc.removeEventListener('keydown', this.#removeKey, true)
+  }
+
+  #outsideRemove = (e: Event): void => {
+    if (this.#removeMenu !== null && e.target instanceof Node && !this.#removeMenu.contains(e.target)) {
+      this.#hideRemoveMenu()
+    }
+  }
+
+  #removeKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      this.#hideRemoveMenu()
+    }
+  }
+
+  #showRemoveMenu(hex: Hex, anchor: HTMLElement): void {
+    this.#hideRemoveMenu()
+    const menu = this.doc.createElement('div')
+    menu.className = 'colour-grid__ctx'
+    menu.setAttribute('role', 'menu')
+    const btn = this.doc.createElement('button')
+    btn.type = 'button'
+    btn.className = 'colour-grid__remove'
+    btn.setAttribute('role', 'menuitem')
+    btn.textContent = `✕ Remove ${hex}`
+    btn.addEventListener('mousedown', (e) => e.preventDefault())
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.#hideRemoveMenu()
+      removeHighlightColorUse(hex)
+      this.render(this.#lastSelected, this.#lastStartHex)
+      this.opts.onResize?.()
+    })
+    menu.append(btn)
+    menu.style.left = `${Math.max(0, Math.min(anchor.offsetLeft, 108))}px`
+    menu.style.top = `${anchor.offsetTop + anchor.offsetHeight + 4}px`
+    this.#customRow.append(menu)
+    this.#removeMenu = menu
+    this.doc.addEventListener('mousedown', this.#outsideRemove, true)
+    this.doc.addEventListener('keydown', this.#removeKey, true)
+  }
+
   /**
    * Sync active checkmarks, custom recent dots, eyedropper visibility, and hex field.
    * Zero DOM rebuild of the 80 palette swatches.
    */
   render(selected: readonly string[], startHex?: Hex | null): void {
+    this.#lastSelected = selected
+    this.#hideRemoveMenu()
     const activeSet = new Set(selected.map((s) => s.toLowerCase()))
     const isEmpty = selected.length === 0
 
@@ -384,6 +437,12 @@ export class ColourGrid {
         item = this.#makeDot(`custom:${hex}`, hex, hex, isLightSwatch(hex), hex.length === 9, () =>
           this.#commitCustom(hex),
         )
+        item.el.title = `${hex} · Right-click to remove`
+        item.el.addEventListener('contextmenu', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          this.#showRemoveMenu(hex, item!.el)
+        })
         this.#customDots.set(hex, item)
       }
       ColourGrid.#setPressed(item.el, activeSet.has(hex))
@@ -475,6 +534,13 @@ export class ColourGrid {
     }
     if (e.key === 'End') {
       this.move(flat.at(-1)!.id)
+      return true
+    }
+    if ((e.key === 'Backspace' || e.key === 'Delete') && this.#current?.startsWith('custom:')) {
+      const hex = this.#current.slice('custom:'.length)
+      removeHighlightColorUse(hex)
+      this.render(this.#lastSelected, this.#lastStartHex)
+      this.opts.onResize?.()
       return true
     }
     if ((e.key === 'Enter' || e.key === ' ') && pos !== null) {

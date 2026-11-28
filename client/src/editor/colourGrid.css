@@ -168,10 +168,41 @@
 }
 
 .colour-grid__custom-row {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 5px;
+}
+
+.colour-grid__ctx {
+  position: absolute;
+  z-index: 20;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
+}
+
+.colour-grid .colour-grid__remove {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #dc2626;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.colour-grid .colour-grid__remove:hover {
+  background: color-mix(in srgb, #dc2626 10%, transparent);
 }
 
 .colour-grid .colour-grid__action {
@@ -250,4 +281,9 @@
   font-size: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   outline: none;
+}
+
+/* Padding wrapper when ColourGrid renders inside a context menu flyout (YAZ-6735). */
+.ctx-menu__grid-wrap {
+  padding: 8px;
 }

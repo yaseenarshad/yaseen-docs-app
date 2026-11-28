@@ -488,6 +488,9 @@
 .reader__body mark.highlight-purple { background: rgba(160, 110, 255, 0.35); }
 .reader__body mark.highlight-red { background: rgba(255, 90, 80, 0.35); }
 .reader__body mark.highlight-gray { background: rgba(150, 150, 150, 0.35); }
+.reader__body mark[data-mark-tone='dark'] { color: #ffffff; }
+.reader__body mark[data-mark-tone='light'] { color: #111111; }
+.reader__body :is([class*='text-color-'], span[style*='color:']) mark[data-mark-tone] { color: inherit; }
 
 /* Named text colours (YAZ-6694 D2, #5): adaptive light/dark via --table-text-* tokens. */
 .text-color-red { color: var(--table-text-red, #c0392b); }

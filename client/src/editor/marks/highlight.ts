@@ -28,6 +28,7 @@ import { classifyCharacter } from 'micromark-util-classify-character'
 import { resolveAll } from 'micromark-util-resolve-all'
 import type { Event, Extension, Resolver, State, Token, TokenizeContext, Tokenizer } from 'micromark-util-types'
 import { isHighlightHex } from '@shared/types'
+import { highlightContrastTone } from '@shared/palette'
 import { toHex } from '../../lib/colour'
 import { codeColorsIn, codeMarkCommand, codeSelection } from '../code/codeMarks'
 import { visibleRangeHasMark, visibleRanges } from '../lineSelection'
@@ -212,9 +213,15 @@ function colorOf(dom: HTMLElement): HighlightColor {
   return hex !== undefined && isCustomHighlight(hex) ? hex : null
 }
 
-/** A highlight's DOM: a named colour's class; a custom colour painted directly (solid `#rrggbb` or custom alpha `#rrggbbaa`, D8). */
-const domAttrs = (color: HighlightColor): Record<string, string> =>
-  color === null ? {} : isCustomHighlight(color) ? { 'data-highlight': color, style: `background-color: ${color}` } : { class: `highlight-${color}` }
+/** A highlight's DOM: a named colour's class; a custom colour painted directly (solid `#rrggbb` or custom alpha `#rrggbbaa`, D8) with auto-contrast tone (`YAZ-6733`). */
+const domAttrs = (color: HighlightColor): Record<string, string> => {
+  if (color === null) return {}
+  if (!isCustomHighlight(color)) return { class: `highlight-${color}` }
+  const tone = highlightContrastTone(color)
+  return tone === null
+    ? { 'data-highlight': color, style: `background-color: ${color}` }
+    : { 'data-highlight': color, 'data-mark-tone': tone, style: `background-color: ${color}` }
+}
 
 export const highlightSchema = $markSchema('highlight', () => ({
   attrs: { color: { default: null } },

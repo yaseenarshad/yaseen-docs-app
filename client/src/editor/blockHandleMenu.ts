@@ -86,7 +86,11 @@ export interface MenuRow {
     headings?: (string | undefined)[]
     /** A short switch under the tabs (YAZ-4794 demo: Strength as the folder table's Off · Light · Medium · Strong): its rows as segments, ✓ pressed. */
     bar?: MenuRow[]
+    /** Custom DOM body for a tab (e.g. unified Google Docs 10×8 `ColourGrid`, YAZ-6735). */
+    render?: (host: HTMLElement, close: () => void, refresh?: (run: () => void) => void) => void
   }[]
+  /** Custom DOM body for a flyout (e.g. unified Google Docs 10×8 `ColourGrid`, YAZ-6735). */
+  render?: (host: HTMLElement, close: () => void, refresh?: (run: () => void) => void) => void
   /**
    * Named switches at the top of the flyout, over `children` (YAZ-4899 demo: Sticky · Default (On) / On / Off at the top
    * of "Header row ›"): a small heading each, then its options as segments, ✓ pressed; a pick goes as a `bar`'s.
@@ -474,7 +478,14 @@ export function fillFlyout(sub: HTMLElement, row: MenuRow, close: () => void, re
       }
       for (const child of group) into.appendChild(rowButton(child, close, row.stay === true ? refresh : undefined))
     })
-  groups(sub, row.children ?? [], row.headings)
+  if (row.render !== undefined) {
+    const wrap = document.createElement('div')
+    wrap.className = 'ctx-menu__grid-wrap'
+    row.render(wrap, close, row.stay === true ? refresh : undefined)
+    sub.appendChild(wrap)
+  } else {
+    groups(sub, row.children ?? [], row.headings)
+  }
   // YAZ-4794 demo: the tabs, then the picked tab's groups in a box of their own, drawn again at a tab click.
   const tabs = row.tabs
   if (tabs === undefined || tabs.length === 0) return
@@ -487,9 +498,17 @@ export function fillFlyout(sub: HTMLElement, row: MenuRow, close: () => void, re
     lastTab.set(row.label, at)
     for (const [i, b] of [...bar.children].entries()) b.setAttribute('aria-pressed', String(i === at))
     body.replaceChildren()
-    const options = tabs[at]!.bar
+    const tab = tabs[at]!
+    const options = tab.bar
     if (options !== undefined && options.length > 0) body.appendChild(segments(options, 'fill-target fill-target--sub'))
-    groups(body, tabs[at]!.children, tabs[at]!.headings)
+    if (tab.render !== undefined) {
+      const wrap = document.createElement('div')
+      wrap.className = 'ctx-menu__grid-wrap'
+      tab.render(wrap, close, row.stay === true ? refresh : undefined)
+      body.appendChild(wrap)
+    } else {
+      groups(body, tab.children, tab.headings)
+    }
   }
   tabs.forEach((tab, i) => {
     const b = document.createElement('button')
@@ -691,7 +710,8 @@ export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close:
       el.appendChild(renderStrip(row, close, refresh))
       continue
     }
-    el.appendChild(row.children === undefined ? rowButton(row, close) : renderParent(row, el, close, refresh))
+    const isParent = row.children !== undefined || row.tabs !== undefined || row.render !== undefined
+    el.appendChild(isParent ? renderParent(row, el, close, refresh) : rowButton(row, close))
   }
   parent?.appendChild(el)
   return el

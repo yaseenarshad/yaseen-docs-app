@@ -52,7 +52,7 @@ const SHADE_HEXES: readonly (readonly `#${string}`[])[] = [
   ['#5b0f00', '#660000', '#783f04', '#7f6000', '#274e13', '#0c343d', '#1c4587', '#073763', '#20124d', '#4c1130'],
 ]
 
-export const GDOCS_SHADES: readonly (readonly PaletteSwatch[])[] = SHADE_HEXES.map((row, r) =>
+export const GDOCS_SHADES: readonly (readonly PaletteSwatch[])[] = /*#__PURE__*/ SHADE_HEXES.map((row, r) =>
   row.map((hex, c) => ({ hex, label: `${GDOCS_BASE_HUES[c]!.label} ${SHADE_NAMES[r]}` })),
 )
 
@@ -60,7 +60,7 @@ export const GDOCS_SHADES: readonly (readonly PaletteSwatch[])[] = SHADE_HEXES.m
 export const GDOCS_ROWS: readonly (readonly PaletteSwatch[])[] = [GDOCS_GRAYSCALE, GDOCS_BASE_HUES, ...GDOCS_SHADES]
 
 /** Flat list of all 80 Google Docs palette swatches. */
-export const GDOCS_ALL: readonly PaletteSwatch[] = GDOCS_ROWS.flat()
+export const GDOCS_ALL: readonly PaletteSwatch[] = /*#__PURE__*/ GDOCS_ROWS.flat()
 
 /** Relative luminance (0–1) of `#rrggbb` or `#rrggbbaa` (ignores alpha; invalid strings return 0.5). */
 export function hexLuminance(hex: string): number {
@@ -74,3 +74,13 @@ export function hexLuminance(hex: string): number {
 
 /** True when a swatch is bright enough to need a dark checkmark / dark ink on top of it. */
 export const isLightSwatch = (hex: string): boolean => hexLuminance(hex) >= 0.42
+
+/**
+ * Auto-contrast text tone for a solid (or ≥ 50% opaque) hex highlight (`YAZ-6733`).
+ * Returns `'dark'` (needs white text), `'light'` (needs dark text), or `null` for translucent washes.
+ */
+export function highlightContrastTone(hex: string): 'dark' | 'light' | null {
+  if (!/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(hex)) return null
+  if (hex.length === 9 && parseInt(hex.slice(7, 9), 16) < 128) return null
+  return isLightSwatch(hex) ? 'light' : 'dark'
+}
