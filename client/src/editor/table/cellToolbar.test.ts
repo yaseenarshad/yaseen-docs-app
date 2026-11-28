@@ -105,7 +105,6 @@ describe('when the toolbar shows', () => {
   })
 })
 
-const NAMES = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey', 'brown']
 /** The colour box in the palette of `arrow` (made on its first Custom colour…), or null. */
 const boxOf = (view: EditorView, arrow: string) => paletteOf(view, arrow).querySelector<HTMLElement>('.colour-box')
 /** Open the palette of `arrow` and click its Custom colour…: the palette stays open, with the box under the item. */
@@ -147,26 +146,21 @@ describe('quick colours, the palette and custom colours (YAZ-3817)', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
-  it('each palette: the clear item, the 10 named colours plus Black and White in a 6 × 2 grid, then Custom colour…', async () => {
+  it('each palette uses the unified Google Docs 10×8 grid: clear item, 80 swatches (grayscale + 10 base hues + 60 shades), then Custom + (YAZ-6727)', async () => {
     const { view } = await mount(TABLE)
     await select(view, [1, 0], [2, 1])
-    const items = (arrow: string) => [...paletteOf(view, arrow).querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))
-    const capitals = [...NAMES.map((n) => n[0].toUpperCase() + n.slice(1)), 'Black', 'White']
-    expect(items('Fill colours')).toEqual(['No fill', ...capitals, 'Custom colour…'])
-    expect(items('Text colours')).toEqual(['Default colour', ...capitals, 'Custom colour…'])
     for (const arrow of ['Fill colours', 'Text colours']) {
       const palette = paletteOf(view, arrow)
-      expect(palette.querySelector('.cell-toolbar__swatches')!.children).toHaveLength(12)
-      expect(palette.querySelector('button')!.textContent).toBe(arrow === 'Fill colours' ? 'No fill' : 'Default colour')
-      expect(palette.querySelector(':scope > button:last-child')!.textContent).toBe('Custom colour…')
+      expect(palette.querySelector('.colour-grid__reset')!.textContent).toBe(arrow === 'Fill colours' ? 'No fill' : 'Default colour')
+      expect(palette.querySelectorAll('.colour-grid__rows .colour-grid__dot')).toHaveLength(80)
+      expect(palette.querySelector('button[aria-label="Black"]')).not.toBeNull()
+      expect(palette.querySelector('button[aria-label="White"]')).not.toBeNull()
+      expect(palette.querySelector('button[aria-label="Red"]')).not.toBeNull()
+      expect(palette.querySelector('button[aria-label="Custom colour…"]')).not.toBeNull()
     }
-    const swatch = (arrow: string, label: string) =>
-      paletteOf(view, arrow).querySelector<HTMLElement>(`button[aria-label="${label}"] .cell-toolbar__swatch`)!.style.background
-    expect(swatch('Fill colours', 'Teal')).toBe('var(--table-fill-solid-teal)')
-    expect(swatch('Text colours', 'Brown')).toBe('var(--table-text-brown)')
   })
 
-  it('Black and White swatches apply #000000 / #ffffff in one undo step, and Fill Custom colour… has an Opacity slider (YAZ-6693)', async () => {
+  it('Black and White swatches apply #000000 / #ffffff in one undo step, and Fill Custom colour… has an Opacity slider (YAZ-6693, YAZ-6727)', async () => {
     const { crepe, view } = await mount(TABLE)
     const before = getMarkdownForSave(crepe)
     await select(view, [1, 0], [2, 1])
@@ -199,17 +193,25 @@ describe('quick colours, the palette and custom colours (YAZ-3817)', () => {
     expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #434343 -->\n`)
   })
 
-  it.each(NAMES)('the palette colour %s saves its name for fill and text, one undo step each', async (name) => {
+  it.each([
+    ['Red', '#ff0000'],
+    ['Orange', '#ff9900'],
+    ['Yellow', '#ffff00'],
+    ['Green', '#00ff00'],
+    ['Blue', '#0000ff'],
+    ['Purple', '#9900ff'],
+    ['Dark grey 4', '#434343'],
+    ['Light grey 1', '#d9d9d9'],
+  ])('the Google Docs palette swatch %s saves %s for fill and text, one undo step each (YAZ-6727)', async (label, hex) => {
     const { crepe, view } = await mount(TABLE)
     const before = getMarkdownForSave(crepe)
     await select(view, [1, 0], [2, 1])
-    const label = name[0].toUpperCase() + name.slice(1)
     pick(view, 'Fill colours', label)
     expect(isOpen(view, 'Fill colours')).toBe(false)
     pick(view, 'Text colours', label)
-    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 ${name}, color A2:B3 ${name} -->\n`)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 ${hex}, color A2:B3 ${hex} -->\n`)
     undo(view.state, view.dispatch)
-    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 ${name} -->\n`)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 ${hex} -->\n`)
     undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
@@ -235,8 +237,7 @@ describe('quick colours, the palette and custom colours (YAZ-3817)', () => {
     expect(document.querySelector('input[type="color"]')).toBeNull()
     const box = boxOf(view, 'Fill colours')!
     expect(box.hidden).toBe(false)
-    expect(box.previousElementSibling!.getAttribute('aria-label')).toBe('Custom colour…')
-    expect(box.previousElementSibling!.getAttribute('aria-expanded')).toBe('true')
+    expect(paletteOf(view, 'Fill colours').querySelector('button[aria-label="Custom colour…"]')!.getAttribute('aria-expanded')).toBe('true')
     expect(isOpen(view, 'Fill colours')).toBe(true)
     // Typing previews in the box only; Enter is the pick.
     pickInBox(box, '#ff8800', false)
@@ -383,12 +384,12 @@ describe('each button acts on every selected cell, in one undo step', () => {
     const before = getMarkdownForSave(crepe)
     await select(view, [1, 0], [2, 1])
     pick(view, 'Fill colours', 'Blue')
-    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 blue -->\n`)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #0000ff -->\n`)
     expect(view.state.selection).toBeInstanceOf(CellSelection)
     pick(view, 'Fill colours', 'No fill')
     expect(getMarkdownForSave(crepe)).toBe(before)
     undo(view.state, view.dispatch)
-    expect(getMarkdownForSave(crepe)).toContain('fill A2:B3 blue')
+    expect(getMarkdownForSave(crepe)).toContain('fill A2:B3 #0000ff')
     undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
@@ -398,7 +399,7 @@ describe('each button acts on every selected cell, in one undo step', () => {
     const before = getMarkdownForSave(crepe)
     await select(view, [0, 0], [1, 1])
     pick(view, 'Text colours', 'Red')
-    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: color A1:B2 red -->\n`)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: color A1:B2 #ff0000 -->\n`)
     pick(view, 'Text colours', 'Default colour')
     expect(getMarkdownForSave(crepe)).toBe(before)
     undo(view.state, view.dispatch)

@@ -147,17 +147,17 @@ describe('Text colour toolbar button A̲▾ and shared ColourPanel (YAZ-6695 D4,
       await settle()
     }
 
-    await clickSwatch('Text red')
-    expect(getMarkdownForSave(crepe)).toBe('hello <span class="text-color-red">world</span>\n')
+    await clickSwatch('Red')
+    expect(getMarkdownForSave(crepe)).toBe('hello <span style="color: #ff0000">world</span>\n')
     expect(must('text-color').classList.contains('active')).toBe(true)
-    expect(document.querySelector<HTMLElement>('.milkdown-toolbar')!.style.getPropertyValue('--text-color-colour')).toBe('var(--table-text-red)')
+    expect(document.querySelector<HTMLElement>('.milkdown-toolbar')!.style.getPropertyValue('--text-color-colour')).toBe('#ff0000')
 
-    await clickSwatch('Text blue')
-    expect(getMarkdownForSave(crepe)).toBe('hello <span class="text-color-blue">world</span>\n')
+    await clickSwatch('Blue')
+    expect(getMarkdownForSave(crepe)).toBe('hello <span style="color: #0000ff">world</span>\n')
     expect(undo(view.state, view.dispatch)).toBe(true)
-    expect(getMarkdownForSave(crepe)).toBe('hello <span class="text-color-red">world</span>\n')
+    expect(getMarkdownForSave(crepe)).toBe('hello <span style="color: #ff0000">world</span>\n')
 
-    await clickSwatch('Default')
+    await clickSwatch('Default colour')
     expect(getMarkdownForSave(crepe)).toBe('hello world\n')
     expect(must('text-color').classList.contains('active')).toBe(false)
 

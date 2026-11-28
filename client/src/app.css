@@ -877,8 +877,8 @@ button {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  /* The board's popup is as wide as its rows: 5 swatches of 30 px, 4 px gaps, 8 px round the row, 12 px padding. */
-  width: 206px;
+  width: fit-content;
+  max-width: calc(100vw - 16px);
   box-sizing: border-box;
   padding: 12px;
   background: var(--bg);

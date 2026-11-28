@@ -289,7 +289,8 @@ import {
 } from './listItemRoundTrip'
 import { toggleUnderline, underline, underlineSchema } from './marks/underline'
 import { clearFormattingKeymap } from './marks/clearFormatting'
-import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, QUICK_HIGHLIGHTS, type HighlightColor } from './marks/highlight'
+import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand } from './marks/highlight'
+import { getQuickHighlightColors, QUICK_HIGHLIGHT_BUTTON_IDS, quickSlotToHighlightColor } from './highlightQuick'
 import { textColor, textColorSchema, toolbarTextColor } from './marks/textColor'
 import { fontSize, fontSizeSchema, selectionFontSize } from './marks/fontSize'
 import { previewColourSelection, TEXT_COLOR_KEY, textColorPanelPlugin, toggleTextColorPanel } from './colourPanel'
@@ -608,15 +609,16 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  */
 function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined, hidden: readonly string[] = [], extend?: CreateCrepeOptions['extendToolbar'], inCode?: ShallowRef<boolean>): void {
   const formatting = builder.getGroup('formatting')
-  for (const color of [null, ...QUICK_HIGHLIGHTS] as HighlightColor[]) {
-    const id = color === null ? 'highlight' : (`highlight-${color}` as 'highlight-green' | 'highlight-blue')
+  for (const idx of [0, 1, 2] as const) {
+    const id = QUICK_HIGHLIGHT_BUTTON_IDS[idx]
     formatting.addItem(id, {
       icon: ownIcon(id),
       label: TOOLBAR_LABELS[id],
-      ...(color === null ? { keymap: keymapRef(highlightKeymap.key, 'ToggleHighlight') } : {}),
-      active: (ctx) => rangeHasHighlight(ctx.get(editorViewCtx).state, highlightSchema.type(ctx), color),
+      ...(idx === 0 ? { keymap: keymapRef(highlightKeymap.key, 'ToggleHighlight') } : {}),
+      active: (ctx) =>
+        rangeHasHighlight(ctx.get(editorViewCtx).state, highlightSchema.type(ctx), quickSlotToHighlightColor(getQuickHighlightColors()[idx])),
       onRun: (ctx) => {
-        ctx.get(commandsCtx).call(setHighlightCommand.key, color)
+        ctx.get(commandsCtx).call(setHighlightCommand.key, quickSlotToHighlightColor(getQuickHighlightColors()[idx]))
         previewColourSelection(ctx.get(editorViewCtx))
       },
     })

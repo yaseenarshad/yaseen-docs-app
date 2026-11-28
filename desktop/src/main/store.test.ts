@@ -806,12 +806,27 @@ describe('createStore: loading', () => {
   })
 
   it('selectionToolbar (YAZ-4348 demo round 2): a file that still lists the pink button, which went into the highlight panel, loads without it', async () => {
-    const textStyle = ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', 'highlight-more']
+    const textStyle = ['bold', 'italic', 'underline', 'strikethrough', 'font-size', 'text-color', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-pink', 'highlight-more']
     const old = { groups: DEFAULT_TOOLBAR.groups, buttons: DEFAULT_TOOLBAR.buttons.flatMap((b) => (b === 'bold' ? textStyle : (textStyle as string[]).includes(b) ? [] : [b])), hidden: ['highlight-pink', 'italic'] }
     expect(old.buttons).toContain('highlight-pink')
     await seed(valid({ settings: { ...DEFAULT_SETTINGS, selectionToolbar: old } }))
     expect(createStore(file).get().settings.selectionToolbar).toEqual({ ...DEFAULT_TOOLBAR, hidden: ['italic'] })
     expect(DEFAULT_TOOLBAR.buttons).not.toContain('highlight-pink')
+  })
+
+  it('quickHighlightColors (YAZ-6729): defaults to yellow/green/blue, persists custom hex/named slots, and repairs invalid slots', async () => {
+    const { quickHighlightColors: _omitted, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings.quickHighlightColors).toEqual(['yellow', 'green', 'blue'])
+
+    const custom: [string, string, string] = ['#cc0000', '#ffff0080', 'pink']
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, quickHighlightColors: custom } }))
+    expect(createStore(file).get().settings.quickHighlightColors).toEqual(custom)
+    expect(isSettings({ ...DEFAULT_SETTINGS, quickHighlightColors: custom })).toBe(true)
+
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, quickHighlightColors: ['not-a-color', '#ff0000', 42] } }))
+    expect(createStore(file).get().settings.quickHighlightColors).toEqual(['yellow', '#ff0000', 'blue'])
+    expect(isSettings({ ...DEFAULT_SETTINGS, quickHighlightColors: ['not-a-color', '#ff0000', 42] })).toBe(false)
   })
 
   it('highlightCustomColors (YAZ-4348 demo round 2): empty by default; a set list survives a restart; the repair drops what does not read, a colour twice, and past the cap', async () => {

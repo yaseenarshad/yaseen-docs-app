@@ -45,12 +45,12 @@ import { clearCells as clearSelected, deleteText, deleteWithNotes } from './cell
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { setCellsAlign, setCellsAttr } from './cells'
-import { ColourBox } from '../highlightColourBox'
+import { ColourGrid } from '../colourGrid'
 import { clampFontSize, DEFAULT_FONT_SIZE, FONT_SIZE_MAX, FONT_SIZE_MIN, FONT_SIZE_PRESETS, isFontSize } from '../marks/fontSize'
-import { TABLE_EXTRA_SWATCHES, capital, customStart, fillSwatch, setCustomColour, textSwatch } from './colours'
+import { capital, customStart, fillSwatch, setCustomColour, textSwatch } from './colours'
 import { TABLE_HANDLE_MENU } from './tableMenu'
 import { mergeCells, mergeRect } from './tableMerge'
-import { CELL_ALIGNS, TABLE_COLORS, type CellAlign, type TableColor } from './tableStyle'
+import { CELL_ALIGNS, type CellAlign, type TableColor } from './tableStyle'
 
 const SVG = (body: string) => `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${body}</svg>`
 const CARET = SVG('<path d="M8 10l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>')
@@ -202,29 +202,33 @@ interface ColourGroup {
 
 let paletteIds = 0
 
-/** A palette's colour box under its "Custom colour…" item: made on the first open. */
-interface CustomBox {
-  /** The box, or null before the first open. */
-  box: ColourBox | null
-  item: HTMLElement
-}
-
 /** The toolbar's one open palette: `toggle` opens a palette (closing the other) or closes it. */
 interface Palettes {
-  toggle: (palette: HTMLElement, arrow: HTMLElement, custom?: CustomBox) => void
+  toggle: (palette: HTMLElement, arrow: HTMLElement, grid?: ColourGrid) => void
   close: () => void
 }
 
-/** Just the box; a focus in it goes back to the note. */
-function hideBox(view: EditorView, custom: CustomBox | undefined): void {
-  if (custom?.box === null || custom?.box === undefined || !custom.box.open) return
-  const focused = custom.box.el.contains(view.dom.ownerDocument.activeElement)
-  custom.box.hide()
-  custom.item.setAttribute('aria-expanded', 'false')
+/** Close a `ColourGrid`'s custom drawer if open, returning focus to the note. */
+function hideGridBox(view: EditorView, grid: ColourGrid | undefined): void {
+  if (grid === undefined || !grid.boxOpen) return
+  const focused = grid.el.contains(view.dom.ownerDocument.activeElement)
+  grid.closeCustom()
   if (focused && !view.isDestroyed) view.focus()
 }
 
-/** A colour group: the label, the quick swatches, and the ▾ with its palette. */
+/** Selected cells' distinct current hex/named values for `attr`, for marking the active dot in `ColourGrid`. */
+function selectedCellValues(state: EditorState, attr: 'fill' | 'color'): string[] {
+  const { selection } = state
+  if (!(selection instanceof CellSelection)) return []
+  const found = new Set<string>()
+  selection.forEachCell((cell) => {
+    const v = cell.attrs[attr]
+    if (typeof v === 'string' && v !== '') found.add(v)
+  })
+  return [...found]
+}
+
+/** A colour group: the label, the quick swatches, and the ▾ with the shared Google Docs 10×8 `ColourGrid` (YAZ-6727). */
 function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes): HTMLElement {
   const box = document.createElement('span')
   box.className = 'cell-toolbar__colours'
@@ -241,71 +245,46 @@ function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes)
   const palette = document.createElement('div')
   palette.className = 'cell-toolbar__palette'
   palette.id = `cell-toolbar-palette-${++paletteIds}`
-  palette.setAttribute('role', 'menu')
+  palette.setAttribute('role', 'dialog')
   palette.setAttribute('aria-label', group.menu)
   palette.hidden = true
-  arrow.setAttribute('aria-haspopup', 'menu')
+  arrow.setAttribute('aria-haspopup', 'dialog')
   arrow.setAttribute('aria-expanded', 'false')
   arrow.setAttribute('aria-controls', palette.id)
-  // Set below, once the item is made.
-  let custom: CustomBox
-  arrow.addEventListener('click', () => palettes.toggle(palette, arrow, custom))
-  const item = (name: string, run: () => void, className: string) => {
-    const button = toolButton(name, '', className)
-    button.setAttribute('role', 'menuitem')
-    button.addEventListener('click', () => {
+
+  const grid = new ColourGrid(document, {
+    noneLabel: group.clear,
+    allowAlpha: group.attr === 'fill',
+    defaultBoxHex: () => '#000000',
+    onPick: (value, isCustom) => {
+      const cells = view.state.selection
+      if (!(cells instanceof CellSelection)) return
+      if (isCustom) {
+        setCustomColour(view, grid.el, cells, group.attr, value as `#${string}`)
+        grid.render(selectedCellValues(view.state, group.attr), customStart(cells, group.attr))
+      } else {
+        palettes.close()
+        setCells(view, group.attr, value)
+      }
+    },
+    onClear: () => {
       palettes.close()
-      run()
-    })
-    return button
-  }
-  const clear = item(group.clear, () => setCells(view, group.attr, null), 'cell-toolbar__clear')
-  clear.textContent = group.clear
-  const swatches = document.createElement('div')
-  swatches.className = 'cell-toolbar__swatches'
-  for (const c of TABLE_COLORS) {
-    const button = item(capital(c), () => setCells(view, group.attr, c), 'cell-toolbar__swatch-item')
-    const swatch = document.createElement('span')
-    swatch.className = 'cell-toolbar__swatch'
-    swatch.style.background = group.swatch(c)
-    button.appendChild(swatch)
-    swatches.appendChild(button)
-  }
-  for (const { label: name, value } of TABLE_EXTRA_SWATCHES) {
-    const button = item(name, () => setCells(view, group.attr, value), 'cell-toolbar__swatch-item')
-    const swatch = document.createElement('span')
-    swatch.className = 'cell-toolbar__swatch'
-    swatch.style.background = value
-    button.appendChild(swatch)
-    swatches.appendChild(button)
-  }
-  const customItem = toolButton('Custom colour…', '', 'cell-toolbar__custom')
-  customItem.setAttribute('role', 'menuitem')
-  customItem.setAttribute('aria-expanded', 'false')
-  customItem.textContent = 'Custom colour…'
-  custom = { box: null, item: customItem }
-  // The palette stays open: the box opens under the item, and the item again closes it.
-  customItem.addEventListener('click', () => {
-    const { selection } = view.state
-    if (custom.box?.open === true) return hideBox(view, custom)
-    if (!(selection instanceof CellSelection)) return
-    if (custom.box === null) {
-      const box = new ColourBox(document, {
-        showAlpha: group.attr === 'fill',
-        preview: () => {},
-        pick: (color) => {
-          const cells = view.state.selection
-          if (cells instanceof CellSelection) setCustomColour(view, box.el, cells, group.attr, color)
-        },
-        close: () => hideBox(view, custom),
-      })
-      custom.box = box
-      palette.append(box.el)
-    }
-    custom.box.show(customStart(selection, group.attr))
-    customItem.setAttribute('aria-expanded', 'true')
+      setCells(view, group.attr, null)
+    },
+    onBoxClose: () => {
+      if (!view.isDestroyed) view.focus()
+    },
   })
-  palette.append(clear, swatches, customItem)
+  palette.append(grid.el)
+
+  arrow.addEventListener('click', () => {
+    palettes.toggle(palette, arrow, grid)
+    if (!palette.hidden) {
+      const cells = view.state.selection
+      grid.render(selectedCellValues(view.state, group.attr), cells instanceof CellSelection ? customStart(cells, group.attr) : '#000000')
+    }
+  })
+
   box.append(arrow, palette)
   return box
 }
@@ -500,22 +479,22 @@ class CellToolbarView {
     this.update(view)
   }
 
-  /** The open palette, its ▾ and its colour box, or null. Escape listens only while one is open. */
-  #open: { palette: HTMLElement; arrow: HTMLElement; custom?: CustomBox } | null = null
+  /** The open palette, its ▾ and its colour grid, or null. Escape listens only while one is open. */
+  #open: { palette: HTMLElement; arrow: HTMLElement; grid?: ColourGrid } | null = null
 
-  #togglePalette = (palette: HTMLElement, arrow: HTMLElement, custom?: CustomBox) => {
+  #togglePalette = (palette: HTMLElement, arrow: HTMLElement, grid?: ColourGrid) => {
     const same = this.#open?.palette === palette
     this.#closePalettes()
     if (same) return
     palette.hidden = false
     arrow.setAttribute('aria-expanded', 'true')
-    this.#open = { palette, arrow, custom }
+    this.#open = { palette, arrow, grid }
     this.view.dom.ownerDocument.addEventListener('keydown', this.#escape, true)
   }
 
   #closePalettes = () => {
     if (this.#open === null) return
-    hideBox(this.view, this.#open.custom)
+    hideGridBox(this.view, this.#open.grid)
     this.#open.palette.hidden = true
     this.#open.arrow.setAttribute('aria-expanded', 'false')
     this.#open = null
@@ -527,7 +506,7 @@ class CellToolbarView {
     if (e.key !== 'Escape' || this.#open === null) return
     e.preventDefault()
     e.stopPropagation()
-    if (this.#open.custom?.box?.open === true) hideBox(this.view, this.#open.custom)
+    if (this.#open.grid?.boxOpen === true) hideGridBox(this.view, this.#open.grid)
     else this.#closePalettes()
   }
 

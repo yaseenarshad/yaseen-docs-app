@@ -1409,6 +1409,23 @@ export const HIGHLIGHT_CUSTOM_COLORS_KEPT = 10
 export const HIGHLIGHT_CUSTOM_COLORS_SHOWN = 5
 /** A custom highlight colour exactly as the page's mark and this setting keep it: lowercase `#rrggbb` or `#rrggbbaa`. */
 export const isHighlightHex = (v: unknown): v is `#${string}` => typeof v === 'string' && /^#[0-9a-f]{6}([0-9a-f]{2})?$/.test(v)
+/** Named soft-wash highlights allowed in quick highlight slots (`yellow` saves as `==text==`). */
+export const QUICK_HIGHLIGHT_NAMES = ['yellow', 'green', 'blue', 'pink', 'orange', 'purple', 'red', 'gray'] as const
+export type QuickHighlightSlot = (typeof QUICK_HIGHLIGHT_NAMES)[number] | `#${string}`
+export type QuickHighlightColors = [QuickHighlightSlot, QuickHighlightSlot, QuickHighlightSlot]
+export const DEFAULT_QUICK_HIGHLIGHT_COLORS: QuickHighlightColors = ['yellow', 'green', 'blue']
+export const isQuickHighlightSlot = (v: unknown): v is QuickHighlightSlot =>
+  typeof v === 'string' && ((QUICK_HIGHLIGHT_NAMES as readonly string[]).includes(v) || isHighlightHex(v))
+export const isQuickHighlightColors = (v: unknown): v is QuickHighlightColors =>
+  Array.isArray(v) && v.length === 3 && v.every(isQuickHighlightSlot)
+export const sanitizeQuickHighlightColors = (v: unknown): QuickHighlightColors => {
+  if (!Array.isArray(v)) return [...DEFAULT_QUICK_HIGHLIGHT_COLORS]
+  return [
+    isQuickHighlightSlot(v[0]) ? v[0] : DEFAULT_QUICK_HIGHLIGHT_COLORS[0],
+    isQuickHighlightSlot(v[1]) ? v[1] : DEFAULT_QUICK_HIGHLIGHT_COLORS[1],
+    isQuickHighlightSlot(v[2]) ? v[2] : DEFAULT_QUICK_HIGHLIGHT_COLORS[2],
+  ]
+}
 /** A kept entry: a lowercase `#rrggbb` and a whole count of one or more. */
 export const isHighlightCustomColor = (v: unknown): v is HighlightCustomColor =>
   typeof v === 'object' && v !== null && isHighlightHex((v as HighlightCustomColor).color) &&
@@ -2409,6 +2426,8 @@ export interface SettingsState {
    * "Most used custom colours" row shows the first `HIGHLIGHT_CUSTOM_COLORS_SHOWN`. Travels with the settings.
    */
   highlightCustomColors: HighlightCustomColor[]
+  /** The 3 default quick highlight colours shown as buttons in the selection toolbar (YAZ-6729). Travels with settings. */
+  quickHighlightColors: QuickHighlightColors
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
   startupWindows: StartupWindows
   /** Show a confirmation popup before Cmd+Q / Alfred Quit All closes a Vault App or Yaseen Docs (YAZ-6641). Default true. */
@@ -3390,6 +3409,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarTabs: DEFAULT_SIDEBAR_TABS,
   selectionToolbar: DEFAULT_TOOLBAR,
   highlightCustomColors: [],
+  quickHighlightColors: DEFAULT_QUICK_HIGHLIGHT_COLORS,
   startupWindows: 'last',
   confirmBeforeQuit: true,
   vaultOpensOn: 'blank',

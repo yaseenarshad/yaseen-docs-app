@@ -46,7 +46,7 @@
   font-size: var(--swatch-tile-letter-size);
   font-weight: var(--swatch-tile-letter-weight);
   line-height: 1;
-  color: var(--swatch-tile-dark);
+  color: var(--swatch-ink, var(--swatch-tile-dark));
 }
 /* Text color: the "A" in the color, on white; a white "A" on a dark tile. In dark mode the board turns its tiles with
    its theme filter, and the canvas its letters: the same filter here. */
