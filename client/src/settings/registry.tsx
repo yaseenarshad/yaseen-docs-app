@@ -1807,7 +1807,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'quickHighlightColors',
             label: 'Quick highlight colours',
-            hint: 'Choose the 3 highlight colours shown directly on the selection toolbar. Pick soft theme-adaptive washes or solid Google Docs / custom colours.',
+            hint: 'Starting 3 highlight colours for each fresh page. Recent picks from the highlight menu slide into these buttons per page.',
             keywords: ['highlight', 'quick', 'toolbar', 'colour', 'color', 'default', 'yellow', 'green', 'blue', 'custom'],
             render: ({ settings, onChange }) => (
               <QuickHighlightControl

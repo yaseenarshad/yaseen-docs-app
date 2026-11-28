@@ -84,6 +84,8 @@ export interface ColourPanelSpec<C extends string | null> {
   colorsIn: (ctx: Ctx, state: EditorState) => C[]
   apply: (ctx: Ctx, color: C) => Command
   remove: (ctx: Ctx) => Command
+  /** Optional callback after a colour is applied from the panel (e.g. per-page recent highlights). */
+  onCommit?: (view: EditorView, color: C) => void
 }
 
 class ColourPanel<C extends string | null> {
@@ -252,6 +254,7 @@ class ColourPanel<C extends string | null> {
     const { view, ctx } = this
     const since = this.#renders
     this.spec.apply(ctx, color)(view.state, (tr) => view.dispatch(closeHistory(tr)))
+    this.spec.onCommit?.(view, color)
     this.#renderOnce(since)
   }
 

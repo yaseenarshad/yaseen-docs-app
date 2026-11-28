@@ -64,7 +64,7 @@
 }
 /* Highlight: the "A" in the page's text color on the wash, so it reads as highlighted text does in each theme. */
 .swatch-tile--on-color .swatch-tile__letter {
-  color: var(--fg, var(--swatch-tile-dark));
+  color: var(--swatch-ink, var(--fg, var(--swatch-tile-dark)));
 }
 [data-theme='dark'] .swatch-tile--on-color {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 15%, var(--bg));

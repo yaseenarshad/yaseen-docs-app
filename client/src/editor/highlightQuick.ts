@@ -1,27 +1,47 @@
 /**
- * Live 3 quick highlight colour slots for the selection toolbar (`highlightQuick.ts`, YAZ-6729).
+ * Live 3 quick highlight colour slots for the selection toolbar (`highlightQuick.ts`, YAZ-6729 + YAZ-6731).
  *
- * Synced from `settings.quickHighlightColors` in `App.tsx`. Defaults to `['yellow', 'green', 'blue']`
- * so `==yellow==`, `<mark class="highlight-green">`, and `<mark class="highlight-blue">` work out of the box,
- * while letting users replace any slot with any named soft wash or custom Google Docs / `#rrggbb[aa]` colour.
+ * - `settings.quickHighlightColors` sets the 3 starting defaults for every fresh page (default:
+ *   `['yellow', 'green', 'blue']`), mirrored onto `:root` CSS vars `--quick-hl-0/1/2`.
+ * - Each open editor (`EditorView`) tracks its own per-page recent 3 highlights in a `WeakMap`
+ *   and scopes `--quick-hl-0/1/2` onto that editor's `.milkdown` root element (YAZ-6731).
+ *   Picking a new colour from the `▾` Highlight panel slides it into Slot 1 (`[new, old1, old2]`)
+ *   for that page only; clicking one of the 3 quick buttons directly applies it without shuffling.
  */
 import { DEFAULT_QUICK_HIGHLIGHT_COLORS, isHighlightHex, type QuickHighlightColors, type QuickHighlightSlot } from '@shared/types'
 import { isLightSwatch } from '@shared/palette'
 import type { HighlightColor, HighlightName } from './marks/highlightColours'
 
-let slots: QuickHighlightColors = [...DEFAULT_QUICK_HIGHLIGHT_COLORS]
+export interface HighlightViewLike {
+  readonly dom: HTMLElement
+}
+
+let defaultSlots: QuickHighlightColors = [...DEFAULT_QUICK_HIGHLIGHT_COLORS]
+const pageSlots = new WeakMap<HighlightViewLike, QuickHighlightColors>()
 const listeners = new Set<(next: QuickHighlightColors) => void>()
 
 export const QUICK_HIGHLIGHT_BUTTON_IDS = ['highlight', 'highlight-green', 'highlight-blue'] as const
 
+/** Global starting defaults (from Settings › Editor › Selection toolbar › Quick highlight colours). */
 export function getQuickHighlightColors(): QuickHighlightColors {
-  return slots
+  return defaultSlots
+}
+
+/** Active 3 quick highlight slots for a specific editor page (falls back to global starting defaults). */
+export function getQuickHighlightColorsForView(view?: HighlightViewLike | null): QuickHighlightColors {
+  if (!view) return defaultSlots
+  return pageSlots.get(view) ?? defaultSlots
 }
 
 /** Map a stored quick slot (`'yellow'` | named wash | `#rrggbb[aa]`) to the `highlight` mark's `color` attr. */
 export function quickSlotToHighlightColor(slot: QuickHighlightSlot): HighlightColor {
   if (slot === 'yellow') return null
   return slot as HighlightName | `#${string}`
+}
+
+/** Map a highlight mark's `color` attr back to a `QuickHighlightSlot`. */
+export function highlightColorToQuickSlot(color: HighlightColor): QuickHighlightSlot {
+  return color === null ? 'yellow' : (color as QuickHighlightSlot)
 }
 
 /** CSS background value for rendering a quick highlight slot's button tile. */
@@ -43,20 +63,37 @@ export function quickSlotLabel(slot: QuickHighlightSlot): string {
   return `Highlight ${slot}`
 }
 
-function applyCssVars(next: QuickHighlightColors): void {
-  if (typeof document === 'undefined') return
-  const root = document.documentElement
+function writeSlotVars(target: HTMLElement, next: QuickHighlightColors): void {
   next.forEach((slot, i) => {
-    root.style.setProperty(`--quick-hl-${i}`, quickSlotSwatch(slot))
-    root.style.setProperty(`--quick-hl-ink-${i}`, quickSlotInk(slot))
+    target.style.setProperty(`--quick-hl-${i}`, quickSlotSwatch(slot))
+    target.style.setProperty(`--quick-hl-ink-${i}`, quickSlotInk(slot))
   })
 }
 
-/** Update the live 3 quick highlight slots (called by `App.tsx` whenever settings change). */
+function editorScopeOf(view: HighlightViewLike): HTMLElement {
+  return view.dom.closest<HTMLElement>('.milkdown') ?? view.dom.parentElement ?? view.dom
+}
+
+/**
+ * Record a highlight chosen from the `▾` panel on this page (YAZ-6731):
+ * - If already in this page's 3 slots, keep order steady (no jumping under the cursor).
+ * - Otherwise slide it into Slot 1 (`[picked, old0, old1]`) and scope CSS vars to this editor only.
+ */
+export function recordPageHighlight(view: HighlightViewLike, picked: HighlightColor): QuickHighlightColors {
+  const slot = highlightColorToQuickSlot(picked)
+  const cur = getQuickHighlightColorsForView(view)
+  if (cur.includes(slot)) return cur
+  const next: QuickHighlightColors = [slot, cur[0], cur[1]]
+  pageSlots.set(view, next)
+  writeSlotVars(editorScopeOf(view), next)
+  return next
+}
+
+/** Update the global starting defaults (called by `App.tsx` whenever settings change). */
 export function setQuickHighlightColors(next: QuickHighlightColors): void {
-  slots = [next[0], next[1], next[2]]
-  applyCssVars(slots)
-  for (const fn of listeners) fn(slots)
+  defaultSlots = [next[0], next[1], next[2]]
+  if (typeof document !== 'undefined') writeSlotVars(document.documentElement, defaultSlots)
+  for (const fn of listeners) fn(defaultSlots)
 }
 
 export function subscribeQuickHighlightColors(fn: (next: QuickHighlightColors) => void): () => void {

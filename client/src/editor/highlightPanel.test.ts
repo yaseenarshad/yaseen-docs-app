@@ -275,4 +275,35 @@ describe('highlight buttons and the unified Google Docs 10×8 ColourGrid panel (
     await select(view, 'hello')
     expect(view.dom.hasAttribute('data-colour-preview')).toBe(false)
   })
+
+  it('tracks the 3 most recent highlights per page without shuffling on quick clicks, while fresh pages start with defaults (YAZ-6731)', async () => {
+    const pageA = await mount('alpha beta\n')
+    await select(pageA.view, 'alpha')
+    await press('highlight-more')
+    await click('Red')
+    await click('Purple')
+    key('Escape')
+
+    // Page A now has ['#9900ff', '#ff0000', 'yellow'] scoped to its .milkdown container.
+    const scopeA = pageA.view.dom.closest<HTMLElement>('.milkdown')!
+    expect(scopeA.style.getPropertyValue('--quick-hl-0')).toBe('#9900ff')
+    expect(scopeA.style.getPropertyValue('--quick-hl-1')).toBe('#ff0000')
+    expect(scopeA.style.getPropertyValue('--quick-hl-2')).toBe('var(--mark-bg)')
+
+    // Clicking an existing quick button applies that colour WITHOUT shuffling the 3 slots.
+    await select(pageA.view, 'beta')
+    await press('highlight-green')
+    expect(getMarkdownForSave(pageA.crepe)).toContain('<mark style="background-color: #ff0000">beta</mark>')
+    expect(scopeA.style.getPropertyValue('--quick-hl-0')).toBe('#9900ff')
+    expect(scopeA.style.getPropertyValue('--quick-hl-1')).toBe('#ff0000')
+
+    // A fresh Page B starts cleanly with the default 3 slots (yellow, green, blue).
+    const hostA = pageA.view.dom.closest('.milkdown')?.parentElement
+    await pageA.crepe.destroy()
+    hostA?.remove()
+    const pageB = await mount('fresh page\n')
+    await select(pageB.view, 'fresh')
+    await press('highlight')
+    expect(getMarkdownForSave(pageB.crepe)).toBe('==fresh== page\n')
+  })
 })

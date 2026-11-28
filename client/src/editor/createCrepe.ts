@@ -290,7 +290,7 @@ import {
 import { toggleUnderline, underline, underlineSchema } from './marks/underline'
 import { clearFormattingKeymap } from './marks/clearFormatting'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand } from './marks/highlight'
-import { getQuickHighlightColors, QUICK_HIGHLIGHT_BUTTON_IDS, quickSlotToHighlightColor } from './highlightQuick'
+import { getQuickHighlightColorsForView, QUICK_HIGHLIGHT_BUTTON_IDS, quickSlotToHighlightColor } from './highlightQuick'
 import { textColor, textColorSchema, toolbarTextColor } from './marks/textColor'
 import { fontSize, fontSizeSchema, selectionFontSize } from './marks/fontSize'
 import { previewColourSelection, TEXT_COLOR_KEY, textColorPanelPlugin, toggleTextColorPanel } from './colourPanel'
@@ -615,11 +615,14 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
       icon: ownIcon(id),
       label: TOOLBAR_LABELS[id],
       ...(idx === 0 ? { keymap: keymapRef(highlightKeymap.key, 'ToggleHighlight') } : {}),
-      active: (ctx) =>
-        rangeHasHighlight(ctx.get(editorViewCtx).state, highlightSchema.type(ctx), quickSlotToHighlightColor(getQuickHighlightColors()[idx])),
+      active: (ctx) => {
+        const view = ctx.get(editorViewCtx)
+        return rangeHasHighlight(view.state, highlightSchema.type(ctx), quickSlotToHighlightColor(getQuickHighlightColorsForView(view)[idx]))
+      },
       onRun: (ctx) => {
-        ctx.get(commandsCtx).call(setHighlightCommand.key, quickSlotToHighlightColor(getQuickHighlightColors()[idx]))
-        previewColourSelection(ctx.get(editorViewCtx))
+        const view = ctx.get(editorViewCtx)
+        ctx.get(commandsCtx).call(setHighlightCommand.key, quickSlotToHighlightColor(getQuickHighlightColorsForView(view)[idx]))
+        previewColourSelection(view)
       },
     })
   }
@@ -630,7 +633,7 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
     label: TOOLBAR_LABELS[MORE_KEY],
     active: (ctx) => {
       const view = ctx.get(editorViewCtx)
-      const colour = panelColour(view.state, highlightSchema.type(ctx))
+      const colour = panelColour(view.state, highlightSchema.type(ctx), view)
       showMoreColour(view, MORE_KEY, colour)
       return colour !== null
     },

@@ -20,7 +20,7 @@ import {
   removeHighlight,
   someHighlightColor,
 } from './marks/highlight'
-import { getQuickHighlightColors, quickSlotToHighlightColor } from './highlightQuick'
+import { getQuickHighlightColorsForView, quickSlotToHighlightColor, recordPageHighlight, type HighlightViewLike } from './highlightQuick'
 
 export { readHex, shadesOf }
 
@@ -28,11 +28,11 @@ export { readHex, shadesOf }
 export const MORE_KEY = 'highlight-more'
 
 /**
- * A colour on the selection that is not one of the 3 quick toolbar buttons, as its CSS background, or null:
- * the ▾ lights for it and shows a bar of it, as the board's ▾ does (YAZ-4445, YAZ-6729).
+ * A colour on the selection that is not one of this page's 3 quick toolbar buttons, as its CSS background, or null:
+ * the ▾ lights for it and shows a bar of it, as the board's ▾ does (YAZ-4445, YAZ-6729, YAZ-6731).
  */
-export function panelColour(state: EditorState, type: MarkType): string | null {
-  const quick = getQuickHighlightColors().map(quickSlotToHighlightColor)
+export function panelColour(state: EditorState, type: MarkType, view?: HighlightViewLike | null): string | null {
+  const quick = getQuickHighlightColorsForView(view).map(quickSlotToHighlightColor)
   let found: HighlightColor | undefined
   someHighlightColor(state, type, (c) => {
     if (quick.includes(c)) return false
@@ -58,6 +58,9 @@ const handle = createColourPanel<HighlightColor>('mdapp-highlight-panel', {
   colorsIn: (ctx, state) => highlightColorsIn(state, highlightSchema.type(ctx)),
   apply: (ctx, color) => applyHighlight(highlightSchema.type(ctx), color),
   remove: (ctx) => removeHighlight(highlightSchema.type(ctx)),
+  onCommit: (view, color) => {
+    recordPageHighlight(view, color)
+  },
 })
 
 /** The ▾'s press (Crepe runs it on pointerdown): open this editor's panel, or close it. */
