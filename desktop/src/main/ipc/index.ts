@@ -79,8 +79,6 @@ export type IpcPlaces = ShareIpcPlaces & {
   onGithubAuthChange?: () => void
   /** macOS Vault App launcher backend (YAZ-5967, YAZ-6374); omitted falls back to unsupported stub. */
   vaultLauncher?: VaultLauncherBackend
-  /** Invoked when a vault launcher icon is created or removed so the Dock icon cache can be invalidated. */
-  onVaultLauncherIconChanged?: (iconPath: string) => void
 }
 
 export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; githubAuth: GithubAuthManager; secrets: Secrets; lsp: LspPool; libraryMoves: LibraryMoves } {
@@ -107,14 +105,14 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   const launcherBackend = places.vaultLauncher ?? createUnsupportedVaultLauncherBackend()
   registerWindowIpc(store, windows, {
     onRemoveVaultSet: (workspaceId) =>
-      cleanupWorkspaceLauncher(store, launcherBackend, workspaceId, places.onVaultLauncherIconChanged),
+      cleanupWorkspaceLauncher(store, launcherBackend, workspaceId),
   })
   registerStorageIpc(store)
   registerPictureFoldersIpc(store, pickedPictureFolders)
   registerSoundIpc()
   registerHomeIpc()
   registerCardFormatsIpc(userData)
-  registerVaultLauncherIpc(store, userData, launcherBackend, places.onVaultLauncherIconChanged, undefined, isTransientReadOnly)
+  registerVaultLauncherIpc(store, userData, launcherBackend, undefined, undefined, isTransientReadOnly)
   // The code tabs' language helpers (YAZ-3454, YAZ-3455): the quit sequence stops them (`stopAllLanguageServers`).
   // They run only while Settings › Code › "Jump across files" is on, and are a download in `<userData>/lsp`
   // (YAZ-3500). A dev build also takes the `node_modules` copies, unless YASEEN_DOCS_LSP_DOWNLOAD_ONLY=1

@@ -67,8 +67,8 @@ export interface Updater {
   state(): UpdateState
   /** "What's new" (YAZ-2988 D13): every published release, newest first, up to 100 (one page), and this app's version. Asked only when the sheet opens. */
   notes(): Promise<ReleaseNotes>
-  /** In the quit sequence's `exit`: with an update staged, start the swap; `reopen` opens the new app after it (S21, S22). */
-  installOnExit(reopen: boolean): void
+  /** In the quit sequence's `exit`: with an update staged, start the swap; `reopen` opens the new app (or `reopenApps` when provided) after it (S21, S22, YAZ-6625 #5). */
+  installOnExit(reopen: boolean, reopenApps?: readonly string[]): void
 }
 
 interface GithubAsset {
@@ -126,7 +126,7 @@ export const SWAP_SCRIPT = [
   // A stale `.old` goes first: `mv` into an existing folder would put the app INSIDE it.
   'rm -rf "$app.old"',
   'if [ ! -e "$app.old" ] && mv "$app" "$app.old" && mv "$app.update" "$app"; then rm -rf "$app.old"; else [ -d "$app" ] || mv "$app.old" "$app"; printf %s "$version" > "$refused"; fi',
-  '[ "$reopen" = 1 ] && open "$app"',
+  'if [ "$reopen" = 1 ]; then shift 5; if [ "$#" -gt 0 ]; then for target in "$@"; do open "$target"; done; else open "$app"; fi; fi',
   'exit 0',
 ].join('\n')
 
@@ -339,10 +339,11 @@ export function createUpdater(host: UpdaterHost, onState: (state: UpdateState) =
       releases.sort((a, b) => compareVersions(b.tag_name, a.tag_name))
       return { current: host.version, checks, releases: releases.slice(0, 100).map((r) => ({ version: shortVersion(r.tag_name), title: r.name ?? r.tag_name, date: r.published_at ?? '', body: r.body ?? '' })) }
     },
-    installOnExit(reopen) {
+    installOnExit(reopen, reopenApps) {
       if (state.kind !== 'ready') return
       try {
-        host.spawnDetached('/bin/sh', ['-c', SWAP_SCRIPT, 'sh', String(host.pid), host.bundle, refusedFile, state.version, reopen ? '1' : '0'])
+        const extraTargets = reopen && reopenApps !== undefined ? reopenApps.filter((target) => target.length > 0) : []
+        host.spawnDetached('/bin/sh', ['-c', SWAP_SCRIPT, 'sh', String(host.pid), host.bundle, refusedFile, state.version, reopen ? '1' : '0', ...extraTargets])
       } catch (err) {
         console.error(`[update] the swap did not start: ${String(err)}`) // the app still exits; the next check stages again
       }

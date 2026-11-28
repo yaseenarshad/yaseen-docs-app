@@ -1110,3 +1110,63 @@ describe('the menu\'s fixed keys (YAZ-3419)', () => {
     expect(fixed.length).toBeGreaterThan(MENU_FIXED_KEYS.length)
   })
 })
+
+describe('App Shim menu items and shim-first routing (YAZ-6625 #6, D3)', () => {
+  it('adds Quit All Yaseen Docs (CmdOrCtrl+Alt+Q) right after Quit when isShim is true on macOS, and strips its accelerator when suspendKeys is true', () => {
+    const handlers = { ...noopHandlers(), quitAll: vi.fn() }
+    const hostApp = menuOf(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: {}, isShim: false }, handlers), 'Yaseen Docs')
+    expect(hostApp.find((i) => i.id === 'menu.app.quit-all')).toBeUndefined()
+
+    const shimApp = menuOf(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: {}, isShim: true }, handlers), 'Yaseen Docs')
+    const quitIdx = shimApp.findIndex((i) => i.role === 'quit')
+    const quitAllItem = shimApp[quitIdx + 1]
+    if (process.platform === 'darwin') {
+      expect(quitAllItem?.id).toBe('menu.app.quit-all')
+      expect(quitAllItem?.label).toBe('Quit All Yaseen Docs')
+      expect(quitAllItem?.accelerator).toBe('CmdOrCtrl+Alt+Q')
+      click(quitAllItem)
+      expect(handlers.quitAll).toHaveBeenCalledOnce()
+
+      const suspended = menuOf(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: {}, isShim: true, suspendKeys: true }, handlers), 'Yaseen Docs')
+      const suspendedQuitAll = suspended.find((i) => i.id === 'menu.app.quit-all')
+      expect(suspendedQuitAll?.accelerator).toBeUndefined()
+    }
+  })
+
+  it('createMenuHandlers delegates openRecent and goToVault to routeVaultToShim when provided, and wires quitAll', () => {
+    const send = vi.fn()
+    const openAlone = vi.fn(() => true)
+    const linkNotice = vi.fn()
+    const quitAll = vi.fn()
+    const routeVaultToShim = vi.fn((p: string) => p === '/vaults/shimmed')
+    const handlers = createMenuHandlers(
+      { openAlone, linkNotice, idFor: () => 'w1', openFilesWindow: vi.fn(() => true), closeWindow: vi.fn(), reloadWindow: vi.fn(async () => true) },
+      {
+        focusedWebContents: () => ({ id: 1, send }),
+        readClipboardText: () => '',
+        readClipboardHTML: () => '',
+        openExternal: vi.fn(),
+        checkForUpdates: vi.fn(),
+        saveHeapSnapshot: vi.fn(async () => true),
+        quitAll,
+        routeVaultToShim,
+      },
+    )
+
+    handlers.openRecent('/vaults/shimmed')
+    expect(routeVaultToShim).toHaveBeenCalledWith('/vaults/shimmed')
+    expect(send).not.toHaveBeenCalled()
+
+    handlers.openRecent('/vaults/normal')
+    expect(send).toHaveBeenCalledWith(CONTRACT.menu.onOpenRoot.channel, '/vaults/normal')
+
+    handlers.goToVault('/vaults/shimmed', 'Shimmed')
+    expect(openAlone).not.toHaveBeenCalled()
+
+    handlers.goToVault('/vaults/normal', 'Normal')
+    expect(openAlone).toHaveBeenCalledWith('/vaults/normal', 'w1')
+
+    handlers.quitAll?.()
+    expect(quitAll).toHaveBeenCalledOnce()
+  })
+})
