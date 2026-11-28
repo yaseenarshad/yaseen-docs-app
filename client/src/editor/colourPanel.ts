@@ -33,6 +33,15 @@ import {
 } from './marks/textColor'
 import { toolbarItemOf } from './toolbarHost'
 
+/** Hide the OS blue selection wash while picking or previewing a highlight / text colour so the true colour shows live (YAZ-6728). */
+export function previewColourSelection(view: EditorView): void {
+  view.dom.setAttribute('data-colour-preview', '')
+}
+
+export function clearColourPreview(view: EditorView): void {
+  view.dom.removeAttribute('data-colour-preview')
+}
+
 /** Currently open toolbar popovers (ColourPanels and FontSizePanel), so opening one closes the others. */
 const activeClosers = new Set<() => void>()
 
@@ -369,6 +378,7 @@ export class ColourPanel<C extends string | null> {
     if (by === 'keyboard') this.#move(this.#rows[0]?.[0]?.id ?? null)
     this.#place()
     this.#anchor()?.setAttribute('aria-expanded', 'true')
+    previewColourSelection(this.view)
     doc.addEventListener('keydown', this.#key, true)
     doc.addEventListener('pointerdown', this.#outside, true)
     doc.addEventListener('mousedown', this.#outside, true)
@@ -384,6 +394,7 @@ export class ColourPanel<C extends string | null> {
     this.#pencil.setAttribute('aria-expanded', 'false')
     this.#move(null)
     this.#anchor()?.removeAttribute('aria-expanded')
+    clearColourPreview(this.view)
     doc.removeEventListener('keydown', this.#key, true)
     doc.removeEventListener('pointerdown', this.#outside, true)
     doc.removeEventListener('mousedown', this.#outside, true)
@@ -545,8 +556,12 @@ export class ColourPanel<C extends string | null> {
   }
 
   update(view: EditorView, prev: EditorState): void {
-    if (!this.open) return
-    if (!prev.selection.eq(view.state.selection) || view.state.selection.empty) this.close()
+    const selectionChanged = !prev.selection.eq(view.state.selection) || view.state.selection.empty
+    if (!this.open) {
+      if (selectionChanged && view.dom.hasAttribute('data-colour-preview')) clearColourPreview(view)
+      return
+    }
+    if (selectionChanged) this.close()
     else if (prev.doc !== view.state.doc) this.#render()
   }
 

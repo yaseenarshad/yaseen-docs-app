@@ -292,7 +292,7 @@ import { clearFormattingKeymap } from './marks/clearFormatting'
 import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, QUICK_HIGHLIGHTS, type HighlightColor } from './marks/highlight'
 import { textColor, textColorSchema, toolbarTextColor } from './marks/textColor'
 import { fontSize, fontSizeSchema, selectionFontSize } from './marks/fontSize'
-import { TEXT_COLOR_KEY, textColorPanelPlugin, toggleTextColorPanel } from './colourPanel'
+import { previewColourSelection, TEXT_COLOR_KEY, textColorPanelPlugin, toggleTextColorPanel } from './colourPanel'
 import { FONT_SIZE_KEY, fontSizePanel, toggleFontSizePanel } from './fontSizePanel'
 import { highlightPanel, MORE_KEY, panelColour, toggleHighlightPanel } from './highlightPanel'
 import { showMoreColour, showToolbarSize } from './toolbarHost'
@@ -615,7 +615,10 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
       label: TOOLBAR_LABELS[id],
       ...(color === null ? { keymap: keymapRef(highlightKeymap.key, 'ToggleHighlight') } : {}),
       active: (ctx) => rangeHasHighlight(ctx.get(editorViewCtx).state, highlightSchema.type(ctx), color),
-      onRun: (ctx) => ctx.get(commandsCtx).call(setHighlightCommand.key, color),
+      onRun: (ctx) => {
+        ctx.get(commandsCtx).call(setHighlightCommand.key, color)
+        previewColourSelection(ctx.get(editorViewCtx))
+      },
     })
   }
   // YAZ-4348 demo round 2: the ▾ of the colour panel; lit when the selection has a colour that is not a button,

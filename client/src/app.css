@@ -691,6 +691,13 @@ button {
 .milkdown .ProseMirror *::selection {
   background: revert;
 }
+/* Live colour preview (YAZ-6728): hide the OS blue selection wash while picking a highlight or text colour
+   so the true colour shows immediately while keeping the selection active. */
+.milkdown .ProseMirror[data-colour-preview]::selection,
+.milkdown .ProseMirror[data-colour-preview] *::selection {
+  background: transparent;
+  color: inherit;
+}
 .milkdown .ProseMirror blockquote::before,
 .milkdown .milkdown-table-block .cell-handle .button-group button:active,
 .milkdown .milkdown-table-block .line-handle .add-button:active {

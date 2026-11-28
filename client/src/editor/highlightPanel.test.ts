@@ -591,4 +591,19 @@ describe('highlight buttons and the ▾ panel (YAZ-4348 demo round 2)', () => {
     tcPanel.querySelector<HTMLButtonElement>('.highlight-panel__pencil')!.click()
     expect(tcPanel.querySelector('input[aria-label="Opacity"]')).toBeNull()
   })
+
+  it('sets data-colour-preview while a colour panel is open or after a quick highlight click, and clears on close or selection change (YAZ-6728)', async () => {
+    const { view } = await mount('hello world\n')
+    await select(view, 'world')
+    expect(view.dom.hasAttribute('data-colour-preview')).toBe(false)
+    await press('highlight-more')
+    expect(view.dom.hasAttribute('data-colour-preview')).toBe(true)
+    key('Escape')
+    expect(view.dom.hasAttribute('data-colour-preview')).toBe(false)
+    // Quick highlight button also activates live colour preview until selection changes.
+    await press('highlight')
+    expect(view.dom.hasAttribute('data-colour-preview')).toBe(true)
+    await select(view, 'hello')
+    expect(view.dom.hasAttribute('data-colour-preview')).toBe(false)
+  })
 })
