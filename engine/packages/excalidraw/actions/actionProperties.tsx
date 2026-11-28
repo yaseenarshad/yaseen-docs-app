@@ -46,6 +46,7 @@ import {
   canBecomePolygon,
   clearTextRunStyle,
   getNonDeletedElements,
+  getSmartShapeMetadata,
   DEFAULT_TEXT_HIGHLIGHT,
   getTextRangeColor,
   getTextRangeHighlight,
@@ -882,7 +883,10 @@ export const actionChangeBackgroundColor = register<
     const shouldEnablePolygon =
       !isTransparent(value.currentItemBackgroundColor) &&
       selectedElements.every(
-        (el) => isLineElement(el) && canBecomePolygon(el.points),
+        (el) =>
+          isLineElement(el) &&
+          canBecomePolygon(el.points) &&
+          !getSmartShapeMetadata(el),
       );
 
     if (shouldEnablePolygon) {

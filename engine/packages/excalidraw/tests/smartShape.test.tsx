@@ -22,6 +22,7 @@ import {
   actionTogglePolygon,
 } from "../actions/actionLinearEditor";
 import { actionSelectAll } from "../actions/actionSelectAll";
+import { getConversionTypeFromElements } from "../components/ConvertElementTypePopup";
 import { getShapeActionPredicates } from "../components/shapeActionPredicates";
 import { Excalidraw } from "../index";
 
@@ -511,7 +512,8 @@ describe("Smart Shape canvas handles, parametric resize, and flips", () => {
     });
     expect(h.state.selectedLinearElement).toBeNull();
 
-    // Linear editor & polygon predicates are false on Smart Shapes
+    // Linear editor, polygon, and element-type conversion predicates are false on Smart Shapes
+    expect(getConversionTypeFromElements([arrow])).toBeNull();
     expect(
       actionToggleLinearEditor.predicate?.(h.elements, h.state, h.app.props, h.app),
     ).toBe(false);
