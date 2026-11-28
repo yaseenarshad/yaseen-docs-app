@@ -84,3 +84,20 @@ export function highlightContrastTone(hex: string): 'dark' | 'light' | null {
   if (hex.length === 9 && parseInt(hex.slice(7, 9), 16) < 128) return null
   return isLightSwatch(hex) ? 'light' : 'dark'
 }
+
+/**
+ * Auto-contrast text tone from a CSS `background-color` value (`#rrggbb[aa]` OR browser-serialized `rgb(...)` / `rgba(...)`).
+ * Used by Mobile reader (`pageRender.ts`) and Desktop cards (`cardRender.ts`) after DOMPurify/inline-style restore (`YAZ-6738`, `YAZ-6739`).
+ */
+export function highlightContrastToneFromStyle(bg: string): 'dark' | 'light' | null {
+  const s = bg.trim()
+  if (s.startsWith('#')) return highlightContrastTone(s)
+  const m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([0-9.]+))?\s*\)$/i.exec(s)
+  if (m === null) return null
+  if (m[4] !== undefined && Number(m[4]) < 0.5) return null
+  const [r, g, b] = [Number(m[1]), Number(m[2]), Number(m[3])].map((n) => {
+    const c = Math.max(0, Math.min(255, n)) / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b >= 0.42 ? 'light' : 'dark'
+}

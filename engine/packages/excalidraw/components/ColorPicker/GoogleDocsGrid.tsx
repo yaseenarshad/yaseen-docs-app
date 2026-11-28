@@ -254,6 +254,7 @@ export const GoogleDocsGrid = ({
   const [storedCustom, setStoredCustom] = useState<string[]>(() =>
     readStoredCustom(),
   );
+  const [dismissedBoard, setDismissedBoard] = useState<string[]>([]);
   const [ctxMenu, setCtxMenu] = useState<{
     label: string;
     hex: string;
@@ -261,6 +262,36 @@ export const GoogleDocsGrid = ({
     left: number;
     top: number;
   } | null>(null);
+  const ctxMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!ctxMenu) {
+      return;
+    }
+    const onDown = (e: MouseEvent) => {
+      if (
+        ctxMenuRef.current &&
+        e.target instanceof Node &&
+        !ctxMenuRef.current.contains(e.target)
+      ) {
+        setCtxMenu(null);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        setCtxMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", onDown, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [ctxMenu]);
 
   const openCtxMenu = (
     e: React.MouseEvent<HTMLButtonElement>,
@@ -301,7 +332,9 @@ export const GoogleDocsGrid = ({
     storedCustom.length > 0 || type === "canvasBackground" || !palette
       ? []
       : getMostUsedCustomColors(elements, type, palette).filter(
-          (c) => !GDOCS_HEX_SET.has(c.toLowerCase()),
+          (c) =>
+            !GDOCS_HEX_SET.has(c.toLowerCase()) &&
+            !dismissedBoard.includes(c.toLowerCase()),
         );
   const customColors = Array.from(
     new Set(
@@ -328,6 +361,8 @@ export const GoogleDocsGrid = ({
 
   const handleRemoveCustom = (hex: string) => {
     setCtxMenu(null);
+    const norm = hex.toLowerCase();
+    setDismissedBoard((prev) => (prev.includes(norm) ? prev : [...prev, norm]));
     setStoredCustom(removeStoredCustom(hex));
   };
 
@@ -513,6 +548,7 @@ export const GoogleDocsGrid = ({
 
       {ctxMenu && (
         <div
+          ref={ctxMenuRef}
           className="gdocs-grid__ctx"
           role="menu"
           style={{ left: ctxMenu.left, top: ctxMenu.top }}

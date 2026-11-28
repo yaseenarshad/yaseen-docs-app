@@ -166,6 +166,7 @@ class TextColorPanel {
     const doc = this.view.dom.ownerDocument
     const focused = this.#el!.contains(doc.activeElement)
     this.#el!.hidden = true
+    this.#grid.hideMenu()
     this.#grid.closeCustom()
     toolbarItemOf(this.view, TEXT_COLOR_MORE_KEY)?.removeAttribute('aria-expanded')
     doc.removeEventListener('keydown', this.#key, true)

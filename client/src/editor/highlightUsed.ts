@@ -35,7 +35,7 @@ function ensureEngineBridge(): void {
   window.addEventListener(ENGINE_ADD_EVENT, (e) => {
     const color = (e as CustomEvent<{ color?: unknown }>).detail?.color
     if (typeof color === 'string' && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(color)) {
-      recordHighlightColorUse(color.toLowerCase())
+      pinHighlightColor(color.toLowerCase())
     }
   })
   window.addEventListener(ENGINE_REMOVE_EVENT, (e) => {
@@ -83,6 +83,22 @@ export function countUse(list: readonly HighlightCustomColor[], color: string): 
 export function recordHighlightColorUse(color: string): void {
   const norm = color.toLowerCase()
   used = countUse(used, norm)
+  save([...used])
+  syncGlobalStorage()
+}
+
+/**
+ * Pin or promote a newly chosen custom colour directly to slot 0 so it ALWAYS appears immediately
+ * in the visible `CUSTOM` row (even when 5 older custom colours have `uses >= 2`, YAZ-6741).
+ */
+export function pinHighlightColor(color: string): void {
+  const norm = color.toLowerCase()
+  const existing = used.find((c) => c.color.toLowerCase() === norm)?.uses ?? 0
+  const topUses = used[0]?.uses ?? 0
+  const uses = Math.max(existing + 1, topUses, 1)
+  const rest = used.filter((c) => c.color.toLowerCase() !== norm)
+  const next = [{ color: norm, uses }, ...rest].slice(0, HIGHLIGHT_CUSTOM_COLORS_KEPT)
+  used = next
   save([...used])
   syncGlobalStorage()
 }

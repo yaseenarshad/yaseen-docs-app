@@ -356,6 +356,6 @@ describe('highlight buttons and the unified Google Docs 10×8 ColourGrid panel (
     removeBtn.click()
     expect(panel()!.querySelector('button[aria-label="#e11d48"]')).toBeNull()
     expect(panel()!.querySelector('button[aria-label="#0284c7"]')).not.toBeNull()
-    expect(saved.at(-1)).toEqual([{ color: '#999999', uses: 1 }, { color: '#0284c7', uses: 1 }])
+    expect(saved.at(-1)).toEqual([{ color: '#999999', uses: 3 }, { color: '#0284c7', uses: 1 }])
   })
 })

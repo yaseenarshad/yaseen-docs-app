@@ -210,7 +210,9 @@ interface Palettes {
 
 /** Close a `ColourGrid`'s custom drawer if open, returning focus to the note. */
 function hideGridBox(view: EditorView, grid: ColourGrid | undefined): void {
-  if (grid === undefined || !grid.boxOpen) return
+  if (grid === undefined) return
+  grid.hideMenu()
+  if (!grid.boxOpen) return
   const focused = grid.el.contains(view.dom.ownerDocument.activeElement)
   grid.closeCustom()
   if (focused && !view.isDestroyed) view.focus()
@@ -246,8 +248,14 @@ function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes)
       return `<span class="cell-toolbar__swatch" style="background: ${bg}"></span>`
     }
     const fg = value.startsWith('#') ? value : group.swatch(value as TableColor)
-    const whiteBg = value.toLowerCase() === '#ffffff' ? ' style="background:#1e1e1e;border-radius:3px"' : ''
-    return `<span${whiteBg}>${SVG(`<text x="12" y="18" text-anchor="middle" font-size="17" font-weight="700" font-family="inherit" fill="${fg}">A</text>`)}</span>`
+    const lower = value.toLowerCase()
+    const chip =
+      lower === '#ffffff'
+        ? ' style="background:#1e1e1e;border-radius:3px"'
+        : lower === '#000000'
+          ? ' style="background:#e9ecef;border-radius:3px"'
+          : ''
+    return `<span${chip}>${SVG(`<text x="12" y="18" text-anchor="middle" font-size="17" font-weight="700" font-family="inherit" fill="${fg}">A</text>`)}</span>`
   }
   const quickNameFor = (value: string): string =>
     value.startsWith('#')
@@ -303,7 +311,8 @@ function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes)
       recordRecent(value)
       if (isCustom) {
         setCustomColour(view, grid.el, cells, group.attr, value as `#${string}`)
-        grid.render(selectedCellValues(view.state, group.attr), customStart(cells, group.attr))
+        const nextCells = view.state.selection
+        grid.render(selectedCellValues(view.state, group.attr), nextCells instanceof CellSelection ? customStart(nextCells, group.attr) : (value as `#${string}`))
       } else {
         palettes.close()
         setCells(view, group.attr, value)

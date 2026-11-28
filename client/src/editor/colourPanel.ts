@@ -30,11 +30,11 @@ export { readHex }
 
 /** Five shades of `hex` (kept exported for tests and legacy callers). */
 const SHADE_STEPS = [
-  { to: 255, by: 0.45 },
-  { to: 255, by: 0.22 },
+  { to: 255, by: 0.5 },
+  { to: 255, by: 0.25 },
   { to: 0, by: 0 },
-  { to: 0, by: 0.25 },
-  { to: 0, by: 0.5 },
+  { to: 0, by: 0.2 },
+  { to: 0, by: 0.4 },
 ] as const
 
 export function shadesOf(hex: Hex): Hex[] {
@@ -192,6 +192,7 @@ class ColourPanel<C extends string | null> {
     const doc = this.view.dom.ownerDocument
     const focused = this.#el!.contains(doc.activeElement)
     this.#el!.hidden = true
+    this.#grid.hideMenu()
     this.#grid.closeCustom()
     this.#grid.move(null)
     this.#anchor()?.removeAttribute('aria-expanded')

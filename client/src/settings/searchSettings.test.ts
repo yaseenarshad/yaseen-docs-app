@@ -99,6 +99,7 @@ describe('settingCandidates', () => {
       'sectionStep',
       'sectionLines',
       'selectionToolbar',
+      'quickHighlightColors',
       // Settings › Editor › Typing (YAZ-4273 D8).
       'typingArrows',
       // Enter keeps the text style: pages, then drawing text boxes (YAZ-3746 13AB).

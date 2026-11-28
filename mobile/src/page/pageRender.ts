@@ -5,6 +5,7 @@ import type { PillEnd } from '@client/editor/wikilink/linkPillLook'
 import { cardPill, pillPieces } from '@client/editor/wikilink/cardPill'
 import { cardIdOf, cardReviewsOf, cardTitleAtOf, cardTitleOf, isCardFix, isCardNoTitle, isCardOff, parseCardLine } from '@shared/cardLine'
 import { DRAWING_LANGUAGE } from '@shared/inlineDrawing'
+import { highlightContrastToneFromStyle } from '@shared/palette'
 import type { ReviewSettings } from '@shared/reviews'
 import { Renderer, type RendererExtension, type Token, type Tokens } from 'marked'
 import { drawingBox, onMacWords } from '../drawing/drawingBox'
@@ -527,17 +528,10 @@ export function renderPiece(text: string, look: PageLook, firstLine = 0): Docume
   drawCards(root, look, cards)
   drawInlineDrawings(root, inlineDrawings)
   drawCallouts(root)
-  // Auto-contrast text tone on solid / >=50% custom hex highlights (YAZ-6733).
+  // Auto-contrast text tone on solid / >=50% custom hex highlights (YAZ-6733, YAZ-6738).
   for (const mark of root.querySelectorAll<HTMLElement>('mark[style]')) {
-    const m = /background-color\s*:\s*(#[0-9a-f]{6}(?:[0-9a-f]{2})?)/i.exec(mark.getAttribute('style') ?? '')
-    if (m === null) continue
-    const hex = m[1]!
-    if (hex.length === 9 && parseInt(hex.slice(7, 9), 16) < 128) continue
-    const [r, g, b] = [1, 3, 5].map((i) => {
-      const c = parseInt(hex.slice(i, i + 2), 16) / 255
-      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
-    })
-    mark.setAttribute('data-mark-tone', 0.2126 * r + 0.7152 * g + 0.0722 * b >= 0.42 ? 'light' : 'dark')
+    const tone = highlightContrastToneFromStyle(mark.style.backgroundColor)
+    if (tone !== null) mark.setAttribute('data-mark-tone', tone)
   }
   // A table's own settings from the file (its frozen rows and columns), read with the Mac's parser.
   for (const table of root.querySelectorAll<HTMLTableElement>('table[data-table-file]')) {

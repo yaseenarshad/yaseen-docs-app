@@ -105,4 +105,17 @@ describe('urlOf: a URL as the browser reads it (YAZ-5242)', () => {
       expect(node.getAttribute('data-inline-color')).toBeNull()
     }
   })
+
+  it('YAZ-6739: desktop and mobile cards set data-mark-tone on solid and >=50% hex highlights, skipping translucent washes', () => {
+    const html =
+      '<mark style="background-color: #000000">black</mark> ' +
+      '<mark style="background-color: #ffff00">yellow</mark> ' +
+      '<mark style="background-color: #00000080">half</mark> ' +
+      '<mark style="background-color: #00000040">wash</mark>'
+    const desktopEl = renderCard(html)
+    expect([...desktopEl.querySelectorAll<HTMLElement>('mark')].map((m) => m.getAttribute('data-mark-tone'))).toEqual(['dark', 'light', 'dark', null])
+    onlyLocalMedia()
+    const mobileEl = renderCard(html)
+    expect([...mobileEl.querySelectorAll<HTMLElement>('mark')].map((m) => m.getAttribute('data-mark-tone'))).toEqual(['dark', 'light', 'dark', null])
+  })
 })

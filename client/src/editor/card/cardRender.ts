@@ -38,6 +38,7 @@
 import DOMPurify from 'dompurify'
 import { Marked, type Token, type TokenizerAndRendererExtension, type Tokens } from 'marked'
 import { cardSides, hiddenCount, markHidden } from '@shared/cardText'
+import { highlightContrastToneFromStyle } from '@shared/palette'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, MouseMods } from '@shared/keys'
 import { parseAlt } from '../image/imageSrc'
@@ -474,6 +475,11 @@ export function renderCard(text: string, show: CardShow = {}, look?: CardLook): 
     boxTables(side)
     fillHidden(side, words, open, next)
     applyLook(side, look)
+    // Auto-contrast text tone on solid / >=50% custom hex highlights inside cards (YAZ-6733, YAZ-6739).
+    for (const markEl of side.querySelectorAll<HTMLElement>('mark[style]')) {
+      const tone = highlightContrastToneFromStyle(markEl.style.backgroundColor)
+      if (tone !== null) markEl.setAttribute('data-mark-tone', tone)
+    }
     if (i > 0) {
       const rule = document.createElement('div')
       rule.className = 'card__rule'

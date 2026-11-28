@@ -381,4 +381,15 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
     const blocked = spans.find((s) => s.textContent === 'blocked')!
     expect(blocked.getAttribute('style')).toBeNull()
   })
+
+  it('YAZ-6738: sets data-mark-tone on solid and >=50% hex highlights after rgb/rgba serialization, skipping translucent washes', async () => {
+    const el = await draw(
+      '<mark style="background-color: #000000">black</mark> ' +
+        '<mark style="background-color: #ffff00">yellow</mark> ' +
+        '<mark style="background-color: #00000080">half</mark> ' +
+        '<mark style="background-color: #00000040">wash</mark>',
+    )
+    const marks = [...el.querySelectorAll<HTMLElement>('mark')]
+    expect(marks.map((m) => m.getAttribute('data-mark-tone'))).toEqual(['dark', 'light', 'dark', null])
+  })
 })

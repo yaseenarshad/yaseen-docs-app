@@ -19,7 +19,7 @@
 import { GDOCS_BASE_HUES, GDOCS_GRAYSCALE, GDOCS_SHADES, isLightSwatch } from '@shared/palette'
 import { solidHex, type Hex } from '../lib/colour'
 import { ColourBox } from './highlightColourBox'
-import { mostUsedHighlightColors, recordHighlightColorUse, removeHighlightColorUse } from './highlightUsed'
+import { mostUsedHighlightColors, pinHighlightColor, removeHighlightColorUse } from './highlightUsed'
 import './colourGrid.css'
 
 /** Parse `#rrggbb`, `rrggbb`, `#rgb`, `rgb`, and (when `allowAlpha`) `#rrggbbaa` / `rrggbbaa`. */
@@ -296,7 +296,7 @@ export class ColourGrid {
   #commitCustom(raw: Hex): void {
     const norm = this.#normalize(raw)
     if (norm === null) return
-    if (this.opts.recordCustom !== false) recordHighlightColorUse(norm)
+    if (this.opts.recordCustom !== false) pinHighlightColor(norm)
     this.opts.onPick(norm, true)
   }
 
@@ -359,6 +359,19 @@ export class ColourGrid {
     el.setAttribute('aria-pressed', String(on))
   }
 
+  get menuOpen(): boolean {
+    return this.#removeMenu !== null
+  }
+
+  hideMenu(): void {
+    this.#hideRemoveMenu()
+  }
+
+  destroy(): void {
+    this.#hideRemoveMenu()
+    this.#box.hide()
+  }
+
   #hideRemoveMenu = (): void => {
     if (this.#removeMenu === null) return
     this.#removeMenu.remove()
@@ -377,6 +390,7 @@ export class ColourGrid {
     if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
+      e.stopImmediatePropagation()
       this.#hideRemoveMenu()
     }
   }
@@ -439,7 +453,7 @@ export class ColourGrid {
       pinBtn.addEventListener('click', (e) => {
         e.stopPropagation()
         this.#hideRemoveMenu()
-        recordHighlightColorUse(hex)
+        pinHighlightColor(hex)
         this.render(this.#lastSelected, this.#lastStartHex)
         this.opts.onResize?.()
       })

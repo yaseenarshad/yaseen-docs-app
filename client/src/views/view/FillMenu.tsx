@@ -137,6 +137,7 @@ function FillGrid({
     grid.render(active, start?.startsWith('#') ? (start as Hex) : '#000000')
     host.replaceChildren(grid.el)
     return () => {
+      grid.destroy()
       host.replaceChildren()
     }
   }, [start])
