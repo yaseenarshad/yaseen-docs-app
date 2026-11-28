@@ -18,7 +18,6 @@ import {
   shapeDirection,
   smartShapeAliases,
   smartShapeCatalog,
-  smartShapeCategory,
   smartShapePreview,
   type ShapeCategory,
   type SmartShapeApi,
@@ -30,7 +29,7 @@ const definition = (over: Partial<SmartShapeDefinition> = {}): SmartShapeDefinit
     id: 'arrow-right' as SmartShapeId,
     title: 'Arrow right',
     kind,
-    category: smartShapeCategory(kind),
+    category: 'arrows',
     width: 200,
     height: 100,
     closed: true,
@@ -132,10 +131,47 @@ describe('the smart shapes, which need the element package', () => {
     expect(buildShapeCatalog(fakeSmart())).toHaveLength(BASIC_SHAPES.length + 1)
   })
 
-  it('never names the twelve itself — whatever the engine defines is what the tab shows', () => {
-    const catalog = smartShapeCatalog(fakeSmart([definition({ id: 'brace-left' as SmartShapeId, title: 'Brace left', kind: 'brace', closed: false })]))
+  it('never hardcodes shape ids itself — whatever the engine defines is what the tab shows', () => {
+    const catalog = smartShapeCatalog(fakeSmart([definition({ id: 'brace-left' as SmartShapeId, title: 'Brace left', kind: 'brace', category: 'brackets', closed: false })]))
     expect(catalog).toHaveLength(1)
     expect(catalog[0]).toMatchObject({ id: 'smart:brace-left', title: 'Brace left', kind: 'brace', category: 'brackets', direction: 'left' })
+  })
+
+  it('centres smart shapes whose first point is not top-left by subtracting (minX, minY) (YAZ-6677)', () => {
+    const shiftedSmart: SmartShapeApi = {
+      SMART_SHAPE_DEFINITIONS: [
+        definition({ id: 'arrow-left' as SmartShapeId, title: 'Arrow left', kind: 'filled-arrow', category: 'arrows', width: 200, height: 100 }),
+        definition({ id: 'bent-arrow' as SmartShapeId, title: 'Bent arrow', kind: 'bent-arrow', category: 'arrows', width: 180, height: 180 }),
+      ],
+      generateSmartShapePoints: (id, width, height) =>
+        (id === 'arrow-left'
+          ? [
+              [0, 0],
+              [-width, -height * 0.25],
+              [-width, height * 0.75],
+            ]
+          : [
+              [0, 0],
+              [0, -height],
+              [width, -height],
+            ]) as unknown as LocalPoint[],
+      createSmartShapeMetadata: (id) => ({ version: 1, id, kind: 'filled-arrow', parameters: {} }),
+    }
+    const catalog = smartShapeCatalog(shiftedSmart)
+
+    // arrow-left: minX = -200, minY = -25 -> bounding box should still centre on (500, 400)
+    const [leftEl] = catalog[0].create(500, 400) as unknown as [{ x: number; y: number; width: number; height: number; points: [number, number][] }]
+    const leftMinX = Math.min(...leftEl.points.map(([px]) => px))
+    const leftMinY = Math.min(...leftEl.points.map(([, py]) => py))
+    expect(leftEl.x + leftMinX + leftEl.width / 2).toBeCloseTo(500, 5)
+    expect(leftEl.y + leftMinY + leftEl.height / 2).toBeCloseTo(400, 5)
+
+    // bent-arrow: minX = 0, minY = -180 -> bounding box should still centre on (500, 400)
+    const [bentEl] = catalog[1].create(500, 400) as unknown as [{ x: number; y: number; width: number; height: number; points: [number, number][] }]
+    const bentMinX = Math.min(...bentEl.points.map(([px]) => px))
+    const bentMinY = Math.min(...bentEl.points.map(([, py]) => py))
+    expect(bentEl.x + bentMinX + bentEl.width / 2).toBeCloseTo(500, 5)
+    expect(bentEl.y + bentMinY + bentEl.height / 2).toBeCloseTo(400, 5)
   })
 
   it('inserts ONE line carrying the engine metadata — a real smart shape, not a drawing of one', () => {
@@ -214,41 +250,41 @@ describe('the smart shapes, which need the element package', () => {
     expect(shapeDirection('right-arrow')).toBeUndefined()
   })
 
-  it('has a category and non-empty aliases for every one of the 32 smart kinds', () => {
-    const expectedCategories: Record<string, ShapeCategory> = {
-      'filled-arrow': 'arrows',
-      'curved-arrow': 'arrows',
-      'u-turn-arrow': 'arrows',
-      'double-arrow': 'arrows',
-      'circle-arrow': 'arrows',
-      'bent-arrow': 'arrows',
-      'pentagon-arrow': 'arrows',
-      'notched-arrow': 'arrows',
-      chevron: 'arrows',
-      brace: 'brackets',
-      bracket: 'brackets',
-      parenthesis: 'brackets',
-      callout: 'callouts',
-      cloud: 'callouts',
-      'note-fold': 'callouts',
-      document: 'callouts',
-      pill: 'basic',
-      'right-triangle': 'basic',
-      pentagon: 'basic',
-      octagon: 'basic',
-      parallelogram: 'basic',
-      trapezoid: 'basic',
-      plus: 'basic',
-      'star-4': 'basic',
-      starburst: 'basic',
-      heart: 'basic',
-      semicircle: 'basic',
-      bookmark: 'banners',
-      tag: 'banners',
-      shield: 'banners',
-      ribbon: 'banners',
-      cylinder: 'banners',
-    }
+  it('has non-empty aliases for every one of the 32 smart kinds and reads category directly from definitions', () => {
+    const allKinds = [
+      'filled-arrow',
+      'curved-arrow',
+      'u-turn-arrow',
+      'double-arrow',
+      'circle-arrow',
+      'bent-arrow',
+      'pentagon-arrow',
+      'notched-arrow',
+      'chevron',
+      'brace',
+      'bracket',
+      'parenthesis',
+      'callout',
+      'cloud',
+      'note-fold',
+      'document',
+      'pill',
+      'right-triangle',
+      'pentagon',
+      'octagon',
+      'parallelogram',
+      'trapezoid',
+      'plus',
+      'star-4',
+      'starburst',
+      'heart',
+      'semicircle',
+      'bookmark',
+      'tag',
+      'shield',
+      'ribbon',
+      'cylinder',
+    ]
     expect(SHAPE_CATEGORIES).toEqual(['basic', 'arrows', 'brackets', 'callouts', 'banners'])
     expect(SHAPE_CATEGORY_LABELS).toEqual({
       basic: 'Basic',
@@ -257,18 +293,12 @@ describe('the smart shapes, which need the element package', () => {
       callouts: 'Callouts',
       banners: 'Banners & Flow',
     })
-    expect(Object.keys(expectedCategories)).toHaveLength(32)
-    for (const [kind, category] of Object.entries(expectedCategories)) {
-      expect(smartShapeCategory(kind), kind).toBe(category)
+    expect(allKinds).toHaveLength(32)
+    for (const kind of allKinds) {
       expect(smartShapeAliases(kind).length, kind).toBeGreaterThan(0)
     }
-  })
-
-  it('prefers definition.category when the engine provides it, falling back to smartShapeCategory', () => {
-    const withCategory = { ...definition({ kind: 'filled-arrow' }), category: 'banners' as ShapeCategory } as SmartShapeDefinition
-    const withoutCategory = { ...definition({ kind: 'callout' }), category: undefined as unknown as ShapeCategory } as SmartShapeDefinition
-    expect(smartShapeCatalog(fakeSmart([withCategory]))[0].category).toBe('banners')
-    expect(smartShapeCatalog(fakeSmart([withoutCategory]))[0].category).toBe('callouts')
+    const bannersDef = definition({ kind: 'filled-arrow', category: 'banners' as ShapeCategory })
+    expect(smartShapeCatalog(fakeSmart([bannersDef]))[0].category).toBe('banners')
   })
 })
 

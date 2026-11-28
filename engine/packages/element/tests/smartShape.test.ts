@@ -131,12 +131,76 @@ describe("Smart Shapes catalog (YAZ-6674)", () => {
         expect(b.height, label).toBeCloseTo(height, 5);
         if (def.closed) {
           expect(pts.at(-1), label).toEqual(pts[0]);
+          // No duplicate consecutive closing point (e.g. cloud, square pill)
+          const secondLast = pts[pts.length - 2];
+          const last = pts[pts.length - 1];
+          expect(
+            Math.hypot(last[0] - secondLast[0], last[1] - secondLast[1]),
+            `${label} duplicate closing point`,
+          ).toBeGreaterThan(1e-4);
         } else {
           expect(pts.at(-1), label).not.toEqual(pts[0]);
         }
         expect(simple(pts), label).toBe(true);
       }
     }
+  });
+
+  it("keeps callout-oval tail centered, plus arms equal, bent-arrow balanced, and wide braces smooth (YAZ-6677)", () => {
+    // callout-oval: tail base straddles tipX at extreme tailPositionRatio (0.2 and 0.8)
+    for (const ratio of [0.2, 0.8]) {
+      const pts = generateSmartShapePoints("callout-oval", 180, 135, {
+        tailPositionRatio: ratio,
+      });
+      const b = box(pts);
+      const inBox = pts.map(([x, y]) => [x - b.minX, y - b.minY] as const);
+      const tipIdx = inBox.findIndex(([, y]) => Math.abs(y - 135) < 1e-4);
+      const prevPt = inBox[tipIdx - 1];
+      const nextPt = inBox[(tipIdx + 1) % inBox.length];
+      const tipX = inBox[tipIdx][0];
+      expect(tipX).toBeCloseTo(ratio * 180, 4);
+      expect(tipX).toBeGreaterThan(Math.min(prevPt[0], nextPt[0]));
+      expect(tipX).toBeLessThan(Math.max(prevPt[0], nextPt[0]));
+    }
+
+    // plus: equal horizontal and vertical arm thickness when stretched non-square (240x100)
+    const plusPts = generateSmartShapePoints("plus", 240, 100, {
+      thicknessRatio: 0.35,
+    });
+    const plusBox = box(plusPts);
+    const plusInBox = plusPts.map(
+      ([x, y]) => [x - plusBox.minX, y - plusBox.minY] as const,
+    );
+    const verticalArmWidth = plusInBox[1][0] - plusInBox[0][0];
+    const horizontalArmHeight = plusInBox[4][1] - plusInBox[3][1];
+    expect(verticalArmWidth).toBeCloseTo(35, 4);
+    expect(horizontalArmHeight).toBeCloseTo(35, 4);
+
+    // bent-arrow: non-self-intersecting at tiny width (1x200) and equal bar/leg thickness when tall (80x200)
+    const tinyBent = generateSmartShapePoints("bent-arrow", 1, 200, {
+      thicknessRatio: 0.3,
+      headAspect: 0.8,
+    });
+    expect(simple(tinyBent)).toBe(true);
+    const tallBent = generateSmartShapePoints("bent-arrow", 80, 200, {
+      thicknessRatio: 0.3,
+      headAspect: 0.8,
+    });
+    const tallBox = box(tallBent);
+    const tallInBox = tallBent.map(
+      ([x, y]) => [x - tallBox.minX, y - tallBox.minY] as const,
+    );
+    const barH = tallInBox[6][1] - tallInBox[1][1];
+    const legW = tallInBox[7][0] - tallInBox[0][0];
+    expect(barH).toBeCloseTo(legW, 4);
+
+    // brace-left: wide stretch (120x200) raises ry proportionally instead of flattening to 18px
+    const wideBrace = generateSmartShapePoints("brace-left", 120, 200, {
+      cuspRatio: 0.5,
+    });
+    const wideSpine = wideBrace.filter(([x]) => Math.abs(x - -60) < 1e-4);
+    const wideTopEnd = Math.min(...wideSpine.map(([, y]) => y));
+    expect(wideTopEnd).toBeCloseTo(42, 4);
   });
 
   it("samples smooth curves for parentheses, curly braces, and rounded/oval callouts", () => {
@@ -480,6 +544,156 @@ describe("Parametric resize, headAspect, legacy migration, and flip swap (YAZ-66
     expect(
       vFlipped.customData?.yasinSmartShape?.parameters.cuspRatio,
     ).toBeCloseTo(0.75, 5);
+  });
+
+  it("mirrors non-paired asymmetric Smart Shapes on horizontal and vertical flips without snap-back (YAZ-6690)", () => {
+    const toBox = (pts: readonly (readonly [number, number])[]) => {
+      const b = box(pts);
+      return pts.map(([x, y]) => [x - b.minX, y - b.minY] as const);
+    };
+
+    const flipXIds: readonly SmartShapeId[] = [
+      "bent-arrow",
+      "pentagon-arrow",
+      "notched-arrow",
+      "curved-arrow",
+      "right-triangle",
+      "parallelogram",
+      "tag",
+    ];
+    for (const id of flipXIds) {
+      const def = getSmartShapeDefinition(id)!;
+      const el = elementOf(id, def.width, def.height, def.defaults);
+      const origBox = toBox(el.points);
+
+      const flipped = resizeSmartShapePoints(el, -def.width, def.height)!;
+      const flippedBox = toBox(flipped.points);
+      expect(flippedBox, `${id} flipX`).not.toEqual(origBox);
+      for (let i = 0; i < origBox.length; i++) {
+        expect(flippedBox[i][0], `${id} flipX x[${i}]`).toBeCloseTo(
+          def.width - origBox[i][0],
+          4,
+        );
+        expect(flippedBox[i][1], `${id} flipX y[${i}]`).toBeCloseTo(
+          origBox[i][1],
+          4,
+        );
+      }
+
+      // Flipping a second time restores the original orientation
+      const flippedBack = resizeSmartShapePoints(
+        { ...el, customData: flipped.customData },
+        def.width,
+        def.height,
+        { flipByX: true },
+      )!;
+      const backBox = toBox(flippedBack.points);
+      for (let i = 0; i < origBox.length; i++) {
+        expect(backBox[i][0], `${id} flipX back x[${i}]`).toBeCloseTo(
+          origBox[i][0],
+          4,
+        );
+        expect(backBox[i][1], `${id} flipX back y[${i}]`).toBeCloseTo(
+          origBox[i][1],
+          4,
+        );
+      }
+    }
+
+    const flipYIds: readonly SmartShapeId[] = [
+      "callout-rectangle",
+      "callout-rounded",
+      "callout-oval",
+      "trapezoid",
+      "heart",
+      "semicircle",
+      "bookmark",
+      "shield",
+    ];
+    for (const id of flipYIds) {
+      const def = getSmartShapeDefinition(id)!;
+      const el = elementOf(id, def.width, def.height, def.defaults);
+      const origBox = toBox(el.points);
+
+      const flipped = resizeSmartShapePoints(el, def.width, -def.height)!;
+      const flippedBox = toBox(flipped.points);
+      expect(flippedBox, `${id} flipY`).not.toEqual(origBox);
+      for (let i = 0; i < origBox.length; i++) {
+        expect(flippedBox[i][0], `${id} flipY x[${i}]`).toBeCloseTo(
+          origBox[i][0],
+          4,
+        );
+        expect(flippedBox[i][1], `${id} flipY y[${i}]`).toBeCloseTo(
+          def.height - origBox[i][1],
+          4,
+        );
+      }
+    }
+
+    // Flipped non-paired shape keeps mirrored orientation across subsequent handle drags and resizes
+    const bent = elementOf("bent-arrow", 180, 180, {
+      thicknessRatio: 0.3,
+      headAspect: 0.8,
+    });
+    const flippedBentRes = resizeSmartShapePoints(bent, -180, 180)!;
+    const flippedBent = {
+      ...bent,
+      points: flippedBentRes.points,
+      customData: flippedBentRes.customData,
+    } as ExcalidrawLinearElement;
+
+    // Head handle now lies on the left half of the mirrored bent-arrow
+    const origHeadX = getSmartShapeHandles(bent).find(
+      ({ name }) => name === "head",
+    )!.scenePoint[0];
+    const flippedHead = getSmartShapeHandles(flippedBent).find(
+      ({ name }) => name === "head",
+    )!;
+    expect(flippedHead.scenePoint[0]).toBeLessThan(origHeadX);
+
+    // Dragging head handle keeps flipX intact and solves the parameter accurately
+    const updatedBent = updateSmartShapeParameter(
+      flippedBent,
+      "headAspect",
+      1.1,
+    );
+    expect(getSmartShapeMetadata(updatedBent)?.flipX).toBe(true);
+    const targetPt = getSmartShapeHandles(updatedBent).find(
+      ({ name }) => name === "head",
+    )!.scenePoint;
+    const draggedBent = updateSmartShapeFromHandle(
+      flippedBent,
+      "head",
+      targetPt,
+    );
+    expect(getSmartShapeMetadata(draggedBent)?.flipX).toBe(true);
+    expect(
+      getSmartShapeMetadata(draggedBent)?.parameters.headAspect,
+    ).toBeCloseTo(1.1, 2);
+
+    // Resizing the flipped shape preserves flipX
+    const resizedBent = resizeSmartShapePoints(draggedBent, 260, 180)!;
+    expect(resizedBent.customData?.yasinSmartShape?.flipX).toBe(true);
+
+    // Vertically flipped callout keeps tail at the top across handle drags
+    const callout = elementOf("callout-rounded", 180, 130, {
+      tailPositionRatio: 0.7,
+    });
+    const flippedCalloutRes = resizeSmartShapePoints(callout, 180, -130)!;
+    const flippedCallout = {
+      ...callout,
+      points: flippedCalloutRes.points,
+      customData: flippedCalloutRes.customData,
+    } as ExcalidrawLinearElement;
+    const flippedTail = getSmartShapeHandles(flippedCallout).find(
+      ({ name }) => name === "tail",
+    )!;
+    const calloutBox = box(flippedCallout.points);
+    // Tail handle is now at the top edge (y = flippedCallout.y + calloutBox.minY)
+    expect(flippedTail.scenePoint[1]).toBeCloseTo(
+      flippedCallout.y + calloutBox.minY,
+      4,
+    );
   });
 
   it("returns null for non-smart elements or zero dimensions", () => {

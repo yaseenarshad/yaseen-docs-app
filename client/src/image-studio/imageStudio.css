@@ -360,7 +360,7 @@
 
 .image-studio__shape-path--closed {
   fill: currentColor;
-  stroke: currentColor;
+  stroke: none;
 }
 
 /* YAZ-6676 (D7): fixed-color Pixabay rasters get a quiet corner pill; recolorable SVGs and shapes stay clean.

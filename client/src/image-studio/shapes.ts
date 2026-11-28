@@ -1,9 +1,8 @@
 /**
- * THE SHAPES CATALOG (YAZ-1818): `excalidraw-app/image-studio/shapes.ts` from the web app, ported.
- * Seven basic shapes drawn by hand, plus every one of the engine's Smart Shapes — arrows (filled,
- * curved, U-turn, double and circle, YAZ-4356), chevrons, braces, brackets, parentheses and
- * callouts — each inserted as a NATIVE element with the `yasinSmartShape` metadata that makes its
- * handles work, not as a picture of one.
+ * THE SHAPES CATALOG (YAZ-1818, YAZ-6669): `excalidraw-app/image-studio/shapes.ts` from the web app, ported.
+ * Seven basic shapes drawn by hand, plus all 47 engine Smart Shapes across five categories (basic, arrows,
+ * brackets & braces, callouts, banners & flow) — each inserted as a NATIVE element with the `yasinSmartShape`
+ * metadata that makes its handles work, not as a picture of one.
  *
  * TWO HALVES, BECAUSE ONE OF THEM COSTS 300 kB. The basics need nothing but arithmetic, so they
  * are a module constant. The Smart Shapes need `SMART_SHAPE_DEFINITIONS` and the point generator
@@ -248,50 +247,6 @@ export function shapeDirection(id: string): ShapeCatalogItem['direction'] {
   return direction === 'right' || direction === 'left' || direction === 'up' || direction === 'down' ? direction : undefined
 }
 
-/** Which Shapes browser section a smart kind belongs to when its engine definition does not declare `category`. */
-export function smartShapeCategory(kind: string): ShapeCategory {
-  switch (kind) {
-    case 'filled-arrow':
-    case 'curved-arrow':
-    case 'u-turn-arrow':
-    case 'double-arrow':
-    case 'circle-arrow':
-    case 'bent-arrow':
-    case 'pentagon-arrow':
-    case 'notched-arrow':
-    case 'chevron':
-      return 'arrows'
-    case 'brace':
-    case 'bracket':
-    case 'parenthesis':
-      return 'brackets'
-    case 'callout':
-    case 'cloud':
-    case 'note-fold':
-    case 'document':
-      return 'callouts'
-    case 'bookmark':
-    case 'tag':
-    case 'shield':
-    case 'ribbon':
-    case 'cylinder':
-      return 'banners'
-    case 'pill':
-    case 'right-triangle':
-    case 'pentagon':
-    case 'octagon':
-    case 'parallelogram':
-    case 'trapezoid':
-    case 'plus':
-    case 'star-4':
-    case 'starburst':
-    case 'heart':
-    case 'semicircle':
-    default:
-      return 'basic'
-  }
-}
-
 /** The words someone would search for that are not already in the title — one set per smart kind. */
 export function smartShapeAliases(kind: string): readonly string[] {
   switch (kind) {
@@ -403,14 +358,23 @@ function smartShapeSkeleton(smart: SmartShapeApi, definition: SmartShapeDefiniti
   const styleScale = resolvedStyleScale(style?.styleScale)
   const width = definition.width * sizeScale
   const height = definition.height * sizeScale
+  const points = smart.generateSmartShapePoints(definition.id, width, height, definition.defaults)
+  let minX = Infinity
+  let minY = Infinity
+  for (const [pointX, pointY] of points) {
+    if (pointX < minX) minX = pointX
+    if (pointY < minY) minY = pointY
+  }
+  const offsetX = Number.isFinite(minX) ? minX : 0
+  const offsetY = Number.isFinite(minY) ? minY : 0
   return [
     {
       type: 'line',
-      x: x - width / 2,
-      y: y - height / 2,
+      x: x - width / 2 - offsetX,
+      y: y - height / 2 - offsetY,
       width,
       height,
-      points: smart.generateSmartShapePoints(definition.id, width, height, definition.defaults),
+      points,
       strokeColor,
       backgroundColor,
       fillStyle,
@@ -431,7 +395,7 @@ export function smartShapeCatalog(smart: SmartShapeApi): ShapeCatalogItem[] {
     id: `smart:${definition.id}`,
     title: definition.title,
     preview: smartShapePreview(smart, definition),
-    category: (definition as { category?: ShapeCategory }).category ?? smartShapeCategory(definition.kind),
+    category: definition.category,
     kind: definition.kind,
     width: definition.width,
     height: definition.height,

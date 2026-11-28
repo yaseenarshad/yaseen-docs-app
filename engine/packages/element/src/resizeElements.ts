@@ -67,7 +67,7 @@ import {
 import { isInGroup } from "./groups";
 import { normalizeCornerRadius } from "./utils";
 import { getElementStyleScale } from "./screenScale";
-import { resizeSmartShapePoints } from "./smartShape";
+import { getPointsMin, resizeSmartShapePoints } from "./smartShape";
 
 import type { Scene } from "./Scene";
 
@@ -1034,10 +1034,8 @@ export const resizeSingleElement = (
     newOrigin.y += offsetY;
 
     if (smartResize) {
-      const origMinX = Math.min(...origElement.points.map(([x]) => x));
-      const origMinY = Math.min(...origElement.points.map(([, y]) => y));
-      const nextMinX = Math.min(...smartResize.points.map(([x]) => x));
-      const nextMinY = Math.min(...smartResize.points.map(([, y]) => y));
+      const [origMinX, origMinY] = getPointsMin(origElement.points);
+      const [nextMinX, nextMinY] = getPointsMin(smartResize.points);
       newOrigin.x += origMinX - nextMinX;
       newOrigin.y += origMinY - nextMinY;
     } else {
@@ -1600,10 +1598,8 @@ export const resizeMultipleElements = (
       let rescaledPoints: { points?: ExcalidrawLinearElement["points"] };
 
       if (smartResize && isLinearElement(orig)) {
-        const origMinX = Math.min(...orig.points.map(([px]) => px));
-        const origMinY = Math.min(...orig.points.map(([, py]) => py));
-        const nextMinX = Math.min(...smartResize.points.map(([px]) => px));
-        const nextMinY = Math.min(...smartResize.points.map(([, py]) => py));
+        const [origMinX, origMinY] = getPointsMin(orig.points);
+        const [nextMinX, nextMinY] = getPointsMin(smartResize.points);
         const boxOffsetX = orig.x + origMinX - anchorX;
         const boxOffsetY = orig.y + origMinY - anchorY;
         const nextBoxLeft =

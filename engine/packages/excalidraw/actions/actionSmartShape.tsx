@@ -82,6 +82,10 @@ export const actionChangeSmartShape = register<SmartShapeActionData>({
             metadata.parameters,
             parameter,
           );
+          const formatBound = (bound: number) =>
+            parameter === "headAspect"
+              ? `${bound}×`
+              : `${Math.round(bound * 100)}%`;
           return (
             <Range
               key={parameter}
@@ -89,6 +93,8 @@ export const actionChangeSmartShape = register<SmartShapeActionData>({
               value={Math.round(value * 100)}
               min={Math.round(min * 100)}
               max={Math.round(max * 100)}
+              minLabel={formatBound(min)}
+              maxLabel={formatBound(max)}
               step={1}
               onChange={(nextValue) =>
                 updateData<SmartShapeActionData>({

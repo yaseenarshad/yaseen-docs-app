@@ -56,7 +56,7 @@ const rect = (id: string) => ({ id, type: 'rectangle' })
 
 const smart: SmartShapeApi = {
   SMART_SHAPE_DEFINITIONS: [
-    { id: 'arrow-right', title: 'Arrow right', kind: 'filled-arrow', width: 200, height: 100, closed: true, roundness: null, defaults: {}, handles: ['shaft'] },
+    { id: 'arrow-right', title: 'Arrow right', kind: 'filled-arrow', category: 'arrows', width: 200, height: 100, closed: true, roundness: null, defaults: {}, handles: ['shaft'] },
   ] as unknown as SmartShapeApi['SMART_SHAPE_DEFINITIONS'],
   generateSmartShapePoints: () =>
     [

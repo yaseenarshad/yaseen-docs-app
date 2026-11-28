@@ -129,8 +129,37 @@ describe("actionChangeSmartShape", () => {
       "250",
     ]);
     expect(range("headAspect")!.value).toBe("80");
+    const headWrapper = range("headAspect")!.closest(".range-wrapper")!;
+    expect(headWrapper.querySelector(".zero-label")?.textContent).toBe("0.25×");
+    expect(headWrapper.querySelector(".max-label")?.textContent).toBe("2.5×");
 
-    // Curly brace exposes cuspRatio [15..85], default 50
+    // Legacy arrow carrying only headLengthRatio lazily populates the headAspect slider (0.4 * 200 / 100 = 0.8 -> 80)
+    const legacyArrow = newElementWith(
+      API.createElement({
+        type: "line",
+        width: 200,
+        height: 100,
+        points: generateSmartShapePoints("arrow-right", 200, 100, {
+          shaftRatio: 0.5,
+          headLengthRatio: 0.4,
+        }),
+      }),
+      {
+        customData: {
+          yasinSmartShape: {
+            version: 1,
+            id: "arrow-right",
+            kind: "filled-arrow",
+            parameters: { shaftRatio: 0.5, headLengthRatio: 0.4 },
+          },
+        },
+      },
+    );
+    API.setElements([legacyArrow]);
+    API.setSelectedElements([legacyArrow]);
+    await waitFor(() => expect(range("headAspect")?.value).toBe("80"));
+
+    // Curly brace exposes cuspRatio [15..85], default 50 with % labels
     const braceMeta = createSmartShapeMetadata("brace-left");
     const brace = newElementWith(
       API.createElement({
@@ -155,6 +184,9 @@ describe("actionChangeSmartShape", () => {
       "85",
     ]);
     expect(range("cuspRatio")!.value).toBe("50");
+    const cuspWrapper = range("cuspRatio")!.closest(".range-wrapper")!;
+    expect(cuspWrapper.querySelector(".zero-label")?.textContent).toBe("15%");
+    expect(cuspWrapper.querySelector(".max-label")?.textContent).toBe("85%");
 
     // Handle-less shape (cloud) does not render an empty Smart shape fieldset
     const cloudMeta = createSmartShapeMetadata("cloud");

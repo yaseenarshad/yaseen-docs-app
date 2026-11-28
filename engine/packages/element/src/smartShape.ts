@@ -150,6 +150,13 @@ export type SmartShapeMetadata = {
   id: SmartShapeId;
   kind: SmartShapeKind;
   parameters: Record<string, number>;
+  flipX?: boolean;
+  flipY?: boolean;
+};
+
+type SmartShapeFlip = {
+  flipX?: boolean;
+  flipY?: boolean;
 };
 
 export type SmartShapeDefinition = {
@@ -823,6 +830,60 @@ const dedupeAdjacent = (list: readonly Vec[], eps = 1e-6): Vec[] => {
   return out;
 };
 
+const closeOutline = (raw: readonly Vec[], eps = 1e-6): Vec[] => {
+  const outline = dedupeAdjacent(raw, eps);
+  if (outline.length > 1) {
+    const first = outline[0];
+    const last = outline[outline.length - 1];
+    if (Math.hypot(last[0] - first[0], last[1] - first[1]) <= eps) {
+      outline[outline.length - 1] = first;
+    } else {
+      outline.push(first);
+    }
+  }
+  return outline;
+};
+
+export const getPointsMin = (
+  pts: readonly (readonly [number, number])[],
+): readonly [minX: number, minY: number] => {
+  let minX = Infinity;
+  let minY = Infinity;
+  for (const [x, y] of pts) {
+    if (x < minX) {
+      minX = x;
+    }
+    if (y < minY) {
+      minY = y;
+    }
+  }
+  return [minX, minY];
+};
+
+const getPointsBounds = (
+  pts: readonly (readonly [number, number])[],
+): readonly [minX: number, minY: number, maxX: number, maxY: number] => {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const [x, y] of pts) {
+    if (x < minX) {
+      minX = x;
+    }
+    if (y < minY) {
+      minY = y;
+    }
+    if (x > maxX) {
+      maxX = x;
+    }
+    if (y > maxY) {
+      maxY = y;
+    }
+  }
+  return [minX, minY, maxX, maxY];
+};
+
 const unit = ([x, y]: Vec): Vec => {
   const length = Math.hypot(x, y) || 1;
   return [x / length, y / length];
@@ -1047,15 +1108,15 @@ const doubleArrow: AnchoredBuilder = (_id, width, height, read) => {
 };
 
 const bentArrow: AnchoredBuilder = (_id, width, height, read) => {
-  const headH = height * 0.56;
+  const headH = Math.min(height * 0.56, width * 1.1);
   const headMidY = headH / 2;
-  const barH = read("thicknessRatio") * headH;
+  const barH = Math.min(read("thicknessRatio") * headH, width * 0.4);
   const barTop = headMidY - barH / 2;
   const barBot = headMidY + barH / 2;
-  const legW = Math.min(barH, width * 0.4);
+  const legW = barH;
   const headPx = Math.min(
     headH * read("headAspect"),
-    Math.max(width - legW, 1) * 0.85,
+    Math.max(width - legW, 0) * 0.85,
   );
   const headBaseX = width - headPx;
   return {
@@ -1226,7 +1287,12 @@ const buildLeftBrace = (
   const seg1 = cuspY;
   const seg2 = span - cuspY;
   const rx = depth / 2;
-  const ry = Math.min(depth / 2, seg1 / 2, seg2 / 2, BRACE_MAX_RADIUS);
+  const ry = Math.min(
+    depth / 2,
+    seg1 / 2,
+    seg2 / 2,
+    Math.max(BRACE_MAX_RADIUS, depth * 0.35),
+  );
   const raw: Vec[] = [
     ...ellipseArcPoints(
       depth,
@@ -1360,10 +1426,10 @@ const callout: AnchoredBuilder = (id, width, height, read) => {
     const cx = rx;
     const cy = ry;
     const tipX = tailRatio * width;
-    const tailAngle = Math.PI * (1 - tailRatio);
-    const spread = 0.18;
-    const a1 = tailAngle - spread;
-    const a2 = tailAngle + spread;
+    const tailAngle = Math.acos(clamp(2 * tailRatio - 1, -0.82, 0.82));
+    const spread = 0.16;
+    const a1 = Math.max(0.12 * Math.PI, tailAngle - spread);
+    const a2 = Math.min(0.88 * Math.PI, tailAngle + spread);
     const startAngle = a2;
     const endAngle = a1 + Math.PI * 2;
     const steps = 40;
@@ -1382,8 +1448,7 @@ const callout: AnchoredBuilder = (id, width, height, read) => {
       cx + rx * Math.cos(angle),
       cy + ry * Math.sin(angle),
     ]);
-    const outline = dedupeAdjacent([...ovalPoints, [tipX, height], ovalPoints[0]]);
-    outline[outline.length - 1] = outline[0];
+    const outline = closeOutline([...ovalPoints, [tipX, height]]);
     return {
       outline,
       anchors: { tail: [tipX, height] },
@@ -1418,8 +1483,7 @@ const callout: AnchoredBuilder = (id, width, height, read) => {
       ),
       ...arcPoints(r, r, r, Math.PI, Math.PI / 2, CORNER_ARC_STEPS),
     ];
-    const outline = dedupeAdjacent(raw);
-    outline.push(outline[0]);
+    const outline = closeOutline(raw);
     return {
       outline,
       anchors: { tail: [anchor, height] },
@@ -1485,8 +1549,7 @@ const cloud: AnchoredBuilder = (_id, width, height) => {
     const lobePts = arcPoints(curr[0], curr[1], curr[2], aStart, sweep, 8);
     raw.push(...(i === 0 ? lobePts : lobePts.slice(1)));
   }
-  const outline = dedupeAdjacent(raw);
-  outline.push(outline[0]);
+  const outline = closeOutline(raw);
   return fitToBox({ outline, anchors: {} }, width, height);
 };
 
@@ -1514,7 +1577,7 @@ const documentShape: AnchoredBuilder = (_id, width, height) => {
     return [width * t, baseY + amp * Math.sin(t * Math.PI * 2)] as Vec;
   });
   return {
-    outline: dedupeAdjacent([[0, 0], [width, 0], ...wave, [0, 0]]),
+    outline: closeOutline([[0, 0], [width, 0], ...wave]),
     anchors: {},
   };
 };
@@ -1535,8 +1598,7 @@ const pill: AnchoredBuilder = (_id, width, height) => {
       ...arcPoints(r, height - r, r, 0, Math.PI, capSteps),
     ];
   }
-  const outline = dedupeAdjacent(raw);
-  outline.push(outline[0]);
+  const outline = closeOutline(raw);
   return { outline, anchors: {} };
 };
 
@@ -1605,13 +1667,11 @@ const trapezoid: AnchoredBuilder = (_id, width, height, read) => {
 };
 
 const plusShape: AnchoredBuilder = (_id, width, height, read) => {
-  const ratio = read("thicknessRatio");
-  const armW = ratio * width;
-  const armH = ratio * height;
-  const x1 = (width - armW) / 2;
-  const x2 = (width + armW) / 2;
-  const y1 = (height - armH) / 2;
-  const y2 = (height + armH) / 2;
+  const arm = read("thicknessRatio") * Math.min(width, height);
+  const x1 = (width - arm) / 2;
+  const x2 = (width + arm) / 2;
+  const y1 = (height - arm) / 2;
+  const y2 = (height + arm) / 2;
   return {
     outline: [
       [x1, 0],
@@ -1691,9 +1751,7 @@ const semicircle: AnchoredBuilder = (_id, width, height) => {
     Math.PI,
     CURVE_STEPS,
   );
-  const outline = dedupeAdjacent([...arc, arc[0]]);
-  outline[outline.length - 1] = outline[0];
-  return { outline, anchors: {} };
+  return { outline: closeOutline(arc), anchors: {} };
 };
 
 const bookmark: AnchoredBuilder = (_id, width, height) => {
@@ -1752,14 +1810,12 @@ const shield: AnchoredBuilder = (_id, width, height) => {
     [0, sideY],
     12,
   );
-  const outline = dedupeAdjacent([
+  const outline = closeOutline([
     [0, 0],
     [width, 0],
     ...rightCurve,
     ...leftCurve.slice(1),
-    [0, 0],
   ]);
-  outline[outline.length - 1] = outline[0];
   return { outline, anchors: {} };
 };
 
@@ -1793,9 +1849,7 @@ const cylinder: AnchoredBuilder = (_id, width, height) => {
     Math.PI,
     capSteps,
   );
-  const outline = dedupeAdjacent([...topArc, ...bottomArc, topArc[0]]);
-  outline[outline.length - 1] = outline[0];
-  return { outline, anchors: {} };
+  return { outline: closeOutline([...topArc, ...bottomArc]), anchors: {} };
 };
 
 /** Every Smart Shape kind has one builder here. */
@@ -1839,15 +1893,29 @@ const buildAnchored = (
   width: number,
   height: number,
   parameters: Record<string, number>,
+  flip?: SmartShapeFlip,
 ): AnchoredShape => {
   const def = DEFINITIONS_BY_ID.get(id);
   if (!def) {
     throw new Error(`Unknown Smart Shape: ${id}`);
   }
   const builder = ANCHORED_BUILDERS[def.kind];
-  return builder(id, width, height, (parameter) =>
+  const shape = builder(id, width, height, (parameter) =>
     readSmartShapeParameter(id, width, height, parameters, parameter),
   );
+  if (!flip?.flipX && !flip?.flipY) {
+    return shape;
+  }
+  const mirror = ([x, y]: Vec): Vec => [
+    flip.flipX ? width - x : x,
+    flip.flipY ? height - y : y,
+  ];
+  return {
+    outline: shape.outline.map(mirror),
+    anchors: Object.fromEntries(
+      Object.entries(shape.anchors).map(([name, pt]) => [name, mirror(pt)]),
+    ),
+  };
 };
 
 /** The handle points of an anchored shape, in the element's own frame (first point at 0, 0). */
@@ -1887,6 +1955,7 @@ const solveHandle = (
   parameters: Record<string, number>,
   handle: SmartShapeHandleName,
   targetBoxPoint: Vec,
+  flip?: SmartShapeFlip,
 ) => {
   const parameter = getSmartShapeHandleParameter(id, handle);
   const limits = DEFINITIONS_BY_ID.get(id)?.limits[parameter];
@@ -1895,10 +1964,16 @@ const solveHandle = (
   }
   const [min, max] = limits;
   const distanceAt = (value: number) => {
-    const shape = buildAnchored(id, width, height, {
-      ...parameters,
-      [parameter]: value,
-    });
+    const shape = buildAnchored(
+      id,
+      width,
+      height,
+      {
+        ...parameters,
+        [parameter]: value,
+      },
+      flip,
+    );
     const point = shape.anchors[handle];
     return point
       ? Math.hypot(point[0] - targetBoxPoint[0], point[1] - targetBoxPoint[1])
@@ -1993,10 +2068,11 @@ export const generateSmartShapePoints = (
   width: number,
   height: number,
   parameters: Record<string, number>,
+  flip?: SmartShapeFlip,
 ): LocalPoint[] => {
   const safeWidth = Math.max(Math.abs(width), 1e-3);
   const safeHeight = Math.max(Math.abs(height), 1e-3);
-  const anchored = buildAnchored(id, safeWidth, safeHeight, parameters);
+  const anchored = buildAnchored(id, safeWidth, safeHeight, parameters, flip);
   const generated = points(anchored.outline);
   const [originX, originY] = generated[0];
   return generated.map(([x, y]) =>
@@ -2063,36 +2139,51 @@ export const resizeSmartShapePoints = (
   const flipByY = opts?.flipByY ?? nextHeight < 0;
 
   let nextId: SmartShapeId = metadata.id;
+  let flipX = Boolean(metadata.flipX);
+  let flipY = Boolean(metadata.flipY);
+
   if (flipByX) {
-    nextId = HORIZONTAL_FLIP_ID[nextId] ?? nextId;
-    const defAfterX = DEFINITIONS_BY_ID.get(nextId)!;
-    if (defAfterX.kind === "callout") {
-      const current = readSmartShapeParameter(
-        nextId,
-        width,
-        height,
-        parameters,
-        "tailPositionRatio",
-      );
-      parameters.tailPositionRatio = clampParameter(
-        nextId,
-        "tailPositionRatio",
-        1 - current,
-      );
-    } else if (nextId === "brace-up" || nextId === "brace-down") {
-      const current = readSmartShapeParameter(
-        nextId,
-        width,
-        height,
-        parameters,
-        "cuspRatio",
-      );
-      parameters.cuspRatio = clampParameter(nextId, "cuspRatio", 1 - current);
+    const swappedX = HORIZONTAL_FLIP_ID[nextId];
+    if (swappedX) {
+      nextId = swappedX;
+    } else {
+      const defAfterX = DEFINITIONS_BY_ID.get(nextId)!;
+      if (defAfterX.kind === "callout") {
+        const current = readSmartShapeParameter(
+          nextId,
+          width,
+          height,
+          parameters,
+          "tailPositionRatio",
+        );
+        parameters.tailPositionRatio = clampParameter(
+          nextId,
+          "tailPositionRatio",
+          1 - current,
+        );
+      } else if (nextId === "brace-up" || nextId === "brace-down") {
+        const current = readSmartShapeParameter(
+          nextId,
+          width,
+          height,
+          parameters,
+          "cuspRatio",
+        );
+        parameters.cuspRatio = clampParameter(
+          nextId,
+          "cuspRatio",
+          1 - current,
+        );
+      } else {
+        flipX = !flipX;
+      }
     }
   }
   if (flipByY) {
-    nextId = VERTICAL_FLIP_ID[nextId] ?? nextId;
-    if (nextId === "brace-left" || nextId === "brace-right") {
+    const swappedY = VERTICAL_FLIP_ID[nextId];
+    if (swappedY) {
+      nextId = swappedY;
+    } else if (nextId === "brace-left" || nextId === "brace-right") {
       const current = readSmartShapeParameter(
         nextId,
         width,
@@ -2101,16 +2192,29 @@ export const resizeSmartShapePoints = (
         "cuspRatio",
       );
       parameters.cuspRatio = clampParameter(nextId, "cuspRatio", 1 - current);
+    } else {
+      flipY = !flipY;
     }
   }
 
   const nextDef = DEFINITIONS_BY_ID.get(nextId)!;
-  const nextPoints = generateSmartShapePoints(nextId, width, height, parameters);
+  const nextFlip: SmartShapeFlip = {
+    ...(flipX ? { flipX: true } : {}),
+    ...(flipY ? { flipY: true } : {}),
+  };
+  const nextPoints = generateSmartShapePoints(
+    nextId,
+    width,
+    height,
+    parameters,
+    nextFlip,
+  );
   const nextMetadata: SmartShapeMetadata = {
     version: 1,
     id: nextId,
     kind: nextDef.kind,
     parameters,
+    ...nextFlip,
   };
 
   return {
@@ -2140,16 +2244,19 @@ export const updateSmartShapeParameter = (
   if (parameter === "headAspect" && def && !("headLengthRatio" in def.limits)) {
     delete parameters.headLengthRatio;
   }
+  const flip: SmartShapeFlip = {
+    flipX: metadata.flipX,
+    flipY: metadata.flipY,
+  };
   const nextPoints = generateSmartShapePoints(
     metadata.id,
     element.width,
     element.height,
     parameters,
+    flip,
   );
-  const oldMinX = Math.min(...element.points.map(([x]) => x));
-  const oldMinY = Math.min(...element.points.map(([, y]) => y));
-  const nextMinX = Math.min(...nextPoints.map(([x]) => x));
-  const nextMinY = Math.min(...nextPoints.map(([, y]) => y));
+  const [oldMinX, oldMinY] = getPointsMin(element.points);
+  const [nextMinX, nextMinY] = getPointsMin(nextPoints);
   return newElementWith(element, {
     x: element.x + oldMinX - nextMinX,
     y: element.y + oldMinY - nextMinY,
@@ -2174,18 +2281,16 @@ export const getSmartShapeHandles = (
     Math.max(Math.abs(element.width), 1e-3),
     Math.max(Math.abs(element.height), 1e-3),
     metadata.parameters,
+    { flipX: metadata.flipX, flipY: metadata.flipY },
   );
   const localHandles = anchoredHandlePoints(anchored, def.handles);
   const [originX, originY] = anchored.outline[0];
-  const xs = anchored.outline.map(([x]) => x - originX);
-  const ys = anchored.outline.map(([, y]) => y - originY);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
+  const [rawMinX, rawMinY, rawMaxX, rawMaxY] = getPointsBounds(
+    anchored.outline,
+  );
   const center = pointFrom<GlobalPoint>(
-    element.x + (minX + maxX) / 2,
-    element.y + (minY + maxY) / 2,
+    element.x + (rawMinX + rawMaxX) / 2 - originX,
+    element.y + (rawMinY + rawMaxY) / 2 - originY,
   );
   return localHandles.map(({ name, point }) => ({
     name,
@@ -2216,16 +2321,18 @@ export const updateSmartShapeFromHandle = (
   if (!metadata) {
     return element;
   }
+  const flip: SmartShapeFlip = {
+    flipX: metadata.flipX,
+    flipY: metadata.flipY,
+  };
   const generated = generateSmartShapePoints(
     metadata.id,
     element.width,
     element.height,
     metadata.parameters,
+    flip,
   );
-  const minX = Math.min(...generated.map(([x]) => x));
-  const maxX = Math.max(...generated.map(([x]) => x));
-  const minY = Math.min(...generated.map(([, y]) => y));
-  const maxY = Math.max(...generated.map(([, y]) => y));
+  const [minX, minY, maxX, maxY] = getPointsBounds(generated);
   const center = pointFrom<GlobalPoint>(
     element.x + (minX + maxX) / 2,
     element.y + (minY + maxY) / 2,
@@ -2245,6 +2352,7 @@ export const updateSmartShapeFromHandle = (
     metadata.parameters,
     handle,
     [shapeX, shapeY],
+    flip,
   );
   if (value === null) {
     return element;

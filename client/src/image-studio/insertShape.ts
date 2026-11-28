@@ -68,11 +68,6 @@ export function insertShape(
   options?: InsertShapeOptions,
 ): ReturnType<ExcalidrawModule['convertToExcalidrawElements']> {
   const appState = api.getAppState()
-  const rawState = appState as unknown as {
-    currentItemStrokeWidth?: number
-    scaleStylesWithZoom?: boolean
-    newShapesMatchZoom?: boolean
-  }
   const zoom = Number.isFinite(appState.zoom?.value) && appState.zoom.value > 0 ? appState.zoom.value : 1
   const centerX = appState.width / 2 / zoom - appState.scrollX
   const centerY = appState.height / 2 / zoom - appState.scrollY
@@ -87,13 +82,11 @@ export function insertShape(
   const rawStrokeWidth =
     typeof appState.currentItemVectorStrokeWidth === 'number' && Number.isFinite(appState.currentItemVectorStrokeWidth)
       ? appState.currentItemVectorStrokeWidth
-      : typeof rawState.currentItemStrokeWidth === 'number' && Number.isFinite(rawState.currentItemStrokeWidth)
-        ? rawState.currentItemStrokeWidth
-        : typeof appState.currentItemStrokeWidthKey === 'string' && appState.currentItemStrokeWidthKey in STROKE_WIDTH_BY_KEY
-          ? STROKE_WIDTH_BY_KEY[appState.currentItemStrokeWidthKey]
-          : 2
+      : typeof appState.currentItemStrokeWidthKey === 'string' && appState.currentItemStrokeWidthKey in STROKE_WIDTH_BY_KEY
+        ? STROKE_WIDTH_BY_KEY[appState.currentItemStrokeWidthKey]
+        : 2
 
-  const scaleStyles = options?.scaleStylesWithZoom ?? rawState.scaleStylesWithZoom ?? rawState.newShapesMatchZoom ?? true
+  const scaleStyles = options?.scaleStylesWithZoom ?? true
   const styleScale = scaleStyles && zoom !== 1 ? Number(zoom.toPrecision(4)) : undefined
   const strokeWidth = scaleStyles && zoom !== 1 ? toBoardSize(rawStrokeWidth, zoom) : rawStrokeWidth
 

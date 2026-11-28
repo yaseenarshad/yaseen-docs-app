@@ -22,7 +22,7 @@
  * OFFLINE IS A STATE, NOT A BANNER: the web half says so in one line; everything local keeps working.
  *
  * THE SMART SHAPES ARRIVE LATE ON PURPOSE. `@excalidraw/element` is a second ~300 kB download (`engine.ts`'s lazy
- * rule), so the seven basic shapes render immediately and the 20 Smart Shapes join when it lands.
+ * rule), so the seven basic shapes render immediately and the Smart Shapes join when it lands.
  *
  * WHAT IT REMEMBERS LIVES ELSEWHERE (🔒 YAZ-1990). Closing the canvas panel unmounts this tab, so the chip, the query,
  * the results and the scroll are `imageStudioSession.ts`'s; this component renders them and keeps what one click has
@@ -245,7 +245,7 @@ const toneKeyOf = (item: StudioItem, { hasSource, favorited, theme }: { hasSourc
   return `${item.provider}:${item.providerId}`
 }
 
-/** A shape tile's picture: one of six stock outlines, or the engine's own generated path. */
+/** A shape tile's picture: one of seven stock outlines, or the engine's own generated path. */
 function ShapeTile({ preview }: { preview: ShapePreview }) {
   if (preview.type === 'smart') {
     return (
