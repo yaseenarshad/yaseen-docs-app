@@ -198,33 +198,6 @@
 .page-table-box .page-table-frame .page-table table[data-stripes][data-subheads] tr[data-stripe] > td {
   --cell-tint: color-mix(in srgb, var(--fg) 4%, transparent);
 }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='red'] { --cell-tint: var(--table-fill-red); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='orange'] { --cell-tint: var(--table-fill-orange); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='yellow'] { --cell-tint: var(--table-fill-yellow); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='green'] { --cell-tint: var(--table-fill-green); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='teal'] { --cell-tint: var(--table-fill-teal); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='blue'] { --cell-tint: var(--table-fill-blue); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='purple'] { --cell-tint: var(--table-fill-purple); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='pink'] { --cell-tint: var(--table-fill-pink); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='grey'] { --cell-tint: var(--table-fill-grey); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='brown'] { --cell-tint: var(--table-fill-brown); }
-/* A custom fill: painted directly (solid `#rrggbb` or `#rrggbbaa`, YAZ-6692). */
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill^='#'] { --cell-tint: var(--table-fill-custom); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill-tone='dark'] { color: #ffffff; }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill-tone='light'] { color: #111111; }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='red'] { color: var(--table-text-red); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='orange'] { color: var(--table-text-orange); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='yellow'] { color: var(--table-text-yellow); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='green'] { color: var(--table-text-green); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='teal'] { color: var(--table-text-teal); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='blue'] { color: var(--table-text-blue); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='purple'] { color: var(--table-text-purple); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='pink'] { color: var(--table-text-pink); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='grey'] { color: var(--table-text-grey); }
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='brown'] { color: var(--table-text-brown); }
-/* A custom text colour: made readable on each theme's page (`tableFile.ts` `readableInk`). */
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-color^='#'] { color: var(--cell-ink-light); }
-:where([data-scheme='dark']) .page-table-box .page-table-frame .page-table table :is(th, td)[data-color^='#'] { color: var(--cell-ink-dark); }
 
 /* The header row's own look (`header …`): a colour at the Mac's strengths (Light 6%, Medium 12%, Strong 20% of the text
    colour; a colour 2.5 times that, Black 5 times), mixed into the page's colour so it stays solid when it sticks. Plain
@@ -274,6 +247,35 @@
 .page-table-box .page-table-frame .page-table table[data-header-align='left'] th { text-align: left !important; }
 .page-table-box .page-table-frame .page-table table[data-header-align='center'] th { text-align: center !important; }
 .page-table-box .page-table-frame .page-table table[data-header-align='right'] th { text-align: right !important; }
+
+/* Per-cell fills, auto-contrast tones, and text colours come AFTER header/subheader/stripe rules (YAZ-6716) so a cell's own look always wins over row defaults. */
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='red'] { --cell-tint: var(--table-fill-red); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='orange'] { --cell-tint: var(--table-fill-orange); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='yellow'] { --cell-tint: var(--table-fill-yellow); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='green'] { --cell-tint: var(--table-fill-green); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='teal'] { --cell-tint: var(--table-fill-teal); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='blue'] { --cell-tint: var(--table-fill-blue); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='purple'] { --cell-tint: var(--table-fill-purple); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='pink'] { --cell-tint: var(--table-fill-pink); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='grey'] { --cell-tint: var(--table-fill-grey); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='brown'] { --cell-tint: var(--table-fill-brown); }
+/* A custom fill: painted directly (solid `#rrggbb` or `#rrggbbaa`, YAZ-6692). */
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill^='#'] { --cell-tint: var(--table-fill-custom); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill-tone='dark'] { color: #ffffff; }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill-tone='light'] { color: #111111; }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='red'] { color: var(--table-text-red); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='orange'] { color: var(--table-text-orange); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='yellow'] { color: var(--table-text-yellow); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='green'] { color: var(--table-text-green); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='teal'] { color: var(--table-text-teal); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='blue'] { color: var(--table-text-blue); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='purple'] { color: var(--table-text-purple); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='pink'] { color: var(--table-text-pink); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='grey'] { color: var(--table-text-grey); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='brown'] { color: var(--table-text-brown); }
+/* A custom text colour: made readable on each theme's page (`tableFile.ts` `readableInk`). */
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color^='#'] { color: var(--cell-ink-light); }
+:where([data-scheme='dark']) .page-table-box .page-table-frame .page-table table :is(th, td)[data-color^='#'] { color: var(--cell-ink-dark); }
 
 /* The table's vertical alignment (a cell's own is in its style, so it wins). */
 .page-table-box .page-table-frame .page-table table[data-valign='middle'] :is(th, td) { vertical-align: middle; }

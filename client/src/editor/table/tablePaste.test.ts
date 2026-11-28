@@ -380,6 +380,32 @@ describe('copy cells to Google Docs with their lines (YAZ-3802, demo round 1 dec
     expect(cellAt(view, 2, 2).attrs.color).toBe('blue')
     expect(cellAt(view, 3, 2).attrs).toEqual(plain)
   })
+
+  it('pasting copied coloured or dark-filled cells back into a table bakes zero stray inline text_color marks (YAZ-6715)', async () => {
+    const view = await mountTable('| h1 | h2 | h3 |\n| --- | --- | --- |\n| a | b | <span class="text-color-blue">c</span> |\n| d | e | f |\n')
+    setCell(view, 1, 0, { fill: '#000000' })
+    setCell(view, 1, 1, { color: 'red' })
+    selectCells(view, [1, 0], [1, 2])
+    const copied = copy(view)
+    // External copy-out still carries inline white/red styles on the cells for Google Docs.
+    expect(copied.html).toContain('color: rgb(255, 255, 255)')
+    expect(copied.html).toContain('color: rgb(192, 57, 43)')
+    caretIn(view, 2, 0)
+    pasteHtml(view, copied.html, copied.text)
+    const marksInCell = (row: number, col: number) => {
+      const found: string[] = []
+      cellAt(view, row, col).descendants((n) => {
+        if (n.isText) for (const m of n.marks) found.push(`${m.type.name}:${String(m.attrs.color)}`)
+      })
+      return found
+    }
+    expect(cellAt(view, 2, 0).attrs.fill).toBe('#000000')
+    expect(cellAt(view, 2, 1).attrs.color).toBe('red')
+    expect(marksInCell(2, 0)).toEqual([])
+    expect(marksInCell(2, 1)).toEqual([])
+    // Intentional inline text_color inside the third cell is preserved.
+    expect(marksInCell(2, 2)).toEqual(['text_color:blue'])
+  })
 })
 
 describe('paste outside a table (S2)', () => {

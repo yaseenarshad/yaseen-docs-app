@@ -221,8 +221,9 @@ class FontSizePanel {
       const delta = e.key === 'ArrowUp' ? 1 : -1
       const current = /^\d+$/.test(this.#input.value.trim()) ? Number(this.#input.value.trim()) : DEFAULT_FONT_SIZE
       const next = clampFontSize(current + delta)
+      // Step the input value only (matching ColourBox R/G/B fields, YAZ-6718): keeps the toolbar visible
+      // while stepping, and Enter commits as one undo step with focus back in the editor.
       this.#input.value = String(next)
-      this.#run(applyFontSize(this.#type(), next))
     }
   }
 

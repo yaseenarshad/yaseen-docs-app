@@ -183,4 +183,22 @@ describe("the file's look on the phone (YAZ-5482)", () => {
     for (const name of ['data-widths', 'data-stripes', 'data-border', 'data-height', 'data-valign', 'data-header-strength']) expect(t.hasAttribute(name)).toBe(false)
     expect(t.querySelector('[data-fill], [data-color], [data-clip], [data-merged]')).toBeNull()
   })
+
+  it('per-cell [data-fill-tone] and [data-color] come after [data-header-text] in tables.css (YAZ-6716), and applyTableLook sets hex CSS vars (YAZ-6717)', async () => {
+    expect(css.indexOf(":is(th, td)[data-fill-tone='dark']")).toBeGreaterThan(css.indexOf("table[data-header-text='full'] th"))
+    expect(css.indexOf(":is(th, td)[data-color='red']")).toBeGreaterThan(css.indexOf("table[data-header-text='pink'] th"))
+
+    const { applyTableLook } = await import('./tableLook')
+    const { TABLE_LOOK_DEFAULTS } = await import('@shared/tableLook')
+    const table = document.createElement('table')
+    applyTableLook(table, {
+      ...TABLE_LOOK_DEFAULTS,
+      tableHeaderRow: { ...TABLE_LOOK_DEFAULTS.tableHeaderRow, color: '#000000', text: '#ffffff' },
+      tableSubheaderRow: { ...TABLE_LOOK_DEFAULTS.tableSubheaderRow, color: '#1e3a5f80', text: '#f0f0f0' },
+    })
+    expect(table.style.getPropertyValue('--table-header-hue')).toBe('#000000')
+    expect(table.style.getPropertyValue('--table-header-ink')).toBe('#ffffff')
+    expect(table.style.getPropertyValue('--table-subheader-hue')).toBe('#1e3a5f80')
+    expect(table.style.getPropertyValue('--table-subheader-ink')).toBe('#f0f0f0')
+  })
 })

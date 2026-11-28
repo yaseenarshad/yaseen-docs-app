@@ -24,10 +24,24 @@ const LIST_LINE_ANYWHERE = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]/m
  * Internal ProseMirror slices (`data-pm-slice`) are left untouched.
  */
 export function normalizePastedStyles(html: string): string {
-  if (/data-pm-slice\s*=/i.test(html) || !/style\s*=/i.test(html)) return html
+  if (!/style\s*=/i.test(html)) return html
+  const isInternal = /data-pm-slice\s*=/i.test(html) || /data-mdapp-clipboard\s*=/i.test(html)
+  if (isInternal && !/<t[hd]\b/i.test(html)) return html
   const template = document.createElement('template')
   template.innerHTML = html
   let changed = false
+  if (isInternal) {
+    // Strip copy-out inline `color` from copied `<th>`/`<td>` cells (`clipboardCopyOut.ts`, YAZ-6715)
+    // so pasting back into Yaseen Docs keeps cell `data-color`/`data-fill-tone` without baking inline `text_color` marks.
+    for (const cell of template.content.querySelectorAll<HTMLElement>('th[style], td[style]')) {
+      if (cell.style.color) {
+        cell.style.removeProperty('color')
+        if (cell.getAttribute('style')?.trim() === '') cell.removeAttribute('style')
+        changed = true
+      }
+    }
+    return changed ? template.innerHTML : html
+  }
   for (const el of template.content.querySelectorAll<HTMLElement>('[style]')) {
     const rawColor = el.style.color
     if (rawColor) {

@@ -181,6 +181,21 @@ describe('[16 ▾] font size toolbar button and popover (YAZ-6695 D5)', () => {
     expect(undo(view.state, view.dispatch)).toBe(true)
     expect(getMarkdownForSave(crepe)).toBe('hello <span style="font-size: 24px">world</span>\n')
 
+    // ArrowUp / ArrowDown steps the numeric input without hiding the toolbar; Enter commits with focus back in the editor (YAZ-6718).
+    input.focus()
+    input.value = '24'
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }))
+    await settle()
+    expect(input.value).toBe('25')
+    expect(document.activeElement).toBe(input)
+    expect(document.querySelector<HTMLElement>('.milkdown-toolbar')?.dataset.show).toBe('true')
+    expect(panel()!.hidden).toBe(false)
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await settle()
+    expect(getMarkdownForSave(crepe)).toBe('hello <span style="font-size: 25px">world</span>\n')
+    expect(view.hasFocus()).toBe(true)
+    expect(document.querySelector<HTMLElement>('.milkdown-toolbar')?.dataset.show).toBe('true')
+
     // Default removes mark.
     await clickBtn('button[aria-label="Default text size"]')
     expect(getMarkdownForSave(crepe)).toBe('hello world\n')
