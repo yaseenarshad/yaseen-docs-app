@@ -4,7 +4,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { APP_ZOOM_STEPS, addClosed, addEdit, addEdits, addOpen, addRecentRoot, cleanVaultKey, cleanVaultLauncher, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, DEFAULT_TOOLBAR, HIGHLIGHT_CUSTOM_COLORS_KEPT, INLINE_CODE_PRESETS, isInlineCodeStyle, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ROW_HEIGHT_DEFAULT, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, type AppState, type CanvasCard, type InlineCodeStyle, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
+import { APP_ZOOM_STEPS, addClosed, addEdit, addEdits, addOpen, addRecentRoot, cleanVaultAppSidebarStart, cleanVaultKey, cleanVaultLauncher, cleanVaultName, DEFAULT_ROW_DATES, DEFAULT_SEARCH_SORT, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, DEFAULT_TOOLBAR, HIGHLIGHT_CUSTOM_COLORS_KEPT, INLINE_CODE_PRESETS, isInlineCodeStyle, defaultAppState, defaultRightPanelIdentity, defaultTabCanvas, EDIT_GAP_MS, HOVER_PLACES, hoverOn, listVaults, LOCAL_SETTINGS, MAX_CANVAS_CARDS, MAX_CLOSED, MAX_COLLAPSED_GROUP_KEYS, MAX_EDITS, MAX_FAVORITES_ORDER, MAX_FOLD_KEYS_PER_FILE, MAX_OPENS, MAX_RECENT_ROOTS, MAX_SESSION_TABS, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, normalizeRoots, OPEN_HALF_LIFE_MS, openScore, openVaultRoots, rootOfPath, sameVaults, SIDEBAR_DEFAULT_W, SIDEBAR_LINE_STYLES, SIDEBAR_MAX_W, SIDEBAR_MIN_W, SIDEBAR_ROW_HEIGHT_DEFAULT, SIDEBAR_ZOOM_STEPS, stepSidebarZoom, stepZoom, TOC_DEFAULT_W, TOC_LINES, TOC_MAX_W, TOC_MIN_W, vaultLaunchersOf, type AppState, type CanvasCard, type InlineCodeStyle, type OpenStat, type Session, type StoredTab, type VaultSet, type WindowEntry } from '@shared/types'
 import { copyFoldKey } from '@shared/foldKey'
 import { settingsFileText, travels } from '@shared/settingsSync'
 import { MAX_PICTURE_FOLDERS } from './fs/picturesFolders'
@@ -390,6 +390,19 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().settings.confirmBeforeQuit).toBe(false)
     expect(isSettings({ ...DEFAULT_SETTINGS, confirmBeforeQuit: 'off' })).toBe(false)
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, confirmBeforeQuit: 'off' })).toMatchObject({ confirmBeforeQuit: true })
+  })
+
+  it('Reveal all Vault App windows on activate (YAZ-6679): On by default, also in a file from before it; Off survives a restart; a wrong value reads On', async () => {
+    expect(DEFAULT_SETTINGS.vaultAppActivateAllWindows).toBe(true)
+    const { vaultAppActivateAllWindows: _gone, ...older } = DEFAULT_SETTINGS
+    await seed(valid({ settings: older }))
+    expect(createStore(file).get().settings.vaultAppActivateAllWindows).toBe(true)
+    const store = createStore(file)
+    store.setSettings({ ...DEFAULT_SETTINGS, vaultAppActivateAllWindows: false })
+    await store.flush()
+    expect(createStore(file).get().settings.vaultAppActivateAllWindows).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, vaultAppActivateAllWindows: 'off' })).toBe(false)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, vaultAppActivateAllWindows: 'off' })).toMatchObject({ vaultAppActivateAllWindows: true })
   })
 
   it('"Jump across files" (YAZ-3500): a file from before it reads off; on survives a restart; a wrong value reads off; it stays on this Mac', async () => {
@@ -3924,7 +3937,7 @@ describe('FolderState.launcher (YAZ-6374)', () => {
     expect(cleanVaultLauncher({ name: 'Work', appPath: '/a.app', iconPath: 'relative.png' })).toBeNull()
   })
 
-  it('persists, sanitizes on load, and deletes FolderState.launcher via setFolder', async () => {
+  it('persists, sanitizes on load, and deletes FolderState.launchers via setFolder (and migrates legacy FolderState.launcher)', async () => {
     const launcher = {
       name: 'Work',
       appPath: '/Applications/Work.app',
@@ -3932,28 +3945,39 @@ describe('FolderState.launcher (YAZ-6374)', () => {
       target: 'today' as const,
       badge: { kind: 'letters' as const, value: 'WK', color: '#0f766e' },
     }
+    const expected = { ...launcher, id: 'default' }
     const s1 = createStore(file)
     s1.setFolder('/vaults/work', { launcher })
-    expect(s1.get().folders['/vaults/work']?.launcher).toEqual(launcher)
+    expect(s1.get().folders['/vaults/work']?.launchers).toEqual([expected])
+    expect(s1.get().folders['/vaults/work']?.launcher).toBeUndefined()
     await s1.flush()
 
-    // Reloading from disk keeps the valid launcher and drops junk entries on other vaults.
+    // Reloading from disk keeps valid launchers, migrates legacy `launcher`, and drops junk entries on other vaults.
     const raw = await onDisk()
+    ;(raw.folders as Record<string, unknown>)['/vaults/legacy'] = {
+      ...raw.folders['/vaults/work'],
+      launchers: undefined,
+      launcher,
+    }
     ;(raw.folders as Record<string, unknown>)['/vaults/bad'] = {
       ...raw.folders['/vaults/work'],
+      launchers: undefined,
       launcher: { name: 'Bad', appPath: 'not-abs', iconPath: '/x.png' },
     }
     await seed(raw)
 
     const s2 = createStore(file)
-    expect(s2.get().folders['/vaults/work']?.launcher).toEqual(launcher)
+    expect(s2.get().folders['/vaults/work']?.launchers).toEqual([expected])
+    expect(s2.get().folders['/vaults/legacy']?.launchers).toEqual([expected])
+    expect(s2.get().folders['/vaults/legacy']?.launcher).toBeUndefined()
+    expect(s2.get().folders['/vaults/bad']?.launchers).toBeUndefined()
     expect(s2.get().folders['/vaults/bad']?.launcher).toBeUndefined()
 
-    // Patching launcher: null deletes the key cleanly.
+    // Patching launcher: null deletes the primary app cleanly.
     s2.setFolder('/vaults/work', { launcher: null })
-    expect(s2.get().folders['/vaults/work']?.launcher).toBeUndefined()
+    expect(s2.get().folders['/vaults/work']?.launchers).toBeUndefined()
     await s2.flush()
-    expect((await onDisk()).folders['/vaults/work']?.launcher).toBeUndefined()
+    expect((await onDisk()).folders['/vaults/work']?.launchers).toBeUndefined()
   })
 
   it('persists, sanitizes on load, preserves on replace, and deletes VaultSet.launcher via setVaultSetLauncher', async () => {
@@ -4071,5 +4095,133 @@ describe('FolderState.launcher (YAZ-6374)', () => {
     expect(s2.get().folders['/vaults/bad']?.lastBounds).toBeUndefined()
     expect(s2.get().vaultSets.find((x) => x.id === ws.id)?.lastBounds).toEqual(wsBounds)
     expect(s2.get().vaultSets.find((x) => x.id === wsBad.id)?.lastBounds).toBeUndefined()
+  })
+
+  it('YAZ-6681 / YAZ-6682: cleanVaultAppSidebarStart, cleanVaultLauncher, multi-app store mutators, and per-app lastBounds', async () => {
+    expect(
+      cleanVaultAppSidebarStart({
+        tab: 'focus',
+        folderKind: 'collection',
+        folderId: '  col-1  ',
+        onlyFolder: true,
+      }),
+    ).toEqual({
+      tab: 'focus',
+      folderKind: 'collection',
+      folderId: 'col-1',
+      onlyFolder: true,
+    })
+    expect(
+      cleanVaultAppSidebarStart({
+        tab: 'files',
+        folderKind: 'disk',
+        folderPath: '  Projects/Alpha  ',
+        onlyFolder: false,
+      }),
+    ).toEqual({
+      tab: 'files',
+      folderKind: 'disk',
+      folderPath: 'Projects/Alpha',
+      onlyFolder: false,
+    })
+    // Bad folderPath (leading / or ..) and bad folderKind are dropped without dropping valid tab; bad tab rejects whole object.
+    expect(
+      cleanVaultAppSidebarStart({
+        tab: 'favorites',
+        folderKind: 'bogus',
+        folderPath: '../escape',
+        onlyFolder: 'yes',
+      }),
+    ).toEqual({ tab: 'favorites' })
+    expect(cleanVaultAppSidebarStart({ tab: 'files', folderPath: '/abs/path' })).toEqual({ tab: 'files' })
+    expect(cleanVaultAppSidebarStart({ tab: 'not-a-lens' })).toBeNull()
+    expect(cleanVaultAppSidebarStart(null)).toBeNull()
+
+    expect(
+      cleanVaultLauncher({
+        id: 'a1b2c3d4',
+        name: 'Focus App',
+        appPath: '/Applications/Focus App.app',
+        iconPath: '/userData/vault-icons/abc-a1b2c3d4.png',
+        sidebarStart: { tab: 'focus', folderKind: 'collection', folderId: 'f1', onlyFolder: true },
+        lastBounds: { x: 20, y: 30, width: 900, height: 700 },
+      }),
+    ).toEqual({
+      id: 'a1b2c3d4',
+      name: 'Focus App',
+      appPath: '/Applications/Focus App.app',
+      iconPath: '/userData/vault-icons/abc-a1b2c3d4.png',
+      sidebarStart: { tab: 'focus', folderKind: 'collection', folderId: 'f1', onlyFolder: true },
+      lastBounds: { x: 20, y: 30, width: 900, height: 700 },
+    })
+
+    // vaultLaunchersOf reads canonical launchers first, else legacy launcher, else [].
+    const legacyInfo = { name: 'Legacy', appPath: '/Applications/Legacy.app', iconPath: '/p.png' }
+    expect(vaultLaunchersOf(undefined)).toEqual([])
+    expect(vaultLaunchersOf({ launcher: legacyInfo })).toEqual([legacyInfo])
+    expect(vaultLaunchersOf({ launcher: legacyInfo, launchers: [{ ...legacyInfo, id: 'default' }] })).toEqual([{ ...legacyInfo, id: 'default' }])
+
+    // Multi-app upsert, bounds memory, deduplication, and selective removal.
+    const s1 = createStore(file)
+    const app1 = s1.upsertVaultLauncher('/vaults/work', {
+      id: 'default',
+      name: 'Work',
+      appPath: '/Applications/Work.app',
+      iconPath: '/icons/w.png',
+    })!
+    const app2 = s1.upsertVaultLauncher('/vaults/work', {
+      id: 'deadbeef',
+      name: 'Work Today',
+      appPath: '/Applications/Work Today.app',
+      iconPath: '/icons/w-deadbeef.png',
+      target: 'today',
+      sidebarStart: { tab: 'files', folderKind: 'disk', folderPath: 'Daily', onlyFolder: true },
+    })!
+    expect(s1.get().folders['/vaults/work']?.launchers).toEqual([app1, app2])
+
+    // setWindowBounds with secondary shimKey saves bounds ONLY onto that app, leaving FolderState.lastBounds untouched.
+    s1.setFolderBounds('/vaults/work', { x: 10, y: 10, width: 1000, height: 700 })
+    s1.upsertWindow({
+      id: 'w-sec',
+      root: '/vaults/work',
+      roots: ['/vaults/work'],
+      file: null,
+      tabs: [],
+      sidebarCollapsed: false,
+      sidebarLens: 'files',
+      bounds: { x: 10, y: 10, width: 800, height: 600 },
+    })
+    s1.setWindowBounds('w-sec', { x: 420, y: 180, width: 760, height: 640 }, true, '/vaults/work::deadbeef')
+    expect(s1.get().folders['/vaults/work']?.lastBounds).toEqual({ x: 10, y: 10, width: 1000, height: 700 })
+    expect(s1.get().folders['/vaults/work']?.launchers?.[1]?.lastBounds).toEqual({ x: 420, y: 180, width: 760, height: 640 })
+
+    // Updating app2 metadata without passing lastBounds preserves its remembered lastBounds.
+    s1.upsertVaultLauncher('/vaults/work', {
+      id: 'deadbeef',
+      name: 'Work Daily',
+      appPath: '/Applications/Work Daily.app',
+      iconPath: '/icons/w-deadbeef.png',
+      target: 'today',
+    })
+    expect(s1.get().folders['/vaults/work']?.launchers?.[1]?.lastBounds).toEqual({ x: 420, y: 180, width: 760, height: 640 })
+
+    // Duplicate ids on disk deduplicate cleanly; missing first id becomes 'default'.
+    await s1.flush()
+    const raw = await onDisk()
+    ;(raw.folders['/vaults/work'] as unknown as Record<string, unknown>).launchers = [
+      { name: 'Primary', appPath: '/Applications/Primary.app', iconPath: '/icons/p.png' },
+      { id: 'dup1', name: 'First Dup', appPath: '/Applications/D1.app', iconPath: '/icons/d1.png' },
+      { id: 'dup1', name: 'Second Dup', appPath: '/Applications/D2.app', iconPath: '/icons/d2.png' },
+    ]
+    await seed(raw)
+    const s2 = createStore(file)
+    expect(s2.get().folders['/vaults/work']?.launchers?.map((l) => [l.id, l.name])).toEqual([
+      ['default', 'Primary'],
+      ['dup1', 'First Dup'],
+    ])
+
+    // Removing dup1 keeps primary intact.
+    s2.removeVaultLauncher('/vaults/work', 'dup1')
+    expect(s2.get().folders['/vaults/work']?.launchers?.map((l) => l.id)).toEqual(['default'])
   })
 })

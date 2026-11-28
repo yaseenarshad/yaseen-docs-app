@@ -57,6 +57,8 @@ export interface InstallVaultLauncherOptions {
   iconPng: Buffer
   /** Optional target view when opening the vault (`'inbox'` or `'today'`). */
   openTarget?: LinkOpenTarget
+  /** Optional per-vault app id (`'default'` or absent = primary app; extra apps get an 8-char hex id; YAZ-6681). */
+  appId?: string
   /** Previous `.app` path when updating or renaming an existing launcher for this vault. */
   previousAppPath?: string | null
   /** Path to Electron's `app_shim_loader` helper (`appShimLoaderPath(process.execPath)`). */
@@ -115,6 +117,7 @@ export interface LauncherPlistInfo {
   hostPath?: string | null
   hostBundleId?: string | null
   serverName?: string | null
+  appId?: string | null
 }
 
 /**
@@ -191,13 +194,18 @@ export function sanitizeBundleName(raw: string): string {
 }
 
 /** Deterministic `CFBundleIdentifier` under `com.yasinarshad.yaseendocs.launcher.<slug>`. */
-export function launcherBundleId(vaultPath: string, name: string): string {
+export function launcherBundleId(vaultPath: string, name = '', appId?: string): string {
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 32)
-  const hash = createHash('sha256').update(stripSlash(vaultPath)).digest('hex').slice(0, 8)
+  const cleanAppId = appId?.trim()
+  const hashInput =
+    cleanAppId !== undefined && cleanAppId.length > 0 && cleanAppId !== 'default'
+      ? `${stripSlash(vaultPath)}::${cleanAppId}`
+      : stripSlash(vaultPath)
+  const hash = createHash('sha256').update(hashInput).digest('hex').slice(0, 8)
   return `${LAUNCHER_BUNDLE_ID_PREFIX}${slug.length > 0 ? `${slug}-` : ''}${hash}`
 }
 
@@ -212,6 +220,7 @@ export interface BuildLauncherPlistFields {
   bundleId: string
   vaultUrl: string
   vaultPath: string
+  appId?: string
   hostBundlePath?: string
   hostBundleId?: string
   serverName?: string
@@ -244,6 +253,10 @@ export function buildLauncherPlist(fields: BuildLauncherPlistFields): string {
     entries.push(['ElectronAppShimServerName', fields.serverName])
   }
   entries.push(['YaseenDocsVaultURL', fields.vaultUrl], ['YaseenDocsVaultPath', fields.vaultPath])
+  const cleanAppId = fields.appId?.trim()
+  if (cleanAppId !== undefined && cleanAppId.length > 0 && cleanAppId !== 'default') {
+    entries.push(['YaseenDocsAppId', cleanAppId])
+  }
   const body = entries
     .map(([key, value]) => {
       if (typeof value === 'boolean') {
@@ -283,6 +296,7 @@ export async function readLauncherPlist(appPath: string): Promise<LauncherPlistI
   try {
     const xml = await readFile(join(appPath, 'Contents', 'Info.plist'), 'utf8')
     const rawVersion = readPlistString(xml, 'CFBundleVersion')
+    const appId = readPlistString(xml, 'YaseenDocsAppId')
     return {
       bundleId: readPlistString(xml, 'CFBundleIdentifier'),
       vaultPath: readPlistString(xml, 'YaseenDocsVaultPath'),
@@ -292,6 +306,7 @@ export async function readLauncherPlist(appPath: string): Promise<LauncherPlistI
       hostPath: readPlistString(xml, 'ElectronAppShimHostPath'),
       hostBundleId: readPlistString(xml, 'ElectronAppShimHostBundleIdentifier'),
       serverName: readPlistString(xml, 'ElectronAppShimServerName'),
+      ...(appId !== null ? { appId } : {}),
     }
   } catch {
     return null
@@ -348,6 +363,15 @@ function isLauncherForVault(info: LauncherPlistInfo | null, normalizedVaultPath:
   return isOwnLauncher(info) && info.vaultPath !== null && stripSlash(info.vaultPath) === normalizedVaultPath
 }
 
+function normalizeAppId(appId?: string | null): string {
+  const trimmed = appId?.trim()
+  return trimmed && trimmed.length > 0 ? trimmed : 'default'
+}
+
+function isLauncherForApp(info: LauncherPlistInfo | null, normalizedVaultPath: string, appId: string): boolean {
+  return isLauncherForVault(info, normalizedVaultPath) && normalizeAppId(info?.appId) === appId
+}
+
 async function isSameAppPath(a: string, b: string, platform: NodeJS.Platform): Promise<boolean> {
   if (a === b) return true
   if (platform === 'darwin' && a.toLowerCase() === b.toLowerCase()) return true
@@ -363,16 +387,17 @@ async function isSameAppPath(a: string, b: string, platform: NodeJS.Platform): P
  * Atomically build, ad-hoc sign, and install a macOS `.app` launcher for a vault.
  *
  * - Picks `/Applications` or falls back to `~/Applications`.
- * - Refuses to overwrite an existing `.app` unless it is our launcher for this vault (or matches `previousAppPath`).
+ * - Refuses to overwrite an existing `.app` unless it is our launcher for this vault app (or matches `previousAppPath`).
  * - Stages in a sibling temp bundle, signs with `codesign --force --sign -`, and swaps atomically.
  * - Touches mtime and runs `lsregister -f` (best-effort) so Finder/Spotlight/Alfred refresh the icon.
- * - Trashes `previousAppPath` after a rename if it belongs to this vault.
+ * - Trashes `previousAppPath` after a rename if it belongs to this vault app.
  */
 export async function installVaultLauncher(opts: InstallVaultLauncherOptions, deps: VaultLauncherDeps): Promise<InstallVaultLauncherResult> {
   const name = sanitizeBundleName(opts.name)
   const normalizedVaultPath = stripSlash(opts.vaultPath)
+  const normalizedAppId = normalizeAppId(opts.appId)
   const vaultUrl = opts.vaultUrl ?? fileLink(normalizedVaultPath, opts.openTarget === undefined ? undefined : { open: opts.openTarget })
-  const bundleId = launcherBundleId(normalizedVaultPath, name)
+  const bundleId = launcherBundleId(normalizedVaultPath, name, normalizedAppId)
   const icns = encodeIcnsFromPng(opts.iconPng)
 
   const exec = deps.execFile ?? defaultExecFile
@@ -382,11 +407,11 @@ export async function installVaultLauncher(opts: InstallVaultLauncherOptions, de
   const previousResolved = opts.previousAppPath != null && opts.previousAppPath.length > 0 ? resolve(opts.previousAppPath) : null
   const targetResolved = resolve(target)
 
-  // Collision guard: never overwrite a third-party app or another vault's launcher.
+  // Collision guard: never overwrite a third-party app, another vault's launcher, or a sibling app on the same vault.
   const targetExists = await pathExists(target)
   if (targetExists) {
     const existing = await readLauncherPlist(target)
-    const ownsTarget = isOwnLauncher(existing) && (isLauncherForVault(existing, normalizedVaultPath) || previousResolved === targetResolved)
+    const ownsTarget = isOwnLauncher(existing) && (isLauncherForApp(existing, normalizedVaultPath, normalizedAppId) || previousResolved === targetResolved)
     if (!ownsTarget) {
       throw new Error(`Cannot overwrite "${target}": an app with that name already exists and is not this vault's launcher.`)
     }
@@ -407,6 +432,7 @@ export async function installVaultLauncher(opts: InstallVaultLauncherOptions, de
       bundleId,
       vaultUrl,
       vaultPath: normalizedVaultPath,
+      appId: normalizedAppId,
       hostBundlePath: opts.hostBundlePath,
       hostBundleId: opts.hostBundleId,
       serverName: opts.serverName,
@@ -431,7 +457,7 @@ export async function installVaultLauncher(opts: InstallVaultLauncherOptions, de
   await utimes(target, now, now).catch(() => {})
   await exec(LSREGISTER_PATH, ['-f', target]).catch(() => {})
 
-  // Rename cleanup: move the old `.app` to Trash if it differs from the new path and belongs to this vault.
+  // Rename cleanup: move the old `.app` to Trash if it differs from the new path and belongs to this vault app.
   // Never trash on a case-only rename on macOS APFS (or when both paths resolve to the same file).
   const platform = deps.platform ?? process.platform
   if (
@@ -440,7 +466,7 @@ export async function installVaultLauncher(opts: InstallVaultLauncherOptions, de
     (await pathExists(previousResolved))
   ) {
     const oldInfo = await readLauncherPlist(previousResolved)
-    if (isLauncherForVault(oldInfo, normalizedVaultPath)) {
+    if (isLauncherForApp(oldInfo, normalizedVaultPath, normalizedAppId)) {
       await deps.trashItem(previousResolved)
     }
   }
@@ -596,6 +622,7 @@ export async function refreshOutdatedLaunchers(
         bundleId,
         vaultUrl,
         vaultPath,
+        appId: item.info.appId ?? undefined,
         hostBundlePath: targetHostPath ?? item.info.hostPath ?? undefined,
         hostBundleId: deps?.hostBundleId ?? item.info.hostBundleId ?? undefined,
         serverName: targetServerName ?? item.info.serverName ?? undefined,

@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   bumpVersion,
   getLinearElementSubType,
+  getSmartShapeMetadata,
   mutateElement,
   updateElbowArrowPoints,
 } from "@excalidraw/element";
@@ -614,7 +615,8 @@ export const convertElementTypes = (
     app.setState((prevState) => ({
       selectedElementIds,
       selectedLinearElement:
-        convertedSelectedLinearElements.length === 1
+        convertedSelectedLinearElements.length === 1 &&
+        !getSmartShapeMetadata(convertedSelectedLinearElements[0])
           ? new LinearElementEditor(
               convertedSelectedLinearElements[0],
               app.scene.getNonDeletedElementsMap(),
@@ -657,6 +659,7 @@ export const getConversionTypeFromElements = (
 const isEligibleLinearElement = (element: ExcalidrawElement) => {
   return (
     isLinearElement(element) &&
+    !getSmartShapeMetadata(element) &&
     (!isArrowElement(element) ||
       (!isArrowBoundToElement(element) && !hasBoundTextElement(element)))
   );

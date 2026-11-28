@@ -38,7 +38,7 @@ import { buildSettingsDialogCtx, type BuildSettingsCtxInput } from './buildSetti
 import { availableSections, groupsOf, isAvailable, resolveGroupTitle, resolveHint, resolveLabel, resolveWide, subheadingOf, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
 import { searchSettings, settingCandidates, type SettingHit } from './searchSettings'
 import { SettingRow } from './SettingRow'
-import { buildScopedSettings, type SettingsScopeMode } from './settingsScope'
+import { buildScopedSettings, isGlobalOnlyRow, type SettingsScopeMode } from './settingsScope'
 import { createSectionFinder } from './sectionFind'
 import { createFindChannel } from '../editor/find/findChannel'
 import { FindBar } from '../editor/find/FindBar'
@@ -69,8 +69,10 @@ export function SettingsDialog({ ctx: givenCtx, input, onClose, initialPage, ini
   /** Top-of-Settings scope switcher (YAZ-6546, YAZ-6556): Global defaults | This vault | This workspace. */
   const [scopeMode, setScopeMode] = useState<SettingsScopeMode>(initialScope ?? 'global')
   const [selectedVaultRoot, setSelectedVaultRoot] = useState<string | null>(() => given.scope?.activeVaultRoot ?? null)
+  /** The section asked for. Search leaves it alone, so clearing a query returns to it. */
+  const [page, setPage] = useState<SettingsSectionId>(() => initialPage ?? availableSections(given)[0].id)
   const effectiveScopeMode: SettingsScopeMode =
-    given.scope === undefined || given.scope.vaults.length === 0
+    page === 'global' || given.scope === undefined || given.scope.vaults.length === 0
       ? 'global'
       : scopeMode === 'workspace' && given.scope.workspace === undefined
         ? 'global'
@@ -104,8 +106,29 @@ export function SettingsDialog({ ctx: givenCtx, input, onClose, initialPage, ini
       hotkeyFilter,
     }
   }, [scoped.ctx, scoped.activeVault, effectiveScopeMode, systemHotkeys, hotkeyFilter])
-  const sections = availableSections(ctx)
-  const settingsPages = sections.filter((s) => s.standalone !== true)
+  const sections = useMemo(() => availableSections(ctx), [ctx])
+  /** Derived Global tab (YAZ-6680): gathers every available global-only row across non-standalone sections, grouped by source section title. */
+  const globalSection = useMemo<SettingsSection>(() => {
+    const groups: SettingsGroup[] = []
+    for (const s of sections) {
+      if (s.standalone === true) continue
+      const items: SettingDef[] = []
+      for (const g of groupsOf(s, ctx)) {
+        for (const item of g.items) {
+          if (isAvailable(item, ctx) && isGlobalOnlyRow(item, s, g)) items.push(item)
+        }
+      }
+      if (items.length > 0) groups.push({ title: s.title, items })
+    }
+    return { id: 'global', title: 'Global', groups }
+  }, [sections, ctx])
+  const settingsPages = useMemo(() => {
+    const pages = sections.filter((s) => s.standalone !== true)
+    if (globalSection.groups.length === 0) return pages
+    const generalIndex = pages.findIndex((s) => s.id === 'general')
+    const insertAt = generalIndex >= 0 ? generalIndex + 1 : 0
+    return [...pages.slice(0, insertAt), globalSection, ...pages.slice(insertAt)]
+  }, [sections, globalSection])
   const referencePages = sections.filter((s) => s.standalone === true)
   const paneRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -118,10 +141,9 @@ export function SettingsDialog({ ctx: givenCtx, input, onClose, initialPage, ini
   const [query, setQuery] = useState('')
   /** The Hotkeys page's own search bar (YAZ-3397 D5): it filters that page alone, and the nav's search stays the whole dialog's. */
   const [hotkeyQuery, setHotkeyQuery] = useState('')
-  /** The section asked for. Search leaves it alone, so clearing a query returns to it. */
-  const [page, setPage] = useState<SettingsSectionId>(initialPage ?? sections[0].id)
   /** The section showing: a section this context stops showing while its page is open (Sync, Review) gives way to the first, in the pane and in the nav alike. */
-  const shown = sections.find((s) => s.id === page) ?? sections[0]
+  const allPages = [...settingsPages, ...referencePages]
+  const shown = allPages.find((s) => s.id === page) ?? allPages[0]
   /** Active-page left-nav sub-TOC (YAZ-6488): only the open non-standalone page's visible titled groups, when there are 2+. */
   const activeToc = useMemo(() => {
     if (query.trim() !== '' || shown.standalone === true) return []
@@ -315,6 +337,9 @@ export function SettingsDialog({ ctx: givenCtx, input, onClose, initialPage, ini
   const section = (s: SettingsSection) => (
     <section key={s.id} id={`settings-${s.id}`} data-section={s.id} className="settings-section" data-tour={s.id === 'cards' ? 'settings-cards-section' : undefined}>
       <h2 className="settings-section__title">{s.title}</h2>
+      {s.id === 'global' && (
+        <p className="settings-global-banner">Global settings — these apply to every vault and workspace on this Mac.</p>
+      )}
       {s.vault === true && vaultLine('settings-section__note')}
       {s.page !== undefined && <p className="settings-section__note">{s.page}</p>}
       {groupsOf(s, ctx).map((g, i) => group(s, g, g.items.filter((item) => isAvailable(item, ctx) && item.searchOnly !== true), g.anchor ?? i, true, i))}
@@ -412,7 +437,7 @@ export function SettingsDialog({ ctx: givenCtx, input, onClose, initialPage, ini
           ✕
         </button>
         <div ref={paneRef} className="settings-pane" onScroll={onPaneScroll}>
-          {given.scope !== undefined && given.scope.vaults.length > 0 && (
+          {given.scope !== undefined && given.scope.vaults.length > 0 && shown.id !== 'global' && (
             <div className="settings-scope-bar" data-scope-mode={effectiveScopeMode}>
               <div className="settings-scope__tabs" role="tablist" aria-label="Settings scope">
                 <button

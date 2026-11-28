@@ -7,6 +7,7 @@ import {
 import { getElementLineSegments } from "@excalidraw/element";
 import { LinearElementEditor } from "@excalidraw/element";
 import {
+  getSmartShapeMetadata,
   isFrameLikeElement,
   isLinearElement,
   isTextElement,
@@ -143,17 +144,20 @@ export class LassoTrail extends AnimatedTrail {
       const selectedIds = [...Object.keys(nextSelection.selectedElementIds)];
       const selectedGroupIds = [...Object.keys(nextSelection.selectedGroupIds)];
 
+      const singleLassoElement =
+        selectedIds.length === 1 && !selectedGroupIds.length
+          ? this.app.scene.getNonDeletedElement(selectedIds[0])
+          : null;
+
       return {
         selectedElementIds: nextSelection.selectedElementIds,
         selectedGroupIds: nextSelection.selectedGroupIds,
         selectedLinearElement:
-          selectedIds.length === 1 &&
-          !selectedGroupIds.length &&
-          isLinearElement(this.app.scene.getNonDeletedElement(selectedIds[0]))
+          singleLassoElement &&
+          isLinearElement(singleLassoElement) &&
+          !getSmartShapeMetadata(singleLassoElement)
             ? new LinearElementEditor(
-                this.app.scene.getNonDeletedElement(
-                  selectedIds[0],
-                ) as NonDeleted<ExcalidrawLinearElement>,
+                singleLassoElement as NonDeleted<ExcalidrawLinearElement>,
                 this.app.scene.getNonDeletedElementsMap(),
               )
             : null,

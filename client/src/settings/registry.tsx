@@ -559,7 +559,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'tables' | 'code' | 'files' | 'linksIds' | 'folderPages' | 'cards' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
+export type SettingsSectionId = 'general' | 'global' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'tables' | 'code' | 'files' | 'linksIds' | 'folderPages' | 'cards' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -1098,7 +1098,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'startupWindows',
             label: 'Reopen',
-            hint: 'A vault that you open from a link or a launcher always opens alone.',
+            hint: 'A vault that you open from a link or a vault app always opens alone.',
             keywords: ['startup', 'launch', 'restore', 'windows', 'quit'],
             render: ({ settings, onChange }) => (
               <Segmented options={STARTUP_WINDOWS_OPTIONS} value={settings.startupWindows} onChange={(startupWindows) => onChange({ ...settings, startupWindows })} ariaLabel="Windows to reopen when the app starts" />
@@ -1123,6 +1123,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         // YAZ-3487 D15: blank is the default (D7); the last page is the old way (YAZ-1767 D2).
+        // YAZ-6679 / YAZ-6683: macOS Vault App activation behavior (Global-only).
         title: 'When a vault opens',
         items: [
           {
@@ -1134,18 +1135,33 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={vaultOpensOnOptions((text) => unit(ctx, text))} value={ctx.settings.vaultOpensOn} onChange={(vaultOpensOn) => ctx.onChange({ ...ctx.settings, vaultOpensOn })} ariaLabel="What a vault opens on" />
             ),
           },
+          {
+            id: 'vaultAppActivateAllWindows',
+            label: 'Reveal all windows when opening a Vault App',
+            hint: 'Opening a running Vault App from Alfred, Spotlight, or the Dock brings all of its open windows to the front.',
+            keywords: ['vault app', 'alfred', 'spotlight', 'dock', 'windows', 'all windows', 'reveal', 'activate', 'monitor', 'launcher'],
+            available: () => /Mac/i.test(navigator.platform),
+            render: ({ settings, onChange }) => (
+              <Segmented
+                options={ON_OFF_OPTIONS}
+                value={settings.vaultAppActivateAllWindows}
+                onChange={(vaultAppActivateAllWindows) => onChange({ ...settings, vaultAppActivateAllWindows })}
+                ariaLabel="Reveal all windows when opening a Vault App"
+              />
+            ),
+          },
         ],
       },
       {
-        // YAZ-5967, YAZ-6375: per-vault macOS `.app` launcher (hidden on non-macOS or when no vault is open).
-        title: 'Vault app',
-        hint: 'Create a macOS launcher app for Alfred, Spotlight, and the Dock.',
+        // YAZ-5967, YAZ-6375, YAZ-6683: standalone macOS Vault Apps and Workspace Apps.
+        title: 'Vault apps',
+        hint: 'Create standalone macOS apps for Alfred, Spotlight, and the Dock.',
         vault: true,
         items: [
           {
             id: 'workspaceLauncher',
-            label: 'Workspace launcher',
-            hint: 'Opens all vaults in this workspace together in one window and updates the Dock icon when focused.',
+            label: 'Workspace app',
+            hint: 'Runs all vaults in this workspace as a standalone macOS app with its own Dock icon and menu bar.',
             keywords: ['workspace', 'app', 'launcher', 'alfred', 'spotlight', 'dock', 'icon', 'badge', 'macos'],
             wide: true,
             available: (ctx) => ctx.workspaceLauncher !== undefined,
@@ -1158,8 +1174,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
           {
             id: 'vaultLauncher',
-            label: 'Vault launcher',
-            hint: 'Opens this vault alone in its own window (never inside a workspace) and updates the Dock icon when focused.',
+            label: 'Vault app',
+            hint: 'Runs this vault as a standalone macOS app with its own Dock icon, Cmd+Tab slot, and menu bar.',
             keywords: ['vault', 'app', 'launcher', 'alfred', 'spotlight', 'dock', 'icon', 'badge', 'macos'],
             wide: true,
             available: (ctx) => ctx.vaultLauncher !== undefined,
@@ -1172,8 +1188,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
           {
             id: 'allLaunchers',
-            label: 'All launchers',
-            hint: 'Every vault launcher, workspace launcher, and leftover .app bundle found on this Mac.',
+            label: 'All vault & workspace apps',
+            hint: 'Every vault app, workspace app, and leftover .app bundle found on this Mac.',
             keywords: ['launcher', 'launchers', 'all', 'orphan', 'orphaned', 'cleanup', 'applications', 'vault', 'workspace', 'macos'],
             wide: true,
             available: () => /Mac/i.test(navigator.platform) && typeof window.yaseenDocs?.vaultLauncher?.listAll === 'function',

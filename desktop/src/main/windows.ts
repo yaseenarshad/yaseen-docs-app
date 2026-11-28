@@ -9,11 +9,12 @@ import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
 import type { LinkOpenTarget } from '@shared/links'
-import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, SIDEBAR_DEFAULT_W, defaultRightPanelIdentity, normalizeRoots, normalizeSidebarZoom, placeVaults, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type InboxCarry, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type ScreenPoint, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type TearOffResult, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, SIDEBAR_DEFAULT_W, defaultRightPanelIdentity, normalizeRoots, normalizeSidebarZoom, placeVaults, rootOfPath, sameVaults, stripSlash, vaultLaunchersOf, type FilesAction, type FilesPreviewRequest, type InboxCarry, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type ScreenPoint, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type TearOffResult, type VaultAppSidebarStart, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 import { appZoomFactor } from './appZoom'
 import { RELOAD_QUIET_MS } from './memory'
+import { parseVaultShimKey } from './appShims'
 import { isAppVault } from '@shared/appVaults'
 
 export interface WindowLike {
@@ -84,6 +85,8 @@ export interface ManagedWindow {
   focus(): void
   /** Like Electron's: shows a window built hidden (YAZ-3343, the tab board's windows). */
   show(): void
+  /** Like Electron's: raises/shows a window without making it key (YAZ-6679). */
+  showInactive?(): void
   /** Like Electron's: emits `close` first — the manager intercepts it to run the flush handshake. */
   close(): void
   /** Like Electron's: destroys without emitting `close` (`closed` still fires). */
@@ -302,7 +305,7 @@ export interface WindowManager extends WindowLookup {
    * blank (S65; YAZ-3487 D1, D7). Either way the set becomes the last used. No folder left, or an
    * unknown `id`, opens nothing and changes nothing → `opened: false`.
    */
-  openVaultSet(id: string, from?: string, shimKey?: string): OpenSetResult
+  openVaultSet(id: string, from?: string, shimKey?: string, sidebarStart?: VaultAppSidebarStart): OpenSetResult
   /**
    * `window:close-self` (GRO-2232, e.g. ⌘W on the last tab): the REAL `close()` on the live
    * window — the `close` interception above runs the flush handshake — NEVER a bare destroy.
@@ -316,7 +319,7 @@ export interface WindowManager extends WindowLookup {
    * (`?open=inbox` or `?open=today`, YAZ-6373), forwards it to `host.onOpenTarget`. A file (E1,
    * GRO-2171): validate, then `resolveLinkTarget` routes it.
    */
-  routeToFile(path: string, rootOverride?: string | null, openTarget?: LinkOpenTarget, shimKey?: string): void
+  routeToFile(path: string, rootOverride?: string | null, openTarget?: LinkOpenTarget, shimKey?: string, sidebarStart?: VaultAppSidebarStart): void
   /** Runtime-only App Shim key owning live window `id`, or undefined for host-owned windows (YAZ-6625 #1). */
   shimKeyOf(id: string): string | undefined
   /** True iff live window `id` is bound to an App Shim (YAZ-6625). */
@@ -329,6 +332,10 @@ export interface WindowManager extends WindowLookup {
   regularWindowIds(): string[]
   /** Focus live window `id` via `focusWindow`; false when not live. */
   focusWindowById(id: string): boolean
+  /** Reveal & focus live windows of `shimKey` (all non-minimized non-hidden oldest→newest when `allWindows` is true, then primary last; YAZ-6679). */
+  focusShimWindows(shimKey: string, allWindows: boolean): boolean
+  /** Push a Start View payload to live window `windowId` via `link:sidebar-start` (held until `link:ready`; YAZ-6682). */
+  sendSidebarStart(windowId: string, payload: { root?: string; sidebarStart: VaultAppSidebarStart }): boolean
   /** Find a live regular (non-shim, non-Files, non-readOnly) host window owning exactly `root`, most recently focused first (YAZ-6625 D3). */
   findHostWindowForVault(root: string): string | undefined
   /** Find a live regular (non-shim, non-Files, non-readOnly) host window owning exactly `roots`, most recently focused first (YAZ-6625 D3). */
@@ -741,8 +748,18 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     return done
   }
 
-  /** Look up remembered lastBounds for a single vault or matching saved workspace (YAZ-6625 #3). */
-  const rememberedBoundsFor = (roots: readonly string[]): WindowBounds | undefined => {
+  /** Look up remembered lastBounds for a specific Vault App shim, single vault, or matching saved workspace (YAZ-6625 #3, YAZ-6681). */
+  const rememberedBoundsFor = (roots: readonly string[], shimKey?: string): WindowBounds | undefined => {
+    if (shimKey !== undefined) {
+      const parsed = parseVaultShimKey(shimKey)
+      if (parsed !== null) {
+        const folders = store.get().folders
+        const folder = folders[parsed.root] ?? (roots.length > 0 ? folders[roots[0]] : undefined)
+        const appBounds = vaultLaunchersOf(folder).find((l) => (l.id ?? 'default') === parsed.appId)?.lastBounds
+        if (appBounds !== undefined) return appBounds
+        if (folder?.lastBounds !== undefined) return folder.lastBounds
+      }
+    }
     if (roots.length === 1) {
       const folders = store.get().folders
       return folders[stripSlash(roots[0])]?.lastBounds ?? folders[roots[0]]?.lastBounds
@@ -761,7 +778,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     const changed = !sameBounds(bounds, entry.bounds)
     const shouldRemember = !readOnlyWins.has(id) && !isFilesWindow(entry) && (changed || (forceRemember && !sameBounds(bounds, DEFAULT_BOUNDS)))
     if (!changed && !shouldRemember) return
-    store.setWindowBounds(id, bounds, shouldRemember)
+    store.setWindowBounds(id, bounds, shouldRemember, windowShims.get(id))
   }
 
   const attach = (entry: WindowEntry, opts?: { hidden?: true; inactive?: true; shimKey?: string }): void => {
@@ -982,7 +999,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     const id = randomUUID()
     if (opts.readOnly === true) readOnlyWins.add(id)
     const roots = normalizeRoots(opts.roots ?? [], opts.root)
-    const remembered = bounds === undefined && opts.bounds === undefined ? rememberedBoundsFor(roots) : undefined
+    const remembered = bounds === undefined && opts.bounds === undefined ? rememberedBoundsFor(roots, shimKey) : undefined
     const targetBounds = bounds ?? clampBounds(opts.bounds ?? remembered ?? { ...DEFAULT_BOUNDS }, host.workAreas())
     const openOpts =
       opts.inactive === true || shimKey !== undefined
@@ -1131,7 +1148,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
   }
 
   /** The door for a saved set of vaults (see `WindowManager.openVaultSet`). */
-  const openVaultSet = (id: string, from?: string, shimKey?: string): OpenSetResult => {
+  const openVaultSet = (id: string, from?: string, shimKey?: string, sidebarStart?: VaultAppSidebarStart): OpenSetResult => {
     const set = store.get().vaultSets.find((s) => s.id === id)
     if (set === undefined) return { opened: false, missing: [] }
     const missing = set.roots.filter((root) => !host.dirExists(root))
@@ -1142,6 +1159,21 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
     // earlier without the missing folder is raised, not doubled.
     if (!raiseWindows((w) => matchesShim(w) && sameVaults(w.roots, found)) && (shimKey !== undefined || from === undefined || !takeHere(from, found))) {
       openWindowInternal({ root: found[0], roots: found, file: startFile(found[0]) }, undefined, shimKey)
+    }
+    if (sidebarStart !== undefined) {
+      const matching = store
+        .get()
+        .windows.filter((w) => !isFilesWindow(w) && sameVaults(w.roots, found) && matchesShim(w))
+        .map((w) => ({ id: w.id, win: live.get(w.id) }))
+        .filter((w): w is { id: string; win: ManagedWindow } => w.win !== undefined && !w.win.isDestroyed())
+      const rank = (wid: string): number => {
+        const at = focusOrder.indexOf(wid)
+        return at === -1 ? Number.POSITIVE_INFINITY : at
+      }
+      const top = matching.sort((a, b) => rank(a.id) - rank(b.id))[0]?.win
+      if (top !== undefined) {
+        sendLink(top, CONTRACT.link.onSidebarStart.channel, { sidebarStart })
+      }
     }
     store.touchVaultSet(id)
     return { opened: true, missing }
@@ -1285,7 +1317,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       if (alone && source !== undefined) {
         // The only tab takes its window along (D5): no new window, no reload. Stored now, as `commitBounds` would after
         // the debounce, so an identity read in between sees where the window is.
-        store.setWindowBounds(from.id, bounds, !readOnlyWins.has(from.id))
+        store.setWindowBounds(from.id, bounds, !readOnlyWins.has(from.id), windowShims.get(from.id))
         source.setBounds(bounds)
         return 'moved'
       }
@@ -1464,7 +1496,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       if (win !== undefined && !win.isDestroyed()) win.close()
     },
 
-    routeToFile(path, rootOverride, openTarget, shimKey) {
+    routeToFile(path, rootOverride, openTarget, shimKey, sidebarStart) {
       // A FOLDER from outside — a vault launcher, a link, or `open -a` — opens by itself (YAZ-6446 D1):
       // raise only a solo window on that vault, or open a new solo window, leaving any workspace window
       // containing it untouched. A link keeps a trailing slash, and the door keys the vault's bucket by
@@ -1472,7 +1504,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const normalized = stripSlash(path)
       if (host.dirExists(path)) {
         openVault(normalized, true, undefined, shimKey)
-        if (openTarget !== undefined) {
+        if (openTarget !== undefined || sidebarStart !== undefined) {
           const matching = store
             .get()
             .windows.filter((w) => !isFilesWindow(w) && sameVaults(w.roots, [normalized]) && (shimKey === undefined || windowShims.get(w.id) === shimKey))
@@ -1484,8 +1516,13 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
           }
           const top = matching.sort((a, b) => rank(a.id) - rank(b.id))[0]?.win
           if (top !== undefined) {
-            if (host.onOpenTarget !== undefined) host.onOpenTarget(top, normalized, openTarget)
-            else sendLink(top, CONTRACT.link.onOpenTarget.channel, { root: normalized, target: openTarget })
+            if (openTarget !== undefined) {
+              if (host.onOpenTarget !== undefined) host.onOpenTarget(top, normalized, openTarget)
+              else sendLink(top, CONTRACT.link.onOpenTarget.channel, { root: normalized, target: openTarget })
+            }
+            if (sidebarStart !== undefined) {
+              sendLink(top, CONTRACT.link.onSidebarStart.channel, { root: normalized, sidebarStart })
+            }
           }
         }
         return
@@ -1555,6 +1592,37 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const win = liveWindow(id)
       if (win === undefined) return false
       focusWindow(win)
+      return true
+    },
+
+    focusShimWindows(shimKey, allWindows) {
+      const ids = [...new Set([...focusOrder, ...live.keys()])].filter(
+        (id) => windowShims.get(id) === shimKey && liveWindow(id) !== undefined,
+      )
+      if (ids.length === 0) return false
+      const nonHiddenIds = ids.filter((id) => !hiddenWins.has(id))
+      if (nonHiddenIds.length === 0) return false
+      const visibleIds = nonHiddenIds.filter((id) => !liveWindow(id)!.isMinimized())
+      if (visibleIds.length === 0) {
+        // All non-hidden windows are minimized: restore & focus ONLY the most-recent one (YAZ-6713 / D1).
+        focusWindow(liveWindow(nonHiddenIds[0])!)
+        return true
+      }
+      if (allWindows) {
+        for (let i = visibleIds.length - 1; i >= 1; i--) {
+          const win = liveWindow(visibleIds[i])!
+          if (typeof win.showInactive === 'function') win.showInactive()
+          else win.moveTop()
+        }
+      }
+      focusWindow(liveWindow(visibleIds[0])!)
+      return true
+    },
+
+    sendSidebarStart(windowId, payload) {
+      const win = liveWindow(windowId)
+      if (win === undefined) return false
+      sendLink(win, CONTRACT.link.onSidebarStart.channel, payload)
       return true
     },
 

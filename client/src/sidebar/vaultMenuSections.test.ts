@@ -205,6 +205,70 @@ describe('buildVaultSetMenuSections (YAZ-2602 S67)', () => {
     item(sections, 'remove-set').onSelect()
     expect(h.onRemove).toHaveBeenCalledExactlyOnceWith('set-1')
   })
+
+  it('uses "Make a workspace app…" and "Edit workspace app…" when onLauncher is provided (YAZ-6683)', () => {
+    const onLauncher = vi.fn()
+    const makeSections = buildVaultSetMenuSections('set-1', { onRename: vi.fn(), onRemove: vi.fn(), onLauncher, hasLauncher: false })
+    expect(groupsOf(makeSections)[0][0]).toBe('Make a workspace app…')
+    item(makeSections, 'launcher-set').onSelect()
+    expect(onLauncher).toHaveBeenCalledWith('set-1')
+
+    const editSections = buildVaultSetMenuSections('set-1', { onRename: vi.fn(), onRemove: vi.fn(), onLauncher, hasLauncher: true })
+    expect(groupsOf(editSections)[0][0]).toBe('Edit workspace app…')
+  })
+})
+
+/** Adaptive macOS Vault App menu (YAZ-6683): 0 apps, 1 app, and 2+ apps submenu. */
+describe('Adaptive Vault App menu (YAZ-6683)', () => {
+  it('shows "Make a vault app…" when 0 apps exist and calls onAddVaultApp', () => {
+    const onAddVaultApp = vi.fn()
+    const onEditVaultApp = vi.fn()
+    const sections = buildVaultMenuSections(target(), { ...handlers(), vaultApps: [], onAddVaultApp, onEditVaultApp })
+    expect(groupsOf(sections)[1]).toEqual(['Set display name', 'Set shortcut', 'Make a vault app…'])
+    item(sections, 'launcher').onSelect()
+    expect(onAddVaultApp).toHaveBeenCalledExactlyOnceWith(OTHER)
+    expect(onEditVaultApp).not.toHaveBeenCalled()
+  })
+
+  it('shows "Edit vault app…" and "Add another vault app…" when 1 app exists', () => {
+    const onAddVaultApp = vi.fn()
+    const onEditVaultApp = vi.fn()
+    const sections = buildVaultMenuSections(target(), {
+      ...handlers(),
+      vaultApps: [{ id: 'default', name: 'Notes' }],
+      onAddVaultApp,
+      onEditVaultApp,
+    })
+    expect(groupsOf(sections)[1]).toEqual(['Set display name', 'Set shortcut', 'Edit vault app…', 'Add another vault app…'])
+    item(sections, 'launcher').onSelect()
+    expect(onEditVaultApp).toHaveBeenCalledExactlyOnceWith(OTHER, 'default')
+    item(sections, 'launcher-add').onSelect()
+    expect(onAddVaultApp).toHaveBeenCalledExactlyOnceWith(OTHER)
+  })
+
+  it('shows "Vault apps" submenu with Edit <name>… items and "+ Add another vault app…" when 2+ apps exist', () => {
+    const onAddVaultApp = vi.fn()
+    const onEditVaultApp = vi.fn()
+    const sections = buildVaultMenuSections(target(), {
+      ...handlers(),
+      vaultApps: [
+        { id: 'default', name: 'Notes' },
+        { id: 'abc12345', name: 'Favorites App' },
+      ],
+      onAddVaultApp,
+      onEditVaultApp,
+    })
+    expect(groupsOf(sections)[1]).toEqual(['Set display name', 'Set shortcut', 'Vault apps'])
+    const parent = sections.flat().find((i) => i.id === 'vault-apps') as MenuParent
+    expect(parent.children.map((group) => group.map((entry) => entry.label))).toEqual([
+      ['Edit Notes…', 'Edit Favorites App…'],
+      ['+ Add another vault app…'],
+    ])
+    parent.children[0][1].onSelect()
+    expect(onEditVaultApp).toHaveBeenCalledExactlyOnceWith(OTHER, 'abc12345')
+    parent.children[1][0].onSelect()
+    expect(onAddVaultApp).toHaveBeenCalledExactlyOnceWith(OTHER)
+  })
 })
 
 /** "Open in Files window" (YAZ-3357 D5): after "Open by itself", on every vault, where the caller can open one. */

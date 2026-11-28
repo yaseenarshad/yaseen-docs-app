@@ -1,5 +1,5 @@
 /**
- * Modal to create or edit a macOS Vault App launcher (YAZ-5967, YAZ-6375).
+ * Modal to create or edit a macOS Vault App or Workspace App (YAZ-5967, YAZ-6375, YAZ-6681, YAZ-6682).
  * Lazy-loaded from `VaultLauncherControl` so it adds zero eager weight to `App.tsx` or Settings.
  *
  * Exports a 512x512 macOS squircle PNG via `<canvas>` from either:
@@ -7,11 +7,14 @@
  * - Image tab: PNG/JPEG/WebP file centre-cropped into a 512x512 squircle
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import type { VaultLauncherBadge, VaultLauncherInfo, VaultLauncherPreset, VaultLauncherStatus, VaultLauncherTarget } from '@shared/types'
+import { mergeFolders } from '@shared/collectionFolders'
+import { stripSlash, type FocusFolder, type ListScope, type SidebarLens, type TreeNode, type VaultAppSidebarStart, type VaultLauncherBadge, type VaultLauncherInfo, type VaultLauncherPreset, type VaultLauncherStatus, type VaultLauncherTarget } from '@shared/types'
 import { sanitizeBadgeSvgPaths, sanitizeBadgeSvgViewBox, shadeHex, vaultInitials } from '@shared/vaultIcon'
 import { api } from '../api'
+import { basename } from '../lib/paths'
 import { iconUrl, loadMaterialIcons, pickableIcons, useMaterialIcons } from '../sidebar/materialIcons'
 import { Segmented } from './controls'
+import { SIDEBAR_TAB_LABELS } from './vaultAppStartLabel'
 
 export { vaultInitials }
 
@@ -43,12 +46,197 @@ const FEATURED_MATERIAL_ICONS: readonly string[] = [
 ]
 
 const MAX_VISIBLE_ICONS = 96
+const MAX_FOLDER_CHOICES = 200
 
 const TARGET_OPTIONS: readonly { label: string; value: VaultLauncherTarget }[] = [
   { label: 'Normal', value: 'normal' },
   { label: 'Cards Inbox', value: 'inbox' },
   { label: "Today's Daily Page", value: 'today' },
 ]
+
+type SidebarTabChoice = 'default' | SidebarLens
+
+const BASE_SIDEBAR_TAB_OPTIONS: readonly { label: string; value: SidebarTabChoice }[] = [
+  { label: 'Default', value: 'default' },
+  { label: 'Files', value: 'files' },
+  { label: 'Favorites', value: 'favorites' },
+  { label: 'Focus', value: 'focus' },
+  { label: 'Recents', value: 'recents' },
+]
+
+const ONLY_FOLDER_OPTIONS: readonly { label: string; value: boolean }[] = [
+  { label: 'On', value: true },
+  { label: 'Off', value: false },
+]
+
+interface FolderChoice {
+  value: string
+  label: string
+  folderKind: 'collection' | 'disk'
+  folderId?: string
+  folderPath?: string
+  folderRoot?: string
+}
+
+function encodeDiskChoiceValue(rel: string, folderRoot?: string): string {
+  return folderRoot !== undefined && folderRoot.length > 0 ? `disk:${stripSlash(folderRoot)}::${rel}` : `disk:${rel}`
+}
+
+function encodeInitialFolder(start: VaultAppSidebarStart | undefined): string {
+  if (start === undefined) return ''
+  if (start.folderKind === 'collection' && start.folderId) return `collection:${start.folderId}`
+  if (start.folderKind === 'disk' && start.folderPath) return encodeDiskChoiceValue(start.folderPath, start.folderRoot)
+  return ''
+}
+
+function decodeDiskChoiceValue(raw: string): { folderPath: string; folderRoot?: string } {
+  const sep = raw.indexOf('::')
+  if (sep > 0) {
+    return { folderRoot: raw.slice(0, sep), folderPath: raw.slice(sep + 2) }
+  }
+  return { folderPath: raw }
+}
+
+function collectDiskDirsBfs(nodes: readonly TreeNode[], vaultRoot: string, limit: number): string[] {
+  const prefix = `${stripSlash(vaultRoot)}/`
+  const queue: TreeNode[] = [...nodes]
+  const out: string[] = []
+  let head = 0
+  while (head < queue.length && out.length < limit) {
+    const node = queue[head++]
+    if (node.type !== 'dir') continue
+    const norm = stripSlash(node.path)
+    if (norm.startsWith(prefix)) {
+      const rel = norm.slice(prefix.length)
+      if (rel.length > 0) out.push(rel)
+    }
+    for (const child of node.children) {
+      if (child.type === 'dir') queue.push(child)
+    }
+  }
+  return out
+}
+
+function collectAllDirPaths(nodes: readonly TreeNode[], out: Set<string>): void {
+  for (const node of nodes) {
+    if (node.type !== 'dir') continue
+    out.add(stripSlash(node.path))
+    collectAllDirPaths(node.children, out)
+  }
+}
+
+async function loadStartViewFolders(
+  tab: 'favorites' | 'focus' | 'files',
+  opts: { isWorkspace: boolean; root?: string; workspaceId?: string },
+): Promise<FolderChoice[]> {
+  const bridge = window.yaseenDocs as unknown as Record<string, Record<string, unknown> | ((...a: unknown[]) => unknown) | undefined> | undefined
+  let targetRoots: string[] = []
+  let workspaceScopeOn = opts.isWorkspace
+  const hasStateGet = typeof (bridge?.state as Record<string, unknown> | undefined)?.get === 'function'
+  if (!opts.isWorkspace && opts.root !== undefined) {
+    targetRoots = [opts.root]
+  } else if (opts.isWorkspace && opts.workspaceId !== undefined && hasStateGet) {
+    try {
+      const state = await api.state.get()
+      targetRoots = state.vaultSets.find((s) => s.id === opts.workspaceId)?.roots ?? []
+      if (tab === 'favorites' || tab === 'focus') {
+        workspaceScopeOn = state.settings?.workspaceLists?.[tab] ?? true
+      }
+    } catch {
+      targetRoots = []
+    }
+  }
+  const multiRoot = opts.isWorkspace && targetRoots.length > 1
+  if (tab === 'files') {
+    if (targetRoots.length === 0 || typeof bridge?.tree !== 'function') return []
+    const choices: FolderChoice[] = []
+    const treeResults = await Promise.allSettled(targetRoots.map((r) => api.tree(r)))
+    for (let idx = 0; idx < targetRoots.length && choices.length < MAX_FOLDER_CHOICES; idx++) {
+      const res = treeResults[idx]
+      if (res.status !== 'fulfilled') continue
+      const r = stripSlash(targetRoots[idx])
+      const vaultPrefix = multiRoot ? `${basename(r)} / ` : ''
+      const remaining = MAX_FOLDER_CHOICES - choices.length
+      for (const rel of collectDiskDirsBfs(res.value.tree, r, remaining)) {
+        choices.push({
+          value: encodeDiskChoiceValue(rel, multiRoot ? r : undefined),
+          label: `${vaultPrefix}${rel}`,
+          folderKind: 'disk',
+          folderPath: rel,
+          ...(multiRoot ? { folderRoot: r } : {}),
+        })
+      }
+    }
+    return choices
+  }
+
+  const scope: ListScope = opts.isWorkspace && workspaceScopeOn ? 'workspace' : 'vault'
+  const choices: FolderChoice[] = []
+
+  const hasFoldersApi =
+    tab === 'favorites'
+      ? typeof (bridge?.favoriteFolders as Record<string, unknown> | undefined)?.get === 'function'
+      : typeof (bridge?.focusFolders as Record<string, unknown> | undefined)?.get === 'function'
+  if (hasFoldersApi && targetRoots.length > 0) {
+    const results = await Promise.allSettled(
+      targetRoots.map((r) => (tab === 'favorites' ? api.favoriteFolders.get(r, scope) : api.focusFolders.get(r, scope))),
+    )
+    const copies: Record<string, FocusFolder[]> = {}
+    results.forEach((res, idx) => {
+      if (res.status === 'fulfilled') copies[targetRoots[idx]] = res.value
+    })
+    for (const folder of mergeFolders(copies)) {
+      choices.push({
+        value: `collection:${folder.id}`,
+        label: folder.name,
+        folderKind: 'collection',
+        folderId: folder.id,
+      })
+    }
+  }
+
+  const hasListApi =
+    tab === 'favorites'
+      ? typeof (bridge?.favorites as Record<string, unknown> | undefined)?.get === 'function'
+      : typeof (bridge?.focus as Record<string, unknown> | undefined)?.get === 'function'
+  if (targetRoots.length > 0 && hasListApi && typeof bridge?.tree === 'function') {
+    const seen = new Set<string>()
+    const rootResults = await Promise.allSettled(
+      targetRoots.map(async (r) => {
+        const [list, treeRes] = await Promise.all([
+          tab === 'favorites' ? api.favorites.get(r, scope) : api.focus.get(r, scope),
+          api.tree(r),
+        ])
+        return { root: stripSlash(r), list, treeRes }
+      }),
+    )
+    for (const res of rootResults) {
+      if (res.status !== 'fulfilled' || seen.size >= MAX_FOLDER_CHOICES) continue
+      const { root: r, list, treeRes } = res.value
+      const dirPaths = new Set<string>()
+      collectAllDirPaths(treeRes.tree, dirPaths)
+      const prefix = `${r}/`
+      const vaultPrefix = multiRoot ? `${basename(r)} / ` : ''
+      for (const p of list) {
+        const norm = stripSlash(p)
+        if (!dirPaths.has(norm) || !norm.startsWith(prefix)) continue
+        const rel = norm.slice(prefix.length)
+        const val = encodeDiskChoiceValue(rel, multiRoot ? r : undefined)
+        if (rel.length === 0 || seen.has(val) || seen.size >= MAX_FOLDER_CHOICES) continue
+        seen.add(val)
+        choices.push({
+          value: val,
+          label: `${vaultPrefix}${rel}`,
+          folderKind: 'disk',
+          folderPath: rel,
+          ...(multiRoot ? { folderRoot: r } : {}),
+        })
+      }
+    }
+  }
+
+  return choices
+}
 
 const BADGE_MODE_OPTIONS: readonly { label: string; value: VaultLauncherBadge['kind'] }[] = [
   { label: 'Emoji', value: 'emoji' },
@@ -231,9 +419,11 @@ function stripPngDataUrlPrefix(dataUrl: string): string {
 export interface VaultLauncherModalProps {
   root?: string
   workspaceId?: string
+  /** Existing Vault App id when editing/recreating; omitted when creating a new app (YAZ-6681). */
+  appId?: string
   defaultName: string
   initial?: VaultLauncherInfo | null
-  /** Optional synced cross-Mac preset to prefill when creating a launcher on a second Mac (YAZ-6560). */
+  /** Optional synced cross-Mac preset to prefill when creating an app on a second Mac (YAZ-6560). */
   preset?: VaultLauncherPreset | null
   initialIconDataUrl?: string | null
   recreating?: boolean
@@ -241,16 +431,23 @@ export interface VaultLauncherModalProps {
   onClose: () => void
 }
 
-export function VaultLauncherModal({ root, workspaceId, defaultName, initial, preset, initialIconDataUrl, recreating = false, onSaved, onClose }: VaultLauncherModalProps) {
+export function VaultLauncherModal({ root, workspaceId, appId, defaultName, initial, preset, initialIconDataUrl, recreating = false, onSaved, onClose }: VaultLauncherModalProps) {
   const isWorkspace = workspaceId !== undefined
   const editing = initial !== null && initial !== undefined
+  const resolvedAppId = appId ?? (editing ? (initial.id ?? 'default') : undefined)
   const seed = initial ?? preset ?? null
   const initialBadge = seed?.badge
+  const initialStart = initial?.sidebarStart
   const hasInitialPng = typeof initialIconDataUrl === 'string' && initialIconDataUrl.startsWith('data:image/png;base64,')
   const startOnImage = seed !== null && initialBadge === undefined && hasInitialPng
 
   const [name, setName] = useState(seed?.name ?? defaultName)
   const [target, setTarget] = useState<VaultLauncherTarget>(seed?.target ?? 'normal')
+  const [sidebarTab, setSidebarTab] = useState<SidebarTabChoice>(initialStart?.tab ?? 'default')
+  const [folderValue, setFolderValue] = useState<string>(() => encodeInitialFolder(initialStart))
+  const [onlyFolder, setOnlyFolder] = useState<boolean>(initialStart?.onlyFolder ?? true)
+  const [folderChoices, setFolderChoices] = useState<FolderChoice[]>([])
+  const [foldersLoading, setFoldersLoading] = useState(false)
   const [tab, setTab] = useState<'badge' | 'image'>(startOnImage ? 'image' : 'badge')
 
   // Badge state
@@ -271,6 +468,131 @@ export function VaultLauncherModal({ root, workspaceId, defaultName, initial, pr
 
   const iconsReady = useMaterialIcons()
   const allMaterialIds = useMemo(() => (iconsReady ? pickableIcons() : []), [iconsReady])
+
+  const sidebarTabOptions = useMemo(
+    () =>
+      sidebarTab === 'sessions'
+        ? [...BASE_SIDEBAR_TAB_OPTIONS, { label: 'Sessions', value: 'sessions' as const }]
+        : BASE_SIDEBAR_TAB_OPTIONS,
+    [sidebarTab],
+  )
+
+  const supportsFolderPicker = sidebarTab === 'favorites' || sidebarTab === 'focus' || sidebarTab === 'files'
+
+  useEffect(() => {
+    if (sidebarTab !== 'favorites' && sidebarTab !== 'focus' && sidebarTab !== 'files') {
+      setFolderChoices([])
+      setFoldersLoading(false)
+      return
+    }
+    let cancelled = false
+    setFoldersLoading(true)
+    void loadStartViewFolders(sidebarTab, { isWorkspace, root, workspaceId }).then(
+      (choices) => {
+        if (cancelled) return
+        setFolderChoices(choices)
+        setFoldersLoading(false)
+      },
+      () => {
+        if (cancelled) return
+        setFolderChoices([])
+        setFoldersLoading(false)
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [sidebarTab, isWorkspace, root, workspaceId])
+
+  const visibleFolderChoices = useMemo(() => {
+    if (folderValue === '' || folderChoices.some((c) => c.value === folderValue)) return folderChoices
+    if (folderValue.startsWith('collection:')) {
+      const id = folderValue.slice('collection:'.length)
+      const fallbackLabel = initialStart?.folderId === id && initialStart.folderName ? initialStart.folderName : `Saved folder (${id})`
+      return [...folderChoices, { value: folderValue, label: fallbackLabel, folderKind: 'collection' as const, folderId: id }]
+    }
+    if (folderValue.startsWith('disk:')) {
+      const { folderPath: rel, folderRoot } = decodeDiskChoiceValue(folderValue.slice('disk:'.length))
+      const fallbackLabel = folderRoot ? `${basename(folderRoot)} / ${rel}` : rel
+      return [...folderChoices, { value: folderValue, label: fallbackLabel, folderKind: 'disk' as const, folderPath: rel, ...(folderRoot ? { folderRoot } : {}) }]
+    }
+    return folderChoices
+  }, [folderChoices, folderValue, initialStart])
+
+  const collectionChoices = useMemo(
+    () => visibleFolderChoices.filter((c) => c.folderKind === 'collection'),
+    [visibleFolderChoices],
+  )
+  const diskChoices = useMemo(
+    () => visibleFolderChoices.filter((c) => c.folderKind === 'disk'),
+    [visibleFolderChoices],
+  )
+
+  const sidebarStartToSave: VaultAppSidebarStart | undefined = useMemo(() => {
+    if (sidebarTab === 'default') return undefined
+    const next: VaultAppSidebarStart = { tab: sidebarTab }
+    if (supportsFolderPicker && folderValue !== '') {
+      const matched = visibleFolderChoices.find((c) => c.value === folderValue)
+      if (folderValue.startsWith('collection:')) {
+        next.folderKind = 'collection'
+        next.folderId = folderValue.slice('collection:'.length)
+        if (matched !== undefined && matched.label !== `Saved folder (${next.folderId})`) {
+          next.folderName = matched.label
+        }
+        next.onlyFolder = onlyFolder
+      } else if (folderValue.startsWith('disk:')) {
+        const { folderPath: rel, folderRoot } = decodeDiskChoiceValue(folderValue.slice('disk:'.length))
+        next.folderKind = 'disk'
+        next.folderPath = rel
+        if (folderRoot !== undefined) {
+          next.folderRoot = folderRoot
+          if (matched !== undefined) next.folderName = matched.label
+        }
+        next.onlyFolder = onlyFolder
+      }
+    }
+    return next
+  }, [sidebarTab, supportsFolderPicker, folderValue, onlyFolder, visibleFolderChoices])
+
+  const selectedFolderLabel = useMemo(() => {
+    if (!supportsFolderPicker || folderValue === '') return null
+    const hit = visibleFolderChoices.find((c) => c.value === folderValue)
+    if (hit !== undefined) return hit.label
+    if (folderValue.startsWith('disk:')) return folderValue.slice('disk:'.length)
+    if (folderValue.startsWith('collection:')) return folderValue.slice('collection:'.length)
+    return null
+  }, [supportsFolderPicker, folderValue, visibleFolderChoices])
+
+  const previewSub = useMemo(() => {
+    if (sidebarTab === 'default') {
+      return isWorkspace
+        ? 'Opens all vaults in workspace'
+        : target === 'inbox'
+          ? 'Opens Cards Inbox'
+          : target === 'today'
+            ? "Opens Today's Daily Page"
+            : 'Opens in Yaseen Docs'
+    }
+    const tabLabel = SIDEBAR_TAB_LABELS[sidebarTab]
+    const startPart = selectedFolderLabel !== null ? `${tabLabel} · ${selectedFolderLabel}${onlyFolder ? ' (only)' : ''}` : tabLabel
+    if (!isWorkspace && target !== 'normal') {
+      const targetLabel = target === 'inbox' ? 'Cards Inbox' : "Today's Daily Page"
+      return `${targetLabel} · ${startPart}`
+    }
+    return startPart
+  }, [sidebarTab, isWorkspace, target, selectedFolderLabel, onlyFolder])
+
+  const handleSidebarTabChange = (next: SidebarTabChoice): void => {
+    if (next === sidebarTab) return
+    setSidebarTab(next)
+    setFolderValue('')
+    setOnlyFolder(true)
+  }
+
+  const handleFolderChange = (nextValue: string): void => {
+    if (folderValue === '' && nextValue !== '') setOnlyFolder(true)
+    setFolderValue(nextValue)
+  }
 
   const visibleMaterialIds = useMemo(() => {
     const q = iconQuery.trim().toLowerCase()
@@ -327,13 +649,16 @@ export function VaultLauncherModal({ root, workspaceId, defaultName, initial, pr
             name: trimmedName,
             pngBase64,
             ...(badgeToSave !== undefined ? { badge: badgeToSave } : {}),
+            ...(sidebarStartToSave !== undefined ? { sidebarStart: sidebarStartToSave } : {}),
           })
         : await api.vaultLauncher.create({
             root: root!,
+            ...(resolvedAppId !== undefined ? { appId: resolvedAppId } : {}),
             name: trimmedName,
             pngBase64,
             target,
             ...(badgeToSave !== undefined ? { badge: badgeToSave } : {}),
+            ...(sidebarStartToSave !== undefined ? { sidebarStart: sidebarStartToSave } : {}),
           })
       onSaved(next)
     } catch (err: unknown) {
@@ -361,15 +686,15 @@ export function VaultLauncherModal({ root, workspaceId, defaultName, initial, pr
           <h3 id="vault-launcher-modal-title" className="vault-launcher-modal__title">
             {isWorkspace
               ? recreating
-                ? 'Recreate workspace launcher'
+                ? 'Recreate workspace app'
                 : editing
-                  ? 'Edit workspace launcher'
-                  : 'Create workspace launcher'
+                  ? 'Edit workspace app'
+                  : 'Create workspace app'
               : recreating
-                ? 'Recreate vault launcher'
+                ? 'Recreate vault app'
                 : editing
-                  ? 'Edit vault launcher'
-                  : 'Make a vault launcher'}
+                  ? 'Edit vault app'
+                  : 'Make a vault app'}
           </h3>
           <button type="button" className="vault-launcher-modal__close" aria-label="Close" disabled={saving} onClick={onClose}>
             ✕
@@ -404,6 +729,78 @@ export function VaultLauncherModal({ root, workspaceId, defaultName, initial, pr
                 <Segmented options={TARGET_OPTIONS} value={target} onChange={setTarget} ariaLabel="Open on" />
               </div>
             )}
+
+            <div className="vault-launcher-modal__field">
+              <span className="vault-launcher-modal__label">Sidebar tab</span>
+              <Segmented options={sidebarTabOptions} value={sidebarTab} onChange={handleSidebarTabChange} ariaLabel="Sidebar tab" />
+              {supportsFolderPicker && (
+                <div className="vault-launcher-modal__start-view">
+                  <label className="vault-launcher-modal__start-row">
+                    <span className="vault-launcher-modal__sublabel">
+                      {sidebarTab === 'favorites'
+                        ? 'Favorites folder'
+                        : sidebarTab === 'focus'
+                          ? 'Focus folder'
+                          : 'Folder in vault'}
+                    </span>
+                    <span className="settings__select-wrap vault-launcher-modal__select-wrap">
+                      <select
+                        className="settings__select"
+                        aria-label={
+                          sidebarTab === 'favorites'
+                            ? 'Favorites folder'
+                            : sidebarTab === 'focus'
+                              ? 'Focus folder'
+                              : 'Folder in vault'
+                        }
+                        value={folderValue}
+                        disabled={foldersLoading && visibleFolderChoices.length === 0}
+                        onChange={(e) => handleFolderChange(e.target.value)}
+                      >
+                        <option value="">None (show all)</option>
+                        {sidebarTab === 'files' ? (
+                          visibleFolderChoices.map((choice) => (
+                            <option key={choice.value} value={choice.value}>
+                              {choice.label}
+                            </option>
+                          ))
+                        ) : collectionChoices.length > 0 && diskChoices.length > 0 ? (
+                          <>
+                            <optgroup label={sidebarTab === 'favorites' ? 'Favorites folders' : 'Focus folders'}>
+                              {collectionChoices.map((choice) => (
+                                <option key={choice.value} value={choice.value}>
+                                  {choice.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="Vault folders">
+                              {diskChoices.map((choice) => (
+                                <option key={choice.value} value={choice.value}>
+                                  {choice.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                          </>
+                        ) : (
+                          visibleFolderChoices.map((choice) => (
+                            <option key={choice.value} value={choice.value}>
+                              {choice.label}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </span>
+                  </label>
+
+                  {folderValue !== '' && (
+                    <div className="vault-launcher-modal__start-row vault-launcher-modal__start-row--inline">
+                      <span className="vault-launcher-modal__sublabel">Hide everything else</span>
+                      <Segmented options={ONLY_FOLDER_OPTIONS} value={onlyFolder} onChange={setOnlyFolder} ariaLabel="Hide everything else" />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="vault-launcher-modal__tabs" role="tablist" aria-label="Icon source">
               <button
@@ -532,7 +929,7 @@ export function VaultLauncherModal({ root, workspaceId, defaultName, initial, pr
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
                     hidden
-                    aria-label="Choose launcher image"
+                    aria-label="Choose app image"
                     onChange={(e) => {
                       const file = e.currentTarget.files?.[0]
                       e.currentTarget.value = ''
@@ -545,7 +942,7 @@ export function VaultLauncherModal({ root, workspaceId, defaultName, initial, pr
             )}
           </div>
 
-          <div className="vault-launcher-modal__preview" aria-label="Launcher preview">
+          <div className="vault-launcher-modal__preview" aria-label="App preview">
             <span className="vault-launcher-modal__preview-label">Preview</span>
             <div className="vault-launcher-modal__dock-preview">
               <LauncherIconPreview tab={tab} badge={currentBadge} imageDataUrl={imageDataUrl} size={76} />
@@ -555,15 +952,7 @@ export function VaultLauncherModal({ root, workspaceId, defaultName, initial, pr
               <LauncherIconPreview tab={tab} badge={currentBadge} imageDataUrl={imageDataUrl} size={28} />
               <div className="vault-launcher-modal__alfred-text">
                 <span className="vault-launcher-modal__alfred-name">{displayAppName}.app</span>
-                <span className="vault-launcher-modal__alfred-sub">
-                  {isWorkspace
-                    ? 'Opens all vaults in workspace'
-                    : target === 'inbox'
-                      ? 'Opens Cards Inbox'
-                      : target === 'today'
-                        ? "Opens Today's Daily Page"
-                        : 'Opens in Yaseen Docs'}
-                </span>
+                <span className="vault-launcher-modal__alfred-sub">{previewSub}</span>
               </div>
             </div>
           </div>
@@ -580,7 +969,7 @@ export function VaultLauncherModal({ root, workspaceId, defaultName, initial, pr
             Cancel
           </button>
           <button type="button" className="btn btn--primary" disabled={!canSubmit} onClick={() => void handleSave()}>
-            {saving ? 'Saving…' : recreating ? 'Recreate launcher' : editing ? 'Save launcher' : 'Create launcher'}
+            {saving ? 'Saving…' : recreating ? 'Recreate app' : editing ? 'Save app' : 'Create app'}
           </button>
         </div>
       </div>

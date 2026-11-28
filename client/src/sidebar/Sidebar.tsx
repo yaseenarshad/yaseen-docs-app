@@ -7,7 +7,7 @@ import { useSidebarPathIds, type IdsInFiles, type IdsInSearch } from '../search/
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
 import { isReadOnlyProperties } from '@shared/readOnly'
-import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
+import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState, type VaultAppSummary } from '@shared/types'
 import { api } from '../api'
 import { osVerbs } from '../lib/osVerbs'
 import { CalendarIcon, GridIcon, InboxIcon, NewTabIcon, NewWindowIcon, SidebarPanelIcon } from '../views/view/icons'
@@ -422,7 +422,7 @@ interface SidebarProps {
   onInbox: (root: string) => void
   /** An Inbox row's "Open in new window" (YAZ-5054): App opens that vault's Inbox in a new window. Absent: no such item. */
   onInboxNewWindow?: (root: string) => void
-  vaultIcons?: Record<string, string>; workspaceIcons?: Record<string, string>; onLauncherChanged?: () => void
+  vaultIcons?: Record<string, string>; workspaceIcons?: Record<string, string>; vaultApps?: Record<string, VaultAppSummary[]>; onLauncherChanged?: () => void
 }
 
 /** One "open the row menu of this path at this point" gesture (YAZ-2663 D6): the reveal request's idiom. */
@@ -823,7 +823,7 @@ export function Sidebar({
   onReviewPage,
   onInbox,
   onInboxNewWindow,
-  vaultIcons, workspaceIcons, onLauncherChanged,
+  vaultIcons, workspaceIcons, vaultApps, onLauncherChanged,
   width,
   collapsed = false,
   asideRef,
@@ -2206,7 +2206,7 @@ export function Sidebar({
           onNotice={onNotice}
           onOpenSetHere={onOpenSetHere}
           hotkeys={settings.hotkeys}
-          vaultIcons={vaultIcons} workspaceIcons={workspaceIcons} onLauncherChanged={onLauncherChanged}
+          vaultIcons={vaultIcons} workspaceIcons={workspaceIcons} vaultApps={vaultApps} onLauncherChanged={onLauncherChanged}
         />
         {/* The lock of each read-only vault (YAZ-4985), beside the vault's name: the page chip's box and countdown. */}
         {onUnlockVault !== undefined && vaults.filter((vault) => vault.readOnly === true && vault.app !== true).map((vault) => (

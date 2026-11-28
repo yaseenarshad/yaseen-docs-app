@@ -2432,6 +2432,8 @@ export interface SettingsState {
   startupWindows: StartupWindows
   /** Show a confirmation popup before Cmd+Q / Alfred Quit All closes a Vault App or Yaseen Docs (YAZ-6641). Default true. */
   confirmBeforeQuit: boolean
+  /** Reveal all open (non-minimized) windows of a Vault App when activating it from Dock, Cmd+Tab, or Alfred (YAZ-6679). Default true. */
+  vaultAppActivateAllWindows: boolean
   /** What a vault opens on (YAZ-3487 D15): every vault open reads it — main's new windows, `openRoot`, `bootTabs`, the empty-window door. */
   vaultOpensOn: VaultOpensOn
   /** Section indent (YAZ-2709): the width of one step in px, 24 | 30 | 36. On or off is per page (the page cog), never here. View-only. */
@@ -3412,6 +3414,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   quickHighlightColors: DEFAULT_QUICK_HIGHLIGHT_COLORS,
   startupWindows: 'last',
   confirmBeforeQuit: true,
+  vaultAppActivateAllWindows: true,
   vaultOpensOn: 'blank',
   sectionStep: 30,
   sectionLines: 'always',
@@ -3845,10 +3848,15 @@ export interface FolderState {
    */
   added?: CardsAdded
   /**
-   * macOS Vault App launcher metadata (YAZ-5967, YAZ-6374): custom `.app` launcher bundle and cached 512x512 PNG icon
-   * for this vault. Persisted, per machine; additive (old builds ignore it). Absent = no launcher.
+   * Legacy single macOS Vault App launcher metadata (YAZ-5967, YAZ-6374): retained for read compatibility.
+   * Canonical storage is `launchers` (YAZ-6681); use `vaultLaunchersOf(folder)` to read.
    */
   launcher?: VaultLauncherInfo
+  /**
+   * Canonical list of macOS Vault Apps installed for this vault (YAZ-6681).
+   * Persisted, per machine; additive (old builds ignore it). Absent = no apps.
+   */
+  launchers?: VaultLauncherInfo[]
   /**
    * Per-vault "Show last updated" switches by sidebar tab (YAZ-6529). Persisted per machine in `yaseendocs.json`,
    * so read-only vaults keep their own switches without writing to disk inside the vault. Absent = fall back to `settings.rowDates`.
@@ -3861,6 +3869,64 @@ export interface FolderState {
 /** Optional view opened when launching a vault via its macOS `.app` launcher (YAZ-5967). */
 export type VaultLauncherTarget = 'normal' | 'inbox' | 'today'
 
+/** Optional sidebar start view applied when a fresh Vault App or Workspace App window opens (YAZ-6682). */
+export interface VaultAppSidebarStart {
+  tab: SidebarLens
+  folderKind?: 'collection' | 'disk'
+  folderId?: string
+  folderPath?: string
+  /** Optional display name for collection or workspace-qualified folders in settings badges. */
+  folderName?: string
+  /** Optional vault root for multi-root Workspace App disk folders. */
+  folderRoot?: string
+  onlyFolder?: boolean
+}
+
+/** Pure (the store and the bridge): a valid `VaultAppSidebarStart`, or null (YAZ-6682). */
+export function cleanVaultAppSidebarStart(raw: unknown): VaultAppSidebarStart | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const r = raw as Record<string, unknown>
+  if (!isSidebarLens(r.tab)) return null
+  const out: VaultAppSidebarStart = { tab: r.tab }
+  if (r.folderKind === 'collection' || r.folderKind === 'disk') {
+    out.folderKind = r.folderKind
+  }
+  if (typeof r.folderId === 'string') {
+    const id = r.folderId.trim()
+    if (id.length > 0 && id.length <= 200 && !id.includes('\0')) {
+      out.folderId = id
+    }
+  }
+  if (typeof r.folderPath === 'string') {
+    const fp = r.folderPath.trim()
+    if (
+      fp.length > 0 &&
+      !fp.startsWith('/') &&
+      !fp.startsWith('\\') &&
+      !fp.includes('\0') &&
+      !fp.split(/[\\/]/).includes('..')
+    ) {
+      out.folderPath = fp
+    }
+  }
+  if (typeof r.folderName === 'string') {
+    const fn = r.folderName.trim()
+    if (fn.length > 0 && fn.length <= 200 && !fn.includes('\0')) {
+      out.folderName = fn
+    }
+  }
+  if (typeof r.folderRoot === 'string') {
+    const fr = stripSlash(r.folderRoot.trim())
+    if (fr.length > 0 && fr.length <= 1024 && !fr.includes('\0')) {
+      out.folderRoot = fr
+    }
+  }
+  if (typeof r.onlyFolder === 'boolean') {
+    out.onlyFolder = r.onlyFolder
+  }
+  return out
+}
+
 /** Badge icon recipe saved alongside a vault launcher so the editor can prefill on edit and sync to Mobile/other Macs (YAZ-5967, YAZ-6560). */
 export interface VaultLauncherBadge {
   kind: 'emoji' | 'letters' | 'material'
@@ -3872,49 +3938,79 @@ export interface VaultLauncherBadge {
   svgViewBox?: string
 }
 
-/** Per-Mac metadata for a vault's `.app` launcher (YAZ-5967, YAZ-6374). */
+/** Per-Mac metadata for a vault's `.app` launcher (YAZ-5967, YAZ-6374, YAZ-6681, YAZ-6682). */
 export interface VaultLauncherInfo {
+  /** Stable per-vault app id (`'default'` for primary/migrated app, 8-char hex for extra apps; YAZ-6681). */
+  id?: string
   name: string
   appPath: string
   iconPath: string
   target?: VaultLauncherTarget
   badge?: VaultLauncherBadge
+  /** Optional sidebar start view applied when a fresh app window opens (YAZ-6682). */
+  sidebarStart?: VaultAppSidebarStart
+  /** Independent remembered window bounds for this app (YAZ-6681). */
+  lastBounds?: WindowBounds
 }
 
-/** Status returned by `vaultLauncher.status` and `vaultLauncher.create` (YAZ-6374, YAZ-6560). */
+/** Pure helper: canonical list of Vault Apps for a folder, with legacy `launcher` fallback (YAZ-6681). */
+export function vaultLaunchersOf(folder: Pick<FolderState, 'launcher' | 'launchers'> | undefined): VaultLauncherInfo[] {
+  if (folder === undefined) return []
+  if (Array.isArray(folder.launchers) && folder.launchers.length > 0) return folder.launchers
+  if (folder.launcher !== undefined) return [folder.launcher]
+  return []
+}
+
+/** Compact summary of an installed Vault App for menus and lists (YAZ-6681). */
+export interface VaultAppSummary {
+  id: string
+  name: string
+  target?: VaultLauncherTarget
+  sidebarStart?: VaultAppSidebarStart
+}
+
+/** Status returned by `vaultLauncher.status` and `vaultLauncher.create` (YAZ-6374, YAZ-6560, YAZ-6681). */
 export interface VaultLauncherStatus {
   supported: boolean
   launcher: VaultLauncherInfo | null
   exists: boolean
   iconDataUrl: string | null
+  /** All installed Vault Apps for this vault with existence and icon data (YAZ-6681). */
+  launchers?: Array<{ launcher: VaultLauncherInfo; exists: boolean; iconDataUrl: string | null }>
   /** Portable launcher preset synced from `.yaseendocs/settings.json` (vault) or `SettingsState.workspaceLaunchers` (workspace), when present. */
   synced?: VaultLauncherPreset | null
   /** Preview data URL for `synced` (SVG for badge presets, PNG for custom `.yaseendocs/vault-icon.png`). */
   syncedIconDataUrl?: string | null
 }
 
-/** Request payload for `vaultLauncher.create` (YAZ-6374). */
+/** Request payload for `vaultLauncher.create` (YAZ-6374, YAZ-6681, YAZ-6682). */
 export interface CreateVaultLauncherRequest {
   root: string
+  /** Target app id to update (`'default'` or existing id); absent creates a new app (or `'default'` when none exist). */
+  appId?: string
   name: string
   pngBase64: string
   target?: VaultLauncherTarget
   badge?: VaultLauncherBadge
+  sidebarStart?: VaultAppSidebarStart
 }
 
-/** Request payload for `vaultLauncher.createWorkspace`. */
+/** Request payload for `vaultLauncher.createWorkspace` (YAZ-6682). */
 export interface CreateWorkspaceLauncherRequest {
   workspaceId: string
   name: string
   pngBase64: string
   badge?: VaultLauncherBadge
+  sidebarStart?: VaultAppSidebarStart
 }
 
-/** Entry returned by `vaultLauncher.listAll` for the All Launchers manager (YAZ-6447). */
+/** Entry returned by `vaultLauncher.listAll` for the All Launchers manager (YAZ-6447, YAZ-6681, YAZ-6682). */
 export interface LauncherListItem {
   kind: 'vault' | 'workspace' | 'orphan'
   /** Vault root path (for vault), workspace id (for workspace), or appPath (for orphan). */
   id: string
+  /** Per-vault app id for `kind === 'vault'` (`'default'` or 8-char hex; YAZ-6681). */
+  appId?: string
   name: string
   appPath: string
   exists: boolean
@@ -3922,11 +4018,13 @@ export interface LauncherListItem {
   /** Display name of the target vault/workspace, or parsed vault/workspace label for orphans. */
   targetName: string
   target?: VaultLauncherTarget
+  sidebarStart?: VaultAppSidebarStart
   /** Raw `YaseenDocsVaultPath` for orphan inspection. */
   vaultPath?: string
 }
 
 const VAULT_LAUNCHER_TARGETS = ['normal', 'inbox', 'today'] as const
+const VAULT_LAUNCHER_ID_RE = /^[a-z0-9_-]{1,64}$/i
 
 /** Pure (the store and the bridge): a valid `VaultLauncherInfo`, or null. */
 export function cleanVaultLauncher(raw: unknown): VaultLauncherInfo | null {
@@ -3941,11 +4039,28 @@ export function cleanVaultLauncher(raw: unknown): VaultLauncherInfo | null {
     appPath: r.appPath,
     iconPath: r.iconPath,
   }
+  if (typeof r.id === 'string') {
+    const id = r.id.trim()
+    if (VAULT_LAUNCHER_ID_RE.test(id)) out.id = id
+  }
   if (typeof r.target === 'string' && (VAULT_LAUNCHER_TARGETS as readonly string[]).includes(r.target)) {
     out.target = r.target as VaultLauncherTarget
   }
   const badge = sanitizeVaultLauncherBadge(r.badge)
   if (badge !== undefined) out.badge = badge
+  const sidebarStart = cleanVaultAppSidebarStart(r.sidebarStart)
+  if (sidebarStart !== null) out.sidebarStart = sidebarStart
+  if (typeof r.lastBounds === 'object' && r.lastBounds !== null && !Array.isArray(r.lastBounds)) {
+    const b = r.lastBounds as Record<string, unknown>
+    if (
+      typeof b.x === 'number' && Number.isFinite(b.x) &&
+      typeof b.y === 'number' && Number.isFinite(b.y) &&
+      typeof b.width === 'number' && Number.isFinite(b.width) && b.width > 0 &&
+      typeof b.height === 'number' && Number.isFinite(b.height) && b.height > 0
+    ) {
+      out.lastBounds = { x: b.x, y: b.y, width: b.width, height: b.height }
+    }
+  }
   return out
 }
 

@@ -18,6 +18,7 @@ import { keepOutsideChangesOfTabs } from './editor/external/outsideChangesMemory
 import { newPageBase } from './editor/wikilink/createFromLink'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useVaultLauncherIcons } from './hooks/useVaultLauncherIcons'
+import { useVaultOpenTargets } from './hooks/useVaultOpenTargets'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { onKeySheetRequest, placeOverTab } from './keys/keySheetRequest'
 import { useMenuEvents } from './hooks/useMenuEvents'
@@ -2797,21 +2798,19 @@ export function App() {
       if (added) moveBoardTab(from, storage.getWindowId(), ref)
     })
   }, [addVault, moveBoardTab])
-  const { launcherIcons, workspaceIcons, refreshLauncherIcons } = useVaultLauncherIcons()
-  const [todayTarget, setTodayTarget] = useState<string | null>(null)
-  const openTarget = useCallback(({ root: targetRoot, target }: { root: string; target: 'inbox' | 'today' }) => {
-    if (target === 'inbox') takeInbox({ root: targetRoot })
-    else if (target === 'today') setTodayTarget(targetRoot)
-  }, [takeInbox])
-  useEffect(() => {
-    if (todayTarget === null) return
-    const at = roots.findIndex((r) => stripSlash(r) === stripSlash(todayTarget))
-    if (at === -1) return setTodayTarget(null)
-    if (vaults[at].wikilinks.resolve === null) return
-    setTodayTarget(null)
-    // YAZ-6503: a Vault App launcher `?open=today` focuses/opens today's page tab without forcing the sidebar open or revealing it in Files.
-    openDailyPage(false, roots[at], false)
-  }, [todayTarget, roots, vaults, openDailyPage])
+  const { launcherIcons, workspaceIcons, vaultApps, refreshLauncherIcons } = useVaultLauncherIcons()
+  const { openTarget, applySidebarStart } = useVaultOpenTargets({
+    roots,
+    vaults,
+    sidebarCollapsedRef,
+    toggleSidebar,
+    changeLens,
+    setFocusOnly,
+    setFilesOnly,
+    revealInFiles,
+    takeInbox,
+    openDailyPage,
+  })
 
   // CLI automation (YAZ-4502, YAZ-6539): navigate, inspect, and manage tabs; reply only once the window shows the result.
   useAutomationSurface('app', { ready: true, inspect: () => ({ path: pageOnShow, tab: activeTab, sidebar: sidebarLens, sidebarCollapsed }) })
@@ -2820,7 +2819,7 @@ export function App() {
     toggleSidebar, changeLens, openPage, openBatch, activateTab: activate, titleOf: (p, n) => n ?? nameOf(p),
     leaveChrome: () => { setOverview(OVERVIEW_CLOSED); setInboxFront(false) }, closeTabs: (ids, moved) => (now.current.phase === 'open' ? closeUnderOverview(ids, moved) : closeTabs(ids, moved)),
   }))
-  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles, onTakeInbox: takeInbox, onOpenTarget: openTarget })
+  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles, onTakeInbox: takeInbox, onOpenTarget: openTarget, onSidebarStart: applySidebarStart })
   /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
   const moveBoardCardToSlot = useCallback((id: string, slot: number) => {
     const from = now.current.tabs.findIndex((t) => t.id === id)
@@ -4504,7 +4503,7 @@ export function App() {
           onInbox={filesDoors?.inbox ?? toggleInbox}
           // Its "Open in new window" (YAZ-5054): main opens the window, from a Files window too.
           onInboxNewWindow={openInboxInNewWindow}
-          vaultIcons={launcherIcons} workspaceIcons={workspaceIcons} onLauncherChanged={refreshLauncherIcons}
+          vaultIcons={launcherIcons} workspaceIcons={workspaceIcons} vaultApps={vaultApps} onLauncherChanged={refreshLauncherIcons}
         />
         </div>
       )}
@@ -4527,7 +4526,7 @@ export function App() {
       ) : root === null ? (
         <section className="editor">
           {/* No dialog opens by itself (C2, GRO-2164): the Welcome screen offers recents + Open folder…. */}
-          <Welcome recents={storage.getRecentRoots()} sets={storage.getVaultSets()} vaultIcons={launcherIcons} workspaceIcons={workspaceIcons} onLauncherChanged={refreshLauncherIcons} onOpenRecent={openRoot} onOpenSet={openSetFromWelcome} onPickFolder={pick} picking={picking} onNotice={notify} />
+          <Welcome recents={storage.getRecentRoots()} sets={storage.getVaultSets()} vaultIcons={launcherIcons} workspaceIcons={workspaceIcons} vaultApps={vaultApps} onLauncherChanged={refreshLauncherIcons} onOpenRecent={openRoot} onOpenSet={openSetFromWelcome} onPickFolder={pick} picking={picking} onNotice={notify} />
         </section>
       ) : (
         <div className="workspace" data-inbox-focus={inboxFocused || undefined}>

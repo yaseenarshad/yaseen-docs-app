@@ -266,37 +266,62 @@ describe('Welcome', () => {
       expect(props.onNotice).toHaveBeenCalledWith("Can't rename: a workspace has that name")
     })
 
-    it('right-clicking a vault row on macOS shows Make/Edit launcher… and opens the vault launcher modal', async () => {
+    it('right-clicking a vault row on macOS adapts for 0, 1, and 2+ vault apps (YAZ-6683)', async () => {
       const ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
       const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
-      const status = vi.fn(async () => ({ supported: true, launcher: null, exists: false, iconDataUrl: null }))
+      const status = vi.fn(async (_root: string, appId?: string) => ({
+        supported: true,
+        launcher: appId ? { id: appId, name: 'Work', appPath: '/Applications/Work.app', iconPath: '/tmp/work.png' } : null,
+        exists: Boolean(appId),
+        iconDataUrl: null,
+      }))
       Object.defineProperty(window, 'yaseenDocs', { value: { ...bridge, vaultLauncher: { status } }, configurable: true, writable: true })
       try {
         const { el } = mount({
           recents: [
             { path: '/vaults/pages', lastOpened: Date.now() },
             { path: '/vaults/work', lastOpened: Date.now() - HOUR },
+            { path: '/vaults/multi', lastOpened: Date.now() - 2 * HOUR },
           ],
-          vaultIcons: { '/vaults/work': ICON },
+          vaultIcons: { '/vaults/work': ICON, '/vaults/multi': ICON },
+          vaultApps: {
+            '/vaults/pages': [],
+            '/vaults/work': [{ id: 'default', name: 'Work' }],
+            '/vaults/multi': [
+              { id: 'default', name: 'Multi' },
+              { id: 'f00dbabe', name: 'Multi Focus' },
+            ],
+          },
         })
-        // Vault with existing launcher shows "Edit launcher…"
+        // 1 app → "Edit vault app…" + "Add another vault app…"
         rightClick(rows(el)[1])
-        expect(menuLabels()).toContain('Edit launcher…')
-
-        // Vault without launcher shows "Make a launcher…" and opens modal
-        rightClick(rows(el)[0])
-        expect(menuLabels()).toContain('Make a launcher…')
-        pick('Make a launcher…')
+        expect(menuLabels()).toContain('Edit vault app…')
+        expect(menuLabels()).toContain('Add another vault app…')
+        pick('Edit vault app…')
         await vi.waitFor(() => {
-          expect(status).toHaveBeenCalledWith('/vaults/pages')
-          expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Make a vault launcher')
+          expect(status).toHaveBeenCalledWith('/vaults/work', 'default')
+          expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Edit vault app')
+        })
+        act(() => void document.body.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())
+
+        // 2+ apps → "Vault apps" submenu
+        rightClick(rows(el)[2])
+        expect(menuLabels()).toContain('Vault apps')
+        expect(menuLabels()).not.toContain('Edit vault app…')
+
+        // 0 apps → "Make a vault app…" opens modal in create mode
+        rightClick(rows(el)[0])
+        expect(menuLabels()).toContain('Make a vault app…')
+        pick('Make a vault app…')
+        await vi.waitFor(() => {
+          expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Make a vault app')
         })
       } finally {
         platformSpy.mockRestore()
       }
     })
 
-    it('right-clicking a workspace row on macOS shows Make/Edit launcher… and opens the workspace launcher modal', async () => {
+    it('right-clicking a workspace row on macOS shows Make/Edit workspace app… and opens the workspace app modal', async () => {
       const ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
       const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
       const workspaceStatus = vi.fn(async () => ({ supported: true, launcher: null, exists: false, iconDataUrl: null }))
@@ -307,17 +332,17 @@ describe('Welcome', () => {
           sets: [work, second],
           workspaceIcons: { s2: ICON },
         })
-        // Workspace with existing launcher shows "Edit launcher…"
+        // Workspace with existing app shows "Edit workspace app…"
         rightClick(rows(el)[1])
-        expect(menuLabels()).toContain('Edit launcher…')
+        expect(menuLabels()).toContain('Edit workspace app…')
 
-        // Workspace without launcher shows "Make a launcher…" and opens modal
+        // Workspace without app shows "Make a workspace app…" and opens modal
         rightClick(rows(el)[0])
-        expect(menuLabels()).toContain('Make a launcher…')
-        pick('Make a launcher…')
+        expect(menuLabels()).toContain('Make a workspace app…')
+        pick('Make a workspace app…')
         await vi.waitFor(() => {
           expect(workspaceStatus).toHaveBeenCalledWith('s1')
-          expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace launcher')
+          expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace app')
         })
       } finally {
         platformSpy.mockRestore()

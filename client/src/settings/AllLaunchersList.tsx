@@ -1,13 +1,14 @@
 /**
- * Settings › General › Vault app › All launchers (YAZ-6448 Decision 6).
+ * Settings › General › Vault apps › All vault & workspace apps (YAZ-6448 Decision 6, YAZ-6683).
  *
- * Lazy-loaded list of every registered vault launcher, workspace launcher, and
- * leftover `.app` launcher bundle found on this Mac. Subscribes to
+ * Lazy-loaded list of every registered vault app, workspace app, and
+ * leftover `.app` bundle found on this Mac. Subscribes to
  * `api.vaultLauncher.onChanged` so creations, edits, and removals stay live.
  */
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { LauncherListItem, VaultLauncherStatus, VaultLauncherTarget } from '@shared/types'
 import { api } from '../api'
+import { sidebarStartBadgeLabel } from './vaultAppStartLabel'
 
 const VaultLauncherModal = lazy(() => import('./VaultLauncherModal').then((m) => ({ default: m.VaultLauncherModal })))
 
@@ -34,7 +35,7 @@ function targetSummary(item: LauncherListItem): string {
 }
 
 function itemKey(item: LauncherListItem): string {
-  return `${item.kind}:${item.id}`
+  return `${item.kind}:${item.id}:${item.appId ?? 'default'}`
 }
 
 interface EditingState {
@@ -93,7 +94,9 @@ export function AllLaunchersList({ onChanged }: AllLaunchersListProps) {
       const status =
         item.kind === 'workspace'
           ? await api.vaultLauncher.workspaceStatus(item.id)
-          : await api.vaultLauncher.status(item.id)
+          : item.appId !== undefined
+            ? await api.vaultLauncher.status(item.id, item.appId)
+            : await api.vaultLauncher.status(item.id)
       if (!mountedRef.current) return
       setEditing({ item, status, recreating })
     } catch (err: unknown) {
@@ -111,6 +114,8 @@ export function AllLaunchersList({ onChanged }: AllLaunchersListProps) {
         await api.shell.reveal({ path: item.appPath })
       } else if (item.kind === 'workspace') {
         await api.vaultLauncher.revealWorkspace(item.id)
+      } else if (item.appId !== undefined) {
+        await api.vaultLauncher.reveal(item.id, item.appId)
       } else {
         await api.vaultLauncher.reveal(item.id)
       }
@@ -128,6 +133,8 @@ export function AllLaunchersList({ onChanged }: AllLaunchersListProps) {
     try {
       if (item.kind === 'workspace') {
         await api.vaultLauncher.testWorkspace(item.id)
+      } else if (item.appId !== undefined) {
+        await api.vaultLauncher.test(item.id, item.appId)
       } else {
         await api.vaultLauncher.test(item.id)
       }
@@ -147,6 +154,8 @@ export function AllLaunchersList({ onChanged }: AllLaunchersListProps) {
         await api.vaultLauncher.removeOrphan(item.appPath)
       } else if (item.kind === 'workspace') {
         await api.vaultLauncher.removeWorkspace(item.id)
+      } else if (item.appId !== undefined) {
+        await api.vaultLauncher.remove(item.id, item.appId)
       } else {
         await api.vaultLauncher.remove(item.id)
       }
@@ -162,13 +171,14 @@ export function AllLaunchersList({ onChanged }: AllLaunchersListProps) {
   return (
     <div className="all-launchers">
       {items === null ? (
-        <p className="all-launchers__empty">Loading launchers…</p>
+        <p className="all-launchers__empty">Loading apps…</p>
       ) : items.length === 0 ? (
-        <p className="all-launchers__empty">No launchers created yet.</p>
+        <p className="all-launchers__empty">No vault or workspace apps created yet.</p>
       ) : (
         <ul className="all-launchers__list">
           {items.map((item) => {
             const targetBadge = item.kind === 'vault' ? targetBadgeLabel(item.target) : null
+            const sidebarStartBadge = item.kind !== 'orphan' ? sidebarStartBadgeLabel(item.sidebarStart) : null
             const summary = targetSummary(item)
             return (
               <li
@@ -197,6 +207,9 @@ export function AllLaunchersList({ onChanged }: AllLaunchersListProps) {
                       </span>
                       {targetBadge !== null && (
                         <span className="all-launchers__badge all-launchers__badge--target">{targetBadge}</span>
+                      )}
+                      {sidebarStartBadge !== null && (
+                        <span className="all-launchers__badge all-launchers__badge--target">{sidebarStartBadge}</span>
                       )}
                       {!item.exists && <span className="all-launchers__missing-note">Missing in Finder</span>}
                     </div>
@@ -266,6 +279,7 @@ export function AllLaunchersList({ onChanged }: AllLaunchersListProps) {
           <VaultLauncherModal
             root={editing.item.kind === 'vault' ? editing.item.id : undefined}
             workspaceId={editing.item.kind === 'workspace' ? editing.item.id : undefined}
+            appId={editing.item.kind === 'vault' ? (editing.item.appId ?? 'default') : undefined}
             defaultName={editing.item.targetName || editing.item.name}
             initial={editing.status.launcher}
             initialIconDataUrl={editing.status.iconDataUrl}

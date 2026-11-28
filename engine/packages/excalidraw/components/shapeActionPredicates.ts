@@ -4,6 +4,7 @@ import {
   shouldAllowVerticalAlign,
   suppportsHorizontalAlign,
   hasBoundTextElement,
+  getSmartShapeMetadata,
   isElbowArrow,
   isImageElement,
   isLinearElement,
@@ -178,7 +179,8 @@ export const getShapeActionPredicates = (
       !appState.selectedLinearElement?.isEditing &&
       singleSelected &&
       isLinearElement(targetElements[0]) &&
-      !isElbowArrow(targetElements[0]),
+      !isElbowArrow(targetElements[0]) &&
+      !getSmartShapeMetadata(targetElements[0]),
   };
 };
 
