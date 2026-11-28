@@ -168,7 +168,7 @@ describe('"Make subheader row" and "Turn back into a normal row" (item 4), one u
     const items = () => [...host.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => `${b.textContent}${b.dataset.hint === '✓' ? '*' : ''}`)
     const tabs = () => [...host.querySelectorAll<HTMLButtonElement>('.fill-target:not(.fill-target--sub) > .fill-target__opt')]
     const bar = () => [...host.querySelectorAll<HTMLButtonElement>('.fill-target--sub:not(.fill-target--switch) .fill-target__opt')].map((b) => `${b.textContent}${b.getAttribute('aria-pressed') === 'true' ? '*' : ''}`)
-    expect(items()).toEqual(['Plain, like any row', 'Gray*', 'Red', 'Orange', 'Yellow', 'Green', 'Teal', 'Blue', 'Purple', 'Pink', 'Black'])
+    expect(items()).toEqual(['Plain, like any row', 'Gray*', 'Red', 'Orange', 'Yellow', 'Green', 'Teal', 'Blue', 'Purple', 'Pink', 'Black', 'Custom colour…'])
     // Sticky at the top (YAZ-4899 demo): Default (On) / On / Off; Off saves `nostickysubheads`, Default takes it back.
     const sticky = () => [...host.querySelectorAll<HTMLButtonElement>('.fill-target--switch .fill-target__opt')].map((b) => `${b.textContent}${b.getAttribute('aria-pressed') === 'true' ? '*' : ''}`)
     expect([host.querySelector('.ctx-menu__heading')?.textContent, sticky()]).toEqual(['Sticky', ['Default (On)*', 'On', 'Off']])

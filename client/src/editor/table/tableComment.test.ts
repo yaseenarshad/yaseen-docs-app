@@ -94,14 +94,15 @@ describe('named and custom colours (YAZ-3817)', () => {
     expect(formatTableComment(parseTableComment(comment)!)).toBe(comment)
   })
 
-  it('a custom colour is `#rrggbb`, read in any case and written lowercase', () => {
-    const parsed = parseTableComment('<!-- table: fill A1:B1 #ff8800 C2 teal, color B2 #1A2B3C -->')
-    expect(parsed?.fill).toEqual(new Map([['A1', '#ff8800'], ['B1', '#ff8800'], ['C2', 'teal']]))
+  it('a custom colour is `#rrggbb` or `#rrggbbaa`, read in any case and written lowercase', () => {
+    const parsed = parseTableComment('<!-- table: fill A1:B1 #ff8800 C2 teal D2 #43434380, color B2 #1A2B3C -->')
+    expect(parsed?.fill).toEqual(new Map([['A1', '#ff8800'], ['B1', '#ff8800'], ['C2', 'teal'], ['D2', '#43434380']]))
     expect(parsed?.color).toEqual(new Map([['B2', '#1a2b3c']]))
-    expect(formatTableComment(parsed!)).toBe('<!-- table: fill A1:B1 #ff8800 C2 teal, color B2 #1a2b3c -->')
+    expect(formatTableComment(parsed!)).toBe('<!-- table: fill A1:B1 #ff8800 C2 teal D2 #43434380, color B2 #1a2b3c -->')
+    expect(parseTableComment('<!-- table: fill A1 #AABBCCDD -->')?.fill).toEqual(new Map([['A1', '#aabbccdd']]))
   })
 
-  it.each(['#ff88', '#ff88000', '#gg8800', 'ff8800', '#ff8800aa'])('%s is no colour: the part is not read, and is kept as its text (YAZ-4176)', (value) => {
+  it.each(['#ff88', '#ff88000', '#gg8800', 'ff8800', '#ff8800aaa'])('%s is no colour: the part is not read, and is kept as its text (YAZ-4176)', (value) => {
     expect(parseTableComment(`<!-- table: fill A1 ${value}, stripes -->`)).toEqual(style({ stripes: true, unknown: [{ after: null, text: `fill A1 ${value}` }] }))
   })
 })
@@ -264,10 +265,18 @@ describe('the header row part, text colour and align (YAZ-4794)', () => {
   })
 
   it('a word it cannot read keeps the whole part as its text: a bare align word, an unknown colour, two text colours', () => {
-    for (const part of ['header left', 'header text-gray', 'header align-middle', 'header blue text-red text-blue']) {
+    for (const part of ['header left', 'header text-gray', 'header align-middle', 'header blue text-red text-blue', 'header #123', 'header text-#12345678']) {
       const parsed = parseTableComment(`<!-- table: stripes, ${part} -->`)!
       expect(parsed.header).toBeUndefined()
       expect(formatTableComment(parsed)).toBe(`<!-- table: stripes, ${part} -->`)
     }
+  })
+
+  it('header and subheader accept custom hex fill (`#rrggbb` / `#rrggbbaa`) and `text-#rrggbb` (YAZ-6692 #6)', () => {
+    const comment = '<!-- table: header #1a2b3c80 text-#ffffff, subheader #434343 text-#d9d9d9 -->'
+    const parsed = parseTableComment('<!-- table: header #1A2B3C80 text-#FFFFFF, subheader #434343 text-#D9D9D9 -->')!
+    expect(parsed.header).toEqual({ color: '#1a2b3c80', text: '#ffffff' })
+    expect(parsed.subheader).toEqual({ color: '#434343', text: '#d9d9d9' })
+    expect(formatTableComment(parsed)).toBe(comment)
   })
 })

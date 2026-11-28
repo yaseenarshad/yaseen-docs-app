@@ -36,7 +36,7 @@ import { useExploreZoom } from '../explore/exploreZoom'
 import { api } from '../api'
 import { CardsSetupWizard } from './CardsSetupWizard'
 import { SyncVaultControl, type SettingsSyncCtx } from './SyncVaultControl'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, EXPLORE_WIDTH_MAX, EXPLORE_WIDTH_MIN, EXPLORE_WIDTH_START, PAGE_WIDTH_MAX, PAGE_WIDTH_MIN, PAGE_WIDTH_START, TAB_WIDTH_MAX, TAB_WIDTH_MIN, TAB_WIDTH_START, type AutoSyncStatus, type ContentStep, type ContentWidth, type TabWidth, type TabWidthPreset, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, CELL_NOTE_PREVIEW_LINES_MAX, CELL_NOTE_PREVIEW_LINES_MIN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type FolderPagesSettings, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, EXPLORE_WIDTH_MAX, EXPLORE_WIDTH_MIN, EXPLORE_WIDTH_START, PAGE_WIDTH_MAX, PAGE_WIDTH_MIN, PAGE_WIDTH_START, TAB_WIDTH_MAX, TAB_WIDTH_MIN, TAB_WIDTH_START, type AutoSyncStatus, type ContentStep, type ContentWidth, type TabWidth, type TabWidthPreset, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, CELL_NOTE_PREVIEW_LINES_MAX, CELL_NOTE_PREVIEW_LINES_MIN, DEFAULT_QUICK_HIGHLIGHT_COLORS, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type FolderPagesSettings, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
 import type { IconRule } from '@shared/vaultIcons'
 import { appCardLook, type CardLookSettings } from '@shared/cardLook'
 import { appTableLook, type TableLookSettings } from '@shared/tableLook'
@@ -91,6 +91,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
+import { QuickHighlightControl } from './QuickHighlightControl'
 import { CARD_TITLE_SHOW_OPTIONS } from '@shared/cardTitleShows'
 import type { TitleRoom } from '@shared/reviews'
 import type { CardTitleMarkShow } from '@shared/cardTitleAt'
@@ -1818,6 +1819,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-3856: the control alone; the group title names it (it showed twice).
             bare: true,
             render: ({ settings, onChange }) => <ToolbarArrange value={settings.selectionToolbar} onChange={(selectionToolbar) => onChange({ ...settings, selectionToolbar })} />,
+          },
+          {
+            id: 'quickHighlightColors',
+            label: 'Quick highlight colours',
+            hint: 'Starting 3 highlight colours for each fresh page. Recent picks from the highlight menu slide into these buttons per page.',
+            keywords: ['highlight', 'quick', 'toolbar', 'colour', 'color', 'default', 'yellow', 'green', 'blue', 'custom'],
+            render: ({ settings, onChange }) => (
+              <QuickHighlightControl
+                value={settings.quickHighlightColors ?? DEFAULT_QUICK_HIGHLIGHT_COLORS}
+                onChange={(quickHighlightColors) => onChange({ ...settings, quickHighlightColors })}
+              />
+            ),
           },
         ],
       },

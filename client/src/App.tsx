@@ -9,7 +9,7 @@ import { spacingVars, type TextFormatting } from '@shared/textFormatting'
 import { GLOBAL_INHERITING_CHROME_KEYS, VAULT_OVERRIDE_KEYS, type VaultChromeKey, type WorkspaceChromeOverrides } from '@shared/vaultSettings'
 import { webLinkVars } from '@shared/webLinks'
 import { NO_PAGE_OVERRIDE_VARS, pageOverrideVars, patchWorkspaceChrome, resolvePageSettings, resolveWindowChrome, setVaultNewPageDrawing, setWindowSearchIncludeInline, splitChromeDiff } from './settings/effectiveSettings'
-import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, DEFAULT_QUICK_HIGHLIGHT_COLORS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -90,6 +90,7 @@ import { setTypingArrows } from './editor/typingArrows'
 import { setEnterKeepsStyle } from './editor/enterKeepsStyle'
 import { toolbarPrefs } from './editor/toolbarPrefs'
 import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/highlightUsed'
+import { setQuickHighlightColors } from './editor/highlightQuick'
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import type { CardReviewResume, CardReviewScope, CardReviewSession } from './review/useCardReview'
@@ -963,6 +964,8 @@ export function App() {
   }, [settings.selectionToolbar])
   // The highlight panel's most used custom colours (YAZ-4348 demo round 2): read by every page's panel, absent from an older main process.
   useEffect(() => setUsedHighlightColors(settings.highlightCustomColors ?? []), [settings.highlightCustomColors])
+  // The 3 customizable quick highlight buttons in the selection toolbar (YAZ-6729).
+  useEffect(() => setQuickHighlightColors(settings.quickHighlightColors ?? DEFAULT_QUICK_HIGHLIGHT_COLORS), [settings.quickHighlightColors])
 
   // Per-window sidebar zoom, Explore Search size, and TOC zoom (YAZ-6490): local copies stay true; same value writes nothing (YAZ-3389 D6).
   const [sidebarZoom, setSidebarZoomState] = useState(storage.getSidebarZoom)

@@ -77,4 +77,45 @@ describe('urlOf: a URL as the browser reads it (YAZ-5242)', () => {
       expect(el.querySelector('img')).toBeNull()
     }
   })
+
+  it('YAZ-6694 #5: preserves exact safe inline color, font-size (8–96), text-color-<name>, and custom <mark> bg while stripping malicious styles', () => {
+    onlyLocalMedia()
+    const el = renderCard(
+      '<span class="text-color-red">named</span> ' +
+        '<span style="color: #e03131">hex</span> ' +
+        '<span style="font-size: 24px">sized</span> ' +
+        '<mark style="background-color: #ff8800">solid</mark> ' +
+        '<mark style="background-color: #ff880080">alpha</mark> ' +
+        '<span style="color: #e03131; background: url(https://evil.example/x)">evil1</span> ' +
+        '<span style="font-size: 999px">evil2</span> ' +
+        '<span data-inline-color="#e03131">spoof</span>',
+    )
+    expect(el.querySelector('span.text-color-red')?.textContent).toBe('named')
+    const spans = [...el.querySelectorAll<HTMLElement>('span')]
+    const hex = spans.find((s) => s.textContent === 'hex')!
+    expect(hex.style.color).toBe('rgb(224, 49, 49)')
+    const sized = spans.find((s) => s.textContent === 'sized')!
+    expect(sized.style.fontSize).toBe('24px')
+    const marks = [...el.querySelectorAll<HTMLElement>('mark')]
+    expect(marks[0].style.backgroundColor).toBe('rgb(255, 136, 0)')
+    expect(marks[1].style.backgroundColor).toMatch(/rgba\(255,\s*136,\s*0,\s*0\.5/)
+    for (const bad of ['evil1', 'evil2', 'spoof']) {
+      const node = spans.find((s) => s.textContent === bad)!
+      expect(node.getAttribute('style')).toBeNull()
+      expect(node.getAttribute('data-inline-color')).toBeNull()
+    }
+  })
+
+  it('YAZ-6739: desktop and mobile cards set data-mark-tone on solid and >=50% hex highlights, skipping translucent washes', () => {
+    const html =
+      '<mark style="background-color: #000000">black</mark> ' +
+      '<mark style="background-color: #ffff00">yellow</mark> ' +
+      '<mark style="background-color: #00000080">half</mark> ' +
+      '<mark style="background-color: #00000040">wash</mark>'
+    const desktopEl = renderCard(html)
+    expect([...desktopEl.querySelectorAll<HTMLElement>('mark')].map((m) => m.getAttribute('data-mark-tone'))).toEqual(['dark', 'light', 'dark', null])
+    onlyLocalMedia()
+    const mobileEl = renderCard(html)
+    expect([...mobileEl.querySelectorAll<HTMLElement>('mark')].map((m) => m.getAttribute('data-mark-tone'))).toEqual(['dark', 'light', 'dark', null])
+  })
 })

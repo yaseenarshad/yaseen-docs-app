@@ -8,12 +8,92 @@ import { externalNumberedHTML, holdsNumbers, literalNumberedHTML, parseLiteralNu
 import { imageOptionsOf } from './image/imageOptions'
 import { imageFile, insertPastedImage } from './image/insertImage'
 import { normalizeEmptyItems } from './listItemRoundTrip'
+import { clampFontSize, DEFAULT_FONT_SIZE } from './marks/fontSize'
+import { toHex } from '../lib/colour'
 import { closePathChip, pastePathLinks, pasteUrlOverWords, pathPasteCtx } from './pathPaste'
 import { pasteCellsOnly } from './table/cellNoteClipboard'
 import { pasteIntoCells } from './table/tablePaste'
 
 /** A bullet or numbered line anywhere in the text: only then does our parser take a plain-text paste over from Milkdown's. */
 const LIST_LINE_ANYWHERE = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]/m
+
+/**
+ * External rich HTML paste (e.g. Google Docs, YAZ-6695 #4): keep intentional inline `color` and `font-size`
+ * (converting `pt` to clamped whole `px` 8–96), while stripping default body black (`#000000`, `rgb(0, 0, 0)`) and
+ * default body sizes (`11pt`, `12pt`, `14.6667px`, `15px`, `16px`) so plain pastes stay clean Markdown.
+ * Internal ProseMirror slices (`data-pm-slice`) are left untouched.
+ */
+export function normalizePastedStyles(html: string): string {
+  if (!/style\s*=/i.test(html)) return html
+  const isInternal = /data-pm-slice\s*=/i.test(html) || /data-mdapp-clipboard\s*=/i.test(html)
+  if (isInternal && !/<t[hd]\b/i.test(html)) return html
+  const template = document.createElement('template')
+  template.innerHTML = html
+  let changed = false
+  if (isInternal) {
+    // Strip copy-out inline `color` from copied `<th>`/`<td>` cells (`clipboardCopyOut.ts`, YAZ-6715)
+    // so pasting back into Yaseen Docs keeps cell `data-color`/`data-fill-tone` without baking inline `text_color` marks.
+    for (const cell of template.content.querySelectorAll<HTMLElement>('th[style], td[style]')) {
+      if (cell.style.color) {
+        cell.style.removeProperty('color')
+        if (cell.getAttribute('style')?.trim() === '') cell.removeAttribute('style')
+        changed = true
+      }
+    }
+    return changed ? template.innerHTML : html
+  }
+  for (const el of template.content.querySelectorAll<HTMLElement>('[style]')) {
+    const rawColor = el.style.color
+    if (rawColor) {
+      const lower = rawColor.trim().toLowerCase()
+      const hex = toHex(lower)
+      const isDefaultBlack = lower === 'black' || hex === '#000000' || (hex !== undefined && hex.length === 9 && hex.endsWith('00'))
+      if (isDefaultBlack || hex === undefined) {
+        el.style.removeProperty('color')
+        changed = true
+      }
+    }
+    const rawSize = el.style.fontSize
+    if (rawSize) {
+      const lower = rawSize.trim().toLowerCase()
+      const ptMatch = /^(\d+(?:\.\d+)?)pt$/.exec(lower)
+      const pxMatch = /^(\d+(?:\.\d+)?)px$/.exec(lower)
+      if (ptMatch !== null) {
+        const pt = Number(ptMatch[1])
+        if (Math.abs(pt - 11) < 0.05 || Math.abs(pt - 12) < 0.05 || pt <= 0) {
+          el.style.removeProperty('font-size')
+          changed = true
+        } else {
+          const px = clampFontSize(pt * (4 / 3))
+          if (px === DEFAULT_FONT_SIZE) el.style.removeProperty('font-size')
+          else el.style.fontSize = `${px}px`
+          changed = true
+        }
+      } else if (pxMatch !== null) {
+        const px = Number(pxMatch[1])
+        if (px <= 0 || (px >= 14.5 && px <= 16.5)) {
+          el.style.removeProperty('font-size')
+          changed = true
+        } else {
+          const clamped = clampFontSize(px)
+          const next = `${clamped}px`
+          if (el.style.fontSize !== next) {
+            el.style.fontSize = next
+            changed = true
+          }
+        }
+      } else {
+        el.style.removeProperty('font-size')
+        changed = true
+      }
+    }
+    if (el.getAttribute('style')?.trim() === '') {
+      el.removeAttribute('style')
+      changed = true
+    }
+  }
+  return changed ? template.innerHTML : html
+}
 
 /** A root-level BR between paragraphs is one blank paragraph, not a paragraph with two visual lines. */
 function normalizeParagraphSeparators(html: string): string {
@@ -48,7 +128,8 @@ function normalizeParagraphSeparators(html: string): string {
 export const clipboardPaste = $prose((ctx) => {
   ctx.update(editorViewOptionsCtx, prev => ({
     ...prev,
-    transformPastedHTML: (html, view) => literalNumberedHTML(normalizeParagraphSeparators(prev.transformPastedHTML?.(html, view) ?? html), holdsNumbers(view.state.schema)),
+    transformPastedHTML: (html, view) =>
+      normalizePastedStyles(literalNumberedHTML(normalizeParagraphSeparators(prev.transformPastedHTML?.(html, view) ?? html), holdsNumbers(view.state.schema))),
     handlePaste: (view, event, slice) => {
       if (!view.editable) return true
       // Image BYTES win over markup (YAZ-1656 / YAZ-1662, D6): a screenshot on the clipboard is

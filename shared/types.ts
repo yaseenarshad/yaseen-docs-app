@@ -1380,7 +1380,7 @@ export const TOOLBAR_LAYOUT = {
   // `highlight-more` (YAZ-4348 demo round 2): the ▾ of the highlight colour panel. Last, so a saved order (the loader
   // appends a new button) puts it right after the highlight buttons too. Pink left the strip for the panel (demo round
   // 2, Yasin): a saved setting that still names `highlight-pink` loses it on load, as any unknown name.
-  textStyle: ['bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more'],
+  textStyle: ['bold', 'italic', 'underline', 'strikethrough', 'font-size', 'text-color', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more'],
   insert: ['code', 'link'],
 } as const
 export type ToolbarGroupId = keyof typeof TOOLBAR_LAYOUT
@@ -1407,8 +1407,25 @@ export interface HighlightCustomColor {
 export const HIGHLIGHT_CUSTOM_COLORS_KEPT = 10
 /** How many the highlight panel's "Most used custom colours" row shows: one row of its grid. */
 export const HIGHLIGHT_CUSTOM_COLORS_SHOWN = 5
-/** A custom highlight colour exactly as the page's mark and this setting keep it: lowercase `#rrggbb`. */
-export const isHighlightHex = (v: unknown): v is `#${string}` => typeof v === 'string' && /^#[0-9a-f]{6}$/.test(v)
+/** A custom highlight colour exactly as the page's mark and this setting keep it: lowercase `#rrggbb` or `#rrggbbaa`. */
+export const isHighlightHex = (v: unknown): v is `#${string}` => typeof v === 'string' && /^#[0-9a-f]{6}([0-9a-f]{2})?$/.test(v)
+/** Named soft-wash highlights allowed in quick highlight slots (`yellow` saves as `==text==`). */
+export const QUICK_HIGHLIGHT_NAMES = ['yellow', 'green', 'blue', 'pink', 'orange', 'purple', 'red', 'gray'] as const
+export type QuickHighlightSlot = (typeof QUICK_HIGHLIGHT_NAMES)[number] | `#${string}`
+export type QuickHighlightColors = [QuickHighlightSlot, QuickHighlightSlot, QuickHighlightSlot]
+export const DEFAULT_QUICK_HIGHLIGHT_COLORS: QuickHighlightColors = ['yellow', 'green', 'blue']
+export const isQuickHighlightSlot = (v: unknown): v is QuickHighlightSlot =>
+  typeof v === 'string' && ((QUICK_HIGHLIGHT_NAMES as readonly string[]).includes(v) || isHighlightHex(v))
+export const isQuickHighlightColors = (v: unknown): v is QuickHighlightColors =>
+  Array.isArray(v) && v.length === 3 && v.every(isQuickHighlightSlot)
+export const sanitizeQuickHighlightColors = (v: unknown): QuickHighlightColors => {
+  if (!Array.isArray(v)) return [...DEFAULT_QUICK_HIGHLIGHT_COLORS]
+  return [
+    isQuickHighlightSlot(v[0]) ? v[0] : DEFAULT_QUICK_HIGHLIGHT_COLORS[0],
+    isQuickHighlightSlot(v[1]) ? v[1] : DEFAULT_QUICK_HIGHLIGHT_COLORS[1],
+    isQuickHighlightSlot(v[2]) ? v[2] : DEFAULT_QUICK_HIGHLIGHT_COLORS[2],
+  ]
+}
 /** A kept entry: a lowercase `#rrggbb` and a whole count of one or more. */
 export const isHighlightCustomColor = (v: unknown): v is HighlightCustomColor =>
   typeof v === 'object' && v !== null && isHighlightHex((v as HighlightCustomColor).color) &&
@@ -2409,6 +2426,8 @@ export interface SettingsState {
    * "Most used custom colours" row shows the first `HIGHLIGHT_CUSTOM_COLORS_SHOWN`. Travels with the settings.
    */
   highlightCustomColors: HighlightCustomColor[]
+  /** The 3 default quick highlight colours shown as buttons in the selection toolbar (YAZ-6729). Travels with settings. */
+  quickHighlightColors: QuickHighlightColors
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
   startupWindows: StartupWindows
   /** Show a confirmation popup before Cmd+Q / Alfred Quit All closes a Vault App or Yaseen Docs (YAZ-6641). Default true. */
@@ -3048,18 +3067,39 @@ export const HEADER_ROW_CHOICES = {
   text: ['muted', 'full', 'white', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'],
   align: ['follow', 'left', 'center', 'right'],
 } as const
-export type HeaderRowOwn = { -readonly [K in keyof typeof HEADER_ROW_CHOICES]?: (typeof HEADER_ROW_CHOICES)[K][number] }
+export const HEADER_FILL_HEX_RE = /^#([0-9a-f]{6}|[0-9a-f]{8})$/i
+export const HEADER_TEXT_HEX_RE = /^#[0-9a-f]{6}$/i
+export type HeaderRowColor = (typeof HEADER_ROW_CHOICES.color)[number] | `#${string}`
+export type HeaderRowText = (typeof HEADER_ROW_CHOICES.text)[number] | `#${string}`
+export type HeaderRowOwn = {
+  color?: HeaderRowColor
+  strength?: (typeof HEADER_ROW_CHOICES.strength)[number]
+  weight?: (typeof HEADER_ROW_CHOICES.weight)[number]
+  text?: HeaderRowText
+  align?: (typeof HEADER_ROW_CHOICES.align)[number]
+}
 /** Settings' header row: every part set, but `text`: null is each table's own (full in a page table, muted in a folder table). */
 export type HeaderRow = Required<Omit<HeaderRowOwn, 'text'>> & { text: NonNullable<HeaderRowOwn['text']> | null }
 export const HEADER_ROW_PARTS = Object.keys(HEADER_ROW_CHOICES) as (keyof HeaderRowOwn)[]
 export const DEFAULT_HEADER_ROW: HeaderRow = { color: 'gray', strength: 'light', weight: 'bold', text: null, align: 'follow' }
 /** A header row choice's name in a menu or a control (YAZ-4794): Align's `follow` is "Follow column", the rest capitalised. */
 export const headerRowLabel = (value: string): string => (value === 'follow' ? 'Follow column' : value.charAt(0).toUpperCase() + value.slice(1))
-/** The parts of `raw` that are one of their choices; the rest are left out. */
+/** The parts of `raw` that are one of their choices (or custom hex for `color` / `text`); the rest are left out. */
 export function headerRowOwn(raw: unknown): HeaderRowOwn {
   if (typeof raw !== 'object' || raw === null) return {}
   const src = raw as Record<string, unknown>
-  return Object.fromEntries(HEADER_ROW_PARTS.filter((part) => (HEADER_ROW_CHOICES[part] as readonly unknown[]).includes(src[part])).map((part) => [part, src[part]]))
+  const out: HeaderRowOwn = {}
+  for (const part of HEADER_ROW_PARTS) {
+    const value = src[part]
+    if ((HEADER_ROW_CHOICES[part] as readonly unknown[]).includes(value)) {
+      Object.assign(out, { [part]: value })
+    } else if (part === 'color' && typeof value === 'string' && HEADER_FILL_HEX_RE.test(value)) {
+      out.color = value.toLowerCase() as `#${string}`
+    } else if (part === 'text' && typeof value === 'string' && HEADER_TEXT_HEX_RE.test(value)) {
+      out.text = value.toLowerCase() as `#${string}`
+    }
+  }
+  return out
 }
 /** The `data-table-header-*` attributes of the set parts: on `.app` (Settings), a page table's block and a folder table (`table.css`). */
 export const headerRowAttrs = (parts: Partial<HeaderRow>): Record<string, string> =>
@@ -3371,6 +3411,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sidebarTabs: DEFAULT_SIDEBAR_TABS,
   selectionToolbar: DEFAULT_TOOLBAR,
   highlightCustomColors: [],
+  quickHighlightColors: DEFAULT_QUICK_HIGHLIGHT_COLORS,
   startupWindows: 'last',
   confirmBeforeQuit: true,
   vaultAppActivateAllWindows: true,

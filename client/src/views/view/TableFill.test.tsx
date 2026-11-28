@@ -124,8 +124,8 @@ describe('fills paint the folder table (YAZ-4536)', () => {
   })
 })
 
-describe('"Fill ›" in the row right-click: a cell, its row or its column (YAZ-4536 D12; one flyout since YAZ-3746 13AW)', () => {
-  it('the menu has ONE Fill flyout after the clipboard group; it holds the Cell · Row · Column switch, No fill, the ten colours and Custom colour…', () => {
+describe('"Fill ›" in the row right-click: a cell, its row or its column (YAZ-4536 D12; one flyout since YAZ-3746 13AW; unified ColourGrid YAZ-6735)', () => {
+  it('the menu has ONE Fill flyout after the clipboard group; it holds the Cell · Row · Column switch, No fill, the 80-swatch Google Docs grid, and + custom', () => {
     const { el } = mount(TABLE)
     rightClick(q(rowNamed(el, 'Agentic Agency'), 'td[data-cell$=":1"]'))
     // One order in every folder-page menu (YAZ-4608 C8): open, the clipboard (13AI), the edits, the view, then Copy path.
@@ -135,10 +135,9 @@ describe('"Fill ›" in the row right-click: a cell, its row or its column (YAZ-
     const flyout = q(el, '.ctx-menu__sub')
     // From a cell the switch starts on Cell.
     expect([...flyout.querySelectorAll<HTMLButtonElement>('.fill-target__opt')].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Cell', 'true'], ['Row', 'false'], ['Column', 'false']])
-    expect([...flyout.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual([
-      'No fill', 'Red', 'Orange', 'Yellow', 'Green', 'Teal', 'Blue', 'Purple', 'Pink', 'Grey', 'Brown', 'Custom colour…',
-    ])
-    expect(q<HTMLElement>(flyout, '.table-menu-swatch').style.background).toBe('var(--table-fill-solid-red)')
+    expect(q<HTMLButtonElement>(flyout, '.colour-grid__reset').textContent).toBe('No fill')
+    expect(flyout.querySelectorAll('.colour-grid__rows .colour-grid__dot')).toHaveLength(80)
+    expect(q<HTMLButtonElement>(flyout, '[data-item="custom-plus"]')).not.toBeNull()
     // One flyout at a time.
     click(item(el, 'Open in'))
     expect(el.querySelectorAll('.ctx-menu__sub')).toHaveLength(1)
@@ -149,39 +148,39 @@ describe('"Fill ›" in the row right-click: a cell, its row or its column (YAZ-
     const { el, yaml } = mount(TABLE)
     rightClick(q(rowNamed(el, 'Agentic Agency'), 'td[data-cell$=":1"]'))
     openFill(el, 'Cell')
-    click(item(el, 'Blue'))
+    click(q<HTMLButtonElement>(el, '.ctx-menu__sub .colour-grid__dot[aria-label="Blue"]'))
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(yaml()).toContain(`    fills:
       - page: "[[Agentic Agency]]"
         column: note.priority
-        fill: blue
+        fill: "#0000ff"
 `)
-    expect(fillOf(q(rowNamed(el, 'Agentic Agency'), 'td[data-cell$=":1"]'))).toBe('var(--table-fill-blue)')
+    expect(fillOf(q(rowNamed(el, 'Agentic Agency'), 'td[data-cell$=":1"]'))).toBe('color-mix(in srgb, #0000ff var(--table-fill-wash), transparent)')
   })
 
   it('Fill › Row writes a row fill; "No fill" clears it and the fills key goes', () => {
     const { el, yaml } = mount(TABLE)
     rightClick(q(rowNamed(el, 'Attribution'), 'td[data-cell$=":2"]'))
     openFill(el, 'Row')
-    click(item(el, 'Pink'))
+    click(q<HTMLButtonElement>(el, '.ctx-menu__sub .colour-grid__dot[aria-label="Magenta"]'))
     expect(yaml()).toContain(`    fills:
       - page: "[[Attribution]]"
-        fill: pink
+        fill: "#ff00ff"
 `)
     rightClick(q(rowNamed(el, 'Attribution'), 'td[data-cell$=":0"]'))
     openFill(el, 'Row')
-    click(item(el, 'No fill'))
+    click(q<HTMLButtonElement>(el, '.ctx-menu__sub .colour-grid__reset'))
     expect(yaml()).not.toContain('fills')
   })
 
-  it('"Custom colour…" opens the colour box in the flyout; Enter in a field writes that hex, and the box stays', () => {
+  it('"+" opens the colour box in the flyout; Enter in a field writes that hex, and the box stays', () => {
     const { el, yaml } = mount(TABLE)
     rightClick(q(rowNamed(el, 'Agentic Agency'), 'td[data-cell$=":0"]'))
     openFill(el, 'Row')
-    click(item(el, 'Custom colour…'))
+    click(q<HTMLButtonElement>(el, '.ctx-menu__sub [data-item="custom-plus"]'))
     const box = q<HTMLElement>(el, '.ctx-menu__sub .colour-box')
     expect(box.hidden).toBe(false)
-    const [r, g, b] = [...box.querySelectorAll<HTMLInputElement>('input')]
+    const [r, g, b] = [...box.querySelectorAll<HTMLInputElement>('input[type="text"]')]
     // Typed as a person types: each field's value, then its input event.
     for (const [field, value] of [[r, '18'], [g, '171'], [b, '52']] as const) {
       field.value = value
@@ -248,17 +247,17 @@ describe('a folder row fills (YAZ-4644 E1): Subfolders: As rows on a Schema page
     const { el, yaml } = schema(SCHEMA)
     rightClick(q(orders(el), 'td[data-cell$=":1"]'))
     openFill(el, 'Row')
-    click(item(el, 'Pink'))
+    click(q<HTMLButtonElement>(el, '.ctx-menu__sub .colour-grid__dot[aria-label="Magenta"]'))
     expect(yaml()).toContain(`    fills:
       - page: "[[Orders]]"
-        fill: pink
+        fill: "#ff00ff"
 `)
-    expect([...orders(el).querySelectorAll<HTMLElement>('td[data-cell]')].map(fillOf)).toEqual(Array(3).fill('var(--table-fill-pink)'))
+    expect([...orders(el).querySelectorAll<HTMLElement>('td[data-cell]')].map(fillOf)).toEqual(Array(3).fill('color-mix(in srgb, #ff00ff var(--table-fill-wash), transparent)'))
     rightClick(q(orders(el), 'td[data-cell$=":1"]'))
     openFill(el, 'Cell')
-    click(item(el, 'Blue'))
-    expect(fillOf(q(orders(el), 'td[data-cell$=":1"]'))).toBe('var(--table-fill-blue)')
-    expect(fillOf(q(orders(el), 'td[data-cell$=":2"]'))).toBe('var(--table-fill-pink)')
+    click(q<HTMLButtonElement>(el, '.ctx-menu__sub .colour-grid__dot[aria-label="Blue"]'))
+    expect(fillOf(q(orders(el), 'td[data-cell$=":1"]'))).toBe('color-mix(in srgb, #0000ff var(--table-fill-wash), transparent)')
+    expect(fillOf(q(orders(el), 'td[data-cell$=":2"]'))).toBe('color-mix(in srgb, #ff00ff var(--table-fill-wash), transparent)')
     // One entry per slot: the second write did not add a twin of the first.
     expect((yaml().match(/- page: /g) ?? []).length).toBe(2)
   })

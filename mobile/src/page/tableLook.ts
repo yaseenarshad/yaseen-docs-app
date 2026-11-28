@@ -54,12 +54,16 @@ export function applyTableLook(table: HTMLTableElement, look: PhoneTableLook | n
   for (const [part, value] of Object.entries(look.tableHeaderRow) as [keyof typeof d, string | null][]) {
     if (value === null || value === d[part] || table.hasAttribute(`data-header-${part}`)) continue
     table.setAttribute(`data-header-${part}`, value)
+    if (part === 'color' && value.startsWith('#')) table.style.setProperty('--table-header-hue', value)
+    if (part === 'text' && value.startsWith('#')) table.style.setProperty('--table-header-ink', value)
   }
   // YAZ-5567: the subheader rows' look, part by part, as the header row's; their sticky choice when the table has none.
   const ds = TABLE_LOOK_DEFAULTS.tableSubheaderRow
   for (const [part, value] of Object.entries(look.tableSubheaderRow) as [keyof typeof ds, string | null][]) {
     if (value === null || value === ds[part] || table.hasAttribute(`data-subheader-${part}`)) continue
     table.setAttribute(`data-subheader-${part}`, value)
+    if (part === 'color' && value.startsWith('#')) table.style.setProperty('--table-subheader-hue', value)
+    if (part === 'text' && value.startsWith('#')) table.style.setProperty('--table-subheader-ink', value)
   }
   if (!look.tableStickySubheaders && !table.hasAttribute('data-sticky-subheaders')) table.setAttribute('data-sticky-subheaders', 'off')
   // A table with a comment had its freeze and Clip from it (`applyTableFile`, with the vault's defaults).

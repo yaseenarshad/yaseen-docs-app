@@ -15,8 +15,8 @@ import { $shortcut } from '@milkdown/kit/utils'
 import { onVisibleLines } from '../lineSelection'
 import { rowShortcuts } from '../pageKeys'
 
-/** The letter styles ⌘\ clears; `link` (and any other mark) stays. `text_color` exists in a text box only. */
-const CLEARED_MARKS = ['strong', 'emphasis', 'underline', 'strike_through', 'inlineCode', 'highlight', 'text_color']
+/** The letter styles ⌘\ clears; `link` (and any other mark) stays. */
+const CLEARED_MARKS = ['strong', 'emphasis', 'underline', 'strike_through', 'inlineCode', 'highlight', 'text_color', 'font_size']
 
 export const clearFormatting: Command = (state, dispatch) => {
   const { schema, selection } = state

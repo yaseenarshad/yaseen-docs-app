@@ -48,8 +48,8 @@ export const ENGINE_INPUTS = [
 ]
 
 const STAMP = join(engine, 'packages', 'excalidraw', 'dist', '.docs-app-build')
-/** Vite's pre-bundle of the renderer's packages (electron-vite's default `cacheDir`): it holds a copy of the engine. */
-const VITE_DEPS = join(repo, 'node_modules', '.vite')
+/** Vite's pre-bundle caches (root and client renderer): they hold copies of the engine. */
+const VITE_DEPS = [join(repo, 'node_modules', '.vite'), join(repo, 'client', 'node_modules', '.vite')]
 
 function run(cmd, args, cwd) {
   const r = spawnSync(cmd, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' })
@@ -101,7 +101,7 @@ export function buildEngine({ force = false } = {}) {
   run('npm', ['install', '--no-save', '--no-audit', '--no-fund', '--prefer-offline'], repo)
   // Vite re-bundles its packages only when the lock file or its config changes; an engine change is neither. Drop the
   // stale copy, so `npm run dev` serves the engine that was just built.
-  rmSync(VITE_DEPS, { recursive: true, force: true })
+  for (const dir of VITE_DEPS) rmSync(dir, { recursive: true, force: true })
   if (stamp !== null) writeFileSync(STAMP, stamp)
   console.log('engine: built')
   return true

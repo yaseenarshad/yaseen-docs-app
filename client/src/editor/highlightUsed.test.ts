@@ -4,7 +4,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HIGHLIGHT_CUSTOM_COLORS_KEPT, HIGHLIGHT_CUSTOM_COLORS_SHOWN } from '@shared/types'
-import { countUse, mostUsedHighlightColors, recordHighlightColorUse, setUsedHighlightColors, setUsedHighlightColorsSaver } from './highlightUsed'
+import { countUse, mostUsedHighlightColors, pinHighlightColor, recordHighlightColorUse, setUsedHighlightColors, setUsedHighlightColorsSaver } from './highlightUsed'
 
 afterEach(() => {
   setUsedHighlightColors([])
@@ -41,5 +41,20 @@ describe('most used custom highlight colours (YAZ-4348 demo round 2)', () => {
     recordHighlightColorUse('#3366ff')
     expect(save).toHaveBeenLastCalledWith([{ color: '#3366ff', uses: 1 }])
     expect(mostUsedHighlightColors()).toEqual(['#3366ff'])
+  })
+
+  it('YAZ-6741: pinHighlightColor immediately shows at slot 0 even when 5 older custom colours have uses >= 2', () => {
+    const save = vi.fn()
+    setUsedHighlightColorsSaver(save)
+    setUsedHighlightColors([
+      { color: '#111111', uses: 5 },
+      { color: '#222222', uses: 4 },
+      { color: '#333333', uses: 3 },
+      { color: '#444444', uses: 2 },
+      { color: '#555555', uses: 2 },
+    ])
+    pinHighlightColor('#ff00aa')
+    expect(mostUsedHighlightColors()[0]).toBe('#ff00aa')
+    expect(mostUsedHighlightColors()).toHaveLength(HIGHLIGHT_CUSTOM_COLORS_SHOWN)
   })
 })

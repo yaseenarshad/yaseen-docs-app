@@ -157,7 +157,7 @@ const SIDEBAR_ROWS_BARE = SIDEBAR_ROWS.filter((id) => !id.startsWith('sidebarIco
 const SIDEBAR_ROWS_REVIEW = SIDEBAR_ROWS.flatMap((id) => (id === 'sidebarIconColors.page' ? [id, 'sidebarIconColors.card'] : [id]))
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
-const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'pageBulletIndent', 'pageBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'typingArrows', 'enterKeepsStylePages', 'enterKeepsStyleBoxes', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'findFolds', 'outsideChangeGlow', 'outsideListPinned', 'outsideOutlineThickness', 'outsideOutlineColors', 'codeBlockWidth', 'inlineCodeStyle']
+const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'pageBulletIndent', 'pageBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'quickHighlightColors', 'typingArrows', 'enterKeepsStylePages', 'enterKeepsStyleBoxes', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'findFolds', 'outsideChangeGlow', 'outsideListPinned', 'outsideOutlineThickness', 'outsideOutlineColors', 'codeBlockWidth', 'inlineCodeStyle']
 /**
  * Settings › Tables (YAZ-4775), after Editor: the page tables' rows, moved off the Editor page with their keys. "All tables"
  * starts with Header row (YAZ-4774) and Width (YAZ-4783); Cell notes with the "+" (YAZ-4790).

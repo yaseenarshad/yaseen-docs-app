@@ -59,11 +59,11 @@ import { formatView, readView, splitParts, type TableViewDef } from './super/vie
 export const TABLE_COLORS = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey', 'brown'] as const
 export type TableColor = (typeof TABLE_COLORS)[number]
 
-/** A cell's fill or text colour, checked: a name, or `#rrggbb` (any case in, lowercase out), else `null`. */
+/** A cell's fill or text colour, checked: a name, `#rrggbb` (solid), or `#rrggbbaa` (CSS Color 4 opacity), lowercase out, else `null`. */
 export function cellColor(value: unknown): string | null {
   if (typeof value !== 'string') return null
   if ((TABLE_COLORS as readonly string[]).includes(value)) return value
-  return /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : null
+  return /^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(value) ? value.toLowerCase() : null
 }
 
 /** A header part's word in the comment (YAZ-4794): `text-<colour>` and `align-<value>`; every other value is its bare word. */
@@ -74,17 +74,20 @@ export function headerWord<K extends keyof HeaderRowOwn>(part: K, value: NonNull
 
 /**
  * The part and value a `header` word names, or `null` (YAZ-4794): `plain` is Strength Off (YAZ-4774), `text-*` and
- * `align-*` the text colour and the alignment, and a bare word a Color, Strength or Weight choice, or `muted` / `full`.
- * A bare colour is always the fill, as before; a bare alignment word is no word.
+ * `align-*` the text colour (including `text-#rrggbb`) and the alignment, and a bare word a Color (including `#rrggbb`
+ * / `#rrggbbaa`), Strength or Weight choice, or `muted` / `full`. A bare colour is always the fill, as before; a bare
+ * alignment word is no word.
  */
 function readHeaderWord(word: string): [keyof HeaderRowOwn, string] | null {
   if (word === 'plain') return ['strength', 'off']
   const prefixed = /^(text|align)-(.+)$/.exec(word)
   if (prefixed !== null) {
     const part = prefixed[1] as 'text' | 'align'
+    if (part === 'text' && /^#[0-9a-f]{6}$/i.test(prefixed[2])) return ['text', prefixed[2].toLowerCase()]
     return (HEADER_ROW_CHOICES[part] as readonly string[]).includes(prefixed[2]) ? [part, prefixed[2]] : null
   }
   if (word === 'muted' || word === 'full') return ['text', word]
+  if (/^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(word)) return ['color', word.toLowerCase()]
   const part = (['color', 'strength', 'weight'] as const).find((p) => (HEADER_ROW_CHOICES[p] as readonly string[]).includes(word))
   return part === undefined ? null : [part, word]
 }

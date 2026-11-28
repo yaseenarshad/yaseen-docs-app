@@ -345,10 +345,10 @@ describe('the selection right-click (YAZ-4593)', () => {
     rightClick(cell(el, 0, 1))
     act(() => item(el, 'Fill').click())
     expect(el.querySelector('.ctx-menu__sub .fill-target__opt[aria-pressed="true"]')?.textContent).toBe('Cell')
-    act(() => item(el, 'Red').click())
+    act(() => el.querySelector<HTMLButtonElement>('.ctx-menu__sub .colour-grid__dot[aria-label="Red"]')!.click())
     expect(onChange).toHaveBeenCalledTimes(1)
-    expect(yaml().match(/fill: red/g)).toHaveLength(4)
-    expect(cell(el, 1, 2).style.getPropertyValue('--view-cell-fill')).toBe('var(--table-fill-red)')
+    expect(yaml().match(/fill: "#ff0000"/g)).toHaveLength(4)
+    expect(cell(el, 1, 2).style.getPropertyValue('--view-cell-fill')).toBe('color-mix(in srgb, #ff0000 var(--table-fill-wash), transparent)')
   })
 
   it('Set value › over one column writes that value to each page that does not have it', async () => {

@@ -1407,7 +1407,7 @@ describe('comments on a card file (YAZ-5466)', () => {
       expect(pillStyleBtn).toBeDefined()
       act(() => pillStyleBtn.click())
       const sub = el.querySelector<HTMLElement>('.ctx-menu--editor .ctx-menu__sub')!
-      expect([...sub.querySelectorAll('.ctx-menu__heading')].map((h) => h.textContent)).toEqual(['Text'])
+      expect([...sub.querySelectorAll('.fill-target__opt')].map((h) => h.textContent)).toEqual(['Text', 'Text colour'])
       expect([...sub.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].map((b) => b.textContent)).toEqual(['Bold', 'Italic', 'Underline', 'Strikethrough', "↺ Back to the vault's look"])
       act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
       act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))

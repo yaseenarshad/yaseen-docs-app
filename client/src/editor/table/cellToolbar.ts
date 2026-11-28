@@ -45,11 +45,12 @@ import { clearCells as clearSelected, deleteText, deleteWithNotes } from './cell
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { setCellsAlign, setCellsAttr } from './cells'
-import { ColourBox } from '../highlightColourBox'
+import { ColourGrid } from '../colourGrid'
+import { clampFontSize, DEFAULT_FONT_SIZE, FONT_SIZE_MAX, FONT_SIZE_MIN, FONT_SIZE_PRESETS, isFontSize } from '../marks/fontSize'
 import { capital, customStart, fillSwatch, setCustomColour, textSwatch } from './colours'
 import { TABLE_HANDLE_MENU } from './tableMenu'
 import { mergeCells, mergeRect } from './tableMerge'
-import { CELL_ALIGNS, TABLE_COLORS, type CellAlign, type TableColor } from './tableStyle'
+import { CELL_ALIGNS, type CellAlign, type TableColor } from './tableStyle'
 
 const SVG = (body: string) => `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${body}</svg>`
 const CARET = SVG('<path d="M8 10l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>')
@@ -106,6 +107,42 @@ function toggleMark(view: EditorView, name: string): void {
   if (tr.docChanged) view.dispatch(tr)
 }
 
+/** The font size across every selected cell's text: one px number, `null` when all default, or `undefined` when mixed. */
+function cellsFontSize(state: EditorState): number | null | undefined {
+  const { selection, schema } = state
+  const type = schema.marks.font_size
+  if (!(selection instanceof CellSelection) || type === undefined) return null
+  let found: number | null | undefined
+  let mixed = false
+  selection.forEachCell((cell) => {
+    if (mixed) return
+    cell.descendants((node) => {
+      if (mixed || !node.isText) return !mixed
+      const raw = type.isInSet(node.marks)?.attrs.size
+      const size = isFontSize(raw) ? raw : null
+      if (found === undefined) found = size
+      else if (found !== size) mixed = true
+      return !mixed
+    })
+  })
+  return mixed ? undefined : (found ?? null)
+}
+
+/** Set (or clear on `null` / `DEFAULT_FONT_SIZE`) `font_size` on every selected cell in one undo step (YAZ-6695 #1). */
+function setCellsFontSize(view: EditorView, size: number | null): void {
+  const { selection, schema } = view.state
+  const type = schema.marks.font_size
+  if (!(selection instanceof CellSelection) || type === undefined) return
+  const tr = closeHistory(view.state.tr)
+  const remove = size === null || size === DEFAULT_FONT_SIZE
+  const mark = remove ? null : type.create({ size: clampFontSize(size) })
+  selection.forEachCell((cell, pos) => {
+    if (mark === null) tr.removeMark(pos + 1, pos + cell.nodeSize - 1, type)
+    else tr.addMark(pos + 1, pos + cell.nodeSize - 1, mark)
+  })
+  if (tr.docChanged) view.dispatch(tr)
+}
+
 /** Clear cells, asking first when a cell note would go (YAZ-4206 D16). */
 function clearCells(view: EditorView): void {
   const { selection } = view.state
@@ -120,7 +157,7 @@ function merge(view: EditorView): void {
 }
 
 /** A button's `enabled` says when it can run; the toolbar sets `disabled` on each update. One without it always can. */
-type Part = { name: string; icon: string; run: (view: EditorView) => void; enabled?: (state: EditorState) => boolean } | 'divider' | 'colours'
+type Part = { name: string; icon: string; run: (view: EditorView) => void; enabled?: (state: EditorState) => boolean } | 'divider' | 'colours' | 'size'
 
 const PARTS: Part[] = [
   'colours',
@@ -128,6 +165,7 @@ const PARTS: Part[] = [
   { name: 'Bold', icon: letter('B', 'font-weight="700"'), run: (v) => toggleMark(v, 'strong') },
   { name: 'Italic', icon: letter('I', 'font-style="italic"'), run: (v) => toggleMark(v, 'emphasis') },
   { name: 'Strikethrough', icon: letter('S', 'text-decoration="line-through"'), run: (v) => toggleMark(v, 'strike_through') },
+  'size',
   'divider',
   ...CELL_ALIGNS.map((a) => ({ name: `Align ${a}`, icon: alignIcon(a), run: (v: EditorView) => alignCells(v, a) })),
   'divider',
@@ -164,29 +202,35 @@ interface ColourGroup {
 
 let paletteIds = 0
 
-/** A palette's colour box under its "Custom colour…" item: made on the first open. */
-interface CustomBox {
-  /** The box, or null before the first open. */
-  box: ColourBox | null
-  item: HTMLElement
-}
-
 /** The toolbar's one open palette: `toggle` opens a palette (closing the other) or closes it. */
 interface Palettes {
-  toggle: (palette: HTMLElement, arrow: HTMLElement, custom: CustomBox) => void
+  toggle: (palette: HTMLElement, arrow: HTMLElement, grid?: ColourGrid) => void
   close: () => void
 }
 
-/** Just the box; a focus in it goes back to the note. */
-function hideBox(view: EditorView, custom: CustomBox): void {
-  if (custom.box === null || !custom.box.open) return
-  const focused = custom.box.el.contains(view.dom.ownerDocument.activeElement)
-  custom.box.hide()
-  custom.item.setAttribute('aria-expanded', 'false')
+/** Close a `ColourGrid`'s custom drawer if open, returning focus to the note. */
+function hideGridBox(view: EditorView, grid: ColourGrid | undefined): void {
+  if (grid === undefined) return
+  grid.hideMenu()
+  if (!grid.boxOpen) return
+  const focused = grid.el.contains(view.dom.ownerDocument.activeElement)
+  grid.closeCustom()
   if (focused && !view.isDestroyed) view.focus()
 }
 
-/** A colour group: the label, the quick swatches, and the ▾ with its palette. */
+/** Selected cells' distinct current hex/named values for `attr`, for marking the active dot in `ColourGrid`. */
+function selectedCellValues(state: EditorState, attr: 'fill' | 'color'): string[] {
+  const { selection } = state
+  if (!(selection instanceof CellSelection)) return []
+  const found = new Set<string>()
+  selection.forEachCell((cell) => {
+    const v = cell.attrs[attr]
+    if (typeof v === 'string' && v !== '') found.add(v)
+  })
+  return [...found]
+}
+
+/** A colour group: the label, the 3 per-page recent quick swatches, and the ▾ with the shared Google Docs 10×8 `ColourGrid` (YAZ-6727, YAZ-6737). */
 function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes): HTMLElement {
   const box = document.createElement('span')
   box.className = 'cell-toolbar__colours'
@@ -194,71 +238,104 @@ function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes)
   label.className = 'cell-toolbar__label'
   label.textContent = group.label
   box.appendChild(label)
-  for (const c of group.quick) {
-    const button = toolButton(group.name(c), group.quickIcon(c), 'toolbar-item cell-toolbar__quick')
-    button.addEventListener('click', () => setCells(view, group.attr, c))
+
+  // Per-page recent 3 slots (YAZ-6737): start fresh with group defaults on every page;
+  // picking a new colour from ▾ slides it into Slot 1 without shuffling on direct quick clicks.
+  const slots: string[] = [...group.quick]
+  const quickIconFor = (value: string): string => {
+    if (group.attr === 'fill') {
+      const bg = value.startsWith('#') ? value : group.swatch(value as TableColor)
+      return `<span class="cell-toolbar__swatch" style="background: ${bg}"></span>`
+    }
+    const fg = value.startsWith('#') ? value : group.swatch(value as TableColor)
+    const lower = value.toLowerCase()
+    const chip =
+      lower === '#ffffff'
+        ? ' style="background:#1e1e1e;border-radius:3px"'
+        : lower === '#000000'
+          ? ' style="background:#e9ecef;border-radius:3px"'
+          : ''
+    return `<span${chip}>${SVG(`<text x="12" y="18" text-anchor="middle" font-size="17" font-weight="700" font-family="inherit" fill="${fg}">A</text>`)}</span>`
+  }
+  const quickNameFor = (value: string): string =>
+    value.startsWith('#')
+      ? group.attr === 'fill'
+        ? `Fill ${value}`
+        : `${value} text`
+      : group.name(value as TableColor)
+
+  const quickButtons: HTMLButtonElement[] = []
+  const syncQuick = () => {
+    slots.forEach((value, idx) => {
+      const btn = quickButtons[idx]
+      if (!btn) return
+      const name = quickNameFor(value)
+      btn.title = name
+      btn.setAttribute('aria-label', name)
+      btn.innerHTML = quickIconFor(value)
+    })
+  }
+  const recordRecent = (picked: string) => {
+    const norm = picked.startsWith('#') ? picked.toLowerCase() : picked
+    if (slots.includes(norm)) return
+    slots.splice(0, 3, norm, slots[0]!, slots[1]!)
+    syncQuick()
+  }
+
+  for (let idx = 0; idx < 3; idx++) {
+    const initial = slots[idx]!
+    const button = toolButton(quickNameFor(initial), quickIconFor(initial), 'toolbar-item cell-toolbar__quick')
+    button.addEventListener('click', () => setCells(view, group.attr, slots[idx]!))
+    quickButtons.push(button)
     box.appendChild(button)
   }
+
   const arrow = toolButton(group.menu, CARET, 'toolbar-item cell-toolbar__arrow')
   const palette = document.createElement('div')
   palette.className = 'cell-toolbar__palette'
   palette.id = `cell-toolbar-palette-${++paletteIds}`
-  palette.setAttribute('role', 'menu')
+  palette.setAttribute('role', 'dialog')
   palette.setAttribute('aria-label', group.menu)
   palette.hidden = true
-  arrow.setAttribute('aria-haspopup', 'menu')
+  arrow.setAttribute('aria-haspopup', 'dialog')
   arrow.setAttribute('aria-expanded', 'false')
   arrow.setAttribute('aria-controls', palette.id)
-  // Set below, once the item is made.
-  let custom: CustomBox
-  arrow.addEventListener('click', () => palettes.toggle(palette, arrow, custom))
-  const item = (name: string, run: () => void, className: string) => {
-    const button = toolButton(name, '', className)
-    button.setAttribute('role', 'menuitem')
-    button.addEventListener('click', () => {
+
+  const grid = new ColourGrid(document, {
+    noneLabel: group.clear,
+    allowAlpha: group.attr === 'fill',
+    defaultBoxHex: () => '#000000',
+    onPick: (value, isCustom) => {
+      const cells = view.state.selection
+      if (!(cells instanceof CellSelection)) return
+      recordRecent(value)
+      if (isCustom) {
+        setCustomColour(view, grid.el, cells, group.attr, value as `#${string}`)
+        const nextCells = view.state.selection
+        grid.render(selectedCellValues(view.state, group.attr), nextCells instanceof CellSelection ? customStart(nextCells, group.attr) : (value as `#${string}`))
+      } else {
+        palettes.close()
+        setCells(view, group.attr, value)
+      }
+    },
+    onClear: () => {
       palettes.close()
-      run()
-    })
-    return button
-  }
-  const clear = item(group.clear, () => setCells(view, group.attr, null), 'cell-toolbar__clear')
-  clear.textContent = group.clear
-  const swatches = document.createElement('div')
-  swatches.className = 'cell-toolbar__swatches'
-  for (const c of TABLE_COLORS) {
-    const button = item(capital(c), () => setCells(view, group.attr, c), 'cell-toolbar__swatch-item')
-    const swatch = document.createElement('span')
-    swatch.className = 'cell-toolbar__swatch'
-    swatch.style.background = group.swatch(c)
-    button.appendChild(swatch)
-    swatches.appendChild(button)
-  }
-  const customItem = toolButton('Custom colour…', '', 'cell-toolbar__custom')
-  customItem.setAttribute('role', 'menuitem')
-  customItem.setAttribute('aria-expanded', 'false')
-  customItem.textContent = 'Custom colour…'
-  custom = { box: null, item: customItem }
-  // The palette stays open: the box opens under the item, and the item again closes it.
-  customItem.addEventListener('click', () => {
-    const { selection } = view.state
-    if (custom.box?.open === true) return hideBox(view, custom)
-    if (!(selection instanceof CellSelection)) return
-    if (custom.box === null) {
-      const box = new ColourBox(document, {
-        preview: () => {},
-        pick: (color) => {
-          const cells = view.state.selection
-          if (cells instanceof CellSelection) setCustomColour(view, box.el, cells, group.attr, color)
-        },
-        close: () => hideBox(view, custom),
-      })
-      custom.box = box
-      palette.append(box.el)
-    }
-    custom.box.show(customStart(selection, group.attr))
-    customItem.setAttribute('aria-expanded', 'true')
+      setCells(view, group.attr, null)
+    },
+    onBoxClose: () => {
+      if (!view.isDestroyed) view.focus()
+    },
   })
-  palette.append(clear, swatches, customItem)
+  palette.append(grid.el)
+
+  arrow.addEventListener('click', () => {
+    palettes.toggle(palette, arrow, grid)
+    if (!palette.hidden) {
+      const cells = view.state.selection
+      grid.render(selectedCellValues(view.state, group.attr), cells instanceof CellSelection ? customStart(cells, group.attr) : '#000000')
+    }
+  })
+
   box.append(arrow, palette)
   return box
 }
@@ -272,13 +349,132 @@ const TEXT: ColourGroup = {
   name: (c) => `${capital(c)} text`, menu: 'Text colours', clear: 'Default colour', swatch: textSwatch,
 }
 
+/** Multi-cell `[16 ▾]` Text size control with stepper, typed input, Default, and presets (YAZ-6695 #1). */
+function renderSize(view: EditorView, palettes: Palettes): { el: HTMLElement; sync: (state: EditorState) => void } {
+  const wrap = document.createElement('span')
+  wrap.className = 'cell-toolbar__colours cell-toolbar__size'
+  const trigger = toolButton(
+    'Text size',
+    `<span class="toolbar-size"><span class="toolbar-size__value">${DEFAULT_FONT_SIZE}</span><span class="toolbar-caret">▾</span></span>`,
+    'toolbar-item cell-toolbar__size-btn',
+  )
+  const label = trigger.querySelector<HTMLElement>('.toolbar-size__value')!
+
+  const palette = document.createElement('div')
+  palette.className = 'cell-toolbar__palette cell-toolbar__size-palette'
+  palette.id = `cell-toolbar-palette-${++paletteIds}`
+  palette.setAttribute('role', 'dialog')
+  palette.setAttribute('aria-label', 'Text size')
+  palette.hidden = true
+  trigger.setAttribute('aria-haspopup', 'dialog')
+  trigger.setAttribute('aria-expanded', 'false')
+  trigger.setAttribute('aria-controls', palette.id)
+
+  const btn = (className: string, text: string, ariaLabel: string, run: () => void) => {
+    const b = toolButton(ariaLabel, '', className)
+    b.textContent = text
+    b.addEventListener('click', run)
+    return b
+  }
+
+  const step = (delta: number) => {
+    const current = cellsFontSize(view.state)
+    const base = typeof current === 'number' ? current : DEFAULT_FONT_SIZE
+    setCellsFontSize(view, clampFontSize(base + delta))
+  }
+
+  const stepper = document.createElement('div')
+  stepper.className = 'font-size-panel__stepper'
+  const dec = btn('font-size-panel__step', '−', 'Decrease text size', () => step(-1))
+  const inc = btn('font-size-panel__step', '+', 'Increase text size', () => step(1))
+
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.inputMode = 'numeric'
+  input.className = 'font-size-panel__input'
+  input.maxLength = 3
+  input.spellcheck = false
+  input.tabIndex = -1
+  input.setAttribute('aria-label', 'Font size in pixels')
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      palettes.close()
+      if (!view.isDestroyed) view.focus()
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      e.stopPropagation()
+      const raw = input.value.trim()
+      if (!/^\d+$/.test(raw)) return
+      const n = Number(raw)
+      if (n < 1) return
+      const size = clampFontSize(Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, n)))
+      if (!view.isDestroyed) view.focus()
+      setCellsFontSize(view, size)
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      e.stopPropagation()
+      const delta = e.key === 'ArrowUp' ? 1 : -1
+      const current = /^\d+$/.test(input.value.trim()) ? Number(input.value.trim()) : DEFAULT_FONT_SIZE
+      const next = clampFontSize(current + delta)
+      input.value = String(next)
+      setCellsFontSize(view, next)
+    }
+  })
+  stepper.append(dec, input, inc)
+
+  const def = btn('font-size-panel__default', 'Default', 'Default text size', () => setCellsFontSize(view, null))
+  const list = document.createElement('div')
+  list.className = 'font-size-panel__presets'
+  const presets = new Map<number, HTMLButtonElement>()
+  for (const size of FONT_SIZE_PRESETS) {
+    const item = btn('font-size-panel__preset', String(size), `${size}px`, () => setCellsFontSize(view, size))
+    item.dataset.size = String(size)
+    presets.set(size, item)
+    list.append(item)
+  }
+
+  palette.append(stepper, def, list)
+  wrap.append(trigger, palette)
+
+  const sync = (state: EditorState) => {
+    const size = cellsFontSize(state)
+    const shownText = size === undefined ? '—' : String(size ?? DEFAULT_FONT_SIZE)
+    if (label.textContent !== shownText) label.textContent = shownText
+    if (palette.hidden) return
+    if (view.dom.ownerDocument.activeElement !== input) {
+      const nextVal = size === undefined ? '' : String(size ?? DEFAULT_FONT_SIZE)
+      if (input.value !== nextVal) input.value = nextVal
+    }
+    const placeholder = size === undefined ? '—' : ''
+    if (input.placeholder !== placeholder) input.placeholder = placeholder
+    const isDefault = size === null
+    def.classList.toggle('active', isDefault)
+    def.setAttribute('aria-pressed', String(isDefault))
+    for (const [preset, b] of presets) {
+      const on = size === preset || (isDefault && preset === DEFAULT_FONT_SIZE)
+      b.classList.toggle('active', on)
+      b.setAttribute('aria-pressed', String(on))
+    }
+  }
+
+  trigger.addEventListener('click', () => {
+    palettes.toggle(palette, trigger)
+    if (!palette.hidden) sync(view.state)
+  })
+
+  return { el: wrap, sync }
+}
+
 /** The strip's DOM: Crepe's toolbar shape (`.divider`, `.toolbar-item`) on our own class, and the buttons with an `enabled` test. */
-function renderStrip(view: EditorView, palettes: Palettes): { strip: HTMLElement; gated: Array<{ button: HTMLButtonElement; enabled: (state: EditorState) => boolean }> } {
+function renderStrip(view: EditorView, palettes: Palettes): { strip: HTMLElement; gated: Array<{ button: HTMLButtonElement; enabled: (state: EditorState) => boolean }>; syncSize: (state: EditorState) => void } {
   const strip = document.createElement('div')
   strip.className = 'cell-toolbar'
   strip.setAttribute('role', 'toolbar')
   strip.setAttribute('aria-label', 'Cells')
   const gated: Array<{ button: HTMLButtonElement; enabled: (state: EditorState) => boolean }> = []
+  let syncSize: (state: EditorState) => void = () => {}
   for (const part of PARTS) {
     if (part === 'divider') {
       const line = document.createElement('div')
@@ -286,6 +482,10 @@ function renderStrip(view: EditorView, palettes: Palettes): { strip: HTMLElement
       strip.appendChild(line)
     } else if (part === 'colours') {
       strip.append(renderColours(view, FILL, palettes), renderColours(view, TEXT, palettes))
+    } else if (part === 'size') {
+      const size = renderSize(view, palettes)
+      syncSize = size.sync
+      strip.appendChild(size.el)
     } else {
       const button = toolButton(part.name, part.icon)
       button.addEventListener('click', () => part.run(view))
@@ -293,7 +493,7 @@ function renderStrip(view: EditorView, palettes: Palettes): { strip: HTMLElement
       strip.appendChild(button)
     }
   }
-  return { strip, gated }
+  return { strip, gated, syncSize }
 }
 
 /** Two or more cells selected. */
@@ -304,13 +504,15 @@ class CellToolbarView {
   #strip: HTMLElement
   /** The buttons that are disabled while their test fails (Merge cells, YAZ-4792). */
   #gated: Array<{ button: HTMLButtonElement; enabled: (state: EditorState) => boolean }>
+  #syncSize: (state: EditorState) => void
   #dragging = false
   #menu = false
 
   constructor(readonly view: EditorView) {
-    const { strip, gated } = renderStrip(view, { toggle: this.#togglePalette, close: this.#closePalettes })
+    const { strip, gated, syncSize } = renderStrip(view, { toggle: this.#togglePalette, close: this.#closePalettes })
     this.#strip = strip
     this.#gated = gated
+    this.#syncSize = syncSize
     this.#provider = new TooltipProvider({
       content: strip,
       debounce: 20,
@@ -328,22 +530,22 @@ class CellToolbarView {
     this.update(view)
   }
 
-  /** The open palette, its ▾ and its colour box, or null. Escape listens only while one is open. */
-  #open: { palette: HTMLElement; arrow: HTMLElement; custom: CustomBox } | null = null
+  /** The open palette, its ▾ and its colour grid, or null. Escape listens only while one is open. */
+  #open: { palette: HTMLElement; arrow: HTMLElement; grid?: ColourGrid } | null = null
 
-  #togglePalette = (palette: HTMLElement, arrow: HTMLElement, custom: CustomBox) => {
+  #togglePalette = (palette: HTMLElement, arrow: HTMLElement, grid?: ColourGrid) => {
     const same = this.#open?.palette === palette
     this.#closePalettes()
     if (same) return
     palette.hidden = false
     arrow.setAttribute('aria-expanded', 'true')
-    this.#open = { palette, arrow, custom }
+    this.#open = { palette, arrow, grid }
     this.view.dom.ownerDocument.addEventListener('keydown', this.#escape, true)
   }
 
   #closePalettes = () => {
     if (this.#open === null) return
-    hideBox(this.view, this.#open.custom)
+    hideGridBox(this.view, this.#open.grid)
     this.#open.palette.hidden = true
     this.#open.arrow.setAttribute('aria-expanded', 'false')
     this.#open = null
@@ -355,7 +557,7 @@ class CellToolbarView {
     if (e.key !== 'Escape' || this.#open === null) return
     e.preventDefault()
     e.stopPropagation()
-    if (this.#open.custom.box?.open === true) hideBox(this.view, this.#open.custom)
+    if (this.#open.grid?.boxOpen === true) hideGridBox(this.view, this.#open.grid)
     else this.#closePalettes()
   }
 
@@ -383,7 +585,10 @@ class CellToolbarView {
   update(view: EditorView, prevState?: EditorState) {
     if (this.#open !== null && !manyCells(view.state)) this.#closePalettes()
     // Only while the strip can show: a key press elsewhere reads no table map.
-    if (manyCells(view.state)) for (const { button, enabled } of this.#gated) button.disabled = !enabled(view.state)
+    if (manyCells(view.state)) {
+      for (const { button, enabled } of this.#gated) button.disabled = !enabled(view.state)
+      this.#syncSize(view.state)
+    }
     this.#provider.update(view, prevState)
   }
 

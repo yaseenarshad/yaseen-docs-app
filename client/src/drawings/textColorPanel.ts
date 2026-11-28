@@ -1,24 +1,17 @@
 /**
- * THE TEXT COLORS OF A TEXT BOX'S POP-UP TOOLBAR (YAZ-4277 1E, D8; YAZ-4445). They set the box's `text_color` mark,
- * `textRuns[].color` on the box.
+ * THE TEXT COLORS OF A TEXT BOX'S POP-UP TOOLBAR (YAZ-4277 1E, D8; YAZ-4445; unified onto Google Docs 10×8
+ * `ColourGrid` in YAZ-6727). They set the box's `text_color` mark, `textRuns[].color` on the box.
  *
- * ONE DESIGN LANGUAGE (YAZ-4445, Yaseen: "can we make this look the same also so its 1 design language?"): the
- * board's main toolbar shows text color as three tiles, a colored "A" on white, then a ▾ with the other colors
- * (`engine/…/actions/actionProperties.tsx` `TEXT_TOOLBAR_COLOR_PICKS`, `TEXT_TOOLBAR_MORE_COLORS`). The pop-up toolbar
- * shows the same tiles (`editor/toolbarButtons.ts` `swatchTile`, `editor/swatchTile.css`) and the same ▾. The ▾ holds
- * the other colors and None, which takes the run color off (the letters take the box color): it replaced the ⊘ button.
- *
- * The ▾ panel is the board's ▾ popover: one row of tiles, then None. As there, it stays open for the next pick, its
- * pick ringed; None closes it. It lives in the pop-ups' layer (`textBoxEditor.ts`), fixed under the ▾, and never
- * takes the selection or the focus: its buttons cancel their mousedown. Escape, a click outside, a new selection or
- * the ▾ again close it.
+ * Keeps the three quick tiles on the toolbar (`TEXT_BOX_COLORS`), and replaces the 5-tile `▾` popover with
+ * the app's unified 10×8 Google Docs `ColourGrid` (grayscale + 10 base hues + 60 shades + Custom + Eyedropper + None).
  */
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
 import type { Mark } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import type { Hex } from '../lib/colour'
+import { ColourGrid } from '../editor/colourGrid'
 import { popupLayerOf, toolbarItemOf } from '../editor/toolbarHost'
-import { swatchTile } from '../editor/toolbarButtons'
 
 interface TextColor {
   key: string
@@ -32,7 +25,7 @@ const textColor = (name: string, color: string): TextColor => ({ key: `text-colo
 /** The three tiles of the toolbar, the board's: black (the box default), red, blue. */
 export const TEXT_BOX_COLORS: readonly TextColor[] = [textColor('black', '#1e1e1e'), textColor('red', '#e03131'), textColor('blue', '#1971c2')]
 
-/** The ▾'s others, the board's ▾ (`TEXT_TOOLBAR_MORE_COLORS`), in its order. */
+/** Legacy board palette list kept exported for `textColorPanel.test.ts` compatibility. */
 export const TEXT_BOX_MORE_COLORS: readonly TextColor[] = [
   textColor('green', '#2f9e44'),
   textColor('white', '#ffffff'),
@@ -77,10 +70,11 @@ export const setTextColor = (color: string | null) => (state: EditorState, dispa
   dispatch(color ? tr.addMark(from, to, type.create({ color })) : tr)
 }
 
-/** The ▾ lights, with a bar of the color, when the selection's one color is one of the ▾'s. */
+/** The ▾ lights, with a bar of the color, when the selection's one color is not one of the 3 quick tiles. */
 export function moreTextColor(state: EditorState): string | null {
   const color = selectionTextColor(state)
-  return typeof color === 'string' && TEXT_BOX_MORE_COLORS.some((c) => c.color === color) ? color : null
+  if (typeof color !== 'string' || color === '') return null
+  return TEXT_BOX_COLORS.some((c) => c.color.toLowerCase() === color.toLowerCase()) ? null : color
 }
 
 const panels = new WeakMap<EditorView, TextColorPanel>()
@@ -92,7 +86,7 @@ export function toggleTextColorPanel(view: EditorView): void {
 
 class TextColorPanel {
   #el: HTMLElement | null = null
-  #tiles = new Map<string, HTMLButtonElement>()
+  #grid!: ColourGrid
 
   constructor(readonly view: EditorView) {
     panels.set(view, this)
@@ -114,30 +108,27 @@ class TextColorPanel {
     el.setAttribute('role', 'dialog')
     el.setAttribute('aria-label', 'More text colors')
     el.hidden = true
-    const row = doc.createElement('div')
-    row.className = 'text-color-panel__tiles'
-    const button = (className: string, label: string, run: () => void) => {
-      const b = doc.createElement('button')
-      b.type = 'button'
-      b.className = className
-      b.tabIndex = -1
-      b.setAttribute('aria-label', label)
-      b.addEventListener('mousedown', (e) => e.preventDefault())
-      b.addEventListener('click', run)
-      return b
-    }
-    for (const { name, color } of TEXT_BOX_MORE_COLORS) {
-      const tile = button('swatch-button', name, () => this.#pick(color))
-      tile.innerHTML = swatchTile('color', color)
-      this.#tiles.set(color, tile)
-      row.append(tile)
-    }
-    const none = button('text-color-panel__none', NONE_LABEL, () => {
-      this.#pick(null)
-      this.close()
+
+    this.#grid = new ColourGrid(doc, {
+      noneLabel: NONE_LABEL,
+      allowAlpha: false,
+      defaultBoxHex: () => '#000000',
+      onPick: (hex) => {
+        if (this.#el!.contains(doc.activeElement)) this.view.focus()
+        this.#pick(hex)
+      },
+      onClear: () => {
+        this.#pick(null)
+        this.close()
+      },
+      onResize: () => {
+        if (this.open) this.#place()
+      },
+      onBoxClose: () => {
+        if (!this.view.isDestroyed) this.view.focus()
+      },
     })
-    none.textContent = 'None'
-    el.append(row, none)
+    el.append(this.#grid.el)
     return el
   }
 
@@ -148,13 +139,11 @@ class TextColorPanel {
     this.#render()
   }
 
-  /** The ring on the selection's color. */
   #render(): void {
     const color = selectionTextColor(this.view.state)
-    for (const [c, tile] of this.#tiles) {
-      tile.classList.toggle('active', c === color)
-      tile.setAttribute('aria-pressed', String(c === color))
-    }
+    const active = typeof color === 'string' ? [color] : []
+    const startHex = typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? (color.toLowerCase() as Hex) : '#000000'
+    this.#grid.render(active, startHex)
   }
 
   #show(): void {
@@ -175,12 +164,16 @@ class TextColorPanel {
   close = (): void => {
     if (!this.open) return
     const doc = this.view.dom.ownerDocument
+    const focused = this.#el!.contains(doc.activeElement)
     this.#el!.hidden = true
+    this.#grid.hideMenu()
+    this.#grid.closeCustom()
     toolbarItemOf(this.view, TEXT_COLOR_MORE_KEY)?.removeAttribute('aria-expanded')
     doc.removeEventListener('keydown', this.#key, true)
     doc.removeEventListener('pointerdown', this.#outside, true)
     doc.removeEventListener('mousedown', this.#outside, true)
     doc.removeEventListener('scroll', this.#scrolled, true)
+    if (focused && !this.view.isDestroyed) this.view.focus()
   }
 
   /** Under the ▾, or over it when the window has no room below; never past the window's sides (the highlight panel's rule). */
@@ -197,10 +190,15 @@ class TextColorPanel {
   }
 
   #key = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape') return
-    e.preventDefault()
-    e.stopPropagation()
-    this.close()
+    if (e.target instanceof HTMLInputElement && this.#el?.contains(e.target)) return
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      if (this.#grid.boxOpen) {
+        this.#grid.closeCustom()
+        if (!this.view.isDestroyed) this.view.focus()
+      } else this.close()
+    }
   }
 
   #outside = (e: Event) => {

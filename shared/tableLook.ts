@@ -143,12 +143,12 @@ const COLOURS = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', '
 const isBandColour = (v: unknown): boolean => typeof v === 'string' && (v === 'accent' || oneOf([...COLOURS, 'grey', 'brown'])(v) || /^#[0-9a-f]{6}$/i.test(v))
 const halfHour = (v: unknown): v is number => whole(v, 0, 24 * 60 - 1, 30)
 
-/** A header row's choices (`HEADER_ROW_CHOICES` in `types.ts`, written out). */
+/** A header row's choices (`HEADER_ROW_CHOICES` in `types.ts`, written out), plus custom hex for fill and text. */
 const ROW_OK: { [K in keyof TableLookRow]-?: (v: unknown) => boolean } = {
-  color: oneOf(['gray', ...COLOURS, 'black']),
+  color: (v) => oneOf(['gray', ...COLOURS, 'black'])(v) || (typeof v === 'string' && /^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(v)),
   strength: oneOf(['off', 'light', 'medium', 'strong']),
   weight: oneOf(['bold', 'regular']),
-  text: (v) => v === null || oneOf(['muted', 'full', 'white', ...COLOURS])(v),
+  text: (v) => v === null || oneOf(['muted', 'full', 'white', ...COLOURS])(v) || (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)),
   align: oneOf(['follow', 'left', 'center', 'right']),
 }
 

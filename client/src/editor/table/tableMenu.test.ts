@@ -202,6 +202,29 @@ describe('Align ▸, Fill ▸, Text colour ▸ and Sort (YAZ-3820)', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
+  it('Fill ▸ and Text colour ▸ include Black (#000000) and White (#ffffff), and Fill custom colour box has Opacity slider (YAZ-6693)', async () => {
+    const { crepe, view } = await mount(TABLE)
+    const before = getMarkdownForSave(crepe)
+    row(view, 1, 1, 'table-fill-black').onSelect()
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill B2 #000000 -->\n`)
+    row(view, 1, 1, 'table-color-white').onSelect()
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill B2 #000000, color B2 #ffffff -->\n`)
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill B2 #000000 -->\n`)
+    row(view, 1, 1, 'table-fill-white').onSelect()
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill B2 #ffffff -->\n`)
+
+    // Fill custom box shows Opacity slider; Text custom box does not.
+    row(view, 1, 1, 'table-fill-custom').onSelect()
+    const alpha = menuBox()!.querySelector<HTMLInputElement>('input[aria-label="Opacity"]')!
+    expect(alpha).not.toBeNull()
+    alpha.value = '50'
+    alpha.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill B2 #ffffff80 -->\n`)
+    row(view, 1, 1, 'table-color-custom').onSelect()
+    expect(menuBox()!.querySelector('input[aria-label="Opacity"]')).toBeNull()
+  })
+
   /** The table menu's colour box, on the page's body. */
   const menuBox = () => document.querySelector<HTMLElement>('body > .table-colour-box')
   /** Type `color` into the box's R G B fields and press Enter: one finished pick. */

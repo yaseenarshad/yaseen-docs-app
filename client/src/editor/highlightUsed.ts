@@ -1,23 +1,59 @@
 /**
- * The custom highlight colours the user picks, most used first (YAZ-4348 demo round 2): the highlight panel's
- * "Most used custom colours" row, kept in the setting `highlightCustomColors`, which travels with the settings.
+ * The custom colours the user picks across the entire app, most used first (YAZ-4348, YAZ-6727, YAZ-6734):
+ * kept in `settings.highlightCustomColors` (`yaseendocs.json`) and mirrored to `localStorage`
+ * (`yaseen:custom-colors`) so Pages, Tables, Drawing Text Boxes, Settings, AND the Excalidraw board
+ * (`engine/packages/excalidraw/components/ColorPicker/GoogleDocsGrid.tsx`) share one persistent global CUSTOM row.
  *
- * `App.tsx` hands the setting in and gives the door that saves it; the panel counts each custom pick here. The
- * count lands here at once, so an open panel shows it before the setting comes back. No editor import: App reads
- * this before any page opens.
+ * No editor import: `App.tsx` reads this before any page opens.
  */
 import { HIGHLIGHT_CUSTOM_COLORS_KEPT, HIGHLIGHT_CUSTOM_COLORS_SHOWN, type HighlightCustomColor } from '@shared/types'
+
+export const GLOBAL_CUSTOM_COLORS_KEY = 'yaseen:custom-colors'
+export const GLOBAL_CUSTOM_COLORS_EVENT = 'yaseen:custom-colors-change'
+const ENGINE_ADD_EVENT = 'yaseen:engine-custom-color-add'
+const ENGINE_REMOVE_EVENT = 'yaseen:engine-custom-color-remove'
 
 let used: readonly HighlightCustomColor[] = []
 let save: (next: HighlightCustomColor[]) => void = () => {}
 
+function syncGlobalStorage(): void {
+  if (typeof window === 'undefined') return
+  const list = used.slice(0, HIGHLIGHT_CUSTOM_COLORS_SHOWN).map((c) => c.color)
+  try {
+    window.localStorage.setItem(GLOBAL_CUSTOM_COLORS_KEY, JSON.stringify(list))
+  } catch {
+    // Ignore storage errors in sandboxed/private environments.
+  }
+  window.dispatchEvent(new CustomEvent(GLOBAL_CUSTOM_COLORS_EVENT, { detail: list }))
+}
+
+/** Bridge Excalidraw engine custom colour add/remove events back into `settings.highlightCustomColors`. */
+let bridgeWired = false
+function ensureEngineBridge(): void {
+  if (bridgeWired || typeof window === 'undefined') return
+  bridgeWired = true
+  window.addEventListener(ENGINE_ADD_EVENT, (e) => {
+    const color = (e as CustomEvent<{ color?: unknown }>).detail?.color
+    if (typeof color === 'string' && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(color)) {
+      pinHighlightColor(color.toLowerCase())
+    }
+  })
+  window.addEventListener(ENGINE_REMOVE_EVENT, (e) => {
+    const color = (e as CustomEvent<{ color?: unknown }>).detail?.color
+    if (typeof color === 'string') removeHighlightColorUse(color.toLowerCase())
+  })
+}
+
 /** The setting as it is now (App, on each change). */
 export function setUsedHighlightColors(list: readonly HighlightCustomColor[]): void {
+  ensureEngineBridge()
   used = list
+  syncGlobalStorage()
 }
 
 /** Where a new count goes (App: the settings' door). */
 export function setUsedHighlightColorsSaver(fn: (next: HighlightCustomColor[]) => void): void {
+  ensureEngineBridge()
   save = fn
 }
 
@@ -43,8 +79,36 @@ export function countUse(list: readonly HighlightCustomColor[], color: string): 
   return next
 }
 
-/** One custom pick: counted here, then saved. */
+/** One custom pick: counted here, saved to settings, and synced to Excalidraw. */
 export function recordHighlightColorUse(color: string): void {
-  used = countUse(used, color)
+  const norm = color.toLowerCase()
+  used = countUse(used, norm)
   save([...used])
+  syncGlobalStorage()
+}
+
+/**
+ * Pin or promote a newly chosen custom colour directly to slot 0 so it ALWAYS appears immediately
+ * in the visible `CUSTOM` row (even when 5 older custom colours have `uses >= 2`, YAZ-6741).
+ */
+export function pinHighlightColor(color: string): void {
+  const norm = color.toLowerCase()
+  const existing = used.find((c) => c.color.toLowerCase() === norm)?.uses ?? 0
+  const topUses = used[0]?.uses ?? 0
+  const uses = Math.max(existing + 1, topUses, 1)
+  const rest = used.filter((c) => c.color.toLowerCase() !== norm)
+  const next = [{ color: norm, uses }, ...rest].slice(0, HIGHLIGHT_CUSTOM_COLORS_KEPT)
+  used = next
+  save([...used])
+  syncGlobalStorage()
+}
+
+/** Remove a custom colour from the global CUSTOM row (YAZ-6734: right-click Remove or Delete/Backspace). */
+export function removeHighlightColorUse(color: string): void {
+  const norm = color.toLowerCase()
+  const next = used.filter((c) => c.color.toLowerCase() !== norm)
+  if (next.length === used.length) return
+  used = next
+  save([...used])
+  syncGlobalStorage()
 }

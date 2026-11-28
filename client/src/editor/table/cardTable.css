@@ -71,8 +71,8 @@
   --table-fill-solid-pink: rgb(255, 120, 180);
   --table-fill-solid-grey: rgb(150, 150, 150);
   --table-fill-solid-brown: rgb(170, 120, 70);
-  /* The header row's Black fill and White text (YAZ-4794 demo), as swatches and as the header's colours. */
-  --table-fill-solid-black: rgb(18, 18, 18);
+  /* The header row's Black fill and White text (YAZ-4794 demo; pure black YAZ-6692 #7), as swatches and as the header's colours. */
+  --table-fill-solid-black: #000000;
   --table-fill-solid-white: rgb(255, 255, 255);
 }
 
@@ -178,6 +178,10 @@
   --table-cell-tint: color-mix(in srgb, var(--table-header-hue, var(--crepe-color-on-background, var(--fg))) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), transparent);
   font-weight: var(--table-header-weight, bold);
   color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 0) * 100%), currentColor));
+}
+.milkdown .ProseMirror .milkdown-table-block:where([data-table-header-color^='#']:not([data-table-header-strength='off'])) th,
+.card__sides .card__side table:where([data-header-color^='#']:not([data-header-strength='off'])) th {
+  --table-cell-tint: var(--table-header-hue);
 }
 @container style(--table-header-aligned: on) {
   .milkdown .ProseMirror .milkdown-table-block:not([data-table-header-align]) th,

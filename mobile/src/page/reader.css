@@ -481,6 +481,31 @@
 :where([data-scheme='dark']) .reader__body mark {
   background: #6b5d1c;
 }
+.reader__body mark.highlight-green { background: rgba(80, 200, 120, 0.35); }
+.reader__body mark.highlight-blue { background: rgba(80, 160, 255, 0.35); }
+.reader__body mark.highlight-pink { background: rgba(255, 120, 180, 0.35); }
+.reader__body mark.highlight-orange { background: rgba(255, 150, 50, 0.35); }
+.reader__body mark.highlight-purple { background: rgba(160, 110, 255, 0.35); }
+.reader__body mark.highlight-red { background: rgba(255, 90, 80, 0.35); }
+.reader__body mark.highlight-gray { background: rgba(150, 150, 150, 0.35); }
+.reader__body mark[data-mark-tone='dark'] { color: #ffffff; }
+.reader__body mark[data-mark-tone='light'] { color: #111111; }
+.reader__body :is([class*='text-color-'], span[style*='color:']) mark[data-mark-tone] { color: inherit; }
+
+/* Named text colours (YAZ-6694 D2, #5): adaptive light/dark via --table-text-* tokens. */
+.text-color-red { color: var(--table-text-red, #c0392b); }
+.text-color-orange { color: var(--table-text-orange, #b45309); }
+.text-color-yellow { color: var(--table-text-yellow, #a16207); }
+.text-color-green { color: var(--table-text-green, #2e7d32); }
+.text-color-teal { color: var(--table-text-teal, #0f766e); }
+.text-color-blue { color: var(--table-text-blue, #1d5fbf); }
+.text-color-purple { color: var(--table-text-purple, #7b3fbf); }
+.text-color-pink { color: var(--table-text-pink, #c2185b); }
+.text-color-grey { color: var(--table-text-grey, #6b6b6b); }
+.text-color-brown { color: var(--table-text-brown, #8b5a2b); }
+.reader__body :is([class*='text-color-'], span[style*='color:']) .wikilink:not(.wikilink--unresolved) {
+  color: inherit;
+}
 
 /* Tables: `tables.css`, with `tableLayout.ts`. Here only the room around the box: a code
    block's. */

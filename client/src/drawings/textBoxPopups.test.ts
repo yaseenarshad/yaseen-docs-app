@@ -298,7 +298,7 @@ describe('the text colors are the board toolbar tiles (YAZ-4445)', () => {
     expect(tile(toolbarItem('text-color-more'))).toBeNull()
   })
 
-  it('the ▾ holds the board’s other colors and None; a pick colors the letters, None takes the color off', async () => {
+  it('the ▾ holds the unified 80-swatch Google Docs ColourGrid and None; a pick colors the letters, None takes the color off', async () => {
     const { view } = await selectWord()
     const before = view.state.selection
     pressItem('text-color-more')
@@ -306,21 +306,19 @@ describe('the text colors are the board toolbar tiles (YAZ-4445)', () => {
     expect(colorPanel()!.hidden).toBe(false)
     // it takes neither the selection nor the focus
     expect(view.state.selection.eq(before)).toBe(true)
-    const buttons = [...colorPanel()!.querySelectorAll<HTMLButtonElement>('button')]
-    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['Text green', 'Text white', 'Text orange', 'Text violet', 'Text gray', 'Text color: none'])
-    expect(buttons.slice(0, 5).map((b) => tile(b)?.color)).toEqual(['#2f9e44', '#ffffff', '#e8590c', '#6741d9', '#343a40'])
-    expect(buttons.slice(0, 5).every((b) => tile(b)?.letter === 'A')).toBe(true)
-    expect(buttons[5].textContent).toBe('None')
+    const dots = [...colorPanel()!.querySelectorAll<HTMLButtonElement>('.colour-grid__rows .colour-grid__dot')]
+    expect(dots).toHaveLength(80)
+    expect(colorPanel()!.querySelector<HTMLButtonElement>('button[aria-label="Text color: none"]')?.textContent).toBe('Text color: none')
 
-    clickInPanel('Text green')
-    expect(runs(view)).toEqual([{ start: 0, end: 4, color: '#2f9e44' }])
+    clickInPanel('Green')
+    expect(runs(view)).toEqual([{ start: 0, end: 4, color: '#00ff00' }])
     // as on the board, the ▾ stays open for the next pick, its pick ringed
     expect(colorPanel()!.hidden).toBe(false)
-    expect(colorPanel()!.querySelector('button[aria-label="Text green"]')!.getAttribute('aria-pressed')).toBe('true')
+    expect(colorPanel()!.querySelector('button[aria-label="Green"]')!.getAttribute('aria-pressed')).toBe('true')
     await settle()
     // the ▾ marks a color of its own with a bar of that color, as the board's
     expect(toolbarItem('text-color-more').classList.contains('active')).toBe(true)
-    expect(document.querySelector<HTMLElement>('.excalidraw-text-box-popups .milkdown-toolbar')!.style.getPropertyValue('--text-color-more-colour')).toBe('#2f9e44')
+    expect(document.querySelector<HTMLElement>('.excalidraw-text-box-popups .milkdown-toolbar')!.style.getPropertyValue('--text-color-more-colour')).toBe('#00ff00')
     expect(toolbarItem('text-color-red').classList.contains('active')).toBe(false)
 
     clickInPanel('Text color: none')
@@ -330,12 +328,12 @@ describe('the text colors are the board toolbar tiles (YAZ-4445)', () => {
     expect(toolbarItem('text-color-more').classList.contains('active')).toBe(false)
   })
 
-  it('the white text color is a white "A" on a dark tile', async () => {
+  it('the white swatch applies #ffffff text color', async () => {
     const { view } = await selectWord()
     pressItem('text-color-more')
-    const white = colorPanel()!.querySelector<HTMLButtonElement>('button[aria-label="Text white"]')!
-    expect(tile(white)).toEqual({ kinds: ['swatch-tile--color', 'is-canonical-white'], color: '#ffffff', letter: 'A' })
-    clickInPanel('Text white')
+    const white = colorPanel()!.querySelector<HTMLButtonElement>('button[aria-label="White"]')!
+    expect(white.classList.contains('is-light')).toBe(true)
+    clickInPanel('White')
     expect(runs(view)).toEqual([{ start: 0, end: 4, color: '#ffffff' }])
   })
 

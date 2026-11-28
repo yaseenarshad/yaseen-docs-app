@@ -53,7 +53,7 @@ describe('when the toolbar shows', () => {
     expect(items).toEqual([
       'label Fill', 'Fill yellow', 'Fill green', 'Fill blue', 'Fill colours',
       'label Text', 'Red text', 'Blue text', 'Green text', 'Text colours', 'divider',
-      'Bold', 'Italic', 'Strikethrough', 'divider',
+      'Bold', 'Italic', 'Strikethrough', 'Text size', 'divider',
       'Align left', 'Align center', 'Align right', 'divider',
       'Merge cells', 'divider',
       'Clear cells',
@@ -105,7 +105,6 @@ describe('when the toolbar shows', () => {
   })
 })
 
-const NAMES = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey', 'brown']
 /** The colour box in the palette of `arrow` (made on its first Custom colour…), or null. */
 const boxOf = (view: EditorView, arrow: string) => paletteOf(view, arrow).querySelector<HTMLElement>('.colour-box')
 /** Open the palette of `arrow` and click its Custom colour…: the palette stays open, with the box under the item. */
@@ -140,43 +139,80 @@ describe('quick colours, the palette and custom colours (YAZ-3817)', () => {
     button(view, 'Blue text').click()
     expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 green, color A2:B3 blue -->\n`)
     expect(view.state.selection).toBeInstanceOf(CellSelection)
-    // A palette pick changes no quick swatch: they stay in the same place every time.
+    // Per-page recent 3 (YAZ-6737): picking a colour from ▾ slides it into Slot 1 without shuffling on direct quick clicks.
     pick(view, 'Fill colours', 'Purple')
-    expect(toolbarOf(view)!.querySelector('button[aria-label="Fill purple"]')).toBeNull()
+    expect(toolbarOf(view)!.querySelector('button[aria-label="Fill #9900ff"]')).not.toBeNull()
+    expect(toolbarOf(view)!.querySelector('button[aria-label="Fill yellow"]')).not.toBeNull()
     for (let i = 0; i < 3; i++) undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
-  it('each palette: the clear item, the 10 named colours in a 5 × 2 grid, then Custom colour…', async () => {
+  it('each palette uses the unified Google Docs 10×8 grid: clear item, 80 swatches (grayscale + 10 base hues + 60 shades), then Custom + (YAZ-6727)', async () => {
     const { view } = await mount(TABLE)
     await select(view, [1, 0], [2, 1])
-    const items = (arrow: string) => [...paletteOf(view, arrow).querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))
-    const capitals = NAMES.map((n) => n[0].toUpperCase() + n.slice(1))
-    expect(items('Fill colours')).toEqual(['No fill', ...capitals, 'Custom colour…'])
-    expect(items('Text colours')).toEqual(['Default colour', ...capitals, 'Custom colour…'])
     for (const arrow of ['Fill colours', 'Text colours']) {
       const palette = paletteOf(view, arrow)
-      expect(palette.querySelector('.cell-toolbar__swatches')!.children).toHaveLength(10)
-      expect(palette.querySelector('button')!.textContent).toBe(arrow === 'Fill colours' ? 'No fill' : 'Default colour')
-      expect(palette.querySelector(':scope > button:last-child')!.textContent).toBe('Custom colour…')
+      expect(palette.querySelector('.colour-grid__reset')!.textContent).toBe(arrow === 'Fill colours' ? 'No fill' : 'Default colour')
+      expect(palette.querySelectorAll('.colour-grid__rows .colour-grid__dot')).toHaveLength(80)
+      expect(palette.querySelector('button[aria-label="Black"]')).not.toBeNull()
+      expect(palette.querySelector('button[aria-label="White"]')).not.toBeNull()
+      expect(palette.querySelector('button[aria-label="Red"]')).not.toBeNull()
+      expect(palette.querySelector('button[aria-label="Custom colour…"]')).not.toBeNull()
     }
-    const swatch = (arrow: string, label: string) =>
-      paletteOf(view, arrow).querySelector<HTMLElement>(`button[aria-label="${label}"] .cell-toolbar__swatch`)!.style.background
-    expect(swatch('Fill colours', 'Teal')).toBe('var(--table-fill-solid-teal)')
-    expect(swatch('Text colours', 'Brown')).toBe('var(--table-text-brown)')
   })
 
-  it.each(NAMES)('the palette colour %s saves its name for fill and text, one undo step each', async (name) => {
+  it('Black and White swatches apply #000000 / #ffffff in one undo step, and Fill Custom colour… has an Opacity slider (YAZ-6693, YAZ-6727)', async () => {
     const { crepe, view } = await mount(TABLE)
     const before = getMarkdownForSave(crepe)
     await select(view, [1, 0], [2, 1])
-    const label = name[0].toUpperCase() + name.slice(1)
+    pick(view, 'Fill colours', 'Black')
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #000000 -->\n`)
+    pick(view, 'Text colours', 'White')
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #000000, color A2:B3 #ffffff -->\n`)
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #000000 -->\n`)
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+
+    // Fill ColourBox shows Opacity slider; Text ColourBox does not.
+    openCustom(view, 'Text colours')
+    expect(boxOf(view, 'Text colours')!.querySelector('input[aria-label="Opacity"]')).toBeNull()
+    openCustom(view, 'Fill colours')
+    const fillBox = boxOf(view, 'Fill colours')!
+    const alpha = fillBox.querySelector<HTMLInputElement>('input[aria-label="Opacity"]')!
+    expect(alpha).not.toBeNull()
+    pickInBox(fillBox, '#434343')
+    alpha.value = '50'
+    alpha.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #43434380 -->\n`)
+    // Reopening on #43434380 restores 50%; dragging back to 100% writes solid #434343.
+    button(view, 'Fill colours').click()
+    openCustom(view, 'Fill colours')
+    expect(alpha.value).toBe('50')
+    alpha.value = '100'
+    alpha.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #434343 -->\n`)
+  })
+
+  it.each([
+    ['Red', '#ff0000'],
+    ['Orange', '#ff9900'],
+    ['Yellow', '#ffff00'],
+    ['Green', '#00ff00'],
+    ['Blue', '#0000ff'],
+    ['Purple', '#9900ff'],
+    ['Dark grey 4', '#434343'],
+    ['Light grey 1', '#d9d9d9'],
+  ])('the Google Docs palette swatch %s saves %s for fill and text, one undo step each (YAZ-6727)', async (label, hex) => {
+    const { crepe, view } = await mount(TABLE)
+    const before = getMarkdownForSave(crepe)
+    await select(view, [1, 0], [2, 1])
     pick(view, 'Fill colours', label)
     expect(isOpen(view, 'Fill colours')).toBe(false)
     pick(view, 'Text colours', label)
-    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 ${name}, color A2:B3 ${name} -->\n`)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 ${hex}, color A2:B3 ${hex} -->\n`)
     undo(view.state, view.dispatch)
-    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 ${name} -->\n`)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 ${hex} -->\n`)
     undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
@@ -202,8 +238,7 @@ describe('quick colours, the palette and custom colours (YAZ-3817)', () => {
     expect(document.querySelector('input[type="color"]')).toBeNull()
     const box = boxOf(view, 'Fill colours')!
     expect(box.hidden).toBe(false)
-    expect(box.previousElementSibling!.getAttribute('aria-label')).toBe('Custom colour…')
-    expect(box.previousElementSibling!.getAttribute('aria-expanded')).toBe('true')
+    expect(paletteOf(view, 'Fill colours').querySelector('button[aria-label="Custom colour…"]')!.getAttribute('aria-expanded')).toBe('true')
     expect(isOpen(view, 'Fill colours')).toBe(true)
     // Typing previews in the box only; Enter is the pick.
     pickInBox(box, '#ff8800', false)
@@ -350,12 +385,12 @@ describe('each button acts on every selected cell, in one undo step', () => {
     const before = getMarkdownForSave(crepe)
     await select(view, [1, 0], [2, 1])
     pick(view, 'Fill colours', 'Blue')
-    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 blue -->\n`)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #0000ff -->\n`)
     expect(view.state.selection).toBeInstanceOf(CellSelection)
     pick(view, 'Fill colours', 'No fill')
     expect(getMarkdownForSave(crepe)).toBe(before)
     undo(view.state, view.dispatch)
-    expect(getMarkdownForSave(crepe)).toContain('fill A2:B3 blue')
+    expect(getMarkdownForSave(crepe)).toContain('fill A2:B3 #0000ff')
     undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
@@ -365,7 +400,7 @@ describe('each button acts on every selected cell, in one undo step', () => {
     const before = getMarkdownForSave(crepe)
     await select(view, [0, 0], [1, 1])
     pick(view, 'Text colours', 'Red')
-    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: color A1:B2 red -->\n`)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: color A1:B2 #ff0000 -->\n`)
     pick(view, 'Text colours', 'Default colour')
     expect(getMarkdownForSave(crepe)).toBe(before)
     undo(view.state, view.dispatch)
@@ -433,5 +468,40 @@ describe('each button acts on every selected cell, in one undo step', () => {
     expect(cellAttr(view, 1, 0, 'fill')).toBe('green')
     undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toBe(before)
+  })
+
+  it('Text size applies to every selected cell in one undo step, supports stepper/input/Default, and shows mixed as — (YAZ-6695 #1)', async () => {
+    const { crepe, view } = await mount(TABLE)
+    const before = getMarkdownForSave(crepe)
+    await select(view, [1, 0], [2, 1])
+    expect(button(view, 'Text size').textContent).toContain('16')
+    button(view, 'Text size').click()
+    expect(isOpen(view, 'Text size')).toBe(true)
+    const palette = paletteOf(view, 'Text size')
+    palette.querySelector<HTMLButtonElement>('button[data-size="24"]')!.click()
+    const big = getMarkdownForSave(crepe)
+    for (const text of ['a', 'b', 'c', 'd']) expect(big).toContain(`<span style="font-size: 24px">${text}</span>`)
+    expect(big).not.toContain('<span style="font-size: 24px">h1</span>')
+    expect(button(view, 'Text size').textContent).toContain('24')
+    expect(view.state.selection).toBeInstanceOf(CellSelection)
+    // Step +1 -> 25px
+    palette.querySelector<HTMLButtonElement>('button[aria-label="Increase text size"]')!.click()
+    expect(getMarkdownForSave(crepe)).toContain('<span style="font-size: 25px">a</span>')
+    // Type 18 and press Enter
+    const input = palette.querySelector<HTMLInputElement>('input[aria-label="Font size in pixels"]')!
+    input.value = '18'
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(getMarkdownForSave(crepe)).toContain('<span style="font-size: 18px">a</span>')
+    // Mixed sizes across header + body show —
+    await select(view, [0, 0], [1, 1])
+    expect(button(view, 'Text size').textContent).toContain('—')
+    // Default removes font_size cleanly
+    await select(view, [1, 0], [2, 1])
+    button(view, 'Text size').click()
+    paletteOf(view, 'Text size').querySelector<HTMLButtonElement>('button[aria-label="Default text size"]')!.click()
+    expect(getMarkdownForSave(crepe)).toBe(before)
+    // Undo restores 18 -> 25 -> 24 -> before
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toContain('<span style="font-size: 18px">a</span>')
   })
 })

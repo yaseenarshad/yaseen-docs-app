@@ -289,9 +289,14 @@ import {
 } from './listItemRoundTrip'
 import { toggleUnderline, underline, underlineSchema } from './marks/underline'
 import { clearFormattingKeymap } from './marks/clearFormatting'
-import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand, QUICK_HIGHLIGHTS, type HighlightColor } from './marks/highlight'
+import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHighlightCommand } from './marks/highlight'
+import { getQuickHighlightColorsForView, QUICK_HIGHLIGHT_BUTTON_IDS, quickSlotToHighlightColor } from './highlightQuick'
+import { textColor, textColorSchema, toolbarTextColor } from './marks/textColor'
+import { fontSize, fontSizeSchema, selectionFontSize } from './marks/fontSize'
+import { clearColourPreview, previewColourSelection, TEXT_COLOR_KEY, textColorPanelPlugin, toggleTextColorPanel } from './colourPanel'
+import { FONT_SIZE_KEY, fontSizePanel, toggleFontSizePanel } from './fontSizePanel'
 import { highlightPanel, MORE_KEY, panelColour, toggleHighlightPanel } from './highlightPanel'
-import { showMoreColour } from './toolbarHost'
+import { showMoreColour, showToolbarSize } from './toolbarHost'
 import { allLinesAre, LIST_KINDS, listButtons, toggleListKind } from './listButtons'
 import { recordCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
 import { arrangeToolbar, toolbarPrefs } from './toolbarPrefs'
@@ -604,14 +609,23 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  */
 function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined, hidden: readonly string[] = [], extend?: CreateCrepeOptions['extendToolbar'], inCode?: ShallowRef<boolean>): void {
   const formatting = builder.getGroup('formatting')
-  for (const color of [null, ...QUICK_HIGHLIGHTS] as HighlightColor[]) {
-    const id = color === null ? 'highlight' : (`highlight-${color}` as 'highlight-green' | 'highlight-blue')
+  for (const idx of [0, 1, 2] as const) {
+    const id = QUICK_HIGHLIGHT_BUTTON_IDS[idx]
     formatting.addItem(id, {
       icon: ownIcon(id),
       label: TOOLBAR_LABELS[id],
-      ...(color === null ? { keymap: keymapRef(highlightKeymap.key, 'ToggleHighlight') } : {}),
-      active: (ctx) => rangeHasHighlight(ctx.get(editorViewCtx).state, highlightSchema.type(ctx), color),
-      onRun: (ctx) => ctx.get(commandsCtx).call(setHighlightCommand.key, color),
+      ...(idx === 0 ? { keymap: keymapRef(highlightKeymap.key, 'ToggleHighlight') } : {}),
+      active: (ctx) => {
+        const view = ctx.get(editorViewCtx)
+        return rangeHasHighlight(view.state, highlightSchema.type(ctx), quickSlotToHighlightColor(getQuickHighlightColorsForView(view)[idx]))
+      },
+      onRun: (ctx) => {
+        const view = ctx.get(editorViewCtx)
+        const color = quickSlotToHighlightColor(getQuickHighlightColorsForView(view)[idx])
+        ctx.get(commandsCtx).call(setHighlightCommand.key, color)
+        if (rangeHasHighlight(view.state, highlightSchema.type(ctx), color)) previewColourSelection(view)
+        else clearColourPreview(view)
+      },
     })
   }
   // YAZ-4348 demo round 2: the ▾ of the colour panel; lit when the selection has a colour that is not a button,
@@ -621,11 +635,33 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
     label: TOOLBAR_LABELS[MORE_KEY],
     active: (ctx) => {
       const view = ctx.get(editorViewCtx)
-      const colour = panelColour(view.state, highlightSchema.type(ctx))
+      const colour = panelColour(view.state, highlightSchema.type(ctx), view)
       showMoreColour(view, MORE_KEY, colour)
       return colour !== null
     },
     onRun: (ctx) => toggleHighlightPanel(ctx.get(editorViewCtx)),
+  })
+  formatting.addItem(FONT_SIZE_KEY, {
+    icon: ownIcon(FONT_SIZE_KEY),
+    label: TOOLBAR_LABELS[FONT_SIZE_KEY],
+    active: (ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const size = selectionFontSize(view.state, fontSizeSchema.type(ctx))
+      showToolbarSize(view, size)
+      return size !== null
+    },
+    onRun: (ctx) => toggleFontSizePanel(ctx.get(editorViewCtx)),
+  })
+  formatting.addItem(TEXT_COLOR_KEY, {
+    icon: ownIcon(TEXT_COLOR_KEY),
+    label: TOOLBAR_LABELS[TEXT_COLOR_KEY],
+    active: (ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const colour = toolbarTextColor(view.state, textColorSchema.type(ctx))
+      showMoreColour(view, TEXT_COLOR_KEY, colour)
+      return colour !== null
+    },
+    onRun: (ctx) => toggleTextColorPanel(ctx.get(editorViewCtx)),
   })
   formatting.addItem('underline', {
     icon: ownIcon('underline'),
@@ -784,9 +820,13 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(slashMenu.inListWatch)
   crepe.editor.use(underline)
   crepe.editor.use(highlight)
+  crepe.editor.use(textColor)
+  crepe.editor.use(fontSize)
   crepe.editor.use(clearFormattingKeymap)
-  // The toolbar's highlight ▾ colour panel and its colour box (YAZ-4348 demo round 2, YAZ-4388).
+  // The toolbar's highlight ▾, text color A̲▾, and text size [16 ▾] panels (YAZ-4348, YAZ-6695).
   crepe.editor.use(highlightPanel)
+  crepe.editor.use(textColorPanelPlugin)
+  crepe.editor.use(fontSizePanel)
   // The line's darkness, thickness, style and length (YAZ-3164): `***` + the `<!-- line: … -->` comment.
   crepe.editor.use(lineStyle)
   // The table's widths, fills, text colours and settings (YAZ-3758): the table + the `<!-- table: … -->` comment. Milkdown's

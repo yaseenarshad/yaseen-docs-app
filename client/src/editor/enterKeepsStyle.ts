@@ -14,7 +14,7 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 
 /** The styles that carry to the new line; a link and inline code start fresh. */
-const CARRIED = new Set(['strong', 'emphasis', 'underline', 'strike_through', 'highlight', 'text_color'])
+const CARRIED = new Set(['strong', 'emphasis', 'underline', 'strike_through', 'highlight', 'text_color', 'font_size'])
 
 let inPages = false
 let inBoxes = true

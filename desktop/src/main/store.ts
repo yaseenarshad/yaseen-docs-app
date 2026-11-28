@@ -203,6 +203,8 @@ import {
   TOOLBAR_GROUPS,
   HIGHLIGHT_CUSTOM_COLORS_KEPT,
   isHighlightCustomColor,
+  isQuickHighlightColors,
+  sanitizeQuickHighlightColors,
   type HighlightCustomColor,
   type StartupWindows,
   type VaultOpensOn,
@@ -854,6 +856,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   sidebarTabs: isSidebarTabs,
   selectionToolbar: isToolbarPrefs,
   highlightCustomColors: isHighlightCustomColors,
+  quickHighlightColors: isQuickHighlightColors,
   startupWindows: (v): v is StartupWindows => typeof v === 'string' && (STARTUP_WINDOWS as readonly string[]).includes(v),
   confirmBeforeQuit: (v): v is boolean => typeof v === 'boolean',
   vaultAppActivateAllWindows: (v): v is boolean => typeof v === 'boolean',
@@ -1022,6 +1025,7 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.sidebarTabs = sanitizeSidebarTabs(src.sidebarTabs)
   out.selectionToolbar = sanitizeToolbarPrefs(src.selectionToolbar)
   out.highlightCustomColors = sanitizeHighlightCustomColors(src.highlightCustomColors)
+  out.quickHighlightColors = sanitizeQuickHighlightColors(src.quickHighlightColors)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
   out.folderPages = sanitizeFolderPages(src.folderPages)
   out.tableHeaderRow = sanitizeHeaderRow(src.tableHeaderRow)

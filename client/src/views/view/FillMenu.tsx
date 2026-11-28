@@ -1,16 +1,14 @@
 import { useContext, useEffect, useRef, useState } from 'react'
-import { capital, fillSwatch } from '../../editor/table/colours'
-import { TABLE_COLORS } from '../../editor/table/tableComment'
-import { ColourBox } from '../../editor/highlightColourBox'
+import { ColourGrid } from '../../editor/colourGrid'
 import type { Hex } from '../../lib/colour'
 import { type FlyoutControl, FlyoutParent, MenuFlyout, useFlyout } from '../../components/Flyout'
 
 export type FillTarget = 'cell' | 'row' | 'column'
 
 interface FillMenuProps {
-  /** The clicked cell's fill now: the custom box opens at it when it is a custom one. */
+  /** The clicked cell's fill now: marks the active dot and seeds `+` custom box. */
   start?: string
-  /** One fill write: a colour name, `#rrggbb`, or null for No fill. */
+  /** One fill write: a colour name, `#rrggbb[aa]`, or null for No fill. */
   onFill: (target: FillTarget, fill: string | null) => void
   onClose: () => void
   /** The flyouts it offers, in this order (YAZ-3746 13AQ: "Fill column" for a column). Default: Fill cell, Fill row. */
@@ -22,39 +20,32 @@ interface FillMenuProps {
   flyout?: FlyoutControl
   /**
    * ONE "Fill ›" (YAZ-3746 13AW) in place of a row per target: its flyout opens on a Cell · Row · Column switch, set to
-   * `initial`, over the colours. `startOf` is each target's fill now, for the custom colour box.
+   * `initial`, over the unified Google Docs 10×8 `ColourGrid` (YAZ-6735).
    */
   combined?: { initial: FillTarget; startOf?: (target: FillTarget) => string | undefined }
 }
 
 const TARGET_WORD: Record<FillTarget, string> = { cell: 'Cell', row: 'Row', column: 'Column' }
-
-
 const LABEL: Record<FillTarget, string> = { cell: 'Fill cell', row: 'Fill row', column: 'Fill column' }
 const CELL_AND_ROW: readonly FillTarget[] = ['cell', 'row']
 
 /**
- * "Fill cell ›" and "Fill row ›" (YAZ-4536 D12), for the folder table's row right-click
- * (`PageContextMenu`'s `extra`). Each flyout is the table block's Fill menu (`tableMenu.ts`): No fill,
- * the ten colours with swatches, and "Custom colour…". The rows are the app's one flyout
- * (`components/Flyout.tsx`, YAZ-4544 4F: the right-or-left place, the hover wait between two parents). A colour closes the menu. "Custom colour…" opens the page's colour box under it, as the
- * cell toolbar does: each finished pick is one write, and the box stays for the next.
+ * Folder View / Super Table right-click "Fill ›" flyout (YAZ-4536, upgraded to unified Google Docs 10×8 `ColourGrid` in YAZ-6735).
  */
 export function FillMenu({ start, onFill, onClose, targets = CELL_AND_ROW, flyout: shared, combined }: FillMenuProps) {
   const own = useFlyout<string>()
   const menu = useContext(MenuFlyout)
   const flyout = shared ?? menu ?? own
-  // "Custom colour…" is open in the flyout that is open; a flyout opens without it.
-  const [custom, setCustom] = useState(false)
-  useEffect(() => setCustom(false), [flyout.open])
+  const [measureTick, setMeasureTick] = useState(0)
   const [target, setTarget] = useState<FillTarget>(combined?.initial ?? targets[0])
-  if (combined !== undefined)
+
+  if (combined !== undefined) {
     return (
       <FlyoutParent
         label="Fill"
         open={flyout.open === 'fill'}
         menuClassName="ctx-menu--glyphs"
-        measureKey={`${custom}`}
+        measureKey={`${target}:${measureTick}`}
         onHover={() => flyout.hover('fill')}
         onOpen={() => flyout.openNow('fill')}
         onCloseFlyout={() => flyout.openNow(null)}
@@ -68,88 +59,88 @@ export function FillMenu({ start, onFill, onClose, targets = CELL_AND_ROW, flyou
             ))}
           </div>
         )}
-        <FillRows key={target} start={combined.startOf?.(target) ?? start} custom={custom} onCustom={setCustom} onFill={(fill) => onFill(target, fill)} onClose={onClose} />
+        <FillGrid
+          key={target}
+          start={combined.startOf?.(target) ?? start}
+          onFill={(fill) => onFill(target, fill)}
+          onClose={onClose}
+          onResize={() => setMeasureTick((n) => n + 1)}
+        />
       </FlyoutParent>
     )
+  }
+
   return (
     <>
-      {targets.map((target) => (
+      {targets.map((t) => (
         <FlyoutParent
-          key={target}
-          label={LABEL[target]}
-          open={flyout.open === `fill:${target}`}
+          key={t}
+          label={LABEL[t]}
+          open={flyout.open === `fill:${t}`}
           menuClassName="ctx-menu--glyphs"
-          measureKey={custom}
-          onHover={() => flyout.hover(`fill:${target}`)}
-          onOpen={() => flyout.openNow(`fill:${target}`)}
+          measureKey={`${measureTick}`}
+          onHover={() => flyout.hover(`fill:${t}`)}
+          onOpen={() => flyout.openNow(`fill:${t}`)}
           onCloseFlyout={() => flyout.openNow(null)}
         >
-          <FillRows start={start} custom={custom} onCustom={setCustom} onFill={(fill) => onFill(target, fill)} onClose={onClose} />
+          <FillGrid
+            start={start}
+            onFill={(fill) => onFill(t, fill)}
+            onClose={onClose}
+            onResize={() => setMeasureTick((n) => n + 1)}
+          />
         </FlyoutParent>
       ))}
     </>
   )
 }
 
-/** One Fill flyout's rows: No fill, the colours, and "Custom colour…" with the page's colour box under it. */
-function FillRows({ start, custom, onCustom, onFill, onClose }: { start: string | undefined; custom: boolean; onCustom: (open: boolean) => void; onFill: (fill: string | null) => void; onClose: () => void }) {
-  const boxHolder = useRef<HTMLDivElement>(null)
-  const box = useRef<ColourBox | null>(null)
-  const pick = useRef(onFill)
-  pick.current = onFill
-  const setCustom = useRef(onCustom)
-  setCustom.current = onCustom
-  // The box opens at the fill there is when it opens; a pick moves the box itself.
-  const startAt = useRef(start)
-  startAt.current = start
+/** Unified Google Docs 10×8 `ColourGrid` mounted cleanly inside the Folder View Fill flyout (YAZ-6735). */
+function FillGrid({
+  start,
+  onFill,
+  onClose,
+  onResize,
+}: {
+  start: string | undefined
+  onFill: (fill: string | null) => void
+  onClose: () => void
+  onResize: () => void
+}) {
+  const hostRef = useRef<HTMLDivElement>(null)
+  const fillRef = useRef(onFill)
+  fillRef.current = onFill
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+  const resizeRef = useRef(onResize)
+  resizeRef.current = onResize
 
   useEffect(() => {
-    if (!custom) return
-    if (box.current === null) {
-      box.current = new ColourBox(document, { preview: () => {}, pick: (hex) => pick.current(hex), close: () => setCustom.current(false) })
-      boxHolder.current?.append(box.current.el)
+    const host = hostRef.current
+    if (host === null) return
+    const grid = new ColourGrid(document, {
+      noneLabel: 'No fill',
+      allowAlpha: true,
+      defaultBoxHex: () => '#000000',
+      onPick: (value, isCustom) => {
+        fillRef.current(value)
+        if (!isCustom) closeRef.current()
+        else grid.render([value], value.startsWith('#') ? (value as Hex) : '#000000')
+      },
+      onClear: () => {
+        fillRef.current(null)
+        closeRef.current()
+      },
+      onResize: () => resizeRef.current(),
+    })
+    const active = start ? [start] : []
+    grid.render(active, start?.startsWith('#') ? (start as Hex) : '#000000')
+    host.replaceChildren(grid.el)
+    return () => {
+      grid.destroy()
+      host.replaceChildren()
     }
-    const at = startAt.current
-    box.current.show(at?.startsWith('#') === true ? (at as Hex) : '#000000')
-    return () => box.current?.hide()
-  }, [custom])
+  }, [start])
 
-  const row = (label: string, fill: string | null, swatch?: string) => (
-    <button
-      key={label}
-      type="button"
-      role="menuitem"
-      className="ctx-menu__item"
-      onClick={() => {
-        onFill(fill)
-        onClose()
-      }}
-    >
-      {swatch === undefined ? (
-        label
-      ) : (
-        <span className="ctx-menu__label">
-          <span className="table-menu-swatch" style={{ background: swatch }} />
-          {label}
-        </span>
-      )}
-    </button>
-  )
-
-  return (
-    <>
-      <div className="ctx-menu__group" role="group">
-        {row('No fill', null)}
-      </div>
-      <div className="ctx-menu__group" role="group">
-        {TABLE_COLORS.map((c) => row(capital(c), c, fillSwatch(c)))}
-      </div>
-      <div className="ctx-menu__group" role="group">
-        <button type="button" role="menuitem" className="ctx-menu__item" aria-expanded={custom} onClick={() => onCustom(!custom)}>
-          Custom colour…
-        </button>
-        <div ref={boxHolder} className="view-fill-menu__box" />
-      </div>
-    </>
-  )
+  return <div ref={hostRef} className="ctx-menu__grid-wrap" />
 }

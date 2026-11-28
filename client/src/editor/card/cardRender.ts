@@ -38,6 +38,7 @@
 import DOMPurify from 'dompurify'
 import { Marked, type Token, type TokenizerAndRendererExtension, type Tokens } from 'marked'
 import { cardSides, hiddenCount, markHidden } from '@shared/cardText'
+import { highlightContrastToneFromStyle } from '@shared/palette'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, MouseMods } from '@shared/keys'
 import { parseAlt } from '../image/imageSrc'
@@ -224,10 +225,10 @@ function sideOf(text: string): DocumentFragment {
 
 /** The variable a header part's value sets (`cardTable.css`'s mapping, as values: the eager CSS stays small). */
 const HEADER_VARS: Record<string, (value: string) => Record<string, string>> = {
-  color: (v) => ({ hue: v === 'gray' ? 'initial' : `var(--table-fill-solid-${v})`, scale: v === 'gray' ? '1' : v === 'black' ? '5' : '2.5' }),
+  color: (v) => (v.startsWith('#') ? { hue: v, scale: '1' } : { hue: v === 'gray' ? 'initial' : `var(--table-fill-solid-${v})`, scale: v === 'gray' ? '1' : v === 'black' ? '5' : '2.5' }),
   strength: (v) => ({ strength: String({ off: 0, light: 6, medium: 12, strong: 20 }[v] ?? 6) }),
   weight: (v) => ({ weight: v === 'regular' ? '400' : 'initial' }),
-  text: (v): Record<string, string> => (v === 'muted' || v === 'full' ? { mute: v === 'muted' ? '1' : '0', ink: 'initial' } : { ink: v === 'white' ? '#fff' : `var(--table-text-${v})` }),
+  text: (v): Record<string, string> => (v === 'muted' || v === 'full' ? { mute: v === 'muted' ? '1' : '0', ink: 'initial' } : { ink: v === 'white' ? '#fff' : v.startsWith('#') ? v : `var(--table-text-${v})` }),
 }
 
 /**
@@ -244,7 +245,7 @@ function lookVars(table: HTMLTableElement): void {
     }
   for (const cell of table.querySelectorAll<HTMLElement>('[data-fill], [data-color]')) {
     const fill = cell.getAttribute('data-fill')
-    if (fill !== null) cell.style.setProperty('--cell-fill', fill.startsWith('#') ? `color-mix(in srgb, ${fill} var(--table-fill-wash, 35%), transparent)` : `var(--table-fill-${fill})`)
+    if (fill !== null) cell.style.setProperty('--cell-fill', fill.startsWith('#') ? 'var(--table-fill-custom)' : `var(--table-fill-${fill})`)
     const color = cell.getAttribute('data-color')
     if (color !== null && !color.startsWith('#')) cell.style.setProperty('--cell-ink', `var(--table-text-${color})`)
   }
@@ -474,6 +475,11 @@ export function renderCard(text: string, show: CardShow = {}, look?: CardLook): 
     boxTables(side)
     fillHidden(side, words, open, next)
     applyLook(side, look)
+    // Auto-contrast text tone on solid / >=50% custom hex highlights inside cards (YAZ-6733, YAZ-6739).
+    for (const markEl of side.querySelectorAll<HTMLElement>('mark[style]')) {
+      const tone = highlightContrastToneFromStyle(markEl.style.backgroundColor)
+      if (tone !== null) markEl.setAttribute('data-mark-tone', tone)
+    }
     if (i > 0) {
       const rule = document.createElement('div')
       rule.className = 'card__rule'

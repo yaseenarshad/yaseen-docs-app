@@ -10,7 +10,6 @@ import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { TABLE, cellPos, mountTable, unmountAll } from './tableTestKit'
 import { pasteIntoCells } from './tablePaste'
-import { FILL_WASH } from './colours'
 import cardTableCss from './cardTable.css?inline'
 import editorTableCss from './table.css?inline'
 import appCss from '../../app.css?inline'
@@ -276,9 +275,44 @@ describe('copy cells to Google Docs with their lines (YAZ-3802, demo round 1 dec
       expect(cells[col].style.backgroundColor, name).toBe(overWhite(light(`--table-fill-${name}`)))
       expect(cells[col].style.color, name).toBe(computed(light(`--table-text-${name}`)))
     })
-    // A custom fill draws at its wash (`FILL_WASH`): over white, as the page shows it.
-    expect(cells[names.length].style.backgroundColor).toBe(overWhite(`rgba(255, 136, 0, ${FILL_WASH})`))
+    // A solid custom hex fill copies solid (YAZ-6692 D1).
+    expect(cells[names.length].style.backgroundColor).toBe(computed('#ff8800'))
     expect(cells[names.length].style.color).toBe(computed('#1a2b3c'))
+  })
+
+  it('custom #rrggbb copies solid with auto-contrast text, and #rrggbbaa composites over white (YAZ-6692 D1, D9)', async () => {
+    const view = await mountTable('| a | b | c |\n| - | - | - |\n| 1 | 2 | 3 |\n')
+    setCell(view, 1, 0, { fill: '#000000' })
+    setCell(view, 1, 1, { fill: '#434343', color: '#ffffff' })
+    setCell(view, 1, 2, { fill: '#00000080' })
+    selectCells(view, [1, 0], [1, 2])
+    const box = document.createElement('div')
+    box.innerHTML = copy(view).html
+    const [dark, explicit, translucent] = [...box.querySelectorAll<HTMLElement>('td')]
+    expect(dark.style.backgroundColor).toBe(computed('#000000'))
+    expect(dark.style.color).toBe(computed('#ffffff'))
+    expect(explicit.style.backgroundColor).toBe(computed('#434343'))
+    expect(explicit.style.color).toBe(computed('#ffffff'))
+    expect(translucent.style.backgroundColor).toBe(overWhite(`rgba(0, 0, 0, ${128 / 255})`))
+  })
+
+  it('inline named text_color and alpha custom highlight copy with light-mode inline colours and paste back cleanly (YAZ-6694 D2, D8)', async () => {
+    const view = await mountTable('<span class="text-color-red">alert</span> <mark style="background-color: #ff000080">soft</mark>\n')
+    view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)))
+    const { html } = copy(view)
+    const box = document.createElement('div')
+    box.innerHTML = html
+    const span = box.querySelector<HTMLElement>('span[data-text-color="red"]')!
+    expect(span.style.color).toBe(computed('#c0392b'))
+    const mark = box.querySelector<HTMLElement>('mark[data-highlight="#ff000080"]')!
+    expect(mark.style.backgroundColor).toBe(overWhite(`rgba(255, 0, 0, ${128 / 255})`))
+    // Parsing back into Yaseen Docs still preserves named `red` and exact `#ff000080`.
+    const parsed = PMDOMParser.fromSchema(view.state.schema).parse(box)
+    const marks: string[] = []
+    parsed.descendants((node) => {
+      if (node.isText) for (const m of node.marks) marks.push(`${m.type.name}:${String(m.attrs.color)}`)
+    })
+    expect(marks).toEqual(['text_color:red', 'highlight:#ff000080'])
   })
 
   it('a cell\'s own alignment copies as its `text-align`; the others keep their column\'s (YAZ-3819)', async () => {
@@ -345,6 +379,32 @@ describe('copy cells to Google Docs with their lines (YAZ-3802, demo round 1 dec
     expect(cellAt(view, 2, 1).attrs.fill).toBe('green')
     expect(cellAt(view, 2, 2).attrs.color).toBe('blue')
     expect(cellAt(view, 3, 2).attrs).toEqual(plain)
+  })
+
+  it('pasting copied coloured or dark-filled cells back into a table bakes zero stray inline text_color marks (YAZ-6715)', async () => {
+    const view = await mountTable('| h1 | h2 | h3 |\n| --- | --- | --- |\n| a | b | <span class="text-color-blue">c</span> |\n| d | e | f |\n')
+    setCell(view, 1, 0, { fill: '#000000' })
+    setCell(view, 1, 1, { color: 'red' })
+    selectCells(view, [1, 0], [1, 2])
+    const copied = copy(view)
+    // External copy-out still carries inline white/red styles on the cells for Google Docs.
+    expect(copied.html).toContain('color: rgb(255, 255, 255)')
+    expect(copied.html).toContain('color: rgb(192, 57, 43)')
+    caretIn(view, 2, 0)
+    pasteHtml(view, copied.html, copied.text)
+    const marksInCell = (row: number, col: number) => {
+      const found: string[] = []
+      cellAt(view, row, col).descendants((n) => {
+        if (n.isText) for (const m of n.marks) found.push(`${m.type.name}:${String(m.attrs.color)}`)
+      })
+      return found
+    }
+    expect(cellAt(view, 2, 0).attrs.fill).toBe('#000000')
+    expect(cellAt(view, 2, 1).attrs.color).toBe('red')
+    expect(marksInCell(2, 0)).toEqual([])
+    expect(marksInCell(2, 1)).toEqual([])
+    // Intentional inline text_color inside the third cell is preserved.
+    expect(marksInCell(2, 2)).toEqual(['text_color:blue'])
   })
 })
 

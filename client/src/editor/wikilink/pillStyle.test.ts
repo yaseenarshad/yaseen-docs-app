@@ -54,25 +54,63 @@ const flyout = (view: EditorView): HTMLElement => {
   return popupOf(view)!.querySelector<HTMLElement>('.ctx-menu__sub')!
 }
 const subRows = (sub: HTMLElement) => Array.from(sub.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')).map((b) => `${b.textContent}${b.dataset.hint === '✓' ? ' ✓' : ''}${b.disabled ? ' (off)' : ''}`)
-const pick = (view: EditorView, label: string) => {
+const tabNames = (sub: HTMLElement) => Array.from(sub.querySelectorAll<HTMLButtonElement>('.fill-target__opt')).map((b) => b.textContent)
+const openTab = (view: EditorView, name: string) => {
   const sub = popupOf(view)!.querySelector<HTMLElement>('.ctx-menu__sub')!
-  Array.from(sub.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')).find((b) => b.textContent === label)!.click()
+  const btn = Array.from(sub.querySelectorAll<HTMLButtonElement>('.fill-target__opt')).find((b) => b.textContent === name)
+  if (!btn) throw new Error(`no tab "${name}"`)
+  btn.click()
+  return popupOf(view)!.querySelector<HTMLElement>('.ctx-menu__sub')!
+}
+const pick = (view: EditorView, label: string, tab?: string) => {
+  const sub = tab !== undefined ? openTab(view, tab) : popupOf(view)!.querySelector<HTMLElement>('.ctx-menu__sub')!
+  const gridBtn =
+    sub.querySelector<HTMLButtonElement>(`.colour-grid button[aria-label="${label}"]`) ??
+    Array.from(sub.querySelectorAll<HTMLButtonElement>('.colour-grid button')).find((b) => b.textContent?.trim() === label)
+  if (gridBtn) {
+    gridBtn.click()
+    return
+  }
+  const item = Array.from(sub.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')).find((b) => b.textContent === label)
+  if (!item) throw new Error(`no item "${label}"${tab ? ` in tab "${tab}"` : ''}`)
+  item.click()
 }
 
-describe('right-click a [[link]] › Pill style (YAZ-4924 round 5)', () => {
-  it('is a flyout in the link menu, before Edit link: Text (B I U S), Highlight (None, yellow, the named colours), Back to the vault\'s look', async () => {
+describe('right-click a [[link]] › Pill style (YAZ-4924 round 5, YAZ-6735)', () => {
+  it('is a compact tabbed flyout (Text, Text colour, Highlight) in the link menu, before Edit link', async () => {
     const { root, view } = await mount('pad [[Known]] tail\n')
     rightClick(span(root, 'Known'))
     expect(topRows(view)).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Pill style', 'Add alias', 'Edit link', 'Remove link'])
     const sub = flyout(view)
-    expect(Array.from(sub.querySelectorAll('.ctx-menu__heading')).map((h) => h.textContent)).toEqual(['Text', 'Highlight'])
-    expect(subRows(sub)).toEqual(['Bold', 'Italic', 'Underline', 'Strikethrough', 'None ✓', 'Yellow', 'Green', 'Blue', 'Pink', 'Orange', 'Purple', 'Red', 'Gray', "↺ Back to the vault's look (off)"])
+    expect(tabNames(sub)).toEqual(['Text', 'Text colour', 'Highlight'])
+    openTab(view, 'Text')
+    expect(subRows(popupOf(view)!.querySelector('.ctx-menu__sub')!)).toEqual([
+      'Bold', 'Italic', 'Underline', 'Strikethrough',
+      "↺ Back to the vault's look (off)",
+    ])
+  })
+
+  it('Text colour tab uses unified 10×8 ColourGrid, wraps the WHOLE link in text_color, Default clears it, and Back clears all (YAZ-4924, YAZ-6695 #3, YAZ-6735)', async () => {
+    const { crepe, root, view } = await mount('pad [[Known]] tail\n')
+    rightClick(span(root, 'Known'))
+    flyout(view)
+    pick(view, 'Red', 'Text colour')
+    expect(getMarkdownForSave(crepe)).toBe('pad <span style="color: #ff0000">[[Known]]</span> tail\n')
+    pick(view, 'Blue', 'Text colour')
+    expect(getMarkdownForSave(crepe)).toBe('pad <span style="color: #0000ff">[[Known]]</span> tail\n')
+    pick(view, 'Default', 'Text colour')
+    expect(getMarkdownForSave(crepe)).toBe('pad [[Known]] tail\n')
+    pick(view, 'Purple', 'Text colour')
+    expect(getMarkdownForSave(crepe)).toBe('pad <span style="color: #9900ff">[[Known]]</span> tail\n')
+    pick(view, "↺ Back to the vault's look", 'Text')
+    expect(getMarkdownForSave(crepe)).toBe('pad [[Known]] tail\n')
   })
 
   it('Bold, Italic, Underline, Strikethrough wrap the WHOLE link in the toolbar\'s marks, a second pick takes it off; the flyout stays open and shows the ✓', async () => {
     const { crepe, root, view } = await mount('pad [[Known]] tail\n')
     rightClick(span(root, 'Known'))
     flyout(view)
+    openTab(view, 'Text')
     pick(view, 'Bold')
     expect(getMarkdownForSave(crepe)).toBe('pad **[[Known]]** tail\n')
     expect(subRows(popupOf(view)!.querySelector('.ctx-menu__sub')!).slice(0, 4)).toEqual(['Bold ✓', 'Italic', 'Underline', 'Strikethrough'])
@@ -88,24 +126,29 @@ describe('right-click a [[link]] › Pill style (YAZ-4924 round 5)', () => {
     expect(span(root, 'Known')).toBeDefined()
   })
 
-  it('a highlight colour is the toolbar\'s highlight around the link: yellow `==`, a named colour `<mark class>`, None takes it off', async () => {
+  it('Highlight tab uses unified 10×8 ColourGrid + Soft washes: yellow `==`, named wash, solid hex, and No highlight takes it off', async () => {
     const { crepe, root, view } = await mount('pad [[Known]] tail\n')
     rightClick(span(root, 'Known'))
     flyout(view)
-    pick(view, 'Green')
+    pick(view, 'Green (soft wash)', 'Highlight')
     expect(getMarkdownForSave(crepe)).toBe('pad <mark class="highlight-green">[[Known]]</mark> tail\n')
-    expect(subRows(popupOf(view)!.querySelector('.ctx-menu__sub')!)).toContain('Green ✓')
-    pick(view, 'Yellow')
+    pick(view, 'Yellow (soft wash)', 'Highlight')
     expect(getMarkdownForSave(crepe)).toBe('pad ==[[Known]]== tail\n')
-    pick(view, 'None')
+    pick(view, 'Red', 'Highlight')
+    expect(getMarkdownForSave(crepe)).toBe('pad <mark style="background-color: #ff0000">[[Known]]</mark> tail\n')
+    pick(view, 'No highlight', 'Highlight')
     expect(getMarkdownForSave(crepe)).toBe('pad [[Known]] tail\n')
   })
 
   it("Back to the vault's look takes this link's marks off, and only this link's; each pick is one undo", async () => {
     const { crepe, root, view } = await mount('pad **[[Other]]** and *==[[Known]]==* tail\n')
     rightClick(span(root, 'Known'))
-    const sub = flyout(view)
-    expect(subRows(sub)).toEqual(['Bold', 'Italic ✓', 'Underline', 'Strikethrough', 'None', 'Yellow ✓', 'Green', 'Blue', 'Pink', 'Orange', 'Purple', 'Red', 'Gray', "↺ Back to the vault's look"])
+    flyout(view)
+    openTab(view, 'Text')
+    expect(subRows(popupOf(view)!.querySelector('.ctx-menu__sub')!)).toEqual([
+      'Bold', 'Italic ✓', 'Underline', 'Strikethrough',
+      "↺ Back to the vault's look",
+    ])
     pick(view, "↺ Back to the vault's look")
     expect(getMarkdownForSave(crepe)).toBe('pad **[[Other]]** and [[Known]] tail\n')
     undo(view.state, view.dispatch)
@@ -120,7 +163,7 @@ describe('right-click a [[link]] › Pill style (YAZ-4924 round 5)', () => {
     expect([row.disabled, row.dataset.hint, row.classList.contains('ctx-menu__item--parent')]).toEqual([true, 'Read only', false])
   })
 
-  it('YAZ-6001 (D3): when highlight is hidden in the toolbar (card editors), Pill style hides the Highlight group and keeps Text + Back', async () => {
+  it('YAZ-6001 (D3): when highlight is hidden in the toolbar (card editors), Pill style hides the Highlight tab and keeps Text + Text colour', async () => {
     const source = createWikilinkResolveSource()
     source.update(resolve, undefined, undefined, false)
     const nav = { root: '/vault', createFolder: () => '', openCurrent: vi.fn(), openBackground: vi.fn(), onNotice: vi.fn() }
@@ -132,8 +175,8 @@ describe('right-click a [[link]] › Pill style (YAZ-4924 round 5)', () => {
     const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
     rightClick(span(root, 'Known'))
     const sub = flyout(view)
-    expect(Array.from(sub.querySelectorAll('.ctx-menu__heading')).map((h) => h.textContent)).toEqual(['Text'])
-    expect(subRows(sub)).toEqual(['Bold', 'Italic', 'Underline', 'Strikethrough', "↺ Back to the vault's look (off)"])
+    expect(tabNames(sub)).toEqual(['Text', 'Text colour'])
+    openTab(view, 'Text')
     pick(view, 'Strikethrough')
     expect(getMarkdownForSave(crepe)).toBe('pad ~~[[Known]]~~ tail\n')
     pick(view, "↺ Back to the vault's look")
@@ -154,9 +197,9 @@ describe('right-click a Markdown link pill › Pill style (YAZ-4924 round 5)', (
     rightClick(anchors[0]!)
     expect(topRows(view)).toContain('Pill style')
     flyout(view)
-    pick(view, 'Bold')
+    pick(view, 'Bold', 'Text')
     expect(getMarkdownForSave(crepe)).toBe('see **[Plan](../plan.md)** and [Web](https://example.com)\n')
-    pick(view, 'Blue')
+    pick(view, 'Blue (soft wash)', 'Highlight')
     // The link mark holds the highlight, as the toolbar's highlight on the link's words does.
     expect(getMarkdownForSave(crepe)).toBe('see **[<mark class="highlight-blue">Plan</mark>](../plan.md)** and [Web](https://example.com)\n')
     rightClick(root.querySelectorAll('a')[1]!)
@@ -172,7 +215,7 @@ describe("a link's own style wins over the vault's look (YAZ-4924 round 5)", () 
     expect(ends()).toEqual(['(:bold', '):bold', '(:green', '):green'])
     rightClick(span(root, 'Known'))
     flyout(view)
-    pick(view, "↺ Back to the vault's look")
+    pick(view, "↺ Back to the vault's look", 'Text')
     expect(ends()).toEqual(['(:', '):', '(:green', '):green'])
   })
 

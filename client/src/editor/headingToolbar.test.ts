@@ -58,7 +58,7 @@ describe('Heading toolbar group (YAZ-923)', () => {
     expect(strip).toEqual([
       'h1', 'h2', 'h3', 'text', '|',
       'checklist', 'bulletList', 'numberedList', '|',
-      'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more', '|',
+      'bold', 'italic', 'underline', 'strikethrough', 'font-size', 'text-color', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more', '|',
       'code', 'link',
     ])
     // The tab order is that order: every item is a button where it stands, and none jumps the queue or leaves it.
@@ -154,7 +154,8 @@ describe('highlight swatches (YAZ-1480)', () => {
 
     const keys = order()
     const at = keys.indexOf('strikethrough')
-    expect(keys.slice(at + 1, at + 4)).toEqual([...SWATCHES])
+    expect(keys.slice(at + 1, at + 3)).toEqual(['font-size', 'text-color'])
+    expect(keys.slice(at + 3, at + 6)).toEqual([...SWATCHES])
     expect(keys.indexOf('highlight-blue')).toBeLessThan(keys.indexOf('code'))
     expect(item('highlight-pink')).toBeNull()
   })
@@ -313,7 +314,7 @@ describe('the toolbar setting (YAZ-3806 T5, T6)', () => {
 
     toolbarPrefs.value = { ...DEFAULT_TOOLBAR, hidden: ['checklist', 'bulletList', 'numberedList'] }
     await tick()
-    expect(strip()).toEqual(['h1', 'h2', 'h3', 'text', '|', 'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more', '|', 'code', 'link'])
+    expect(strip()).toEqual(['h1', 'h2', 'h3', 'text', '|', 'bold', 'italic', 'underline', 'strikethrough', 'font-size', 'text-color', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more', '|', 'code', 'link'])
 
     toolbarPrefs.value = { ...DEFAULT_TOOLBAR, groups: ['lists', 'lineType', 'textStyle', 'insert'], buttons: ['link', ...DEFAULT_TOOLBAR.buttons.filter((b) => b !== 'link')] }
     await tick()
@@ -325,7 +326,7 @@ describe('the toolbar setting (YAZ-3806 T5, T6)', () => {
     expect(strip()).toEqual([
       'h1', 'h2', 'h3', 'text', '|',
       'checklist', 'bulletList', 'numberedList', '|',
-      'bold', 'italic', 'underline', 'strikethrough', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more', '|',
+      'bold', 'italic', 'underline', 'strikethrough', 'font-size', 'text-color', 'highlight', 'highlight-green', 'highlight-blue', 'highlight-more', '|',
       'code', 'link',
     ])
   })

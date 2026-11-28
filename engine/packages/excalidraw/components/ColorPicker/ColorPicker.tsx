@@ -28,9 +28,7 @@ import {
   temporarilyDisableTextEditorBlur,
 } from "../../hooks/useTextEditorFocus";
 
-import { ColorInput } from "./ColorInput";
-import { Picker } from "./Picker";
-import PickerHeading from "./PickerHeading";
+import { GoogleDocsGrid } from "./GoogleDocsGrid";
 import { TopPicks } from "./TopPicks";
 
 import type { SwatchLetter } from "./TopPicks";
@@ -104,36 +102,36 @@ const ColorPickerPopupContent = ({
   const { container } = useExcalidrawContainer();
   const stylesPanelMode = useStylesPanelMode();
   const isCompactMode = stylesPanelMode !== "full";
-  const isMobileMode = stylesPanelMode === "mobile";
   const [, setActiveColorPickerSection] = useAtom(activeColorPickerSectionAtom);
 
   const [eyeDropperState, setEyeDropperState] = useAtom(activeEyeDropperAtom);
-
-  const colorInputJSX = (
-    <div>
-      <PickerHeading>{t("colorPicker.hexCode")}</PickerHeading>
-      <ColorInput
-        color={color || ""}
-        label={label}
-        onChange={(color) => {
-          onChange(color);
-        }}
-        colorPickerType={type}
-        placeholder={t("colorPicker.color")}
-      />
-    </div>
-  );
-
   const colorPickerContentRef = useRef<HTMLDivElement>(null);
 
   const focusPickerContent = () => {
     colorPickerContentRef.current?.focus();
   };
 
+  const closePopup = () => {
+    if (close) {
+      close();
+    } else if (getOpenPopup() === type) {
+      updateData({ openPopup: null });
+    }
+    setActiveColorPickerSection(null);
+  };
+
+  const title = isCompactMode
+    ? type === "elementStroke"
+      ? t("labels.stroke")
+      : type === "elementBackground"
+      ? t("labels.background")
+      : null
+    : null;
+
   return (
     <PropertiesPopover
       container={container}
-      style={{ maxWidth: "13rem" }}
+      style={{ maxWidth: "18rem" }}
       // Improve focus handling for text editing scenarios
       preventAutoFocusOnTouch={!!appState.editingTextElement}
       onFocusOutside={(event) => {
@@ -153,12 +151,7 @@ const ColorPickerPopupContent = ({
       }}
       onClose={() => {
         // only clear if we're still the active popup (avoid racing with switch)
-        if (close) {
-          close();
-        } else if (getOpenPopup() === type) {
-          updateData({ openPopup: null });
-        }
-        setActiveColorPickerSection(null);
+        closePopup();
 
         // Refocus text editor when popover closes if we were editing text
         if (appState.editingTextElement) {
@@ -166,56 +159,34 @@ const ColorPickerPopupContent = ({
         }
       }}
     >
-      {palette ? (
-        <Picker
-          ref={colorPickerContentRef}
-          palette={palette}
-          color={color}
-          onChange={onChange}
-          onEyeDropperToggle={(force) => {
-            setEyeDropperState((state) => {
-              if (force) {
-                state = state || {
-                  keepOpenOnAlt: true,
-                  onSelect: onChange,
-                  colorPickerType: type,
-                };
-                state.keepOpenOnAlt = true;
-                return state;
-              }
-
-              return force === false || state
-                ? null
-                : {
-                    keepOpenOnAlt: false,
-                    onSelect: onChange,
-                    colorPickerType: type,
-                  };
-            });
-          }}
-          onEscape={(event) => {
+      <div
+        ref={colorPickerContentRef}
+        className="color-picker-content properties-content"
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
             if (eyeDropperState) {
               setEyeDropperState(null);
             } else {
-              // close explicitly on Escape
-              if (close) {
-                close();
-              } else {
-                updateData({ openPopup: null });
-              }
+              closePopup();
             }
-          }}
+          }
+        }}
+      >
+        {title && <div className="color-picker__title">{title}</div>}
+        <GoogleDocsGrid
+          color={color}
+          onChange={onChange}
           type={type}
+          label={label}
           elements={elements}
-          updateData={updateData}
-          showTitle={isCompactMode}
-          showHotKey={!isMobileMode}
-        >
-          {colorInputJSX}
-        </Picker>
-      ) : (
-        colorInputJSX
-      )}
+          palette={palette}
+          noneLabel={type === "elementBackground" ? "No fill" : null}
+          onRequestClose={closePopup}
+        />
+      </div>
     </PropertiesPopover>
   );
 };
@@ -292,34 +263,29 @@ const ColorPickerTrigger = ({
 };
 
 /**
- * YAZ-3943 demo 2: the ▾ after the text toolbar's three picks, in the toolbar's one popover (`ToolbarPopover`):
- * more picks, "None" when the host has one, and "Custom…", which opens the full picker. The ▾ marks a color not
- * among the three; mixed colors mark nothing (YAZ-3943 demo 2). No tooltip: it would cover the popover.
+ * YAZ-3943 demo 2 / YAZ-6730: the ▾ after the toolbar's three picks opens the unified Google Docs
+ * 10×8 colour grid directly in `ToolbarPopover` (matching Page, Table, and Drawing Text Box pickers).
  */
 const MoreColors = ({
   color,
   label,
   type,
   topPicks,
-  morePicks,
+  elements,
+  palette,
   onChange,
   editingTextElement,
-  onCustom,
   onNone,
-  pickLabels,
-  swatchLetter,
 }: {
   color: string | null;
   label: string;
   type: ColorPickerType;
   topPicks: readonly string[];
-  morePicks: readonly string[];
+  elements: readonly ExcalidrawElement[];
+  palette?: ColorPaletteCustom | null;
   onChange: (color: string) => void;
   editingTextElement: boolean;
-  onCustom: () => void;
   onNone?: () => void;
-  pickLabels?: Readonly<Record<string, string>>;
-  swatchLetter?: SwatchLetter;
 }) => {
   const [open, setOpen] = useState(false);
   const other = !!color && color !== "transparent" && !topPicks.includes(color);
@@ -341,37 +307,17 @@ const MoreColors = ({
       onTriggerPointerDown={keepEditor}
     >
       <div className="color-picker__more-popover" onPointerDown={keepEditor}>
-        <TopPicks
-          activeColor={color}
+        <GoogleDocsGrid
+          color={color}
           onChange={onChange}
           type={type}
-          topPicks={morePicks}
-          titles={false}
-          labels={pickLabels}
-          letter={swatchLetter}
+          label={label}
+          elements={elements}
+          palette={palette}
+          noneLabel={onNone ? "None" : null}
+          onNone={onNone}
+          onRequestClose={() => setOpen(false)}
         />
-        {onNone && (
-          <button
-            type="button"
-            className="color-picker__custom"
-            onClick={() => {
-              setOpen(false);
-              onNone();
-            }}
-          >
-            None
-          </button>
-        )}
-        <button
-          type="button"
-          className="color-picker__custom"
-          onClick={() => {
-            setOpen(false);
-            onCustom();
-          }}
-        >
-          Custom…
-        </button>
       </div>
     </ToolbarPopover>
   );
@@ -447,13 +393,11 @@ export const ColorPicker = ({
                   label={label}
                   type={type}
                   topPicks={topPicks ?? []}
-                  morePicks={morePicks}
+                  elements={elements}
+                  palette={palette}
                   onChange={onChange}
                   editingTextElement={!!appState.editingTextElement}
-                  onCustom={openPopup}
                   onNone={onNone}
-                  pickLabels={pickLabels}
-                  swatchLetter={swatchLetter}
                 />
               </span>
             </Popover.Anchor>
