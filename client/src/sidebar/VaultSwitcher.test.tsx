@@ -1879,7 +1879,7 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
       pick('Edit workspace app…')
       await vi.waitFor(() => {
         expect(workspaceStatus).toHaveBeenCalledWith('set-work')
-        expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace launcher')
+        expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace app')
       })
     } finally {
       platformSpy.mockRestore()
@@ -1911,7 +1911,7 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
       expect(menuLabels()).toContain('Make a vault app…')
       pick('Make a vault app…')
       await vi.waitFor(() => {
-        expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Make a vault launcher')
+        expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Make a vault app')
       })
       expect(status).not.toHaveBeenCalled()
 
@@ -1924,7 +1924,7 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
       pick('Edit vault app…')
       await vi.waitFor(() => {
         expect(status).toHaveBeenCalledWith(ROOT, 'default')
-        expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Edit vault launcher')
+        expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Edit vault app')
       })
 
       // 2+ apps → "Vault apps" submenu
@@ -1962,7 +1962,7 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
       pick('Make a workspace app…')
       await vi.waitFor(() => {
         expect(workspaceStatus).toHaveBeenCalledWith('set-work')
-        expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace launcher')
+        expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace app')
       })
 
       // Close modal and verify label flips to "Edit workspace app…" when icon exists

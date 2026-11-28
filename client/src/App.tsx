@@ -2794,7 +2794,7 @@ export function App() {
       if (added) moveBoardTab(from, storage.getWindowId(), ref)
     })
   }, [addVault, moveBoardTab])
-  const { launcherIcons, workspaceIcons, refreshLauncherIcons } = useVaultLauncherIcons()
+  const { launcherIcons, workspaceIcons, vaultApps, refreshLauncherIcons } = useVaultLauncherIcons()
   const [todayTarget, setTodayTarget] = useState<string | null>(null)
   const openTarget = useCallback(({ root: targetRoot, target }: { root: string; target: 'inbox' | 'today' }) => {
     if (target === 'inbox') takeInbox({ root: targetRoot })
@@ -4546,7 +4546,7 @@ export function App() {
           onInbox={filesDoors?.inbox ?? toggleInbox}
           // Its "Open in new window" (YAZ-5054): main opens the window, from a Files window too.
           onInboxNewWindow={openInboxInNewWindow}
-          vaultIcons={launcherIcons} workspaceIcons={workspaceIcons} onLauncherChanged={refreshLauncherIcons}
+          vaultIcons={launcherIcons} workspaceIcons={workspaceIcons} vaultApps={vaultApps} onLauncherChanged={refreshLauncherIcons}
         />
         </div>
       )}
@@ -4569,7 +4569,7 @@ export function App() {
       ) : root === null ? (
         <section className="editor">
           {/* No dialog opens by itself (C2, GRO-2164): the Welcome screen offers recents + Open folder…. */}
-          <Welcome recents={storage.getRecentRoots()} sets={storage.getVaultSets()} vaultIcons={launcherIcons} workspaceIcons={workspaceIcons} onLauncherChanged={refreshLauncherIcons} onOpenRecent={openRoot} onOpenSet={openSetFromWelcome} onPickFolder={pick} picking={picking} onNotice={notify} />
+          <Welcome recents={storage.getRecentRoots()} sets={storage.getVaultSets()} vaultIcons={launcherIcons} workspaceIcons={workspaceIcons} vaultApps={vaultApps} onLauncherChanged={refreshLauncherIcons} onOpenRecent={openRoot} onOpenSet={openSetFromWelcome} onPickFolder={pick} picking={picking} onNotice={notify} />
         </section>
       ) : (
         <div className="workspace" data-inbox-focus={inboxFocused || undefined}>

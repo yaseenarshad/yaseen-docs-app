@@ -300,7 +300,7 @@ describe('Welcome', () => {
         pick('Edit vault app…')
         await vi.waitFor(() => {
           expect(status).toHaveBeenCalledWith('/vaults/work', 'default')
-          expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Edit vault launcher')
+          expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Edit vault app')
         })
         act(() => void document.body.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())
 
@@ -314,7 +314,7 @@ describe('Welcome', () => {
         expect(menuLabels()).toContain('Make a vault app…')
         pick('Make a vault app…')
         await vi.waitFor(() => {
-          expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Make a vault launcher')
+          expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Make a vault app')
         })
       } finally {
         platformSpy.mockRestore()
@@ -342,7 +342,7 @@ describe('Welcome', () => {
         pick('Make a workspace app…')
         await vi.waitFor(() => {
           expect(workspaceStatus).toHaveBeenCalledWith('s1')
-          expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace launcher')
+          expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace app')
         })
       } finally {
         platformSpy.mockRestore()

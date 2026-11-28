@@ -263,7 +263,7 @@ describe('VaultLauncherControl', () => {
     await act(async () => buttonByText(el, '+ Add another vault app…')?.click())
     await act(async () => { await Promise.resolve() })
     expect(el.querySelector<HTMLInputElement>('input[aria-label="App name"]')?.value).toBe('Notes')
-    expect(el.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Make a vault launcher')
+    expect(el.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Make a vault app')
     await act(async () => el.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())
 
     // Removing the secondary card leaves the primary card intact
@@ -441,7 +441,7 @@ describe('VaultLauncherModal', () => {
     await act(async () => buttonByText(el, '🚀')?.click())
 
     // Submit
-    await act(async () => buttonByText(el, 'Create launcher')?.click())
+    await act(async () => buttonByText(el, 'Create app')?.click())
     expect(mockCreate).toHaveBeenCalledWith({
       root: ROOT,
       name: 'Work Vault',
@@ -461,7 +461,7 @@ describe('VaultLauncherModal', () => {
       <VaultLauncherModal root={ROOT} defaultName="Safari" onSaved={onSaved} onClose={onClose} />,
     )
 
-    await act(async () => buttonByText(el, 'Create launcher')?.click())
+    await act(async () => buttonByText(el, 'Create app')?.click())
     expect(el.querySelector('.vault-launcher-modal__error-banner')?.textContent).toContain('Safari.app')
     expect(onSaved).not.toHaveBeenCalled()
   })
@@ -487,17 +487,17 @@ describe('VaultLauncherModal', () => {
 
     await act(async () => buttonByText(el, 'Image')?.click())
     // Submit disabled until an image is chosen
-    expect(buttonByText(el, 'Create launcher')?.disabled).toBe(true)
+    expect(buttonByText(el, 'Create app')?.disabled).toBe(true)
 
-    const fileInput = el.querySelector<HTMLInputElement>('input[aria-label="Choose launcher image"]')!
+    const fileInput = el.querySelector<HTMLInputElement>('input[aria-label="Choose app image"]')!
     const file = new File([new Uint8Array([1, 2, 3])], 'icon.png', { type: 'image/png' })
     Object.defineProperty(fileInput, 'files', { value: [file], configurable: true })
     await act(async () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    expect(buttonByText(el, 'Create launcher')?.disabled).toBe(false)
-    await act(async () => buttonByText(el, 'Create launcher')?.click())
+    expect(buttonByText(el, 'Create app')?.disabled).toBe(false)
+    await act(async () => buttonByText(el, 'Create app')?.click())
     expect(mockCreate).toHaveBeenCalledWith({
       root: ROOT,
       name: 'Notes',
@@ -532,7 +532,7 @@ describe('VaultLauncherModal', () => {
     const searchInput = el.querySelector<HTMLInputElement>('input[aria-label="Search Material icons"]')!
     expect(searchInput).not.toBeNull()
 
-    await act(async () => buttonByText(el, 'Create launcher')?.click())
+    await act(async () => buttonByText(el, 'Create app')?.click())
     expect(mockCreate).toHaveBeenCalledWith({
       root: ROOT,
       name: 'Notes',
@@ -569,11 +569,11 @@ describe('VaultLauncherModal', () => {
       <VaultLauncherModal workspaceId="ws-1" defaultName="Work Suite" onSaved={onSaved} onClose={vi.fn()} />,
     )
 
-    expect(el.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace launcher')
+    expect(el.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Create workspace app')
     expect(el.querySelector('[aria-label="Open on"]')).toBeNull()
     expect(el.querySelector('.vault-launcher-modal__alfred-sub')?.textContent).toBe('Opens all vaults in workspace')
 
-    await act(async () => buttonByText(el, 'Create launcher')?.click())
+    await act(async () => buttonByText(el, 'Create app')?.click())
     expect(mockCreateWorkspace).toHaveBeenCalledWith({
       workspaceId: 'ws-1',
       name: 'Work Suite',

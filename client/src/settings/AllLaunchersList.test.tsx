@@ -414,7 +414,7 @@ describe('AllLaunchersList', () => {
     })
 
     expect(mockStatus).toHaveBeenCalledWith(VAULT_ITEM.id)
-    expect(el.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Edit vault launcher')
+    expect(el.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Edit vault app')
     expect(el.querySelector<HTMLInputElement>('input[aria-label="App name"]')?.value).toBe('Daily Note Vault')
 
     // Close edit modal
@@ -429,7 +429,7 @@ describe('AllLaunchersList', () => {
       await Promise.resolve()
     })
     expect(mockWorkspaceStatus).toHaveBeenCalledWith(WORKSPACE_ITEM.id)
-    expect(el.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Edit workspace launcher')
+    expect(el.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Edit workspace app')
 
     await act(async () => el.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())
     expect(el.querySelector('.vault-launcher-modal')).toBeNull()
@@ -442,7 +442,7 @@ describe('AllLaunchersList', () => {
       await Promise.resolve()
     })
     expect(mockStatus).toHaveBeenCalledWith(MISSING_ITEM.id)
-    expect(el.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Recreate vault launcher')
+    expect(el.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Recreate vault app')
   })
 
   it('shows inline role="alert" error and disables buttons while busy', async () => {
