@@ -811,7 +811,11 @@ export function sanitizeWorkspaceLaunchers(raw: unknown): Record<string, VaultLa
     if (key.length === 0 || FORBIDDEN_RECORD_KEYS.has(key)) continue
     const clean = sanitizeVaultLauncherPreset(val)
     if (clean === null || clean.badge === undefined) continue
-    out[key] = { name: clean.name, badge: clean.badge }
+    out[key] = {
+      name: clean.name,
+      badge: clean.badge,
+      ...(clean.sidebarStart !== undefined ? { sidebarStart: clean.sidebarStart } : {}),
+    }
     count += 1
   }
   return out

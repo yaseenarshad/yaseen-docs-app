@@ -25,7 +25,7 @@ import { SHOW_IDS_FILE } from './showIds'
 import { TABLE_LOOK_FILE } from './tableLook'
 import { TEXT_FORMATTING_FILE } from './textFormatting'
 import { UNIT_WORD_FILE } from './unitWord'
-import { sanitizeVaultLauncherPreset, type VaultLauncherPreset } from './vaultIcon'
+import { sanitizeVaultAppsList, sanitizeVaultLauncherPreset, type VaultLauncherPreset } from './vaultIcon'
 import { sanitizeWebLinks } from './webLinks'
 import {
   DEFAULT_ROW_DATES,
@@ -143,8 +143,10 @@ export const SECTION_TO_LEGACY_FILE: Readonly<Record<LegacySectionKey, LegacySet
  */
 export interface VaultSettingsDoc extends VaultSettingsOverrides {
   version: number
-  /** Portable synced vault launcher & icon preset (YAZ-6560). */
+  /** Portable synced primary vault launcher & icon preset (YAZ-6560; kept mirrored with `vaultApps[0]` for Mobile & older builds). */
   launcher?: VaultLauncherPreset
+  /** All portable synced Vault Apps for this vault, including extra apps & Start Views (YAZ-6743). */
+  vaultApps?: VaultLauncherPreset[]
   textFormatting?: Record<string, unknown>
   tableLook?: Record<string, unknown>
   cardLook?: Record<string, unknown>
@@ -162,6 +164,7 @@ export interface VaultSettingsDoc extends VaultSettingsOverrides {
 export const VAULT_SETTINGS_DOC_KEYS: readonly string[] = [
   'version',
   'launcher',
+  'vaultApps',
   ...VAULT_OVERRIDE_KEYS,
   ...LEGACY_SECTION_KEYS,
 ]
@@ -331,6 +334,15 @@ export function readVaultSection(raw: unknown, section: LegacySectionKey): Recor
 export function readVaultLauncherPreset(raw: unknown): VaultLauncherPreset | null {
   if (!isRecord(raw)) return null
   return sanitizeVaultLauncherPreset(raw.launcher)
+}
+
+/** Read and validate all portable `vaultApps` presets from `settings.json`, falling back to legacy single `launcher` (YAZ-6743). */
+export function readVaultAppsPresets(raw: unknown): VaultLauncherPreset[] {
+  if (!isRecord(raw)) return []
+  const list = sanitizeVaultAppsList(raw.vaultApps)
+  if (list.length > 0) return list
+  const single = sanitizeVaultLauncherPreset(raw.launcher)
+  return single !== null ? [{ id: 'default', ...single }] : []
 }
 
 /**

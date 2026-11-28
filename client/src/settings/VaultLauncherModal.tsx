@@ -434,10 +434,10 @@ export interface VaultLauncherModalProps {
 export function VaultLauncherModal({ root, workspaceId, appId, defaultName, initial, preset, initialIconDataUrl, recreating = false, onSaved, onClose }: VaultLauncherModalProps) {
   const isWorkspace = workspaceId !== undefined
   const editing = initial !== null && initial !== undefined
-  const resolvedAppId = appId ?? (editing ? (initial.id ?? 'default') : undefined)
+  const resolvedAppId = appId ?? (editing ? (initial.id ?? 'default') : preset?.id)
   const seed = initial ?? preset ?? null
   const initialBadge = seed?.badge
-  const initialStart = initial?.sidebarStart
+  const initialStart = initial?.sidebarStart ?? preset?.sidebarStart
   const hasInitialPng = typeof initialIconDataUrl === 'string' && initialIconDataUrl.startsWith('data:image/png;base64,')
   const startOnImage = seed !== null && initialBadge === undefined && hasInitialPng
 

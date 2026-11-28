@@ -986,4 +986,83 @@ describe('multiple Vault Apps per vault & sidebarStart IPC (YAZ-6681, YAZ-6682)'
       await registered(CONTRACT.vaultLauncher.status)(undefined, '/Users/yasin/Vaults/Bad', '../bad'),
     ).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
   })
+
+  it('YAZ-6743: syncs multiple Vault Apps + per-app icons + portable sidebarStart in settings.json and workspace sidebarStart in settings', async () => {
+    const vaultRoot = path.join(dir, 'sync-multi-vault')
+    await mkdir(vaultRoot, { recursive: true })
+
+    // 1st app (badge + disk Start View with machine-local folderRoot stripped in settings.json)
+    await registered(CONTRACT.vaultLauncher.create)(undefined, {
+      root: vaultRoot,
+      name: 'Work Main',
+      pngBase64: VALID_PNG_B64,
+      badge: { kind: 'emoji', value: '💼', color: '#2563eb' },
+      sidebarStart: { tab: 'files', folderKind: 'disk', folderPath: 'Projects', folderRoot: vaultRoot, onlyFolder: true },
+    })
+
+    // 2nd app (custom PNG + focus Start View)
+    const second = (await registered(CONTRACT.vaultLauncher.create)(undefined, {
+      root: vaultRoot,
+      name: 'Work Daily',
+      pngBase64: VALID_PNG_B64,
+      target: 'today',
+      sidebarStart: { tab: 'focus', folderKind: 'collection', folderId: 'focus-2', onlyFolder: true },
+    })) as { ok: true; value: { launcher: { id: string } } }
+    const secId = second.value.launcher.id
+
+    const settingsDoc = JSON.parse(await readFile(path.join(vaultRoot, '.yaseendocs', 'settings.json'), 'utf8')) as {
+      launcher?: Record<string, unknown>
+      vaultApps?: Array<Record<string, unknown>>
+    }
+    expect(settingsDoc.launcher).toMatchObject({
+      name: 'Work Main',
+      sidebarStart: { tab: 'files', folderKind: 'disk', folderPath: 'Projects', onlyFolder: true },
+    })
+    expect((settingsDoc.launcher?.sidebarStart as Record<string, unknown>)?.folderRoot).toBeUndefined()
+    expect(settingsDoc.vaultApps).toHaveLength(2)
+    expect(settingsDoc.vaultApps?.[1]).toEqual({
+      id: secId,
+      name: 'Work Daily',
+      target: 'today',
+      iconFile: `vault-icon-${secId}.png`,
+      sidebarStart: { tab: 'focus', folderKind: 'collection', folderId: 'focus-2', onlyFolder: true },
+    })
+    expect(existsSync(path.join(vaultRoot, '.yaseendocs', `vault-icon-${secId}.png`))).toBe(true)
+
+    // Remove local apps (simulate Mac #2 with 0 installed apps) -> status returns BOTH in syncedApps with previews.
+    await registered(CONTRACT.vaultLauncher.remove)(undefined, vaultRoot, 'default')
+    await registered(CONTRACT.vaultLauncher.remove)(undefined, vaultRoot, secId)
+    const mac2Status = (await registered(CONTRACT.vaultLauncher.status)(undefined, vaultRoot)) as {
+      ok: true
+      value: { syncedApps?: Array<{ preset: { id?: string; name: string; sidebarStart?: unknown }; iconDataUrl: string | null }> }
+    }
+    expect(mac2Status.value.syncedApps).toHaveLength(2)
+    expect(mac2Status.value.syncedApps?.[0].iconDataUrl).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
+    expect(mac2Status.value.syncedApps?.[1].iconDataUrl).toBe(`data:image/png;base64,${VALID_PNG_B64}`)
+
+    // clearSynced(root, secId) removes ONLY the 2nd app and its custom PNG, keeping Work Main.
+    await registered(CONTRACT.vaultLauncher.clearSynced)(undefined, vaultRoot, secId)
+    expect(existsSync(path.join(vaultRoot, '.yaseendocs', `vault-icon-${secId}.png`))).toBe(false)
+    const afterSingleClear = (await registered(CONTRACT.vaultLauncher.status)(undefined, vaultRoot)) as {
+      ok: true
+      value: { syncedApps?: Array<{ preset: { name: string } }> }
+    }
+    expect(afterSingleClear.value.syncedApps?.map((x) => x.preset.name)).toEqual(['Work Main'])
+
+    // Workspace badge + sidebarStart syncs in SettingsState.workspaceLaunchers.
+    const ws = store.saveVaultSet('Synced WS', ['/vaults/a', '/vaults/b'], 100)!
+    const wsStart = { tab: 'favorites' as const, folderKind: 'collection' as const, folderId: 'fav-1', onlyFolder: true }
+    await registered(CONTRACT.vaultLauncher.createWorkspace)(undefined, {
+      workspaceId: ws.id,
+      name: 'Synced WS',
+      pngBase64: VALID_PNG_B64,
+      badge: { kind: 'letters', value: 'SW', color: '#0D9488' },
+      sidebarStart: wsStart,
+    })
+    expect(store.get().settings.workspaceLaunchers['synced ws']).toEqual({
+      name: 'Synced WS',
+      badge: { kind: 'letters', value: 'SW', color: '#0D9488' },
+      sidebarStart: wsStart,
+    })
+  })
 })

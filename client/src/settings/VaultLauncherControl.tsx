@@ -9,7 +9,7 @@
  * - Removed in Finder: clear notice with Recreate and Clear buttons.
  */
 import { lazy, Suspense, useEffect, useState } from 'react'
-import type { VaultLauncherInfo, VaultLauncherStatus, VaultLauncherTarget } from '@shared/types'
+import type { VaultLauncherInfo, VaultLauncherPreset, VaultLauncherStatus, VaultLauncherTarget } from '@shared/types'
 import { api } from '../api'
 import { sidebarStartBadgeLabel } from './vaultAppStartLabel'
 
@@ -28,8 +28,13 @@ interface VaultAppItem {
   iconDataUrl: string | null
 }
 
+interface SyncedAppItem {
+  preset: VaultLauncherPreset
+  iconDataUrl: string | null
+}
+
 type ModalState =
-  | { mode: 'create'; useSyncedPreset: boolean }
+  | { mode: 'create'; syncedEntry: SyncedAppItem | null }
   | { mode: 'edit'; item: VaultAppItem; recreating: boolean }
 
 function targetBadgeLabel(target?: VaultLauncherTarget): string | null {
@@ -46,6 +51,27 @@ function resolveAppItems(status: VaultLauncherStatus, isWorkspace: boolean): Vau
     return [{ launcher: status.launcher, exists: status.exists, iconDataUrl: status.iconDataUrl }]
   }
   return []
+}
+
+function resolveSyncedItems(status: VaultLauncherStatus, isWorkspace: boolean): SyncedAppItem[] {
+  if (!isWorkspace && status.syncedApps !== undefined && status.syncedApps.length > 0) {
+    return status.syncedApps
+  }
+  if (status.synced != null) {
+    return [{ preset: status.synced, iconDataUrl: status.syncedIconDataUrl ?? null }]
+  }
+  return []
+}
+
+function isPresetInstalled(preset: VaultLauncherPreset, installed: readonly VaultAppItem[]): boolean {
+  const presetId = preset.id ?? 'default'
+  const presetName = preset.name.trim().toLowerCase()
+  return installed.some((item) => {
+    const localId = item.launcher.id ?? 'default'
+    if (preset.id !== undefined && localId === presetId) return true
+    if (preset.id === undefined && localId === 'default' && installed.length === 1) return true
+    return item.launcher.name.trim().toLowerCase() === presetName
+  })
 }
 
 export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged }: VaultLauncherControlProps) {
@@ -86,9 +112,11 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
 
   if (status === null || !status.supported) return null
 
-  const { synced = null, syncedIconDataUrl = null } = status
   const items = resolveAppItems(status, isWorkspace)
-  const syncedTargetLabel = isWorkspace ? null : targetBadgeLabel(synced?.target)
+  const allSynced = resolveSyncedItems(status, isWorkspace)
+  const pendingSynced = isWorkspace
+    ? (items.length === 0 ? allSynced : [])
+    : allSynced.filter((entry) => !isPresetInstalled(entry.preset, items))
   const hasExplicitDefault = items.some((entry) => entry.launcher.id === 'default')
 
   const handleRemove = async (appId?: string): Promise<void> => {
@@ -136,39 +164,53 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
     }
   }
 
-  const handleInstallSynced = async (): Promise<void> => {
-    if (synced === null) return
+  const installOneSynced = async (entry: SyncedAppItem): Promise<VaultLauncherStatus> => {
+    const { preset, iconDataUrl } = entry
+    let pngDataUrl: string
+    let badgeToSave = preset.badge
+    if (preset.badge !== undefined) {
+      const { enrichBadgeForSync, renderBadgeToPng } = await import('./VaultLauncherModal')
+      badgeToSave = await enrichBadgeForSync(preset.badge)
+      pngDataUrl = await renderBadgeToPng(badgeToSave)
+    } else if (iconDataUrl !== null && iconDataUrl.startsWith('data:image/png;base64,')) {
+      pngDataUrl = iconDataUrl
+    } else {
+      throw new Error('Synced app icon image is unavailable.')
+    }
+    const pngBase64 = pngDataUrl.replace(/^data:image\/png;base64,/, '')
+    return isWorkspace
+      ? api.vaultLauncher.createWorkspace({
+          workspaceId,
+          name: preset.name,
+          pngBase64,
+          ...(badgeToSave !== undefined ? { badge: badgeToSave } : {}),
+          ...(preset.sidebarStart !== undefined ? { sidebarStart: preset.sidebarStart } : {}),
+        })
+      : api.vaultLauncher.create({
+          root: root!,
+          ...(preset.id !== undefined ? { appId: preset.id } : {}),
+          name: preset.name,
+          pngBase64,
+          ...(preset.target !== undefined ? { target: preset.target } : {}),
+          ...(badgeToSave !== undefined ? { badge: badgeToSave } : {}),
+          ...(preset.sidebarStart !== undefined ? { sidebarStart: preset.sidebarStart } : {}),
+        })
+  }
+
+  const handleInstallSynced = async (entry: SyncedAppItem): Promise<void> => {
     setBusy(true)
     setError(null)
     try {
-      let pngDataUrl: string
-      let badgeToSave = synced.badge
-      if (synced.badge !== undefined) {
-        const { enrichBadgeForSync, renderBadgeToPng } = await import('./VaultLauncherModal')
-        badgeToSave = await enrichBadgeForSync(synced.badge)
-        pngDataUrl = await renderBadgeToPng(badgeToSave)
-      } else if (syncedIconDataUrl !== null && syncedIconDataUrl.startsWith('data:image/png;base64,')) {
-        pngDataUrl = syncedIconDataUrl
-      } else {
-        throw new Error('Synced app icon image is unavailable.')
-      }
-      const pngBase64 = pngDataUrl.replace(/^data:image\/png;base64,/, '')
-      const next = isWorkspace
-        ? await api.vaultLauncher.createWorkspace({
-            workspaceId,
-            name: synced.name,
-            pngBase64,
-            ...(badgeToSave !== undefined ? { badge: badgeToSave } : {}),
-          })
-        : await api.vaultLauncher.create({
-            root: root!,
-            name: synced.name,
-            pngBase64,
-            ...(synced.target !== undefined ? { target: synced.target } : {}),
-            ...(badgeToSave !== undefined ? { badge: badgeToSave } : {}),
-          })
-      const nextSynced = badgeToSave !== undefined ? { ...synced, badge: badgeToSave } : synced
-      setStatus({ ...next, synced: nextSynced, syncedIconDataUrl })
+      const next = await installOneSynced(entry)
+      setStatus((prev) => ({
+        ...next,
+        ...(next.synced === undefined && prev?.synced != null
+          ? { synced: prev.synced, syncedIconDataUrl: prev.syncedIconDataUrl ?? null }
+          : {}),
+        ...(next.syncedApps === undefined && prev?.syncedApps !== undefined
+          ? { syncedApps: prev.syncedApps }
+          : {}),
+      }))
       onChanged?.()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err))
@@ -177,12 +219,58 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
     }
   }
 
-  const handleClearSynced = async (): Promise<void> => {
+  const handleInstallAllSynced = async (): Promise<void> => {
+    if (pendingSynced.length === 0) return
     setBusy(true)
     setError(null)
     try {
-      await (isWorkspace ? api.vaultLauncher.clearSyncedWorkspace(workspaceId) : api.vaultLauncher.clearSynced(root!))
-      setStatus((prev) => (prev === null ? null : { ...prev, synced: null, syncedIconDataUrl: null }))
+      let latest: VaultLauncherStatus | null = null
+      for (const entry of pendingSynced) {
+        latest = await installOneSynced(entry)
+      }
+      if (latest !== null) {
+        setStatus((prev) => ({
+          ...latest!,
+          ...(latest!.synced === undefined && prev?.synced != null
+            ? { synced: prev.synced, syncedIconDataUrl: prev.syncedIconDataUrl ?? null }
+            : {}),
+          ...(latest!.syncedApps === undefined && prev?.syncedApps !== undefined
+            ? { syncedApps: prev.syncedApps }
+            : {}),
+        }))
+      }
+      onChanged?.()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleClearSynced = async (appId?: string): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      const clearSingle = !isWorkspace && appId !== undefined && allSynced.length > 1
+      await (isWorkspace
+        ? api.vaultLauncher.clearSyncedWorkspace(workspaceId)
+        : clearSingle
+          ? api.vaultLauncher.clearSynced(root!, appId)
+          : api.vaultLauncher.clearSynced(root!))
+      setStatus((prev) => {
+        if (prev === null) return null
+        if (clearSingle && prev.syncedApps !== undefined) {
+          const remaining = prev.syncedApps.filter((e) => (e.preset.id ?? 'default') !== appId)
+          const first = remaining[0] ?? null
+          return {
+            ...prev,
+            synced: first?.preset ?? null,
+            syncedIconDataUrl: first?.iconDataUrl ?? null,
+            syncedApps: remaining,
+          }
+        }
+        return { ...prev, synced: null, syncedIconDataUrl: null, syncedApps: [] }
+      })
       onChanged?.()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err))
@@ -232,41 +320,65 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
     }
   }
 
+  const renderSyncedSection = () => {
+    if (pendingSynced.length === 0) return null
+    return (
+      <>
+        {!isWorkspace && pendingSynced.length >= 2 && (
+          <div className="vault-launcher__actions">
+            <button type="button" className="btn btn--primary" disabled={busy} onClick={() => void handleInstallAllSynced()}>
+              Install all {pendingSynced.length} synced apps
+            </button>
+          </div>
+        )}
+        {pendingSynced.map((entry, idx) => {
+          const preset = entry.preset
+          const targetLabel = isWorkspace ? null : targetBadgeLabel(preset.target)
+          const startLabel = sidebarStartBadgeLabel(preset.sidebarStart)
+          return (
+            <div key={`synced:${preset.id ?? preset.name}:${idx}`} className="vault-launcher__card vault-launcher__card--synced">
+              <div className="vault-launcher__summary">
+                {entry.iconDataUrl !== null && (
+                  <img className="vault-launcher__icon" src={entry.iconDataUrl} alt="" width={48} height={48} />
+                )}
+                <div className="vault-launcher__meta">
+                  <div className="vault-launcher__name-line">
+                    <span className="vault-launcher__name">{preset.name}.app</span>
+                    {targetLabel !== null && <span className="vault-launcher__target">{targetLabel}</span>}
+                    {startLabel !== null && <span className="vault-launcher__target">{startLabel}</span>}
+                  </div>
+                  <span className="vault-launcher__path">
+                    Saved for this {isWorkspace ? 'workspace' : 'vault'} on another Mac — not installed on this Mac yet.
+                  </span>
+                </div>
+              </div>
+              <div className="vault-launcher__actions">
+                <button type="button" className="btn btn--primary" disabled={busy} onClick={() => void handleInstallSynced(entry)}>
+                  Add app to this Mac
+                </button>
+                <button type="button" className="btn" disabled={busy} onClick={() => setModal({ mode: 'create', syncedEntry: entry })}>
+                  Customize…
+                </button>
+                <button type="button" className="btn" disabled={busy} onClick={() => void handleClearSynced(preset.id)}>
+                  {allSynced.length > 1 ? 'Clear synced' : 'Clear synced icon'}
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </>
+    )
+  }
+
   return (
     <div className="vault-launcher">
       <div className="vault-launcher__target-title">{isWorkspace ? `Workspace: ${defaultName}` : `Vault: ${defaultName}`}</div>
       {items.length === 0 ? (
-        synced !== null ? (
-          <div className="vault-launcher__card vault-launcher__card--synced">
-            <div className="vault-launcher__summary">
-              {syncedIconDataUrl !== null && (
-                <img className="vault-launcher__icon" src={syncedIconDataUrl} alt="" width={48} height={48} />
-              )}
-              <div className="vault-launcher__meta">
-                <div className="vault-launcher__name-line">
-                  <span className="vault-launcher__name">{synced.name}.app</span>
-                  {syncedTargetLabel !== null && <span className="vault-launcher__target">{syncedTargetLabel}</span>}
-                </div>
-                <span className="vault-launcher__path">
-                  Saved for this {isWorkspace ? 'workspace' : 'vault'} on another Mac — not installed on this Mac yet.
-                </span>
-              </div>
-            </div>
-            <div className="vault-launcher__actions">
-              <button type="button" className="btn btn--primary" disabled={busy} onClick={() => void handleInstallSynced()}>
-                Add app to this Mac
-              </button>
-              <button type="button" className="btn" disabled={busy} onClick={() => setModal({ mode: 'create', useSyncedPreset: true })}>
-                Customize…
-              </button>
-              <button type="button" className="btn" disabled={busy} onClick={() => void handleClearSynced()}>
-                Clear synced icon
-              </button>
-            </div>
-          </div>
+        pendingSynced.length > 0 ? (
+          renderSyncedSection()
         ) : (
           <div className="vault-launcher__empty">
-            <button type="button" className="btn" onClick={() => setModal({ mode: 'create', useSyncedPreset: false })}>
+            <button type="button" className="btn" onClick={() => setModal({ mode: 'create', syncedEntry: null })}>
               {isWorkspace ? 'Make a workspace app…' : 'Make a vault app…'}
             </button>
           </div>
@@ -332,9 +444,10 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
               </div>
             )
           })}
+          {renderSyncedSection()}
           {!isWorkspace && (
             <div className="vault-launcher__actions">
-              <button type="button" className="btn" disabled={busy} onClick={() => setModal({ mode: 'create', useSyncedPreset: false })}>
+              <button type="button" className="btn" disabled={busy} onClick={() => setModal({ mode: 'create', syncedEntry: null })}>
                 + Add another vault app…
               </button>
             </div>
@@ -353,16 +466,20 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
           <VaultLauncherModal
             root={root}
             workspaceId={workspaceId}
-            appId={!isWorkspace && modal.mode === 'edit' ? (modal.item.launcher.id ?? 'default') : undefined}
+            appId={
+              !isWorkspace
+                ? modal.mode === 'edit'
+                  ? (modal.item.launcher.id ?? 'default')
+                  : modal.syncedEntry?.preset.id
+                : undefined
+            }
             defaultName={defaultName}
             initial={modal.mode === 'edit' ? modal.item.launcher : null}
-            preset={modal.mode === 'create' && modal.useSyncedPreset ? synced : null}
+            preset={modal.mode === 'create' ? (modal.syncedEntry?.preset ?? null) : null}
             initialIconDataUrl={
               modal.mode === 'edit'
                 ? modal.item.iconDataUrl
-                : modal.useSyncedPreset
-                  ? syncedIconDataUrl
-                  : null
+                : (modal.syncedEntry?.iconDataUrl ?? null)
             }
             recreating={modal.mode === 'edit' && modal.recreating}
             onSaved={(next) => {
@@ -370,6 +487,9 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
                 ...next,
                 ...(next.synced === undefined && prev?.synced != null
                   ? { synced: prev.synced, syncedIconDataUrl: prev.syncedIconDataUrl ?? null }
+                  : {}),
+                ...(next.syncedApps === undefined && prev?.syncedApps !== undefined
+                  ? { syncedApps: prev.syncedApps }
                   : {}),
               }))
               setModal(null)

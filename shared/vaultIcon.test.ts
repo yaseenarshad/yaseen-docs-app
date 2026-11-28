@@ -3,9 +3,13 @@ import {
   renderBadgeSvgDataUrl,
   sanitizeBadgeSvgPaths,
   sanitizeBadgeSvgViewBox,
+  sanitizeSyncedSidebarStart,
+  sanitizeVaultAppsList,
+  sanitizeVaultIconFile,
   sanitizeVaultLauncherBadge,
   sanitizeVaultLauncherPreset,
   VAULT_ICON_FILE,
+  vaultIconFileFor,
   vaultInitials,
   workspaceLauncherKey,
 } from './vaultIcon'
@@ -131,5 +135,59 @@ describe('vaultIcon (YAZ-6560)', () => {
       svgPaths: ['M1 2h12v10H1z'],
     })
     expect(decodeURIComponent(materialUrl)).toContain('<path d="M1 2h12v10H1z" fill="#ffffff"/>')
+  })
+
+  it('YAZ-6743: sanitizes multi-app vaultApps list, per-app icon filenames, and portable sidebarStart', () => {
+    expect(vaultIconFileFor()).toBe('vault-icon.png')
+    expect(vaultIconFileFor('default')).toBe('vault-icon.png')
+    expect(vaultIconFileFor('a1b2c3d4')).toBe('vault-icon-a1b2c3d4.png')
+    expect(sanitizeVaultIconFile('vault-icon-a1b2c3d4.png')).toBe('vault-icon-a1b2c3d4.png')
+    expect(sanitizeVaultIconFile('../vault-icon.png')).toBeUndefined()
+    expect(sanitizeVaultIconFile('other.png')).toBeUndefined()
+
+    expect(
+      sanitizeSyncedSidebarStart({
+        tab: 'focus',
+        folderKind: 'disk',
+        folderPath: 'Engineering/Specs',
+        folderName: 'Specs',
+        onlyFolder: true,
+      }),
+    ).toEqual({
+      tab: 'focus',
+      folderKind: 'disk',
+      folderPath: 'Engineering/Specs',
+      folderName: 'Specs',
+      onlyFolder: true,
+    })
+    // Rejects path traversal in folderPath and unknown sidebar tabs.
+    expect(sanitizeSyncedSidebarStart({ tab: 'files', folderPath: '../secret' })).toEqual({ tab: 'files' })
+    expect(sanitizeSyncedSidebarStart({ tab: 'bogus' })).toBeUndefined()
+
+    const list = sanitizeVaultAppsList([
+      {
+        name: 'Main Vault',
+        badge: { kind: 'emoji', value: '📚', color: '#007AFF' },
+      },
+      {
+        id: 'a1b2c3d4',
+        name: 'Eng Focus',
+        iconFile: 'vault-icon-a1b2c3d4.png',
+        sidebarStart: { tab: 'focus', folderKind: 'collection', folderId: 'f1', onlyFolder: true },
+      },
+      // Duplicate id dropped
+      {
+        id: 'a1b2c3d4',
+        name: 'Duplicate',
+        badge: { kind: 'letters', value: 'DU', color: '#ff0000' },
+      },
+    ])
+    expect(list).toHaveLength(2)
+    expect(list[1]).toEqual({
+      id: 'a1b2c3d4',
+      name: 'Eng Focus',
+      iconFile: 'vault-icon-a1b2c3d4.png',
+      sidebarStart: { tab: 'focus', folderKind: 'collection', folderId: 'f1', onlyFolder: true },
+    })
   })
 })
