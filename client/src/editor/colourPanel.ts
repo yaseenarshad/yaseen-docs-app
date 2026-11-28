@@ -322,7 +322,7 @@ const textColorHandle = createColourPanel<NonNullTextColor>('mdapp-text-color-pa
     if (/^#[0-9a-f]{8}$/i.test(raw)) return raw.slice(0, 7).toLowerCase() as NonNullTextColor & Hex
     return null
   },
-  hexOf: textColorHex,
+  hexOf: (color) => textColorHex(color),
   colorsIn: (ctx, state) => textColorsIn(state, textColorSchema.type(ctx)),
   apply: (ctx, color) => applyTextColor(textColorSchema.type(ctx), color),
   remove: (ctx) => removeTextColor(textColorSchema.type(ctx)),
