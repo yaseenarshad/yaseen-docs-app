@@ -142,12 +142,57 @@ describe('YAZ-4794 demo: the page table Header row flyout, as the folder page', 
     tabs(view)[0].click()
   })
 
-  it('YAZ-4794 demo: Fill has Off · Light · Medium · Strong as a short switch (Light pressed, the default), then the colours ending in Black', async () => {
+  it('YAZ-4794 demo: Fill has Off · Light · Medium · Strong as a short switch (Light pressed, the default), then the colours ending in Black, then Custom colour…', async () => {
     const { view } = await openHeaderRow()
     expect(bar(view).map((b) => `${b.textContent}${b.getAttribute('aria-pressed') === 'true' ? '*' : ''}`)).toEqual(['Off', 'Light*', 'Medium', 'Strong'])
     const colours = items(view).slice(1)
-    expect(colours.at(-1)).toBe('Black')
-    expect(colours).toHaveLength(HEADER_ROW_CHOICES.color.length)
+    expect(colours.at(-2)).toBe('Black')
+    expect(colours.at(-1)).toBe('Custom colour…')
+    expect(colours).toHaveLength(HEADER_ROW_CHOICES.color.length + 1)
+  })
+
+  it('YAZ-6693 #6: Header and Subheader Custom colour… opens ColourBox (with Opacity for Fill, solid for Text) and saves custom hex', async () => {
+    const { crepe, view } = await openHeaderRow()
+    tabs(view)[0].click()
+    ;[...flyout(view).querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Custom colour…')!.click()
+    const menuBox = () => document.querySelector<HTMLElement>('body > .table-colour-box')!
+    expect(menuBox().hidden).toBe(false)
+    const alpha = menuBox().querySelector<HTMLInputElement>('input[aria-label="Opacity"]')!
+    expect(alpha).not.toBeNull()
+    const pickRgb = (hex: string) => {
+      const fields = ['Red', 'Green', 'Blue'].map((n) => menuBox().querySelector<HTMLInputElement>(`input[aria-label="${n}"]`)!)
+      ;[1, 3, 5].forEach((offset, i) => {
+        fields[i]!.value = String(parseInt(hex.slice(offset, offset + 2), 16))
+        fields[i]!.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      fields[2]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    }
+    pickRgb('#1a2b3c')
+    alpha.value = '50'
+    alpha.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: header #1a2b3c80 -->')
+
+    // Text tab Custom colour… has no opacity slider and saves text-#rrggbb.
+    const reopenMenu = (label: string) => {
+      if (menuOf(view) === null) {
+        view.dom.parentElement!.querySelector<HTMLElement>('.operation-item')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }))
+      }
+      ;[...menuOf(view).querySelectorAll<HTMLButtonElement>('[aria-haspopup="menu"]')].find((b) => b.textContent === label)!.click()
+    }
+    reopenMenu('Header row')
+    tabs(view)[1].click()
+    ;[...flyout(view).querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Custom colour…')!.click()
+    expect(menuBox().querySelector('input[aria-label="Opacity"]')).toBeNull()
+    pickRgb('#ffffff')
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: header #1a2b3c80 text-#ffffff -->')
+
+    // Subheader row also supports Custom colour… for Fill and Text.
+    reopenMenu('Subheader row')
+    tabs(view)[0].click()
+    ;[...flyout(view).querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === 'Custom colour…')!.click()
+    expect(menuBox().querySelector('input[aria-label="Opacity"]')).not.toBeNull()
+    pickRgb('#434343')
+    expect(getMarkdownForSave(crepe)).toContain('subheader #434343')
   })
 
   it('YAZ-4794 demo: the Text tab shows Muted, Full, White and the colours; Style shows Weight and Align', async () => {

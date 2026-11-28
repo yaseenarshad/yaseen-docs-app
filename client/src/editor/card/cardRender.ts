@@ -224,10 +224,10 @@ function sideOf(text: string): DocumentFragment {
 
 /** The variable a header part's value sets (`cardTable.css`'s mapping, as values: the eager CSS stays small). */
 const HEADER_VARS: Record<string, (value: string) => Record<string, string>> = {
-  color: (v) => ({ hue: v === 'gray' ? 'initial' : `var(--table-fill-solid-${v})`, scale: v === 'gray' ? '1' : v === 'black' ? '5' : '2.5' }),
+  color: (v) => (v.startsWith('#') ? { hue: v, scale: '1' } : { hue: v === 'gray' ? 'initial' : `var(--table-fill-solid-${v})`, scale: v === 'gray' ? '1' : v === 'black' ? '5' : '2.5' }),
   strength: (v) => ({ strength: String({ off: 0, light: 6, medium: 12, strong: 20 }[v] ?? 6) }),
   weight: (v) => ({ weight: v === 'regular' ? '400' : 'initial' }),
-  text: (v): Record<string, string> => (v === 'muted' || v === 'full' ? { mute: v === 'muted' ? '1' : '0', ink: 'initial' } : { ink: v === 'white' ? '#fff' : `var(--table-text-${v})` }),
+  text: (v): Record<string, string> => (v === 'muted' || v === 'full' ? { mute: v === 'muted' ? '1' : '0', ink: 'initial' } : { ink: v === 'white' ? '#fff' : v.startsWith('#') ? v : `var(--table-text-${v})` }),
 }
 
 /**
@@ -244,7 +244,7 @@ function lookVars(table: HTMLTableElement): void {
     }
   for (const cell of table.querySelectorAll<HTMLElement>('[data-fill], [data-color]')) {
     const fill = cell.getAttribute('data-fill')
-    if (fill !== null) cell.style.setProperty('--cell-fill', fill.startsWith('#') ? `color-mix(in srgb, ${fill} var(--table-fill-wash, 35%), transparent)` : `var(--table-fill-${fill})`)
+    if (fill !== null) cell.style.setProperty('--cell-fill', fill.startsWith('#') ? 'var(--table-fill-custom)' : `var(--table-fill-${fill})`)
     const color = cell.getAttribute('data-color')
     if (color !== null && !color.startsWith('#')) cell.style.setProperty('--cell-ink', `var(--table-text-${color})`)
   }

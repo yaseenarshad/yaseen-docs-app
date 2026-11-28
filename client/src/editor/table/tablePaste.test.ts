@@ -10,7 +10,6 @@ import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { TABLE, cellPos, mountTable, unmountAll } from './tableTestKit'
 import { pasteIntoCells } from './tablePaste'
-import { FILL_WASH } from './colours'
 import cardTableCss from './cardTable.css?inline'
 import editorTableCss from './table.css?inline'
 import appCss from '../../app.css?inline'
@@ -276,9 +275,25 @@ describe('copy cells to Google Docs with their lines (YAZ-3802, demo round 1 dec
       expect(cells[col].style.backgroundColor, name).toBe(overWhite(light(`--table-fill-${name}`)))
       expect(cells[col].style.color, name).toBe(computed(light(`--table-text-${name}`)))
     })
-    // A custom fill draws at its wash (`FILL_WASH`): over white, as the page shows it.
-    expect(cells[names.length].style.backgroundColor).toBe(overWhite(`rgba(255, 136, 0, ${FILL_WASH})`))
+    // A solid custom hex fill copies solid (YAZ-6692 D1).
+    expect(cells[names.length].style.backgroundColor).toBe(computed('#ff8800'))
     expect(cells[names.length].style.color).toBe(computed('#1a2b3c'))
+  })
+
+  it('custom #rrggbb copies solid with auto-contrast text, and #rrggbbaa composites over white (YAZ-6692 D1, D9)', async () => {
+    const view = await mountTable('| a | b | c |\n| - | - | - |\n| 1 | 2 | 3 |\n')
+    setCell(view, 1, 0, { fill: '#000000' })
+    setCell(view, 1, 1, { fill: '#434343', color: '#ffffff' })
+    setCell(view, 1, 2, { fill: '#00000080' })
+    selectCells(view, [1, 0], [1, 2])
+    const box = document.createElement('div')
+    box.innerHTML = copy(view).html
+    const [dark, explicit, translucent] = [...box.querySelectorAll<HTMLElement>('td')]
+    expect(dark.style.backgroundColor).toBe(computed('#000000'))
+    expect(dark.style.color).toBe(computed('#ffffff'))
+    expect(explicit.style.backgroundColor).toBe(computed('#434343'))
+    expect(explicit.style.color).toBe(computed('#ffffff'))
+    expect(translucent.style.backgroundColor).toBe(overWhite(`rgba(0, 0, 0, ${128 / 255})`))
   })
 
   it('a cell\'s own alignment copies as its `text-align`; the others keep their column\'s (YAZ-3819)', async () => {

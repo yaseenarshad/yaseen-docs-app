@@ -3046,18 +3046,39 @@ export const HEADER_ROW_CHOICES = {
   text: ['muted', 'full', 'white', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'],
   align: ['follow', 'left', 'center', 'right'],
 } as const
-export type HeaderRowOwn = { -readonly [K in keyof typeof HEADER_ROW_CHOICES]?: (typeof HEADER_ROW_CHOICES)[K][number] }
+export const HEADER_FILL_HEX_RE = /^#([0-9a-f]{6}|[0-9a-f]{8})$/i
+export const HEADER_TEXT_HEX_RE = /^#[0-9a-f]{6}$/i
+export type HeaderRowColor = (typeof HEADER_ROW_CHOICES.color)[number] | `#${string}`
+export type HeaderRowText = (typeof HEADER_ROW_CHOICES.text)[number] | `#${string}`
+export type HeaderRowOwn = {
+  color?: HeaderRowColor
+  strength?: (typeof HEADER_ROW_CHOICES.strength)[number]
+  weight?: (typeof HEADER_ROW_CHOICES.weight)[number]
+  text?: HeaderRowText
+  align?: (typeof HEADER_ROW_CHOICES.align)[number]
+}
 /** Settings' header row: every part set, but `text`: null is each table's own (full in a page table, muted in a folder table). */
 export type HeaderRow = Required<Omit<HeaderRowOwn, 'text'>> & { text: NonNullable<HeaderRowOwn['text']> | null }
 export const HEADER_ROW_PARTS = Object.keys(HEADER_ROW_CHOICES) as (keyof HeaderRowOwn)[]
 export const DEFAULT_HEADER_ROW: HeaderRow = { color: 'gray', strength: 'light', weight: 'bold', text: null, align: 'follow' }
 /** A header row choice's name in a menu or a control (YAZ-4794): Align's `follow` is "Follow column", the rest capitalised. */
 export const headerRowLabel = (value: string): string => (value === 'follow' ? 'Follow column' : value.charAt(0).toUpperCase() + value.slice(1))
-/** The parts of `raw` that are one of their choices; the rest are left out. */
+/** The parts of `raw` that are one of their choices (or custom hex for `color` / `text`); the rest are left out. */
 export function headerRowOwn(raw: unknown): HeaderRowOwn {
   if (typeof raw !== 'object' || raw === null) return {}
   const src = raw as Record<string, unknown>
-  return Object.fromEntries(HEADER_ROW_PARTS.filter((part) => (HEADER_ROW_CHOICES[part] as readonly unknown[]).includes(src[part])).map((part) => [part, src[part]]))
+  const out: HeaderRowOwn = {}
+  for (const part of HEADER_ROW_PARTS) {
+    const value = src[part]
+    if ((HEADER_ROW_CHOICES[part] as readonly unknown[]).includes(value)) {
+      Object.assign(out, { [part]: value })
+    } else if (part === 'color' && typeof value === 'string' && HEADER_FILL_HEX_RE.test(value)) {
+      out.color = value.toLowerCase() as `#${string}`
+    } else if (part === 'text' && typeof value === 'string' && HEADER_TEXT_HEX_RE.test(value)) {
+      out.text = value.toLowerCase() as `#${string}`
+    }
+  }
+  return out
 }
 /** The `data-table-header-*` attributes of the set parts: on `.app` (Settings), a page table's block and a folder table (`table.css`). */
 export const headerRowAttrs = (parts: Partial<HeaderRow>): Record<string, string> =>

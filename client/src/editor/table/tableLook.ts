@@ -31,12 +31,12 @@ export function headerRowVars(row: HeaderRow, kind: 'header' | 'subheader'): Rec
   const v = (name: string) => `--table-${kind}-${name}`
   const text = row.text
   return {
-    [v('hue')]: row.color === 'gray' ? 'initial' : `var(--table-fill-solid-${row.color})`,
-    [v('scale')]: row.color === 'gray' ? '1' : row.color === 'black' ? '5' : '2.5',
+    [v('hue')]: row.color === 'gray' ? 'initial' : row.color.startsWith('#') ? row.color : `var(--table-fill-solid-${row.color})`,
+    [v('scale')]: row.color === 'gray' || row.color.startsWith('#') ? '1' : row.color === 'black' ? '5' : '2.5',
     [v('strength')]: { off: '0', light: '6', medium: '12', strong: '20' }[row.strength],
     [v('weight')]: row.weight === 'regular' ? '400' : 'initial',
     [v('mute')]: text === 'muted' ? '1' : text === 'full' ? '0' : 'initial',
-    [v('ink')]: text === null || text === 'muted' || text === 'full' ? 'initial' : text === 'white' ? '#fff' : `var(--table-text-${text})`,
+    [v('ink')]: text === null || text === 'muted' || text === 'full' ? 'initial' : text === 'white' ? '#fff' : text.startsWith('#') ? text : `var(--table-text-${text})`,
     [v('align')]: row.align === 'follow' ? 'initial' : row.align,
     // The row's Align for every header cell of a table with none of its own (a style query: `!important` over a column's).
     [v('aligned')]: row.align === 'follow' ? 'off' : 'on',

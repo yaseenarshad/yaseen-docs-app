@@ -114,7 +114,7 @@
   --table-fill-solid-blue: rgb(80, 160, 255);
   --table-fill-solid-purple: rgb(160, 110, 255);
   --table-fill-solid-pink: rgb(255, 120, 180);
-  --table-fill-solid-black: rgb(18, 18, 18);
+  --table-fill-solid-black: #000000;
   /* The Mac's band colours grey and brown (Row band colour). */
   --table-fill-solid-grey: rgb(150, 150, 150);
   --table-fill-solid-brown: rgb(170, 120, 70);
@@ -171,8 +171,11 @@
   font-weight: 700;
 }
 /* White text on a coloured subheader: the colour deepened toward black, as the header's (4.5:1 under white). */
-.page-table-box .page-table-frame .page-table table[data-subheader-text='white'][data-subheader-color] td[data-subhead] {
+.page-table-box .page-table-frame .page-table table[data-subheader-text='white'][data-subheader-color]:not([data-subheader-color^='#']) td[data-subhead] {
   --cell-tint: color-mix(in srgb, var(--sub-hue) 55%, #000);
+}
+.page-table-box .page-table-frame .page-table table:where([data-subheader-color^='#']:not([data-subheader-strength='off'])) td[data-subhead] {
+  --cell-tint: var(--table-subheader-hue);
 }
 .page-table-box .page-table-frame .page-table table[data-subheader-weight='regular'] td[data-subhead] { font-weight: 400; }
 .page-table-box .page-table-frame .page-table table[data-subheader-text='muted'] td[data-subhead] { color: var(--fg-muted); }
@@ -185,6 +188,7 @@
 .page-table-box .page-table-frame .page-table table[data-subheader-text='blue'] td[data-subhead] { color: var(--table-text-blue); }
 .page-table-box .page-table-frame .page-table table[data-subheader-text='purple'] td[data-subhead] { color: var(--table-text-purple); }
 .page-table-box .page-table-frame .page-table table[data-subheader-text='pink'] td[data-subhead] { color: var(--table-text-pink); }
+.page-table-box .page-table-frame .page-table table:where([data-subheader-text^='#']) td[data-subhead] { color: var(--table-subheader-ink); }
 .page-table-box .page-table-frame .page-table table[data-subheader-align='left'] td[data-subhead] { text-align: left !important; }
 .page-table-box .page-table-frame .page-table table[data-subheader-align='center'] td[data-subhead] { text-align: center !important; }
 .page-table-box .page-table-frame .page-table table[data-subheader-align='right'] td[data-subhead] { text-align: right !important; }
@@ -204,8 +208,10 @@
 .page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='pink'] { --cell-tint: var(--table-fill-pink); }
 .page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='grey'] { --cell-tint: var(--table-fill-grey); }
 .page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='brown'] { --cell-tint: var(--table-fill-brown); }
-/* A custom fill: the Mac's wash of it (35%, both themes). */
-.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill^='#'] { --cell-tint: color-mix(in srgb, var(--table-fill-custom) 35%, transparent); }
+/* A custom fill: painted directly (solid `#rrggbb` or `#rrggbbaa`, YAZ-6692). */
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill^='#'] { --cell-tint: var(--table-fill-custom); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill-tone='dark'] { color: #ffffff; }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill-tone='light'] { color: #111111; }
 .page-table-box .page-table-frame .page-table table :is(th, td)[data-color='red'] { color: var(--table-text-red); }
 .page-table-box .page-table-frame .page-table table :is(th, td)[data-color='orange'] { color: var(--table-text-orange); }
 .page-table-box .page-table-frame .page-table table :is(th, td)[data-color='yellow'] { color: var(--table-text-yellow); }
@@ -243,8 +249,14 @@
 /* White text on a coloured header (the Mac's choice for a dark header): the colour deepened toward black, so the white
    reads in both themes (a Strong red is pink on a light page, and white on it is not read: 2.4:1). 55% of each colour
    with black is 4.5:1 or more under white. */
-.page-table-box table[data-header-text='white'][data-header-color] {
+.page-table-box table[data-header-text='white'][data-header-color]:not([data-header-color^='#']) {
   --table-head-bg: color-mix(in srgb, var(--th-hue) 55%, #000);
+}
+.page-table-box table[data-header-color^='#']:not([data-header-strength='off']) {
+  --table-head-bg: var(--bg);
+}
+.page-table-box .page-table-frame .page-table table:where([data-header-color^='#']:not([data-header-strength='off'])) th {
+  --cell-tint: var(--table-header-hue);
 }
 .page-table-box .page-table-frame .page-table table[data-header-weight='regular'] th { font-weight: 400; }
 .page-table-box .page-table-frame .page-table table[data-header-text='muted'] th { color: var(--fg-muted); }
@@ -258,6 +270,7 @@
 .page-table-box .page-table-frame .page-table table[data-header-text='blue'] th { color: var(--table-text-blue); }
 .page-table-box .page-table-frame .page-table table[data-header-text='purple'] th { color: var(--table-text-purple); }
 .page-table-box .page-table-frame .page-table table[data-header-text='pink'] th { color: var(--table-text-pink); }
+.page-table-box .page-table-frame .page-table table:where([data-header-text^='#']) th { color: var(--table-header-ink); }
 .page-table-box .page-table-frame .page-table table[data-header-align='left'] th { text-align: left !important; }
 .page-table-box .page-table-frame .page-table table[data-header-align='center'] th { text-align: center !important; }
 .page-table-box .page-table-frame .page-table table[data-header-align='right'] th { text-align: right !important; }

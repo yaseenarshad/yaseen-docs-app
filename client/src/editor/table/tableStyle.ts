@@ -85,6 +85,7 @@ import {
   type Valign,
 } from './tableComment'
 import { checkedView, type TableViewDef } from './super/viewGrammar'
+import { fillTone } from './tableMarks'
 // The rules a card's table shares first, then the editor's own: the order of the one file they were.
 import './cardTable.css'
 import './table.css'
@@ -249,6 +250,10 @@ function tableDomAttrs(attrs: Record<string, unknown>): Record<string, string> |
     out['data-table-zoom'] = String(level.zoom)
     style.push(`--table-zoom: ${level.zoom / 100}`)
   }
+  if (level.header?.color?.startsWith('#')) style.push(`--table-header-hue: ${level.header.color}`)
+  if (level.header?.text?.startsWith('#')) style.push(`--table-header-ink: ${level.header.text}`)
+  if (level.subheader?.color?.startsWith('#')) style.push(`--table-subheader-hue: ${level.subheader.color}`)
+  if (level.subheader?.text?.startsWith('#')) style.push(`--table-subheader-ink: ${level.subheader.text}`)
   if (style.length > 0) out.style = style.join('; ')
   Object.assign(out, headerRowAttrs(level.header ?? {}), subheaderRowAttrs(level.subheader ?? {}))
   if (level.sticky !== undefined) out['data-table-sticky-subheaders'] = level.sticky ? 'on' : 'off'
@@ -366,7 +371,13 @@ const cellDomAttrs = (node: ProseNode, base: Record<string, string>): Record<str
   if (node.attrs.subhead === true) out['data-subhead'] = ''
   const width = Array.isArray(node.attrs.colwidth) ? (node.attrs.colwidth[0] as number | undefined) : undefined
   if (typeof width === 'number' && width < NARROW_COLUMN) out['data-narrow'] = ''
-  if (fill?.startsWith('#')) style.push(`--table-fill-custom: ${fill}`)
+  if (fill?.startsWith('#')) {
+    style.push(`--table-fill-custom: ${fill}`)
+    if (color === null) {
+      const tone = fillTone(fill)
+      if (tone !== null) out['data-fill-tone'] = tone
+    }
+  }
   if (color?.startsWith('#')) style.push(`--table-text-custom: ${color}`)
   const joined = style.filter(Boolean).join('; ')
   if (joined !== '') out.style = joined

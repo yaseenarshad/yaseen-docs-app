@@ -31,9 +31,13 @@ describe('the ten cell colours in table.css (YAZ-3817)', () => {
     expect(bodyOf(`${CELL}[data-color='${c}']`)).toContain(`color: var(--table-text-${c})`)
   })
 
-  it('a custom fill draws at the wash that a copy uses', () => {
+  it('a custom fill paints directly via --table-fill-custom (solid or #rrggbbaa), pure black is #000000, and auto-contrast fill-tone precedes explicit text color (YAZ-6692)', () => {
     expect(bodyOf(':root')).toMatch(new RegExp(`--table-fill-wash:\\s*${FILL_WASH * 100}%;`))
-    expect(bodyOf(`${CELL}[data-fill^='#']`)).toContain('color-mix(in srgb, var(--table-fill-custom) var(--table-fill-wash), transparent)')
+    expect(bodyOf(':root')).toMatch(/--table-fill-solid-black:\s*#000000;/)
+    expect(bodyOf(`${CELL}[data-fill^='#']`).trim()).toBe('--table-cell-tint: var(--table-fill-custom);')
+    expect(bodyOf(`${CELL}[data-fill-tone='dark']`).trim()).toBe('color: #ffffff;')
+    expect(bodyOf(`${CELL}[data-fill-tone='light']`).trim()).toBe('color: #111111;')
+    expect(editorTableCss.indexOf("[data-fill-tone='dark']")).toBeLessThan(editorTableCss.indexOf("[data-color='red']"))
   })
 })
 

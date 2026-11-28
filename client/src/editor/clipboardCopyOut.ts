@@ -12,7 +12,6 @@ import { rowShortcuts } from './pageKeys'
 import { getZoomedItemPos } from './outline/zoom'
 import { CELL_NOTES_ATTR, cellNotesMarkdown, copySerializer } from './table/cellNoteClipboard'
 import { isCellNote } from './table/cellNotes'
-import { FILL_WASH } from './table/colours'
 import { cellColor, cellValign, type TableColor } from './table/tableComment'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 
@@ -162,9 +161,13 @@ const COPY_TEXT: Record<TableColor, string> = {
   red: '#c0392b', orange: '#b45309', yellow: '#a16207', green: '#2e7d32', teal: '#0f766e',
   blue: '#1d5fbf', purple: '#7b3fbf', pink: '#c2185b', grey: '#6b6b6b', brown: '#8b5a2b',
 }
-/** `#rrggbb` at its wash (`FILL_WASH`, table.css `--table-fill-wash`) over white. */
-const washOverWhite = (hex: string): string => hexOfRgb(rgbOf(hex).map((c) => 255 - (255 - c) * FILL_WASH))
-const copyFill = (fill: string | null) => (fill === null ? undefined : fill.startsWith('#') ? washOverWhite(fill) : COPY_FILL[fill as TableColor])
+/** `#rrggbb` copies solid; `#rrggbbaa` composites over white (Google Docs needs a solid colour). */
+function copyHexFill(hex: string): string {
+  if (hex.length === 7) return hex
+  const alpha = parseInt(hex.slice(7, 9), 16) / 255
+  return hexOfRgb(rgbOf(hex).map((c) => 255 - (255 - c) * alpha))
+}
+const copyFill = (fill: string | null) => (fill === null ? undefined : fill.startsWith('#') ? copyHexFill(fill) : COPY_FILL[fill as TableColor])
 const copyText = (color: string | null) => (color === null ? undefined : color.startsWith('#') ? color : COPY_TEXT[color as TableColor])
 
 /**
@@ -182,6 +185,8 @@ function styleTables(dom: DocumentFragment): void {
     if (fill !== undefined) cell.style.backgroundColor = fill
     const color = copyText(cellColor(cell.dataset.color))
     if (color !== undefined) cell.style.color = color
+    else if (cell.dataset.fillTone === 'dark') cell.style.color = '#ffffff'
+    else if (cell.dataset.fillTone === 'light') cell.style.color = '#111111'
     // A cell's own vertical alignment is in its style already; a copied table gives the others its default (YAZ-4166).
     const valign = cellValign(cell.closest('table')?.getAttribute('data-table-valign'))
     if (cell.style.verticalAlign === '' && valign !== null) cell.style.verticalAlign = valign

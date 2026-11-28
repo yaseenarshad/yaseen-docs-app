@@ -1,0 +1,35 @@
+/* Opacity slider and translucent swatch backdrop for ColourBox with `showAlpha: true` (YAZ-6693). */
+.colour-box--alpha .colour-box__swatch {
+  background:
+    linear-gradient(var(--pick), var(--pick)),
+    repeating-conic-gradient(#ccc 0 25%, #fff 0 50%) 0 0 / 8px 8px;
+}
+
+.colour-box__alpha {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.colour-box__alpha-label {
+  white-space: nowrap;
+}
+
+.colour-box__alpha-range {
+  width: 100%;
+  min-width: 0;
+  height: 12px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.colour-box__alpha-value {
+  min-width: 30px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}

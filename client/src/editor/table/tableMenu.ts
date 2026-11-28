@@ -66,7 +66,7 @@ import { canMoveToCellNote, moveToCellNote, openCellNote } from './cellNoteCard'
 import { deleteText, deleteWithNotes, duplicateWithNotes, type DeleteKind } from './cellNoteGuard'
 import { cellNoteLabelsIn, cellNoteOf, removeCellNote, tableAround } from './cellNotes'
 import { bodySpansRows, cellAt, isMerged, mergeCrosses, rectHasMerge, rowFolded, rowNoDim, rowSubhead, setCellsAlign, setCellsAttr, setCellsValign, typedValue, wholeColumns, wholeRows } from './cells'
-import { capital, fillSwatch, pickCustomColour, textSwatch } from './colours'
+import { TABLE_EXTRA_SWATCHES, capital, fillSwatch, pickCustomColour, textSwatch } from './colours'
 import { foldRows, keepingScroll, unfoldRun } from './tableFold'
 import { headerRowParent, swatchIcon } from './tableRows'
 import { setAllSections, setSubhead } from './tableSubhead'
@@ -547,17 +547,24 @@ export function tableMenuSections(view: EditorView, pointer: number | null, kind
           item('subhead-expand-all', 'Expand all subheaders', () => view.dispatch(closeHistory(setAllSections(view.state.tr, tablePos, false)))),
         ]
       : []
-  /** Fill ▸ or Text colour ▸: the cell toolbar's palette — the clear item, the ten names, Custom colour… (YAZ-3817). */
+  /** Fill ▸ or Text colour ▸: the cell toolbar's palette — the clear item, the ten names + Black/White, Custom colour… (YAZ-3817, YAZ-6693). */
   const palette = (attr: 'fill' | 'color', label: string, clear: string, color: (c: TableColor) => string): MenuParent => ({
     id: `table-${attr}`,
     label,
     children: [
       [item(`${attr}-none`, clear, run(cellsAttr(attr, null)))],
-      TABLE_COLORS.map((c) => {
-        const row: MenuAction = { ...item(`${attr}-${c}`, capital(c), run(cellsAttr(attr, c))), icon: swatch(color(c)) }
-        swatches.set(row, color(c))
-        return row
-      }),
+      [
+        ...TABLE_COLORS.map((c) => {
+          const row: MenuAction = { ...item(`${attr}-${c}`, capital(c), run(cellsAttr(attr, c))), icon: swatch(color(c)) }
+          swatches.set(row, color(c))
+          return row
+        }),
+        ...TABLE_EXTRA_SWATCHES.map(({ id, label: name, value }) => {
+          const row: MenuAction = { ...item(`${attr}-${id}`, name, run(cellsAttr(attr, value))), icon: swatch(value) }
+          swatches.set(row, value)
+          return row
+        }),
+      ],
       [item(`${attr}-custom`, 'Custom colour…', () => customColour(view, pointer, attr))],
     ],
   })

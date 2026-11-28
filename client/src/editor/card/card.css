@@ -632,6 +632,9 @@
   font-weight: var(--table-subheader-weight, bold);
   color: var(--table-subheader-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-subheader-mute, 0) * 100%), currentColor));
 }
+.card__sides .card__table:not(.page-table) > table:where([data-subheader-color^='#']:not([data-subheader-strength='off'])) td[data-subhead] {
+  --table-cell-tint: var(--table-subheader-hue);
+}
 .card__sides .card__table:not(.page-table) > table[data-subheader-align] {
   --table-subheader-aligned: off;
 }
@@ -652,6 +655,12 @@
    wash, a text colour made readable on the page in each theme (`readableInk`: `--cell-ink-light`, `--cell-ink-dark`). */
 .card__sides .card__table:not(.page-table) > table :is(th, td)[data-fill] {
   --table-cell-tint: var(--cell-fill);
+}
+.card__sides .card__table:not(.page-table) > table :is(th, td)[data-fill-tone='dark'] {
+  color: #ffffff;
+}
+.card__sides .card__table:not(.page-table) > table :is(th, td)[data-fill-tone='light'] {
+  color: #111111;
 }
 .card__sides .card__table:not(.page-table) > table :is(th, td)[data-color] {
   color: var(--cell-ink, var(--cell-ink-light));

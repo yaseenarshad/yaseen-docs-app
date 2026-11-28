@@ -86,6 +86,27 @@ describe("the file's look on the phone (YAZ-5482)", () => {
     }
   })
 
+  it('YAZ-6692: solid custom hex fills, #rrggbbaa, auto-contrast fill-tone, readableInk on dark fills, pure black, and header/subheader hex', async () => {
+    const t = await one(
+      `| A | B | C |\n| - | - | - |\n| 1 | 2 | 3 |\n\n<!-- table: fill A1 #000000 B1 #434343 C1 #d9d9d9 A2 #000000 B2 #43434340, color A1:B1 #ffffff, header #11223380 text-#ffffff, subhead 2, subheader #434343 text-#eeeeee -->`,
+    )
+    expect(t.rows[0]!.cells[0]!.style.getPropertyValue('--cell-ink-light')).toBe('#ffffff')
+    expect(t.rows[0]!.cells[0]!.style.getPropertyValue('--cell-ink-dark')).toBe('#ffffff')
+    expect(t.rows[0]!.cells[1]!.style.getPropertyValue('--cell-ink-light')).toBe('#ffffff')
+    expect(t.rows[0]!.cells[2]!.dataset.fillTone).toBe('light')
+    expect(t.rows[1]!.cells[0]!.dataset.fillTone).toBe('dark')
+    expect(t.rows[1]!.cells[1]!.hasAttribute('data-fill-tone')).toBe(false)
+    expect(t.rows[1]!.cells[1]!.style.getPropertyValue('--table-fill-custom')).toBe('#43434340')
+    expect(t.style.getPropertyValue('--table-header-hue')).toBe('#11223380')
+    expect(t.style.getPropertyValue('--table-header-ink')).toBe('#ffffff')
+    expect(t.style.getPropertyValue('--table-subheader-hue')).toBe('#434343')
+    expect(t.style.getPropertyValue('--table-subheader-ink')).toBe('#eeeeee')
+    expect(css).toContain("--table-fill-solid-black: #000000;")
+    expect(css).toContain("[data-fill^='#'] { --cell-tint: var(--table-fill-custom); }")
+    expect(css).toContain("[data-fill-tone='dark'] { color: #ffffff; }")
+    expect(css).toContain("[data-fill-tone='light'] { color: #111111; }")
+  })
+
   it("alignment: a cell's own wins over its column's; the table's vertical alignment and a cell's own", async () => {
     const t = await one(`${LOOK}\n\n${LOOK_COMMENT}`)
     expect(t.dataset.valign).toBe('middle')

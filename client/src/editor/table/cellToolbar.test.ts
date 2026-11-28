@@ -147,16 +147,16 @@ describe('quick colours, the palette and custom colours (YAZ-3817)', () => {
     expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
-  it('each palette: the clear item, the 10 named colours in a 5 × 2 grid, then Custom colour…', async () => {
+  it('each palette: the clear item, the 10 named colours plus Black and White in a 6 × 2 grid, then Custom colour…', async () => {
     const { view } = await mount(TABLE)
     await select(view, [1, 0], [2, 1])
     const items = (arrow: string) => [...paletteOf(view, arrow).querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))
-    const capitals = NAMES.map((n) => n[0].toUpperCase() + n.slice(1))
+    const capitals = [...NAMES.map((n) => n[0].toUpperCase() + n.slice(1)), 'Black', 'White']
     expect(items('Fill colours')).toEqual(['No fill', ...capitals, 'Custom colour…'])
     expect(items('Text colours')).toEqual(['Default colour', ...capitals, 'Custom colour…'])
     for (const arrow of ['Fill colours', 'Text colours']) {
       const palette = paletteOf(view, arrow)
-      expect(palette.querySelector('.cell-toolbar__swatches')!.children).toHaveLength(10)
+      expect(palette.querySelector('.cell-toolbar__swatches')!.children).toHaveLength(12)
       expect(palette.querySelector('button')!.textContent).toBe(arrow === 'Fill colours' ? 'No fill' : 'Default colour')
       expect(palette.querySelector(':scope > button:last-child')!.textContent).toBe('Custom colour…')
     }
@@ -164,6 +164,39 @@ describe('quick colours, the palette and custom colours (YAZ-3817)', () => {
       paletteOf(view, arrow).querySelector<HTMLElement>(`button[aria-label="${label}"] .cell-toolbar__swatch`)!.style.background
     expect(swatch('Fill colours', 'Teal')).toBe('var(--table-fill-solid-teal)')
     expect(swatch('Text colours', 'Brown')).toBe('var(--table-text-brown)')
+  })
+
+  it('Black and White swatches apply #000000 / #ffffff in one undo step, and Fill Custom colour… has an Opacity slider (YAZ-6693)', async () => {
+    const { crepe, view } = await mount(TABLE)
+    const before = getMarkdownForSave(crepe)
+    await select(view, [1, 0], [2, 1])
+    pick(view, 'Fill colours', 'Black')
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #000000 -->\n`)
+    pick(view, 'Text colours', 'White')
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #000000, color A2:B3 #ffffff -->\n`)
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #000000 -->\n`)
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+
+    // Fill ColourBox shows Opacity slider; Text ColourBox does not.
+    openCustom(view, 'Text colours')
+    expect(boxOf(view, 'Text colours')!.querySelector('input[aria-label="Opacity"]')).toBeNull()
+    openCustom(view, 'Fill colours')
+    const fillBox = boxOf(view, 'Fill colours')!
+    const alpha = fillBox.querySelector<HTMLInputElement>('input[aria-label="Opacity"]')!
+    expect(alpha).not.toBeNull()
+    pickInBox(fillBox, '#434343')
+    alpha.value = '50'
+    alpha.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #43434380 -->\n`)
+    // Reopening on #43434380 restores 50%; dragging back to 100% writes solid #434343.
+    button(view, 'Fill colours').click()
+    openCustom(view, 'Fill colours')
+    expect(alpha.value).toBe('50')
+    alpha.value = '100'
+    alpha.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 #434343 -->\n`)
   })
 
   it.each(NAMES)('the palette colour %s saves its name for fill and text, one undo step each', async (name) => {

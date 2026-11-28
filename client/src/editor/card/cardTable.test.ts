@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { beats, rules, specificity } from '../cssRules'
-import { INK_CONTRAST, PAGE_BG, contrast } from '../table/tableMarks'
+import { INK_CONTRAST, PAGE_BG, contrast, fillTone } from '../table/tableMarks'
 import { renderCard } from './cardRender'
 
 const TABLE = '| Urdu | Roman | English |\n|:--|:-:|--:|\n| {{آپ کو}} | {{Aap ko}} | to you |\n| {{آتی ہے}} | {{aati hai}} | is known |'
@@ -82,14 +82,37 @@ describe('renderCard: the table look the page saved (YAZ-5867)', () => {
   const table = (comment: string, text = T3) => renderCard(`${text}\n<!-- table: ${comment} -->`).querySelector<HTMLTableElement>('.card__table > table')!
   const at = (t: HTMLTableElement, r: number, c: number) => t.rows[r]!.cells[c] as HTMLTableCellElement
 
-  it('fill: a named fill and a custom one (its wash colour on the cell)', () => {
-    const t = table('fill A2 blue B3 #ff8800')
+  it('fill: a named fill and a custom solid hex fill (plus #rrggbbaa and auto-contrast tone, YAZ-6692)', () => {
+    const t = table('fill A2 blue B3 #ff8800 A1 #000000 B1 #434343 C1 #d9d9d9 C2 #00000040')
     expect(at(t, 1, 0).dataset.fill).toBe('blue')
     expect(at(t, 2, 1).dataset.fill).toBe('#ff8800')
     expect(at(t, 2, 1).style.getPropertyValue('--table-fill-custom')).toBe('#ff8800')
     expect(at(t, 1, 1).hasAttribute('data-fill')).toBe(false)
     expect(at(t, 1, 0).style.getPropertyValue('--cell-fill')).toBe('var(--table-fill-blue)')
-    expect(at(t, 2, 1).style.getPropertyValue('--cell-fill')).toBe('color-mix(in srgb, #ff8800 var(--table-fill-wash, 35%), transparent)')
+    expect(at(t, 2, 1).style.getPropertyValue('--cell-fill')).toBe('var(--table-fill-custom)')
+    expect(at(t, 0, 0).dataset.fillTone).toBe('dark')
+    expect(at(t, 0, 1).dataset.fillTone).toBe('dark')
+    expect(at(t, 0, 2).dataset.fillTone).toBe('light')
+    expect(at(t, 1, 2).hasAttribute('data-fill-tone')).toBe(false)
+    expect([fillTone('#000000'), fillTone('#434343'), fillTone('#d9d9d9'), fillTone('#ffffff'), fillTone('#00000080'), fillTone('#00000040')]).toEqual(['dark', 'dark', 'light', 'light', 'dark', null])
+  })
+
+  it('text colour on a dark solid fill checks contrast against the cell fill, not PAGE_BG (YAZ-6692 D1)', () => {
+    const t = table('fill A1 #000000 B1 #434343, color A1:B1 #ffffff')
+    for (const col of [0, 1]) {
+      const cell = at(t, 0, col)
+      expect(cell.style.getPropertyValue('--cell-ink-light')).toBe('#ffffff')
+      expect(cell.style.getPropertyValue('--cell-ink-dark')).toBe('#ffffff')
+      expect(cell.hasAttribute('data-fill-tone')).toBe(false)
+    }
+  })
+
+  it('header and subheader custom hex set --table-header-hue / --table-header-ink vars (YAZ-6692 #6)', () => {
+    const t = table('header #1a2b3c80 text-#ffffff, subhead 2, subheader #434343 text-#d9d9d9')
+    expect(t.style.getPropertyValue('--table-header-hue')).toBe('#1a2b3c80')
+    expect(t.style.getPropertyValue('--table-header-ink')).toBe('#ffffff')
+    expect(t.style.getPropertyValue('--table-subheader-hue')).toBe('#434343')
+    expect(t.style.getPropertyValue('--table-subheader-ink')).toBe('#d9d9d9')
   })
 
   it('text colour: a name, and a custom colour made readable in light and in dark', () => {

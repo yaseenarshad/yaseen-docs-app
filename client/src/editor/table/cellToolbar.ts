@@ -46,7 +46,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { setCellsAlign, setCellsAttr } from './cells'
 import { ColourBox } from '../highlightColourBox'
-import { capital, customStart, fillSwatch, setCustomColour, textSwatch } from './colours'
+import { TABLE_EXTRA_SWATCHES, capital, customStart, fillSwatch, setCustomColour, textSwatch } from './colours'
 import { TABLE_HANDLE_MENU } from './tableMenu'
 import { mergeCells, mergeRect } from './tableMerge'
 import { CELL_ALIGNS, TABLE_COLORS, type CellAlign, type TableColor } from './tableStyle'
@@ -233,6 +233,14 @@ function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes)
     button.appendChild(swatch)
     swatches.appendChild(button)
   }
+  for (const { label: name, value } of TABLE_EXTRA_SWATCHES) {
+    const button = item(name, () => setCells(view, group.attr, value), 'cell-toolbar__swatch-item')
+    const swatch = document.createElement('span')
+    swatch.className = 'cell-toolbar__swatch'
+    swatch.style.background = value
+    button.appendChild(swatch)
+    swatches.appendChild(button)
+  }
   const customItem = toolButton('Custom colour…', '', 'cell-toolbar__custom')
   customItem.setAttribute('role', 'menuitem')
   customItem.setAttribute('aria-expanded', 'false')
@@ -245,6 +253,7 @@ function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes)
     if (!(selection instanceof CellSelection)) return
     if (custom.box === null) {
       const box = new ColourBox(document, {
+        showAlpha: group.attr === 'fill',
         preview: () => {},
         pick: (color) => {
           const cells = view.state.selection

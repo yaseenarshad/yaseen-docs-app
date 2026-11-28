@@ -26,6 +26,7 @@ export const INK_CONTRAST = 4.5
 
 const rgbOf = (hex: string): [number, number, number] => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number]
 const hexOf = (rgb: number[]): string => `#${rgb.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('')}`
+const alphaOf = (hex: string): number => (hex.length === 9 ? parseInt(hex.slice(7, 9), 16) / 255 : 1)
 const luminance = (hex: string): number => {
   const [r, g, b] = rgbOf(hex).map((v) => {
     const c = v / 255
@@ -33,6 +34,28 @@ const luminance = (hex: string): number => {
   })
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
+
+/**
+ * Auto-contrast tone for a custom hex cell fill (`#rrggbb` or `#rrggbbaa`, YAZ-6692 D9):
+ * dark solid fills (alpha >= 0.5, relative luminance < 0.35) → `'dark'` (`#ffffff` text);
+ * light solid fills (alpha >= 0.5, relative luminance >= 0.35) → `'light'` (`#111111` text);
+ * translucent fills (alpha < 0.5) or invalid strings → `null` (keep page default text color).
+ */
+export function fillTone(hex: string): 'dark' | 'light' | null {
+  if (!/^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(hex)) return null
+  if (alphaOf(hex) < 0.5) return null
+  return luminance(hex) < 0.35 ? 'dark' : 'light'
+}
+
+/** Composite `#rrggbb` or `#rrggbbaa` over an opaque `#rrggbb` background. */
+export function compositeOver(hex: string, bg: string): string {
+  const a = alphaOf(hex)
+  if (a >= 1) return hex.slice(0, 7)
+  const fg = rgbOf(hex)
+  const back = rgbOf(bg)
+  return hexOf(fg.map((v, i) => v * a + back[i]! * (1 - a)))
+}
+
 /** The WCAG contrast of two `#rrggbb` colours. */
 export function contrast(a: string, b: string): number {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
@@ -77,7 +100,12 @@ export function gridOf(table: HTMLTableElement): { rows: number; cols: number } 
 export function applySubheads(table: HTMLTableElement, style: TableStyle): void {
   const rows = [...table.rows]
   const subheads = [...new Set(style.subhead ?? [])].filter((r) => r > 0 && r < rows.length).sort((a, b) => a - b)
-  for (const [part, value] of Object.entries(style.subheader ?? {})) if (typeof value === 'string') table.setAttribute(`data-subheader-${part}`, value)
+  for (const [part, value] of Object.entries(style.subheader ?? {})) {
+    if (typeof value !== 'string') continue
+    table.setAttribute(`data-subheader-${part}`, value)
+    if (part === 'color' && value.startsWith('#')) table.style.setProperty('--table-subheader-hue', value)
+    if (part === 'text' && value.startsWith('#')) table.style.setProperty('--table-subheader-ink', value)
+  }
   if (style.sticky !== undefined) table.setAttribute('data-sticky-subheaders', style.sticky ? 'on' : 'off')
   if (subheads.length === 0) return
   table.setAttribute('data-subheads', '')
@@ -111,7 +139,12 @@ export function applyTableMarks(table: HTMLTableElement, style: TableStyle, opti
     table.style.setProperty('--table-border-px', `${Math.min(options.borderMaxPx ?? Number.POSITIVE_INFINITY, style.border.px)}px`)
     table.style.setProperty('--table-border-dark', `${style.border.darkness}%`)
   }
-  for (const [part, value] of Object.entries(style.header ?? {})) if (typeof value === 'string') table.setAttribute(`data-header-${part}`, value)
+  for (const [part, value] of Object.entries(style.header ?? {})) {
+    if (typeof value !== 'string') continue
+    table.setAttribute(`data-header-${part}`, value)
+    if (part === 'color' && value.startsWith('#')) table.style.setProperty('--table-header-hue', value)
+    if (part === 'text' && value.startsWith('#')) table.style.setProperty('--table-header-ink', value)
+  }
   applySubheads(table, style)
 
   // Each cell by its A1 address, in the file's grid (before the merges).
@@ -121,15 +154,25 @@ export function applyTableMarks(table: HTMLTableElement, style: TableStyle, opti
     const cell = cells.get(address)
     if (cell === undefined) continue
     cell.setAttribute('data-fill', fill)
-    if (fill.startsWith('#')) cell.style.setProperty('--table-fill-custom', fill)
+    if (fill.startsWith('#')) {
+      cell.style.setProperty('--table-fill-custom', fill)
+      if (!style.color.has(address)) {
+        const tone = fillTone(fill)
+        if (tone !== null) cell.setAttribute('data-fill-tone', tone)
+      }
+    }
   }
   for (const [address, color] of style.color) {
     const cell = cells.get(address)
     if (cell === undefined) continue
     cell.setAttribute('data-color', color)
     if (color.startsWith('#')) {
-      cell.style.setProperty('--cell-ink-light', readableInk(color, PAGE_BG.light))
-      cell.style.setProperty('--cell-ink-dark', readableInk(color, PAGE_BG.dark))
+      const fill = style.fill.get(address)
+      const solidFill = fill !== undefined && fill.startsWith('#') && alphaOf(fill) >= 0.5 ? fill : null
+      const lightBg = solidFill !== null ? compositeOver(solidFill, PAGE_BG.light) : PAGE_BG.light
+      const darkBg = solidFill !== null ? compositeOver(solidFill, PAGE_BG.dark) : PAGE_BG.dark
+      cell.style.setProperty('--cell-ink-light', readableInk(color.slice(0, 7), lightBg))
+      cell.style.setProperty('--cell-ink-dark', readableInk(color.slice(0, 7), darkBg))
     }
   }
   for (const [address, align] of style.align) cells.get(address)?.style.setProperty('text-align', align)

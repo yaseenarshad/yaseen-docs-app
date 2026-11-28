@@ -33,6 +33,9 @@
   font-weight: var(--table-subheader-weight, bold);
   color: var(--table-subheader-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-subheader-mute, 0) * 100%), currentColor));
 }
+.milkdown .ProseMirror .milkdown-table-block:where([data-table-subheader-color^='#']:not([data-table-subheader-strength='off'])) td[data-subhead] {
+  --table-cell-tint: var(--table-subheader-hue);
+}
 
 .milkdown .ProseMirror .milkdown-table-block[data-table-subheader-align]:not([data-table-subheader-align='follow']) td[data-subhead] {
   text-align: var(--table-subheader-align) !important;
@@ -122,7 +125,9 @@
 .milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='pink'] { --table-cell-tint: var(--table-fill-pink); }
 .milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='grey'] { --table-cell-tint: var(--table-fill-grey); }
 .milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill='brown'] { --table-cell-tint: var(--table-fill-brown); }
-.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill^='#'] { --table-cell-tint: color-mix(in srgb, var(--table-fill-custom) var(--table-fill-wash), transparent); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill^='#'] { --table-cell-tint: var(--table-fill-custom); }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill-tone='dark'] { color: #ffffff; }
+.milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-fill-tone='light'] { color: #111111; }
 
 .milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='red'] { color: var(--table-text-red); }
 .milkdown .ProseMirror :is(.milkdown-table-block, .super-view) :is(th, td)[data-color='orange'] { color: var(--table-text-orange); }
@@ -676,7 +681,7 @@
 
 .milkdown .cell-toolbar__swatches {
   display: grid;
-  grid-template-columns: repeat(5, auto);
+  grid-template-columns: repeat(6, auto);
   gap: 4px;
   padding: 4px 5px 3px;
 }

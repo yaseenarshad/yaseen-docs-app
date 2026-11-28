@@ -43,7 +43,7 @@ import { tablerIcon, type TablerIcon } from './tableIcons'
 import { setCellsAttr, tableHasSubheads } from './cells'
 import { fillCalendarDay, goToNow, minutesOf, missingDayTimes, nowPlace, setTimeSlots } from './tableCalendar'
 import { calendarDaySetting, cellNoteButtonSetting, headerRowSetting, stickyHeaderSetting, stickySubheadersSetting, subheaderRowSetting, textInCellsSetting, timeFormatSetting } from './timeFormatSetting'
-import { capital, headerSwatch } from './colours'
+import { capital, headerSwatch, pickHeaderCustomColour } from './colours'
 import { CELL_ALIGNS, VALIGNS, type TableAttrs } from './tableStyle'
 import { superRule, turnBackPlain, turnIntoSuper } from './super/superTables'
 
@@ -171,6 +171,16 @@ export function headerRowParent(view: EditorView, pos: number, kind: 'header' | 
     hint: ownSticky === value ? '✓' : undefined,
     run: () => setTable(view, pos, { [attr]: value }),
   }))
+  const customRow = (part: 'color' | 'text'): MenuRow => {
+    const current = shown[part]
+    const isHex = typeof current === 'string' && current.startsWith('#')
+    return {
+      label: 'Custom colour…',
+      icon: isHex ? swatchIcon(current) : undefined,
+      hint: isHex ? '✓' : undefined,
+      run: () => pickHeaderCustomColour(view, pos, kind, part, isHex ? (current as `#${string}`) : '#000000'),
+    }
+  }
   return {
     label: kind === 'header' ? 'Header row' : 'Subheader row',
     run: () => {},
@@ -185,9 +195,9 @@ export function headerRowParent(view: EditorView, pos: number, kind: 'header' | 
         label: 'Fill',
         // Strength as a short switch, as the folder table's (YAZ-4794 demo: "shouldnt it follow?").
         bar: parts.strength,
-        children: [parts.color],
+        children: [parts.color, [customRow('color')]],
       },
-      { label: 'Text', children: [parts.text] },
+      { label: 'Text', children: [parts.text, [customRow('text')]] },
       { label: 'Style', headings: ['Weight', 'Align'], children: [parts.weight, parts.align] },
     ],
   }

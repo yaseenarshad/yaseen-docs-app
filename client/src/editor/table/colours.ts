@@ -20,6 +20,7 @@ import { Plugin, PluginKey, type EditorState, type Transaction } from '@milkdown
 import { CellSelection, TableMap, type TableRect } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { headerRowOwn, type HeaderRowOwn } from '@shared/types'
 import type { Hex } from '../../lib/colour'
 import { ColourBox } from '../highlightColourBox'
 import { setCellsAttr } from './cells'
@@ -31,16 +32,22 @@ export const capital = (word: string) => word[0].toUpperCase() + word.slice(1)
 /** Each swatch's colour: a fill at full strength in light and dark (`table.css`; the cells keep their wash). */
 export const fillSwatch = (c: TableColor) => `var(--table-fill-solid-${c})`
 export const textSwatch = (c: TableColor) => `var(--table-text-${c})`
-/** A header row colour's swatch (YAZ-4794): the fill swatches, plus the header's own Black and White (`table.css`). */
-export const headerSwatch = (c: string) => `var(--table-fill-solid-${c === 'gray' ? 'grey' : c})`
+/** A header row colour's swatch (YAZ-4794): the fill swatches, Black/White, or a custom `#rrggbb(aa)`. */
+export const headerSwatch = (c: string) => (c.startsWith('#') ? c : `var(--table-fill-solid-${c === 'gray' ? 'grey' : c})`)
 
-/** A custom fill's see-through wash: `table.css` `--table-fill-wash` (35%), and a copy to Docs (`clipboardCopyOut.ts`). */
+/** Solid Black and White swatches added to table Fill and Text palettes (YAZ-6693 D7). */
+export const TABLE_EXTRA_SWATCHES = [
+  { id: 'black', label: 'Black', value: '#000000' as Hex },
+  { id: 'white', label: 'White', value: '#ffffff' as Hex },
+] as const
+
+/** A custom fill's see-through wash (used by folder/view fills): 35%. */
 export const FILL_WASH = 0.35
 
 /** Where the box opens when the cells have no one custom colour, as the system picker did. */
 const START: Hex = '#000000'
 
-/** The cells' one custom colour of `attr`, else black: where the box opens. */
+/** The cells' one custom colour of `attr` (`#rrggbb` or `#rrggbbaa`), else black: where the box opens. */
 export function customStart(cells: CellSelection, attr: 'fill' | 'color'): Hex {
   const colours = new Set<unknown>()
   cells.forEachCell((cell) => void colours.add(cell.attrs[attr]))
@@ -68,25 +75,55 @@ export function setCustomColour(view: EditorView, holder: HTMLElement, cells: Ce
   if (tr.docChanged) view.dispatch(tr)
 }
 
-/** The target's corner cells (their positions) while the table menu's box is open, or null. */
-type Target = { anchor: number; head: number } | null
+/**
+ * One finished pick on a header or subheader row: sets `part` (`color` or `text`) on `kind`, one undo step (YAZ-6693 #6).
+ */
+function setRowCustomColour(
+  view: EditorView,
+  holder: HTMLElement,
+  tablePos: number,
+  rowKind: 'header' | 'subheader',
+  part: 'color' | 'text',
+  color: Hex,
+): void {
+  if (view.isDestroyed) return
+  if (holder.contains(view.dom.ownerDocument.activeElement)) view.focus()
+  const node = view.state.doc.nodeAt(tablePos)
+  if (node?.type.name !== 'table') return
+  const current = headerRowOwn(node.attrs[rowKind])
+  const next: HeaderRowOwn = { ...current, [part]: color }
+  if (JSON.stringify(next) === JSON.stringify(current)) return
+  view.dispatch(closeHistory(view.state.tr).setNodeAttribute(tablePos, rowKind, next))
+}
+
+/** The target's cells or table row while the menu's box is open, or null. */
+type Target =
+  | { kind: 'cells'; anchor: number; head: number; attr: 'fill' | 'color' }
+  | { kind: 'row'; tablePos: number; rowKind: 'header' | 'subheader'; part: 'color' | 'text' }
+  | null
 const pickKey = new PluginKey<Target>('mdapp-custom-colour-pick')
 
-/** A cell node still starts at `pos`, mapped through `tr`; `null` when it was deleted. */
+/** A cell or table node still starts at `pos`, mapped through `tr`; `null` when it was deleted. */
 const mapCell = (tr: Transaction, pos: number): number | null => {
   const mapped = tr.mapping.mapResult(pos)
   return mapped.deletedAfter ? null : mapped.pos
 }
 
-/** The target again as a CellSelection of `state`, or null when its cells are no longer one table's cells. */
-function targetOf(state: EditorState): CellSelection | null {
-  const target = pickKey.getState(state)
-  if (target == null) return null
+/** The target cells again as a CellSelection of `state`, or null when its cells are no longer one table's cells. */
+function targetCellsOf(state: EditorState, target: Extract<NonNullable<Target>, { kind: 'cells' }>): CellSelection | null {
   const isCell = (pos: number) => ['cell', 'header_cell'].includes(state.doc.nodeAt(pos)?.type.spec.tableRole as string)
   if (!isCell(target.anchor) || !isCell(target.head)) return null
   const $anchor = state.doc.resolve(target.anchor)
   const $head = state.doc.resolve(target.head)
   return $anchor.start(-1) === $head.start(-1) ? new CellSelection($anchor, $head) : null
+}
+
+/** Whether the current plugin target still exists in `state`. */
+function targetAlive(state: EditorState): boolean {
+  const target = pickKey.getState(state)
+  if (target == null) return false
+  if (target.kind === 'cells') return targetCellsOf(state, target) !== null
+  return state.doc.nodeAt(target.tablePos)?.type.name === 'table'
 }
 
 /** Each note's box for the table menu, so `pickCustomColour` reaches the one of its own editor. */
@@ -99,7 +136,7 @@ const menuBoxes = new WeakMap<EditorView, MenuColourBox>()
 class MenuColourBox {
   #el: HTMLElement | null = null
   #box: ColourBox | null = null
-  #attr: 'fill' | 'color' = 'fill'
+  #boxes: Record<'alpha' | 'solid', ColourBox | null> = { alpha: null, solid: null }
 
   constructor(readonly view: EditorView) {
     menuBoxes.set(view, this)
@@ -109,7 +146,7 @@ class MenuColourBox {
     return this.#el !== null && !this.#el.hidden
   }
 
-  show(target: CellSelection, attr: 'fill' | 'color'): void {
+  #open(target: NonNullable<Target>, showAlpha: boolean, start: Hex): void {
     const { view } = this
     const doc = view.dom.ownerDocument
     if (this.#el === null) {
@@ -117,25 +154,48 @@ class MenuColourBox {
       this.#el.className = 'table-colour-box'
       this.#el.setAttribute('role', 'dialog')
       this.#el.setAttribute('aria-label', 'Custom colour')
-      this.#box = new ColourBox(doc, {
+    }
+    const slot = showAlpha ? 'alpha' : 'solid'
+    let box = this.#boxes[slot]
+    if (box === null) {
+      box = new ColourBox(doc, {
+        showAlpha,
         preview: () => {},
         pick: (color) => {
-          const cells = targetOf(view.state)
-          if (cells !== null) setCustomColour(view, this.#el!, cells, this.#attr, color)
+          const current = pickKey.getState(view.state)
+          if (current == null) return
+          if (current.kind === 'cells') {
+            const cells = targetCellsOf(view.state, current)
+            if (cells !== null) setCustomColour(view, this.#el!, cells, current.attr, color)
+          } else {
+            setRowCustomColour(view, this.#el!, current.tablePos, current.rowKind, current.part, color)
+          }
         },
         close: this.close,
       })
-      this.#el.append(this.#box.el)
+      this.#boxes[slot] = box
+    }
+    if (this.#box !== box) {
+      this.#box?.hide()
+      this.#box = box
+      this.#el.replaceChildren(box.el)
     }
     if (!this.#el.isConnected) doc.body.appendChild(this.#el)
-    this.#attr = attr
-    view.dispatch(view.state.tr.setMeta(pickKey, { anchor: target.$anchorCell.pos, head: target.$headCell.pos }))
+    view.dispatch(view.state.tr.setMeta(pickKey, target))
     this.#el.hidden = false
-    this.#box!.show(customStart(target, attr))
+    box.show(start)
     this.#place()
     doc.addEventListener('keydown', this.#key, true)
     doc.addEventListener('mousedown', this.#outside, true)
     doc.addEventListener('scroll', this.#place, true)
+  }
+
+  show(target: CellSelection, attr: 'fill' | 'color'): void {
+    this.#open({ kind: 'cells', anchor: target.$anchorCell.pos, head: target.$headCell.pos, attr }, attr === 'fill', customStart(target, attr))
+  }
+
+  showRow(tablePos: number, rowKind: 'header' | 'subheader', part: 'color' | 'text', start: Hex): void {
+    this.#open({ kind: 'row', tablePos, rowKind, part }, part === 'color', start)
   }
 
   /** Hide it; `forget` also drops the target (never inside the view's update, where a dispatch is not allowed). */
@@ -145,7 +205,7 @@ class MenuColourBox {
     const doc = view.dom.ownerDocument
     const focused = this.#el!.contains(doc.activeElement)
     this.#el!.hidden = true
-    this.#box!.hide()
+    this.#box?.hide()
     doc.removeEventListener('keydown', this.#key, true)
     doc.removeEventListener('mousedown', this.#outside, true)
     doc.removeEventListener('scroll', this.#place, true)
@@ -156,18 +216,33 @@ class MenuColourBox {
 
   close = (): void => this.#hide(true)
 
-  /** Under the target cells, or over them; never past the window's sides. All reads, then the writes. */
+  /** Under the target cells (or table header), or over them; never past the window's sides. All reads, then the writes. */
   #place = (): void => {
     const el = this.#el
-    const cells = targetOf(this.view.state)
-    if (el === null || cells === null) return
+    const target = pickKey.getState(this.view.state)
+    if (el === null || target == null) return
     const win = this.view.dom.ownerDocument.defaultView
-    const a = (this.view.nodeDOM(cells.$anchorCell.pos) as HTMLElement | null)?.getBoundingClientRect()
-    const b = (this.view.nodeDOM(cells.$headCell.pos) as HTMLElement | null)?.getBoundingClientRect()
-    if (a === undefined || b === undefined) return
-    const top = Math.min(a.top, b.top)
-    const bottom = Math.max(a.bottom, b.bottom)
-    const left = Math.min(a.left, b.left)
+    let top: number
+    let bottom: number
+    let left: number
+    if (target.kind === 'cells') {
+      const cells = targetCellsOf(this.view.state, target)
+      if (cells === null) return
+      const a = (this.view.nodeDOM(cells.$anchorCell.pos) as HTMLElement | null)?.getBoundingClientRect()
+      const b = (this.view.nodeDOM(cells.$headCell.pos) as HTMLElement | null)?.getBoundingClientRect()
+      if (a === undefined || b === undefined) return
+      top = Math.min(a.top, b.top)
+      bottom = Math.max(a.bottom, b.bottom)
+      left = Math.min(a.left, b.left)
+    } else {
+      const dom = this.view.nodeDOM(target.tablePos) as HTMLElement | null
+      const anchor = dom?.querySelector<HTMLElement>(target.rowKind === 'subheader' ? 'td[data-subhead], th' : 'th') ?? dom
+      const rect = anchor?.getBoundingClientRect()
+      if (rect === undefined) return
+      top = rect.top
+      bottom = rect.bottom
+      left = rect.left
+    }
     const width = el.offsetWidth
     const height = el.offsetHeight
     const roomBelow = win === null || bottom + 4 + height <= win.innerHeight - 8
@@ -192,8 +267,8 @@ class MenuColourBox {
 
   update(view: EditorView, prev: EditorState): void {
     if (!this.open || prev.doc === view.state.doc) return
-    // Its cells are gone: the box goes too (the state already has no target).
-    if (targetOf(view.state) === null) this.#hide(false)
+    // Its cells/table are gone: the box goes too (the state already has no target).
+    if (!targetAlive(view.state)) this.#hide(false)
     else this.#place()
   }
 
@@ -204,7 +279,7 @@ class MenuColourBox {
   }
 }
 
-/** Keeps the menu box's target cells through every transaction (one map per change, nothing else), and the box. */
+/** Keeps the menu box's target cells or table through every transaction (one map per change, nothing else), and the box. */
 export const customColourPick = $prose(
   () =>
     new Plugin<Target>({
@@ -215,9 +290,13 @@ export const customColourPick = $prose(
           const meta = tr.getMeta(pickKey) as Target | undefined
           if (meta !== undefined) return meta
           if (target === null || !tr.docChanged) return target
-          const anchor = mapCell(tr, target.anchor)
-          const head = mapCell(tr, target.head)
-          return anchor === null || head === null ? null : { anchor, head }
+          if (target.kind === 'cells') {
+            const anchor = mapCell(tr, target.anchor)
+            const head = mapCell(tr, target.head)
+            return anchor === null || head === null ? null : { ...target, anchor, head }
+          }
+          const tablePos = mapCell(tr, target.tablePos)
+          return tablePos === null ? null : { ...target, tablePos }
         },
       },
       view: (view) => new MenuColourBox(view),
@@ -230,4 +309,17 @@ export const customColourPick = $prose(
  */
 export function pickCustomColour(view: EditorView, target: CellSelection, attr: 'fill' | 'color'): void {
   menuBoxes.get(view)?.show(target, attr)
+}
+
+/**
+ * Custom colour… for a table's Header row or Subheader row Fill (`color`, with opacity slider) or Text (`text`) (YAZ-6693 #6).
+ */
+export function pickHeaderCustomColour(
+  view: EditorView,
+  tablePos: number,
+  rowKind: 'header' | 'subheader',
+  part: 'color' | 'text',
+  start: Hex = START,
+): void {
+  menuBoxes.get(view)?.showRow(tablePos, rowKind, part, start)
 }

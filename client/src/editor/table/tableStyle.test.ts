@@ -218,6 +218,34 @@ describe('custom colours (YAZ-3817)', () => {
     expect(cellAttr(copy, 'fill')).toEqual([[null, null], ['#ff8800', 'teal']])
     expect(cellAttr(copy, 'color')).toEqual([[null, null], [null, '#1a2b3c']])
   })
+
+  it('auto-contrast data-fill-tone and #rrggbbaa opacity cells, plus custom hex header/subheader (YAZ-6692)', async () => {
+    const note = `${SMALL}\n<!-- table: fill A1 #000000 B1 #d9d9d9 A2 #434343 B2 #00000040, color A2 #ff0000, header #11223380 text-#ffffff, subheader #445566 text-#eeeeee -->\n`
+    expect(await save(note)).toBe(note)
+    const { root, view } = await mount(note)
+    const [a1, b1] = root.querySelectorAll<HTMLElement>('th')
+    const [a2, b2] = root.querySelectorAll<HTMLElement>('td')
+    expect(a1.getAttribute('data-fill-tone')).toBe('dark')
+    expect(b1.getAttribute('data-fill-tone')).toBe('light')
+    // Explicit color suppresses auto-contrast; translucent alpha < 0.5 has no tone.
+    expect(a2.hasAttribute('data-fill-tone')).toBe(false)
+    expect(b2.hasAttribute('data-fill-tone')).toBe(false)
+    expect(b2.style.getPropertyValue('--table-fill-custom')).toBe('#00000040')
+    const block = root.querySelector<HTMLElement>('.milkdown-table-block')!
+    expect(block.getAttribute('data-table-header-color')).toBe('#11223380')
+    expect(block.getAttribute('data-table-header-text')).toBe('#ffffff')
+    expect(block.style.getPropertyValue('--table-header-hue')).toBe('#11223380')
+    expect(block.style.getPropertyValue('--table-header-ink')).toBe('#ffffff')
+    expect(block.style.getPropertyValue('--table-subheader-hue')).toBe('#445566')
+    expect(block.style.getPropertyValue('--table-subheader-ink')).toBe('#eeeeee')
+    // Copy/paste inside the app preserves custom header/subheader hex.
+    const { schema } = view.state
+    const holder = document.createElement('div')
+    holder.appendChild(DOMSerializer.fromSchema(schema).serializeNode(tables(view.state.doc)[0]))
+    const [copy] = tables(DOMParser.fromSchema(schema).parse(holder))
+    expect(copy.attrs.header).toEqual({ color: '#11223380', text: '#ffffff' })
+    expect(copy.attrs.subheader).toEqual({ color: '#445566', text: '#eeeeee' })
+  })
 })
 
 describe('a cell\'s own alignment (YAZ-3819)', () => {

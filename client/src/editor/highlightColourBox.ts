@@ -14,6 +14,7 @@
  * the handles with `transform` only, and writes only what changed.
  */
 import { hexOfRgb, rgbOf, solidHex, type Hex } from '../lib/colour'
+import './colourBoxAlpha.css'
 
 /** What the box tells what holds it. */
 export interface ColourBoxHooks {
@@ -23,6 +24,8 @@ export interface ColourBoxHooks {
   pick: (hex: Hex) => void
   /** Escape in an R G B field: the box closes, what holds it stays. */
   close: () => void
+  /** Show an Opacity slider (`0`–`100%`, default `100%`), reading/writing `#rrggbb` (100%) or `#rrggbbaa` (< 100%) (YAZ-6693). */
+  showAlpha?: boolean
 }
 
 type Hsv = { h: number; s: number; v: number }
@@ -54,6 +57,17 @@ export function fromHsv({ h, s, v }: Hsv): Hex {
 /** A typed channel, 0 to 255, else null. */
 const readByte = (text: string): number | null => (/^\d{1,3}$/.test(text.trim()) && Number(text) <= 255 ? Number(text) : null)
 
+/** Opacity percent (`0`–`100`) encoded by `#rrggbbaa`, or `100` for solid `#rrggbb`. */
+const readAlpha = (hex: string): number =>
+  /^#[0-9a-f]{8}$/i.test(hex) ? Math.round((parseInt(hex.slice(7, 9), 16) / 255) * 100) : 100
+
+/** Solid `#rrggbb` at 100%, or `#rrggbbaa` below 100%. */
+const withAlpha = (solid: Hex, alpha: number): Hex => {
+  const pct = Math.round(clamp(alpha, 0, 100))
+  if (pct >= 100) return solid
+  return `${solid}${Math.round((pct / 100) * 255).toString(16).padStart(2, '0')}` as Hex
+}
+
 /** Material's "colorize", the pipette Chromium's popup shows. */
 const EYEDROPPER =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12a1 1 0 0 0 .01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z"/></svg>'
@@ -67,8 +81,12 @@ export class ColourBox {
   #hueThumb: HTMLElement
   #dropper: HTMLButtonElement
   #fields: HTMLInputElement[]
+  #alphaRange: HTMLInputElement | null = null
+  #alphaValue: HTMLElement | null = null
   /** Kept apart from the hex, so the hue survives a drag through gray or black. */
   #hsv: Hsv = { h: 0, s: 0, v: 0 }
+  /** Whole percent opacity (0–100) when `showAlpha` is enabled. */
+  #alpha = 100
   #dropping = false
   /** What #draw wrote last, so an unchanged style or attribute is not written again. */
   #drawn = new Map<string, string>()
@@ -115,6 +133,48 @@ export class ColourBox {
     const row = div('colour-box__row')
     row.append(dropper, div('colour-box__swatch'), this.#hue)
 
+    let alphaRow: HTMLElement | null = null
+    if (hooks.showAlpha === true) {
+      this.el.classList.add('colour-box--alpha')
+      alphaRow = div('colour-box__alpha')
+      const alphaLabel = doc.createElement('span')
+      alphaLabel.className = 'colour-box__alpha-label'
+      alphaLabel.textContent = 'Opacity'
+      const range = doc.createElement('input')
+      range.type = 'range'
+      range.className = 'colour-box__alpha-range'
+      range.min = '0'
+      range.max = '100'
+      range.step = '1'
+      range.value = '100'
+      range.tabIndex = -1
+      range.setAttribute('aria-label', 'Opacity')
+      const updateAlpha = () => {
+        this.#alpha = Math.round(clamp(Number(range.value), 0, 100))
+        this.#draw()
+      }
+      range.addEventListener('input', () => {
+        updateAlpha()
+        this.hooks.preview(this.hex)
+      })
+      range.addEventListener('change', () => {
+        updateAlpha()
+        if (this.open) this.hooks.pick(this.hex)
+      })
+      range.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return
+        e.preventDefault()
+        e.stopPropagation()
+        this.hooks.close()
+      })
+      const readout = doc.createElement('span')
+      readout.className = 'colour-box__alpha-value'
+      readout.textContent = '100%'
+      alphaRow.append(alphaLabel, range, readout)
+      this.#alphaRange = range
+      this.#alphaValue = readout
+    }
+
     const rgb = div('colour-box__rgb')
     this.#fields = ['Red', 'Green', 'Blue'].map((name) => {
       const label = doc.createElement('label')
@@ -134,7 +194,7 @@ export class ColourBox {
       rgb.append(label)
       return input
     })
-    this.el.append(this.#sv, row, rgb)
+    this.el.append(this.#sv, row, ...(alphaRow !== null ? [alphaRow] : []), rgb)
   }
 
   get open(): boolean {
@@ -142,7 +202,8 @@ export class ColourBox {
   }
 
   get hex(): Hex {
-    return fromHsv(this.#hsv)
+    const solid = fromHsv(this.#hsv)
+    return this.hooks.showAlpha === true ? withAlpha(solid, this.#alpha) : solid
   }
 
   show(hex: Hex): void {
@@ -162,6 +223,7 @@ export class ColourBox {
     if (next.s === 0 || next.v === 0) next.h = this.#hsv.h
     if (next.v === 0) next.s = this.#hsv.s
     this.#hsv = next
+    if (this.hooks.showAlpha === true) this.#alpha = readAlpha(hex)
     this.#draw()
   }
 
@@ -184,6 +246,14 @@ export class ColourBox {
       this.#sv.setAttribute('aria-valuetext', x)
     })
     this.#put('now', String(Math.round(h)), (x) => this.#hue.setAttribute('aria-valuenow', x))
+    if (this.#alphaRange !== null && this.#alphaValue !== null) {
+      const pct = String(this.#alpha)
+      if (this.#alphaRange.value !== pct) this.#alphaRange.value = pct
+      this.#put('alpha', `${pct}%`, (x) => {
+        this.#alphaValue!.textContent = x
+        this.#alphaRange!.setAttribute('aria-valuetext', x)
+      })
+    }
     const rgb = rgbOf(hex)
     this.#fields.forEach((f, i) => {
       const value = String(rgb[i])
