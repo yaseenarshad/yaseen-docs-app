@@ -15,8 +15,6 @@ thoughts/
 docs/superpowers/
 # The macOS spell checker helper (YAZ-4464, `tools/buildSpeller.mjs`): built by dev, build and test, shipped in Resources/bin.
 desktop/build/bin/speller
-# The macOS Vault App launcher helper (YAZ-6373, `tools/buildVaultLauncher.mjs`): built by dev, build and test, shipped in Resources/bin.
-desktop/build/bin/vault-launcher
 # The share viewer build (YAZ-3040, `tools/buildShareViewer.mjs`): made by `npm run build`, shipped as the `share-viewer` extraResource.
 share/dist/
 # YAZ-5645: the Worker secret for the dev server (mobile/.dev.vars, GITHUB_CLIENT_SECRET=...). Never committed.

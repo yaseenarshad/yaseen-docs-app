@@ -160,7 +160,12 @@ test('step 3 — copying the three children puts 1. markers on text/plain and an
     .poll(() => app.evaluate(({ clipboard }) => clipboard.readText()), { timeout: 5_000 })
     .toMatch(/1\. 1\\?\) Setup/)
   const text = await app.evaluate(({ clipboard }) => clipboard.readText())
-  const html = await app.evaluate(({ clipboard }) => clipboard.readHTML())
+  const html = await app.evaluate(async ({ clipboard }) => {
+    for (const item of await clipboard.read()) {
+      if (item.types.includes('text/html')) return await (await item.getType('text/html')).text()
+    }
+    return ''
+  })
   expect(text).toMatch(/2\. 2\\?\) VS Code/)
   expect(text).toMatch(/3\. 3\\?\) WisprFlow/)
   expect(html).toContain('<ol')

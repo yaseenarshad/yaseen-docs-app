@@ -1102,11 +1102,81 @@ describe('subscribeMenuRebuildOnActiveFile', () => {
 describe('the menu\'s fixed keys (YAZ-3419)', () => {
   it('every key the menu carries is a changeable command\'s, a numbered vault\'s, in MENU_FIXED_KEYS, or a Mac standard key (⌘R, YAZ-3737 D2) — so the recorder and the store refuse it', () => {
     const vaults: MenuInputs['keyedVaults'] = [{ key: 1, name: 'Pages', path: '/vaults/pages' }]
-    const fixed = (['markdown', 'drawing', 'diagram', null] as const).flatMap((kind) =>
-      allItems(build(RECENTS, true, noopHandlers(), vaults, kind)).filter((i) => typeof i.accelerator === 'string' && i.accelerator !== '' && !i.id?.startsWith('menu.window.vault.')),
+    const fixed = [false, true].flatMap((isShim) =>
+      (['markdown', 'drawing', 'diagram', null] as const).flatMap((kind) =>
+        allItems(buildMenuTemplate({ recents: RECENTS, keyedVaults: vaults, isDev: true, activeKind: kind, hotkeys: {}, isShim }, noopHandlers())).filter(
+          (i) => typeof i.accelerator === 'string' && i.accelerator !== '' && !i.id?.startsWith('menu.window.vault.'),
+        ),
+      ),
     )
     const stray = fixed.filter((i) => !HOTKEY_COMMANDS.some((c) => sameKey(c.key, i.accelerator as string)) && ![...MENU_FIXED_KEYS, ...APP_STANDARD_KEYS].some((k) => sameKey(k.accelerator, i.accelerator as string)))
     expect(stray.map((i) => `${i.id} ${String(i.accelerator)}`)).toEqual([])
     expect(fixed.length).toBeGreaterThan(MENU_FIXED_KEYS.length)
+  })
+})
+
+describe('App Shim menu items and shim-first routing (YAZ-6625 #6, D3)', () => {
+  it('adds Quit All Yaseen Docs (CmdOrCtrl+Alt+Q) right after Quit when isShim is true on macOS, and strips its accelerator when suspendKeys is true', () => {
+    const handlers = { ...noopHandlers(), quitAll: vi.fn() }
+    const hostApp = menuOf(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: {}, isShim: false }, handlers), 'Yaseen Docs')
+    expect(hostApp.find((i) => i.id === 'menu.app.quit-all')).toBeUndefined()
+
+    // Host menu shows Quit All Yaseen Docs when Vault Apps are open alongside host (YAZ-6640 Option B).
+    const hostWithShims = menuOf(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: {}, isShim: false, showQuitAll: true }, handlers), 'Yaseen Docs')
+    if (process.platform === 'darwin') {
+      expect(hostWithShims.find((i) => i.id === 'menu.app.quit-all')?.accelerator).toBe('CmdOrCtrl+Alt+Q')
+    }
+
+    const shimApp = menuOf(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: {}, isShim: true }, handlers), 'Yaseen Docs')
+    const quitIdx = shimApp.findIndex((i) => i.role === 'quit')
+    const quitAllItem = shimApp[quitIdx + 1]
+    if (process.platform === 'darwin') {
+      expect(quitAllItem?.id).toBe('menu.app.quit-all')
+      expect(quitAllItem?.label).toBe('Quit All Yaseen Docs')
+      expect(quitAllItem?.accelerator).toBe('CmdOrCtrl+Alt+Q')
+      click(quitAllItem)
+      expect(handlers.quitAll).toHaveBeenCalledOnce()
+
+      const suspended = menuOf(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: {}, isShim: true, suspendKeys: true }, handlers), 'Yaseen Docs')
+      const suspendedQuitAll = suspended.find((i) => i.id === 'menu.app.quit-all')
+      expect(suspendedQuitAll?.accelerator).toBeUndefined()
+    }
+  })
+
+  it('createMenuHandlers delegates openRecent and goToVault to routeVaultToShim when provided, and wires quitAll', () => {
+    const send = vi.fn()
+    const openAlone = vi.fn(() => true)
+    const linkNotice = vi.fn()
+    const quitAll = vi.fn()
+    const routeVaultToShim = vi.fn((p: string) => p === '/vaults/shimmed')
+    const handlers = createMenuHandlers(
+      { openAlone, linkNotice, idFor: () => 'w1', openFilesWindow: vi.fn(() => true), closeWindow: vi.fn(), reloadWindow: vi.fn(async () => true) },
+      {
+        focusedWebContents: () => ({ id: 1, send }),
+        readClipboardText: () => '',
+        readClipboardHTML: () => '',
+        openExternal: vi.fn(),
+        checkForUpdates: vi.fn(),
+        saveHeapSnapshot: vi.fn(async () => true),
+        quitAll,
+        routeVaultToShim,
+      },
+    )
+
+    handlers.openRecent('/vaults/shimmed')
+    expect(routeVaultToShim).toHaveBeenCalledWith('/vaults/shimmed')
+    expect(send).not.toHaveBeenCalled()
+
+    handlers.openRecent('/vaults/normal')
+    expect(send).toHaveBeenCalledWith(CONTRACT.menu.onOpenRoot.channel, '/vaults/normal')
+
+    handlers.goToVault('/vaults/shimmed', 'Shimmed')
+    expect(openAlone).not.toHaveBeenCalled()
+
+    handlers.goToVault('/vaults/normal', 'Normal')
+    expect(openAlone).toHaveBeenCalledWith('/vaults/normal', 'w1')
+
+    handlers.quitAll?.()
+    expect(quitAll).toHaveBeenCalledOnce()
   })
 })

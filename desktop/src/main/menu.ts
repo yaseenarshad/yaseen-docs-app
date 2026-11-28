@@ -89,6 +89,8 @@ export interface MenuHandlers {
   shareLink(): void
   /** View › Canvas Background › a pick (YAZ-3037; Draw's 🔒 YAZ-1775 D10): the focused renderer's visible drawing takes `color`. */
   canvasBackground(color: string): void
+  /** App Shim menu › Quit All Yaseen Docs (⌘⌥Q, YAZ-6625 #6): quits the host process and all connected shims. */
+  quitAll?(): void
 }
 
 export interface MenuInputs {
@@ -123,6 +125,10 @@ export interface MenuInputs {
   suspendKeys?: boolean
   /** Settings › Files & Links › Daily pages (YAZ-3607): File › Open Today's Daily Page shows, with its key, only while it is on. Absent = off. */
   dailyPages?: boolean
+  /** True when building the application menu for a macOS App Shim process (YAZ-6625 D4, #6). Adds "Quit All Yaseen Docs". */
+  isShim?: boolean
+  /** True when macOS App Shims are running alongside the host app (YAZ-6640 Option B). Adds "Quit All Yaseen Docs" to the host menu too. */
+  showQuitAll?: boolean
 }
 
 /**
@@ -148,7 +154,7 @@ const menuLabel = (text: string): string => text.replace(/&/g, '&&')
  * The whole menu bar as a template. Item `id`s are stable so a live check (Playwright) can
  * drive items through `Menu.getApplicationMenu().getMenuItemById(...)`.
  */
-export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, frontKind = activeKind, hotkeys, hotkeysAside, suspendKeys = false, dailyPages = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
+export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, frontKind = activeKind, hotkeys, hotkeysAside, suspendKeys = false, dailyPages = false, isShim = false, showQuitAll = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
   const recentItems: MenuItemConstructorOptions[] =
     recents.length === 0
       ? [{ label: 'No Recent Folders', enabled: false }]
@@ -188,6 +194,16 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
           ? ([{ role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }] satisfies MenuItemConstructorOptions[])
           : []),
         { role: 'quit' },
+        ...(isMac && (isShim || showQuitAll)
+          ? ([
+              {
+                id: 'menu.app.quit-all',
+                label: 'Quit All Yaseen Docs',
+                accelerator: 'CmdOrCtrl+Alt+Q',
+                click: () => handlers.quitAll?.(),
+              },
+            ] satisfies MenuItemConstructorOptions[])
+          : []),
       ],
     },
     {
@@ -445,14 +461,18 @@ export interface MenuHost {
    * this through `pickMenuTargetWindow` (see its comment for why macOS forces the fallback).
    */
   focusedWebContents(): { id: number; send(channel: string, ...args: unknown[]): void } | undefined
-  readClipboardText(): string
+  readClipboardText(): string | Promise<string>
   /** The clipboard's HTML, for Paste as › Cells only (YAZ-4206 D18). */
-  readClipboardHTML(): string
+  readClipboardHTML(): string | Promise<string>
   openExternal(url: string): void
   /** Check for Updates… (YAZ-2976): `index.ts` runs the check and answers for each state (S4–S6). */
   checkForUpdates(): void
   /** Save Heap Snapshot (YAZ-3737 D9): `saveHeapSnapshot` on `target`'s debugger, then Finder shows the file. `false` = a debugger was already attached (S23). */
   saveHeapSnapshot(target: { id: number }, windowId: string): Promise<boolean>
+  /** App Shim menu › Quit All Yaseen Docs (⌘⌥Q, YAZ-6625 #6). */
+  quitAll?(): void
+  /** Shim-first routing for Open Recent and Window › Vault (YAZ-6625 D3). Returns true if handled by a shim. */
+  routeVaultToShim?(path: string): boolean
 }
 
 type MenuWindows = Pick<WindowManager, 'openAlone' | 'linkNotice' | 'idFor' | 'openFilesWindow' | 'closeWindow' | 'reloadWindow'>
@@ -470,7 +490,16 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
     },
     pasteAs(mode) {
       const target = host.focusedWebContents()
-      if (target !== undefined) target.send(SPECIAL.menuPasteAs, { mode, text: host.readClipboardText(), ...(mode === 'cells' ? { html: host.readClipboardHTML() } : {}) } satisfies ClipboardPasteRequest)
+      if (target === undefined) return
+      const text = host.readClipboardText()
+      const html = mode === 'cells' ? host.readClipboardHTML() : undefined
+      if (typeof text === 'string' && (html === undefined || typeof html === 'string')) {
+        target.send(SPECIAL.menuPasteAs, { mode, text, ...(html !== undefined ? { html } : {}) } satisfies ClipboardPasteRequest)
+        return
+      }
+      void Promise.all([text, html]).then(([resolvedText, resolvedHtml]) => {
+        target.send(SPECIAL.menuPasteAs, { mode, text: resolvedText, ...(resolvedHtml !== undefined ? { html: resolvedHtml } : {}) } satisfies ClipboardPasteRequest)
+      })
     },
     newItem() {
       host.focusedWebContents()?.send(CONTRACT.menu.onNewItem.channel)
@@ -504,10 +533,14 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
       host.focusedWebContents()?.send(CONTRACT.menu.onOpenFolder.channel)
     },
     openRecent(path) {
+      // Shim-first routing on macOS (YAZ-6625 D3): if this vault has an installed or connected shim, route there.
+      if (host.routeVaultToShim?.(path)) return
       // The renderer owns the vault-open rule (YAZ-1914): Welcome switches in place, a vault window asks main's door (an empty one takes the vault, YAZ-3487 D1).
       host.focusedWebContents()?.send(CONTRACT.menu.onOpenRoot.channel, path)
     },
     goToVault(path, name) {
+      // Shim-first routing on macOS (YAZ-6625 D3): if this vault has an installed or connected shim, route there.
+      if (host.routeVaultToShim?.(path)) return
       // Straight to `openAlone` in main, never through the focused renderer (YAZ-2555 A5, YAZ-6446 D5):
       // with every window minimized no renderer is in front, and ⌘1–⌘9 opens the vault alone instead of
       // raising a workspace window that happens to include it. An EMPTY window in front — a Welcome
@@ -603,6 +636,9 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
     },
     canvasBackground(color) {
       host.focusedWebContents()?.send(CONTRACT.menu.onCanvasBackground.channel, color)
+    },
+    quitAll() {
+      host.quitAll?.()
     },
   }
 }

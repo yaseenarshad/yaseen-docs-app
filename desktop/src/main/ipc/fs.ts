@@ -351,7 +351,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     fileClip.set(req)
     const set = fileClip.get()
     // Only a clip the system clipboard really holds can go stale there (YAZ-4372): off macOS or after a failed write, none.
-    if (set !== null) wrote = writeOsFiles(set.paths) ? set.paths : []
+    if (set !== null) wrote = (await writeOsFiles(set.paths)) ? set.paths : []
   })
   /**
    * The clip a Paste takes NOW (YAZ-3265 D13): the newer of the app's own and the system clipboard's.
@@ -365,9 +365,9 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
    * untouched (a read pushes nothing). When the app cannot know the system clipboard — off macOS, a failed
    * read, or a failed write (`wrote` is empty) — its own clip stands, as before.
    */
-  const clipNow = (): { clip: FileClip; finder: boolean } | null => {
+  const clipNow = async (): Promise<{ clip: FileClip; finder: boolean } | null> => {
     const own = fileClip.get()
-    const read = osFiles()
+    const read = await osFiles()
     const all = (read ?? []).map((p) => path.resolve(p))
     const os = all.filter((p) => !isSkipped(path.basename(p)))
     if (os.length > 0 && !sameFiles(os, wrote) && !(own !== null && sameFiles(os, own.paths))) return { clip: { op: 'copy', paths: [...new Set(os)] }, finder: true }
@@ -378,7 +378,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // then `clip:changed` carries the rest (the same catch-up read `github.status` offers). It reads
   // again on focus (YAZ-3265 D13): back from Finder, "Paste N items" counts Finder's files.
   handle(CONTRACT.file.clipState, async () => {
-    const now = clipNow()
+    const now = await clipNow()
     return now === null ? null : { count: now.clip.paths.length, op: now.clip.op, paths: now.clip.paths }
   })
   // Paste (D2–D4) of the clip `clipNow` picks. Per entry, in clipboard order, and one bad entry never stops the rest:
@@ -410,7 +410,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     const targetRoot = rootOfPath(rootsOfSender(e), dir)
     if (targetRoot === null) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that folder', { path: dir })
     const expected = requireExpect(confirmed)
-    const now = clipNow()
+    const now = await clipNow()
     if (now === null || now.clip.op !== expected.op || !sameOrder(now.clip.paths, expected.paths)) throw new BridgeFailure('CONFLICT', CLIP_CHANGED)
     if (now.finder) return pasteEntries(now.clip, req, { copy: (from, toDir) => importCopy(from, toDir, { freeName: true }), move: moveEntry })
     const { clip } = now
@@ -422,7 +422,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
     if (clip.op === 'cut' && res.pasted.length > 0) {
       fileClip.clear()
       // The cut is spent: its old paths leave the system clipboard too, unless something was copied there since.
-      clearOsFiles(clip.paths)
+      await clearOsFiles(clip.paths)
     }
     return res
   })

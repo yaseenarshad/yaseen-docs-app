@@ -182,3 +182,45 @@ it('reports exitedFullScreen: false and detaches listeners when fullscreen exit 
   expect(win.listenerCount('leave-full-screen')).toBe(0)
   expect(win.listenerCount('closed')).toBe(0)
 })
+
+it('skips app.focus({ steal: true }) for App Shim windows on macOS while keeping it for host windows (YAZ-6625 #4)', async () => {
+  const hostPage = Object.assign(new EventEmitter(), { id: 21, send: vi.fn() })
+  const shimPage = Object.assign(new EventEmitter(), { id: 22, send: vi.fn() })
+  const makeWin = (page: typeof hostPage) =>
+    Object.assign(new EventEmitter(), {
+      webContents: page,
+      isDestroyed: () => false,
+      isFocused: () => false,
+      isMinimized: () => false,
+      isFullScreen: () => false,
+      getBounds: () => ({ x: 0, y: 0, width: 1000, height: 700 }),
+      setBounds: vi.fn(),
+      setFullScreen: vi.fn(),
+      restore: vi.fn(),
+      show: vi.fn(),
+      focus: vi.fn(),
+      minimize: vi.fn(),
+    })
+  const hostWin = makeWin(hostPage)
+  const shimWin = makeWin(shimPage)
+  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([hostWin, shimWin] as never)
+
+  const host = registerAutomationIpc(
+    {} as Store,
+    { idFor: (s: unknown) => (s === hostPage ? 'host-1' : s === shimPage ? 'shim-1' : undefined) } as unknown as WindowManager,
+    (id) => id === 'shim-1',
+  )
+
+  host.focusWindow!('shim-1')
+  expect(app.focus).not.toHaveBeenCalled()
+  expect(shimWin.show).toHaveBeenCalledOnce()
+  expect(shimWin.focus).toHaveBeenCalledOnce()
+
+  await host.moveWindow!('shim-1', { x: 10, y: 25, width: 900, height: 700 }, true)
+  expect(app.focus).not.toHaveBeenCalled()
+
+  host.focusWindow!('host-1')
+  if (process.platform === 'darwin') expect(app.focus).toHaveBeenCalledExactlyOnceWith({ steal: true })
+  expect(hostWin.show).toHaveBeenCalledOnce()
+  expect(hostWin.focus).toHaveBeenCalledOnce()
+})

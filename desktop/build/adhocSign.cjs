@@ -68,8 +68,6 @@ module.exports = async function afterPack(context) {
   // would keep its linker ad-hoc signature, sealed as a plain file. So it gets the bundle's identity first.
   const speller = path.join(app, 'Contents', 'Resources', 'bin', 'speller')
   execFileSync('codesign', ['--force', '--sign', identity, '--identifier', 'com.yasinarshad.yaseendocs.speller', speller], { stdio: 'inherit' })
-  const vaultLauncher = path.join(app, 'Contents', 'Resources', 'bin', 'vault-launcher')
-  execFileSync('codesign', ['--force', '--sign', identity, '--identifier', 'com.yasinarshad.yaseendocs.vault-launcher', vaultLauncher], { stdio: 'inherit' })
   execFileSync('codesign', ['--force', '--deep', '--sign', identity, app], { stdio: 'inherit' })
 }
 module.exports.trimChromiumLocales = trimChromiumLocales

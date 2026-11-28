@@ -3101,3 +3101,169 @@ describe('createWindowManager: WindowHost.focusWindow delegation (YAZ-6595 D1)',
     expect(focusWindow).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('createWindowManager: App Shim ownership, bounds memory, handoff, and flushAndClose (YAZ-6625)', () => {
+  it('#1: duplicateWindow, popOut, tearOff, inboxToNewWindow, and openBehind inherit shimKey, while openFilesWindow NEVER does', () => {
+    const createOpts: Array<{ id: string; kind?: string; shimKey?: string }> = []
+    const base = makeHost([AREA], (p) => p === '/v/a/note.md', (p) => p === '/v/a')
+    const host: WindowHost = {
+      ...base.host,
+      create(entry, opts) {
+        createOpts.push({ id: entry.id, kind: entry.kind, shimKey: opts?.shimKey })
+        return base.host.create(entry, opts)
+      },
+    }
+    const manager = createWindowManager(store, host)
+
+    manager.openWindow({ root: '/v/a', file: '/v/a/note.md' }, '/v/a')
+    const orig = store.get().windows[0]
+    expect(manager.shimKeyOf(orig.id)).toBe('/v/a')
+    expect(manager.isShimWindow(orig.id)).toBe(true)
+    expect(manager.regularWindowCount()).toBe(0)
+    expect(createOpts.at(-1)?.shimKey).toBe('/v/a')
+
+    // duplicateWindow inherits shimKey.
+    manager.duplicateWindow(orig)
+    const dupId = createOpts.at(-1)!.id
+    expect(createOpts.at(-1)?.shimKey).toBe('/v/a')
+    expect(manager.shimKeyOf(dupId)).toBe('/v/a')
+
+    // popOut inherits shimKey.
+    manager.popOut(orig, '/v/a/note.md')
+    expect(createOpts.at(-1)?.shimKey).toBe('/v/a')
+
+    // tearOff (opening new window off-window) inherits shimKey.
+    expect(manager.tearOff(orig, '/v/a/note.md', {}, { x: 1350, y: 850 }, false)).toBe('opened')
+    expect(createOpts.at(-1)?.shimKey).toBe('/v/a')
+
+    // inboxToNewWindow inherits shimKey.
+    const inboxId = manager.inboxToNewWindow(orig, { root: '/v/a' })
+    expect(createOpts.at(-1)?.shimKey).toBe('/v/a')
+    expect(manager.shimKeyOf(inboxId)).toBe('/v/a')
+
+    // openBehind inherits shimKey.
+    const behindId = manager.openBehind(orig)
+    expect(createOpts.at(-1)?.shimKey).toBe('/v/a')
+    expect(manager.shimKeyOf(behindId)).toBe('/v/a')
+
+    // openFilesWindow MUST stay host-owned (never inherit shimKey).
+    expect(manager.openFilesWindow(orig.id, null)).toBe(true)
+    const filesCreated = createOpts.at(-1)!
+    expect(filesCreated.kind).toBe('files')
+    expect(filesCreated.shimKey).toBeUndefined()
+    expect(manager.isShimWindow(filesCreated.id)).toBe(false)
+    expect(manager.regularWindowCount()).toBe(1)
+  })
+
+  it('#3: remembers and restores clamped lastBounds per single vault and per saved workspace', () => {
+    vi.useFakeTimers()
+    try {
+      const ws = store.saveVaultSet('Work', ['/v/a', '/v/b'], 1)!
+      const { host, created } = makeHost([AREA], () => false, (p) => p === '/v/a' || p === '/v/b')
+      const manager = createWindowManager(store, host)
+
+      // Single vault: move/resize commits lastBounds; reopening restores clamped bounds.
+      manager.openWindow({ root: '/v/a', file: null })
+      const winA = created.at(-1)!.win
+      winA.bounds = { x: 250, y: 120, width: 950, height: 680 }
+      winA.emit('move')
+      vi.advanceTimersByTime(BOUNDS_DEBOUNCE_MS)
+      expect(store.get().folders['/v/a']?.lastBounds).toEqual({ x: 250, y: 120, width: 950, height: 680 })
+      winA.destroy()
+
+      manager.openWindow({ root: '/v/a', file: null })
+      expect(created.at(-1)!.entry.bounds).toEqual({ x: 250, y: 120, width: 950, height: 680 })
+
+      // Off-screen remembered bounds clamp onto host.workAreas().
+      store.setFolderBounds('/v/a', { x: 5000, y: 5000, width: 900, height: 600 })
+      manager.openWindow({ root: '/v/a', file: null })
+      expect(created.at(-1)!.entry.bounds).toEqual({ x: 540, y: 300, width: 900, height: 600 })
+
+      // Workspace: move/resize commits VaultSet.lastBounds; reopening restores them.
+      expect(manager.openVaultSet(ws.id)).toEqual({ opened: true, missing: [] })
+      const winWs = created.at(-1)!.win
+      winWs.bounds = { x: 80, y: 60, width: 1100, height: 740 }
+      winWs.emit('resize')
+      vi.advanceTimersByTime(BOUNDS_DEBOUNCE_MS)
+      expect(store.get().vaultSets.find((s) => s.id === ws.id)?.lastBounds).toEqual({ x: 80, y: 60, width: 1100, height: 740 })
+      winWs.destroy()
+
+      expect(manager.openVaultSet(ws.id)).toEqual({ opened: true, missing: [] })
+      expect(created.at(-1)!.entry.bounds).toEqual({ x: 80, y: 60, width: 1100, height: 740 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('handoffWindowToShim flushes & closes the host window and reopens its tabs/active file/bounds/sidebar inside the shim', async () => {
+    const createOpts: Array<{ id: string; shimKey?: string }> = []
+    const base = makeHost([AREA], (p) => p === '/v/a/one.md' || p === '/v/a/two.md', (p) => p === '/v/a')
+    const host: WindowHost = {
+      ...base.host,
+      create(entry, opts) {
+        createOpts.push({ id: entry.id, shimKey: opts?.shimKey })
+        return base.host.create(entry, opts)
+      },
+    }
+    const manager = createWindowManager(store, host)
+
+    manager.openWindow({ root: '/v/a', file: '/v/a/one.md' })
+    const hostEntry = store.get().windows[0]
+    const hostWin = base.created[0].win
+    store.upsertWindow({
+      ...hostEntry,
+      file: '/v/a/two.md',
+      tabs: ['/v/a/one.md', '/v/a/two.md'],
+      sidebarCollapsed: true,
+      bounds: { x: 180, y: 90, width: 1020, height: 720 },
+    })
+    hostWin.bounds = { x: 180, y: 90, width: 1020, height: 720 }
+
+    expect(manager.findHostWindowForVault('/v/a')).toBe(hostEntry.id)
+    const handoff = manager.handoffWindowToShim(hostEntry.id, '/v/a')
+    // Acknowledge flush from the host renderer.
+    manager.handleFlushed(hostWin.webContents, true)
+    const newId = await handoff
+
+    expect(newId).toBeTruthy()
+    expect(hostWin.isDestroyed()).toBe(true)
+    expect(manager.isShimWindow(newId!)).toBe(true)
+    expect(manager.shimKeyOf(newId!)).toBe('/v/a')
+    expect(manager.regularWindowCount()).toBe(0)
+    expect(createOpts.at(-1)).toEqual({ id: newId, shimKey: '/v/a' })
+    const handedEntry = store.get().windows.find((w) => w.id === newId)
+    expect(handedEntry).toMatchObject({
+      root: '/v/a',
+      roots: ['/v/a'],
+      file: '/v/a/two.md',
+      tabs: ['/v/a/one.md', '/v/a/two.md'],
+      sidebarCollapsed: true,
+      bounds: { x: 180, y: 90, width: 1020, height: 720 },
+    })
+    // Handoff must not pollute Recently closed.
+    expect(store.get().folders['/v/a']?.closed ?? {}).toEqual({})
+  })
+
+  it('flushAndCloseWindows flushes and destroys ONLY the target shim windows while leaving other windows untouched', async () => {
+    const { host, created } = makeHost([AREA], () => false, (p) => p === '/v/a' || p === '/v/b')
+    const manager = createWindowManager(store, host)
+
+    manager.openWindow({ root: '/v/a', file: null }, '/v/a')
+    manager.openWindow({ root: '/v/b', file: null }, '/v/b')
+    const [winA, winB] = created.map((c) => c.win)
+    const [idA, idB] = created.map((c) => c.entry.id)
+
+    const closing = manager.flushAndCloseWindows(manager.windowsForShim('/v/a'))
+    expect(winA.webContents.send).toHaveBeenCalledWith(SPECIAL.appFlush)
+    expect(winB.webContents.send).not.toHaveBeenCalledWith(SPECIAL.appFlush)
+    manager.handleFlushed(winA.webContents, true)
+    await closing
+
+    expect(winA.isDestroyed()).toBe(true)
+    expect(winB.isDestroyed()).toBe(false)
+    expect(manager.windowsForShim('/v/a')).toEqual([])
+    expect(manager.windowsForShim('/v/b')).toEqual([idB])
+    expect(store.get().windows.map((w) => w.id)).toEqual([idB])
+    expect(idA).not.toBe(idB)
+  })
+})

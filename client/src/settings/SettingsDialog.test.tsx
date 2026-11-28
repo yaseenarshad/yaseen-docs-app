@@ -143,7 +143,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 
 /** The rows of each page with no vault open, in registry order (registry.tsx). */
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
-const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'vaultOpensOn']
+const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'confirmBeforeQuit', 'vaultOpensOn']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
 const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'tabWidth', 'inactiveTabWidth', 'menuIcons', 'exploreWidth', 'explorePageZoom', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
@@ -220,7 +220,7 @@ describe('SettingsDialog shell (D1)', () => {
   it('General shows the "Settings folder" row and the "Reopen" row, each under its own group; Files & Links no longer shows "Reopen" (YAZ-3276 D7)', () => {
     const { el } = mount()
     expect(headings(el)).toEqual(['General'])
-    expect(groupTitles(el)).toEqual(['You', 'Settings folder', 'When the app starts', 'When a vault opens'])
+    expect(groupTitles(el)).toEqual(['You', 'Settings folder', 'When the app starts', 'When quitting', 'When a vault opens'])
     expect(rowIds(el)).toEqual(GENERAL_ROWS)
     expect(row(el, 'settingsFolder')?.querySelector('.setting__label')?.textContent).toBe('Settings folder')
     expect(row(el, 'settingsFolder')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('Settings folder')
@@ -422,7 +422,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     const { el } = mount()
     const hints = () => [...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)
     // General, as it opens (YAZ-3276 D7): two titled groups, no hints.
-    expect(groupTitles(el)).toEqual(['You', 'Settings folder', 'When the app starts', 'When a vault opens'])
+    expect(groupTitles(el)).toEqual(['You', 'Settings folder', 'When the app starts', 'When quitting', 'When a vault opens'])
     expect(hints()).toEqual([])
 
     clickNav(el, 'Appearance')

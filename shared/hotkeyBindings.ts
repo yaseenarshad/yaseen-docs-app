@@ -416,6 +416,7 @@ export const MENU_FIXED_KEYS: readonly FixedKey[] = [
   { label: 'Zoom out', accelerator: 'CmdOrCtrl+-' },
   { label: 'Next tab', accelerator: 'CmdOrCtrl+Shift+]' },
   { label: 'Previous tab', accelerator: 'CmdOrCtrl+Shift+[' },
+  { label: 'Quit all Yaseen Docs', accelerator: 'CmdOrCtrl+Alt+Q' },
 ]
 
 /**

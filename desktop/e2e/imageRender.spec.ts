@@ -206,8 +206,21 @@ test('step 2 — the west handle resizes into `alt|width` on disk; ⌘Z takes it
 })
 
 test('step 3 — Copy Image puts real pixels on the system clipboard', async () => {
+  const readClipboardImage = () =>
+    app.evaluate(async ({ clipboard, nativeImage }) => {
+      const items = await clipboard.read()
+      for (const item of items) {
+        if (item.types.includes('image/png')) {
+          const blob = await item.getType('image/png')
+          const img = nativeImage.createFromBuffer(Buffer.from(await blob.arrayBuffer()))
+          return { empty: img.isEmpty(), size: img.getSize() }
+        }
+      }
+      return { empty: true, size: { width: 0, height: 0 } }
+    })
+
   await app.evaluate(({ clipboard }) => clipboard.clear())
-  expect(await app.evaluate(({ clipboard }) => clipboard.readImage().isEmpty())).toBe(true)
+  expect((await readClipboardImage()).empty).toBe(true)
 
   const box = await imgByAlt(win, 'a').boundingBox()
   if (box === null) throw new Error('the image has no box')
@@ -221,8 +234,8 @@ test('step 3 — Copy Image puts real pixels on the system clipboard', async () 
   }, { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) })
 
   // The copy is asynchronous (main asks the renderer for the bitmap), so poll the pasteboard.
-  await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readImage().isEmpty()), { timeout: 10_000 }).toBe(false)
-  const size = await app.evaluate(({ clipboard }) => clipboard.readImage().getSize())
+  await expect.poll(async () => (await readClipboardImage()).empty, { timeout: 10_000 }).toBe(false)
+  const { size } = await readClipboardImage()
   expect(size.width).toBeGreaterThan(0)
   expect(size.height).toBeGreaterThan(0)
   // It is THIS image: the source bitmap's own aspect ratio, not the resized display box.

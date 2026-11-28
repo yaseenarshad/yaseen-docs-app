@@ -6,7 +6,7 @@ import path from 'node:path'
 import { ipcMain } from 'electron'
 import { CONTRACT } from '@shared/ipc'
 import { createStore, type Store } from '../store'
-import { buildLauncherPlist, LAUNCHER_BUNDLE_ID_PREFIX, type ScannedLauncher } from '../vaultLauncher'
+import { buildLauncherPlist, LAUNCHER_BUNDLE_ID_PREFIX, LAUNCHER_BUNDLE_VERSION, type ScannedLauncher } from '../vaultLauncher'
 import {
   cleanupWorkspaceLauncher,
   createUnsupportedVaultLauncherBackend,
@@ -38,7 +38,6 @@ let store: Store
 let installedApps: Set<string>
 let scannedApps: ScannedLauncher[]
 let backend: VaultLauncherBackend
-let onIconChanged: ReturnType<typeof vi.fn<(iconPath: string) => void>>
 let onChanged: ReturnType<typeof vi.fn<() => void>>
 
 beforeEach(async () => {
@@ -47,7 +46,6 @@ beforeEach(async () => {
   store = createStore(path.join(dir, 'yaseendocs.json'))
   installedApps = new Set()
   scannedApps = []
-  onIconChanged = vi.fn()
   onChanged = vi.fn()
   backend = {
     supported: true,
@@ -64,7 +62,7 @@ beforeEach(async () => {
     exists: vi.fn((p: string) => installedApps.has(p)),
     scan: vi.fn(async () => scannedApps),
   }
-  registerVaultLauncherIpc(store, dir, backend, onIconChanged, onChanged)
+  registerVaultLauncherIpc(store, dir, backend, onChanged)
 })
 
 afterEach(async () => {
@@ -82,7 +80,7 @@ describe('vaultLauncher IPC (YAZ-6374)', () => {
     })
   })
 
-  it('create writes PNG atomically, installs via backend, persists FolderState.launcher, and notifies onIconChanged', async () => {
+  it('create writes PNG atomically, installs via backend, and persists FolderState.launcher', async () => {
     const res = await registered(CONTRACT.vaultLauncher.create)(undefined, {
       root: ROOT,
       name: 'Work Docs',
@@ -120,7 +118,6 @@ describe('vaultLauncher IPC (YAZ-6374)', () => {
       target: 'inbox',
       badge: { kind: 'emoji', value: '🚀', color: '#2563eb' },
     })
-    expect(onIconChanged).toHaveBeenCalledWith(expectedIconPath)
 
     // Re-creating passes previousAppPath to backend.install.
     await registered(CONTRACT.vaultLauncher.create)(undefined, {
@@ -193,20 +190,18 @@ describe('vaultLauncher IPC (YAZ-6374)', () => {
     })
   })
 
-  it('remove trashes existing .app, deletes cached PNG, clears store, and notifies onIconChanged', async () => {
+  it('remove trashes existing .app, deletes cached PNG, and clears store', async () => {
     await registered(CONTRACT.vaultLauncher.create)(undefined, {
       root: ROOT,
       name: 'Work',
       pngBase64: VALID_PNG_B64,
     })
     const iconPath = vaultLauncherIconPath(dir, ROOT)
-    onIconChanged.mockClear()
 
     expect(await registered(CONTRACT.vaultLauncher.remove)(undefined, ROOT)).toEqual({ ok: true, value: undefined })
     expect(backend.remove).toHaveBeenCalledWith('/Applications/Work.app', ROOT)
     expect(existsSync(iconPath)).toBe(false)
     expect(store.get().folders[ROOT]?.launcher).toBeUndefined()
-    expect(onIconChanged).toHaveBeenCalledWith(iconPath)
   })
 
   it('remove skips backend.remove when the .app was already deleted in Finder', async () => {
@@ -353,7 +348,6 @@ describe('workspace launcher IPC', () => {
       iconPath: expectedIconPath,
       badge: { kind: 'letters', value: 'WS', color: '#2563eb' },
     })
-    expect(onIconChanged).toHaveBeenCalledWith(expectedIconPath)
 
     // Reveal and test delegate to backend.
     expect(await registered(CONTRACT.vaultLauncher.revealWorkspace)(undefined, ws.id)).toEqual({ ok: true, value: undefined })
@@ -377,12 +371,10 @@ describe('workspace launcher IPC', () => {
     })
 
     // Remove workspace launcher.
-    onIconChanged.mockClear()
     expect(await registered(CONTRACT.vaultLauncher.removeWorkspace)(undefined, ws.id)).toEqual({ ok: true, value: undefined })
     expect(backend.remove).toHaveBeenCalledWith('/Applications/Work Suite.app', `workspace:${ws.id}`)
     expect(existsSync(expectedIconPath)).toBe(false)
     expect(store.get().vaultSets.find((s) => s.id === ws.id)?.launcher).toBeUndefined()
-    expect(onIconChanged).toHaveBeenCalledWith(expectedIconPath)
   })
 
   it('validates workspaceId, unknown workspace, and missing launcher app', async () => {
@@ -434,7 +426,7 @@ describe('launcher lifecycle & All Launchers IPC (YAZ-6447)', () => {
     expect(onChanged).toHaveBeenCalledTimes(5)
   })
 
-  it('cleanupWorkspaceLauncher trashes .app, deletes cached PNG, calls onIconChanged, and broadcasts onChanged', async () => {
+  it('cleanupWorkspaceLauncher trashes .app, deletes cached PNG, and broadcasts onChanged', async () => {
     const ws = store.saveVaultSet('Cleanup WS', ['/vaults/a', '/vaults/b'], 100)!
     await registered(CONTRACT.vaultLauncher.createWorkspace)(undefined, {
       workspaceId: ws.id,
@@ -444,21 +436,17 @@ describe('launcher lifecycle & All Launchers IPC (YAZ-6447)', () => {
     const iconPath = workspaceLauncherIconPath(dir, ws.id)
     expect(existsSync(iconPath)).toBe(true)
 
-    onIconChanged.mockClear()
     onChanged.mockClear()
-    await cleanupWorkspaceLauncher(store, backend, ws.id, onIconChanged, onChanged)
+    await cleanupWorkspaceLauncher(store, backend, ws.id, onChanged)
 
     expect(backend.remove).toHaveBeenCalledWith('/Applications/Cleanup WS.app', `workspace:${ws.id}`)
     expect(existsSync(iconPath)).toBe(false)
-    expect(onIconChanged).toHaveBeenCalledWith(iconPath)
     expect(onChanged).toHaveBeenCalledTimes(1)
 
     // No-op when workspace has no launcher.
     const wsNoLauncher = store.saveVaultSet('Plain WS', ['/vaults/c', '/vaults/d'], 101)!
-    onIconChanged.mockClear()
     onChanged.mockClear()
-    await cleanupWorkspaceLauncher(store, backend, wsNoLauncher.id, onIconChanged, onChanged)
-    expect(onIconChanged).not.toHaveBeenCalled()
+    await cleanupWorkspaceLauncher(store, backend, wsNoLauncher.id, onChanged)
     expect(onChanged).not.toHaveBeenCalled()
   })
 
@@ -494,17 +482,32 @@ describe('launcher lifecycle & All Launchers IPC (YAZ-6447)', () => {
       {
         appPath: process.platform === 'darwin' ? '/Applications/daily vault.app' : '/Applications/Daily Vault.app',
         name: 'daily vault',
-        info: { bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}daily`, vaultPath: rootA, vaultUrl: `yaseendocs://${rootA}`, bundleVersion: 2 },
+        info: {
+          bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}daily`,
+          vaultPath: rootA,
+          vaultUrl: `yaseendocs://${rootA}`,
+          bundleVersion: LAUNCHER_BUNDLE_VERSION,
+        },
       },
       {
         appPath: '/Applications/All Folders.app',
         name: 'All Folders',
-        info: { bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}ws`, vaultPath: `workspace:${ws.id}`, vaultUrl: `yaseendocs://workspace/${ws.id}`, bundleVersion: 2 },
+        info: {
+          bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}ws`,
+          vaultPath: `workspace:${ws.id}`,
+          vaultUrl: `yaseendocs://workspace/${ws.id}`,
+          bundleVersion: LAUNCHER_BUNDLE_VERSION,
+        },
       },
       {
         appPath: '/Applications/Demo Orphan.app',
         name: 'Demo Orphan',
-        info: { bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}demo`, vaultPath: '/Users/yasin/DeletedVault', vaultUrl: 'yaseendocs:///Users/yasin/DeletedVault', bundleVersion: 2 },
+        info: {
+          bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}demo`,
+          vaultPath: '/Users/yasin/DeletedVault',
+          vaultUrl: 'yaseendocs:///Users/yasin/DeletedVault',
+          bundleVersion: LAUNCHER_BUNDLE_VERSION,
+        },
       },
       {
         appPath: '/Applications/Mystery Orphan.app',
@@ -571,6 +574,48 @@ describe('launcher lifecycle & All Launchers IPC (YAZ-6447)', () => {
     vi.mocked(ipcMain.handle).mockClear()
     registerVaultLauncherIpc(store, dir, createUnsupportedVaultLauncherBackend())
     expect(await registered(CONTRACT.vaultLauncher.listAll)(undefined)).toEqual({ ok: true, value: [] })
+  })
+
+  it('listAll falls back to scanInstalledLaunchers using YASEEN_DOCS_APP_SHIM_DIRS when backend.scan is omitted', async () => {
+    const shimDir = path.join(dir, 'IsolatedShims')
+    const orphanApp = path.join(shimDir, 'Env Orphan.app')
+    await mkdir(path.join(orphanApp, 'Contents'), { recursive: true })
+    await writeFile(
+      path.join(orphanApp, 'Contents', 'Info.plist'),
+      buildLauncherPlist({
+        name: 'Env Orphan',
+        bundleId: `${LAUNCHER_BUNDLE_ID_PREFIX}env-orphan-1234`,
+        vaultUrl: 'yaseendocs:///Users/yasin/EnvOrphan',
+        vaultPath: '/Users/yasin/EnvOrphan',
+      }),
+      'utf8',
+    )
+
+    const prevEnv = process.env.YASEEN_DOCS_APP_SHIM_DIRS
+    process.env.YASEEN_DOCS_APP_SHIM_DIRS = shimDir
+    try {
+      vi.mocked(ipcMain.handle).mockClear()
+      const { scan: _ignored, ...backendWithoutScan } = backend
+      registerVaultLauncherIpc(store, dir, backendWithoutScan, onChanged)
+      expect(await registered(CONTRACT.vaultLauncher.listAll)(undefined)).toEqual({
+        ok: true,
+        value: [
+          {
+            kind: 'orphan',
+            id: orphanApp,
+            name: 'Env Orphan',
+            appPath: orphanApp,
+            exists: true,
+            iconDataUrl: null,
+            targetName: '/Users/yasin/EnvOrphan',
+            vaultPath: '/Users/yasin/EnvOrphan',
+          },
+        ],
+      })
+    } finally {
+      if (prevEnv === undefined) delete process.env.YASEEN_DOCS_APP_SHIM_DIRS
+      else process.env.YASEEN_DOCS_APP_SHIM_DIRS = prevEnv
+    }
   })
 
   it('removeOrphan trashes valid orphan launcher and refuses third-party .app (fails closed)', async () => {

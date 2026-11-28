@@ -379,6 +379,19 @@ describe('createStore: loading', () => {
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, cardTips: 'off' })).toMatchObject({ cardTips: true })
   })
 
+  it('Confirm before quitting (YAZ-6641): On by default, also in a file from before it; Off survives a restart; a wrong value reads On', async () => {
+    expect(DEFAULT_SETTINGS.confirmBeforeQuit).toBe(true)
+    const { confirmBeforeQuit: _gone, ...older } = DEFAULT_SETTINGS
+    await seed(valid({ settings: older }))
+    expect(createStore(file).get().settings.confirmBeforeQuit).toBe(true)
+    const store = createStore(file)
+    store.setSettings({ ...DEFAULT_SETTINGS, confirmBeforeQuit: false })
+    await store.flush()
+    expect(createStore(file).get().settings.confirmBeforeQuit).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, confirmBeforeQuit: 'off' })).toBe(false)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, confirmBeforeQuit: 'off' })).toMatchObject({ confirmBeforeQuit: true })
+  })
+
   it('"Jump across files" (YAZ-3500): a file from before it reads off; on survives a restart; a wrong value reads off; it stays on this Mac', async () => {
     const { codeLanguageHelpers: _a, ...legacySettings } = DEFAULT_SETTINGS
     expect(DEFAULT_SETTINGS.codeLanguageHelpers).toBe(false)
@@ -3997,5 +4010,51 @@ describe('FolderState.launcher (YAZ-6374)', () => {
       { menuIcons: 'off' },
     )
     expect(mergedOff.menuIcons).toBe('off')
+  })
+
+  it('YAZ-6625 #3: persists and sanitizes lastBounds on folders and saved workspaces, and commits atomically via setWindowBounds', async () => {
+    const s1 = createStore(file)
+    const bounds = { x: 120, y: 80, width: 1050, height: 720 }
+    const ws = s1.saveVaultSet('Suite', ['/vaults/a', '/vaults/b'], 1)!
+    const wsBad = s1.saveVaultSet('Bad', ['/vaults/c', '/vaults/d'], 2)!
+
+    // Folder lastBounds: rejects non-positive dimensions and skips duplicate writes.
+    let commits = 0
+    s1.onChange(() => commits++)
+    s1.setFolderBounds('/vaults/a', { x: 0, y: 0, width: 0, height: 500 })
+    expect(commits).toBe(0)
+    s1.setFolderBounds('/vaults/a', bounds)
+    expect(commits).toBe(1)
+    s1.setFolderBounds('/vaults/a', { ...bounds })
+    expect(commits).toBe(1)
+    expect(s1.get().folders['/vaults/a']?.lastBounds).toEqual(bounds)
+
+    // Workspace lastBounds: preserved across same-name replace.
+    const wsBounds = { x: 40, y: 50, width: 1300, height: 850 }
+    s1.setVaultSetBounds(ws.id, wsBounds)
+    s1.saveVaultSet('Suite', ['/vaults/a', '/vaults/b', '/vaults/e'], 3)
+    expect(s1.get().vaultSets.find((x) => x.id === ws.id)?.lastBounds).toEqual(wsBounds)
+
+    // setWindowBounds updates window entry and folder lastBounds in ONE commit.
+    s1.upsertWindow({ id: 'w1', root: '/vaults/x', roots: ['/vaults/x'], file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    commits = 0
+    s1.setWindowBounds('w1', { x: 300, y: 200, width: 900, height: 650 }, true)
+    expect(commits).toBe(1)
+    expect(s1.get().windows.find((w) => w.id === 'w1')?.bounds).toEqual({ x: 300, y: 200, width: 900, height: 650 })
+    expect(s1.get().folders['/vaults/x']?.lastBounds).toEqual({ x: 300, y: 200, width: 900, height: 650 })
+    await s1.flush()
+
+    // Corrupt lastBounds on disk sanitize out cleanly while valid entries survive reload.
+    const raw = await onDisk()
+    ;(raw.folders['/vaults/bad'] as unknown) = { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null, lastBounds: { x: 1, y: 2, width: -10, height: 500 } }
+    const badWs = raw.vaultSets.find((x: { id: string }) => x.id === wsBad.id) as unknown as Record<string, unknown>
+    badWs.lastBounds = { x: 'bad', y: 0, width: 800, height: 600 }
+    await seed(raw)
+
+    const s2 = createStore(file)
+    expect(s2.get().folders['/vaults/a']?.lastBounds).toEqual(bounds)
+    expect(s2.get().folders['/vaults/bad']?.lastBounds).toBeUndefined()
+    expect(s2.get().vaultSets.find((x) => x.id === ws.id)?.lastBounds).toEqual(wsBounds)
+    expect(s2.get().vaultSets.find((x) => x.id === wsBad.id)?.lastBounds).toBeUndefined()
   })
 })

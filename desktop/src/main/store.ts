@@ -159,6 +159,7 @@ import {
   normalizeRoots,
   rootOfPath,
   placeVaults,
+  sameVaults,
   stripSlash,
   type AppState,
   type CodeOutlineSort,
@@ -312,6 +313,8 @@ export interface Store {
   pushRecent(path: string, now?: number): void
   removeRecent(path: string): void
   setFolder(root: string, patch: FolderPatch): void
+  /** Remember last window bounds for a single vault (YAZ-6625 #3). Invalid or unchanged bounds commit nothing. */
+  setFolderBounds(root: string, bounds: WindowBounds): void
   setFolds(root: string, file: string, keys: readonly string[]): void
   /** The folded rows of one page's table of contents (YAZ-3939 D1); an empty list removes the entry. */
   setTocFolds(root: string, file: string, keys: readonly string[]): void
@@ -402,6 +405,10 @@ export interface Store {
   touchVaultSet(id: string, now?: number): void
   /** Set or clear (`null`) the macOS `.app` launcher metadata on a saved workspace (`VaultSet`). An unknown `id` is a no-op. */
   setVaultSetLauncher(id: string, launcher: VaultLauncherInfo | null): void
+  /** Remember last window bounds for a saved workspace (`VaultSet`, YAZ-6625 #3). Unknown `id`, invalid, or unchanged bounds commit nothing. */
+  setVaultSetBounds(id: string, bounds: WindowBounds): void
+  /** Atomically commit a live window's bounds and (when `remember` is true) persist `lastBounds` on its vault or matching workspace in ONE commit (YAZ-6625 #3). */
+  setWindowBounds(id: string, bounds: WindowBounds, remember?: boolean): void
   /**
    * Save `tabs` as a session (YAZ-3147 D2) and answer it. The tabs are cut at MAX_SESSION_TABS, and only
    * the vaults of `roots` that hold a tab are kept. A new session goes to the front. With `replaceId`
@@ -841,6 +848,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   selectionToolbar: isToolbarPrefs,
   highlightCustomColors: isHighlightCustomColors,
   startupWindows: (v): v is StartupWindows => typeof v === 'string' && (STARTUP_WINDOWS as readonly string[]).includes(v),
+  confirmBeforeQuit: (v): v is boolean => typeof v === 'boolean',
   vaultOpensOn: (v): v is VaultOpensOn => typeof v === 'string' && (VAULT_OPENS_ON as readonly string[]).includes(v),
   sectionStep: (v): v is number => isFiniteNumber(v) && SECTION_STEPS.includes(v),
   sectionLines: (v): v is SectionLines => typeof v === 'string' && (SECTION_LINES as readonly string[]).includes(v),
@@ -1082,6 +1090,12 @@ export const isSettings = (v: unknown): v is SettingsState => isRecord(v) && SET
 export const isWindowBounds = (v: unknown): v is WindowBounds =>
   isRecord(v) && isFiniteNumber(v.x) && isFiniteNumber(v.y) && isFiniteNumber(v.width) && isFiniteNumber(v.height)
 
+const cleanWindowBounds = (v: unknown): WindowBounds | null =>
+  isWindowBounds(v) && v.width > 0 && v.height > 0 ? { x: v.x, y: v.y, width: v.width, height: v.height } : null
+
+const sameStoredBounds = (a: WindowBounds | undefined, b: WindowBounds): boolean =>
+  a !== undefined && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
+
 /** Core v1 shape; additive window-identity fields are repaired separately. */
 type StoredWindowEntry = Pick<WindowEntry, 'id' | 'root' | 'file' | 'bounds'> & { roots?: unknown; tabs?: unknown; tabStrip?: unknown; name?: unknown; rightPanel?: unknown; sidebarCollapsed?: unknown; sidebarLens?: unknown; kind?: unknown; zoom?: unknown; exploreSize?: unknown; tocZoom?: unknown; sidebarWidth?: unknown }
 const isStoredWindowEntry = (v: unknown): v is StoredWindowEntry =>
@@ -1260,6 +1274,7 @@ function sanitizeFolder(raw: unknown): FolderState | null {
   const added = cleanCardsAdded(raw.added)
   const launcher = cleanVaultLauncher(raw.launcher)
   const rowDates = cleanRowDates(raw.rowDates)
+  const lastBounds = cleanWindowBounds(raw.lastBounds)
   return {
     // Tree expansion is SESSION state (YAZ-1642): never restored, never written (`toDisk`).
     // A relaunch starts every tree collapsed; a pre-1642 file's leftover lists are ignored.
@@ -1287,6 +1302,8 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     ...(launcher !== null && { launcher }),
     // Per-vault "Show last updated" switches (YAZ-6529): a junk entry is dropped.
     ...(rowDates !== null && { rowDates }),
+    // Last remembered window bounds for this vault (YAZ-6625 #3): a junk entry is dropped.
+    ...(lastBounds !== null && { lastBounds }),
   }
 }
 
@@ -1328,7 +1345,8 @@ function sanitizeVaultSets(raw: unknown): VaultSet[] {
     if (name === null || roots.length < 2) continue
     seen.add(s.id)
     const launcher = cleanVaultLauncher(s.launcher)
-    out.push({ id: s.id, name, roots, lastUsed: isFiniteNumber(s.lastUsed) ? s.lastUsed : 0, ...(launcher !== null ? { launcher } : {}) })
+    const lastBounds = cleanWindowBounds(s.lastBounds)
+    out.push({ id: s.id, name, roots, lastUsed: isFiniteNumber(s.lastUsed) ? s.lastUsed : 0, ...(launcher !== null ? { launcher } : {}), ...(lastBounds !== null ? { lastBounds } : {}) })
   }
   return out.slice(0, MAX_VAULT_SETS)
 }
@@ -1742,6 +1760,14 @@ export function createStore(filePath: string): Store {
       commit({ ...state, folders: { ...(key == null ? state.folders : freeVaultKey(state.folders, key)), [root]: next } })
     },
 
+    setFolderBounds(root, rawBounds) {
+      const bounds = cleanWindowBounds(rawBounds)
+      if (bounds === null) return
+      const cur = folderOf(root)
+      if (sameStoredBounds(cur.lastBounds, bounds)) return
+      commit({ ...state, folders: { ...state.folders, [root]: { ...cur, lastBounds: bounds } } })
+    },
+
     setFolds(root, file, keys) {
       const cur = folderOf(root)
       const folds = { ...cur.folds }
@@ -2084,6 +2110,7 @@ export function createStore(filePath: string): Store {
         roots,
         lastUsed: now,
         ...(existing?.launcher !== undefined ? { launcher: existing.launcher } : {}),
+        ...(existing?.lastBounds !== undefined ? { lastBounds: existing.lastBounds } : {}),
       }
       commit({ ...state, vaultSets: [saved, ...state.vaultSets.filter((s) => s !== existing)] })
       return saved
@@ -2120,6 +2147,48 @@ export function createStore(filePath: string): Store {
       const launcher = cleanVaultLauncher(rawLauncher)
       if (launcher === null) return
       commit({ ...state, vaultSets: state.vaultSets.map((s) => (s === set ? { ...s, launcher } : s)) })
+    },
+
+    setVaultSetBounds(id, rawBounds) {
+      const set = state.vaultSets.find((s) => s.id === id)
+      if (set === undefined) return
+      const bounds = cleanWindowBounds(rawBounds)
+      if (bounds === null || sameStoredBounds(set.lastBounds, bounds)) return
+      commit({ ...state, vaultSets: state.vaultSets.map((s) => (s === set ? { ...s, lastBounds: bounds } : s)) })
+    },
+
+    setWindowBounds(id, rawBounds, remember = true) {
+      const bounds = cleanWindowBounds(rawBounds)
+      if (bounds === null) return
+      const entry = state.windows.find((w) => w.id === id)
+      if (entry === undefined) return
+      const windowChanged = !sameStoredBounds(entry.bounds, bounds)
+      let folders = state.folders
+      let vaultSets = state.vaultSets
+      let memoryChanged = false
+      if (remember && entry.kind !== 'files' && entry.roots.length > 0) {
+        if (entry.roots.length === 1) {
+          const root = stripSlash(entry.roots[0])
+          const cur = folderOf(root)
+          if (!sameStoredBounds(cur.lastBounds, bounds)) {
+            folders = { ...state.folders, [root]: { ...cur, lastBounds: bounds } }
+            memoryChanged = true
+          }
+        } else {
+          const set = state.vaultSets.find((s) => sameVaults(s.roots, entry.roots))
+          if (set !== undefined && !sameStoredBounds(set.lastBounds, bounds)) {
+            vaultSets = state.vaultSets.map((s) => (s === set ? { ...s, lastBounds: bounds } : s))
+            memoryChanged = true
+          }
+        }
+      }
+      if (!windowChanged && !memoryChanged) return
+      commit({
+        ...state,
+        windows: windowChanged ? state.windows.map((w) => (w.id === id ? { ...w, bounds } : w)) : state.windows,
+        folders,
+        vaultSets,
+      })
     },
 
     saveSession(rawName, rawTabs, rawRoots, replaceId, now = Date.now()) {

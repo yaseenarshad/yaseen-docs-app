@@ -109,7 +109,10 @@ vi.mock('electron', () => ({
   protocol: h.protocol,
   net: { fetch: vi.fn() },
   BrowserWindow: { getAllWindows: () => h.s.windows, getFocusedWindow: () => null },
-  clipboard: { readText: vi.fn(), writeText: vi.fn() },
+  ClipboardItem: class {
+    constructor(readonly items: Record<string, unknown>) {}
+  },
+  clipboard: { read: vi.fn(async () => []), readText: vi.fn(async () => ''), write: vi.fn(async () => undefined), writeText: vi.fn(async () => undefined) },
   Menu: { buildFromTemplate: vi.fn(), setApplicationMenu: vi.fn() },
   // `on`/`off`: the selection colour re-reads on an appearance change (YAZ-5941).
   nativeTheme: { shouldUseDarkColors: false, on: vi.fn(), off: vi.fn() },

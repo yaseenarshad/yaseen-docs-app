@@ -21,7 +21,10 @@ vi.mock('electron', () => ({
   shell: { trashItem: vi.fn(async () => undefined) },
   nativeImage: { createFromBuffer: vi.fn() },
   screen: { getCursorScreenPoint: () => ({ x: 0, y: 0 }), getDisplayNearestPoint: () => ({ scaleFactor: 2 }) },
-  clipboard: { read: vi.fn(() => ''), clear: vi.fn(), writeBuffer: vi.fn() },
+  ClipboardItem: class {
+    constructor(readonly items: Record<string, unknown>) {}
+  },
+  clipboard: { read: vi.fn(async () => []), clear: vi.fn(), write: vi.fn(async () => undefined) },
 }))
 vi.mock('../fs/watchers', () => ({ subscribe: vi.fn(() => () => undefined), activeWatcherRoots: () => [] }))
 
@@ -83,7 +86,7 @@ describe('fs:duplicate (YAZ-4592 S26)', () => {
     // Only the two pages: a `.folder.md` the id sweep may write is no concern of this door.
     expect((await readdir(plans)).filter((name) => !name.startsWith('.')).sort()).toEqual(['Trip.md', path.basename(res.value.to)])
     expect(fileClip.get()).toBeNull()
-    expect(clipboard.writeBuffer).not.toHaveBeenCalled()
+    expect(clipboard.write).not.toHaveBeenCalled()
   })
 
   it('refuses a path no vault of the calling window holds, and a relative one', async () => {

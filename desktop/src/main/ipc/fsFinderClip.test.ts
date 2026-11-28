@@ -15,25 +15,49 @@ import { fileClip } from '../fileClip'
 import { _evictAll } from '../vaultIndex'
 import { registerFsIpc } from './fs'
 
-/** The stand-in pasteboard: one value per type. A write replaces everything, as on the Mac. */
+/** The stand-in pasteboard: one value per MIME type. A write replaces everything, as on the Mac. */
 const board = vi.hoisted(() => new Map<string, string>())
-const TYPE = 'NSFilenamesPboardType'
+const TYPE = 'electron application/osclipboard;format="NSFilenamesPboardType"'
 
-vi.mock('electron', () => ({
-  ipcMain: { handle: vi.fn(), on: vi.fn() },
-  BrowserWindow: { getAllWindows: vi.fn(() => []) },
-  shell: { trashItem: vi.fn(async () => undefined) },
-  nativeImage: { createFromBuffer: vi.fn() },
-  screen: { getCursorScreenPoint: () => ({ x: 0, y: 0 }), getDisplayNearestPoint: () => ({ scaleFactor: 2 }) },
-  clipboard: {
-    read: vi.fn((type: string) => board.get(type) ?? ''),
-    clear: vi.fn(() => board.clear()),
-    writeBuffer: vi.fn((type: string, buffer: Buffer) => {
-      board.clear()
-      board.set(type, buffer.toString('utf8'))
-    }),
-  },
-}))
+vi.mock('electron', () => {
+  class FakeClipboardItem {
+    readonly items: Record<string, string | Blob>
+    constructor(items: Record<string, string | Blob>) {
+      this.items = items
+    }
+    get types(): string[] {
+      return Object.keys(this.items)
+    }
+    async getType(type: string): Promise<Blob> {
+      const value = this.items[type]
+      if (value === undefined) throw new Error(`missing type ${type}`)
+      return typeof value === 'string' ? new Blob([value]) : value
+    }
+  }
+  return {
+    ipcMain: { handle: vi.fn(), on: vi.fn() },
+    BrowserWindow: { getAllWindows: vi.fn(() => []) },
+    shell: { trashItem: vi.fn(async () => undefined) },
+    nativeImage: { createFromBuffer: vi.fn() },
+    screen: { getCursorScreenPoint: () => ({ x: 0, y: 0 }), getDisplayNearestPoint: () => ({ scaleFactor: 2 }) },
+    ClipboardItem: FakeClipboardItem,
+    clipboard: {
+      read: vi.fn(async () =>
+        board.size === 0 ? [] : [new FakeClipboardItem(Object.fromEntries(board.entries()))],
+      ),
+      clear: vi.fn(() => board.clear()),
+      write: vi.fn(async (items: FakeClipboardItem[]) => {
+        board.clear()
+        for (const item of items) {
+          for (const type of item.types) {
+            const blob = await item.getType(type)
+            board.set(type, await blob.text())
+          }
+        }
+      }),
+    },
+  }
+})
 vi.mock('../fs/watchers', () => ({ subscribe: vi.fn(() => () => undefined), activeWatcherRoots: () => [] }))
 vi.mock('../favorites', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
 vi.mock('../focus', () => ({ renamePath: vi.fn(async () => undefined), removePath: vi.fn(async () => undefined) }))
@@ -234,18 +258,14 @@ describe('copy and paste with Finder (YAZ-3265 D13, D14)', () => {
     const pdf = path.join(vault, 'report.pdf')
     const own = { ok: true, value: { count: 1, op: 'copy', paths: [pdf] } }
     // A failed write: the system clipboard never held the clip, so it cannot go stale there.
-    vi.mocked(clipboard.writeBuffer).mockImplementationOnce(() => {
-      throw new Error('pasteboard busy')
-    })
+    vi.mocked(clipboard.write).mockRejectedValueOnce(new Error('pasteboard busy'))
     textCopied()
     await clip('copy', pdf)
     expect(await clipState()).toEqual(own)
     // A failed read, after a write that held.
     await clip('copy', pdf)
     textCopied()
-    vi.mocked(clipboard.read).mockImplementationOnce(() => {
-      throw new Error('pasteboard busy')
-    })
+    vi.mocked(clipboard.read).mockRejectedValueOnce(new Error('pasteboard busy'))
     expect(await clipState()).toEqual(own)
     // Off macOS the app keeps its own clipboard only.
     const platform = process.platform

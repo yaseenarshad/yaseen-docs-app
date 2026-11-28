@@ -2,7 +2,7 @@ import { rendererUrlFor } from './rendererUrl'
 import { startAutomationServer, type AutomationServer } from '../automation/server'
 import { prepareAutomation } from './automation'
 import { registerAutomationIpc } from './ipc/automation'
-import { app, BrowserWindow, clipboard, Menu, nativeImage, nativeTheme, net, powerMonitor, protocol, screen, shell, systemPreferences, webContents } from 'electron'
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, systemPreferences, webContents } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { enableCompileCache } from 'node:module'
@@ -60,8 +60,8 @@ import { flushDiaries, flushIndexCache, initIndexCache } from './vaultIndex'
 import { initMint, macId } from './vaultIndex/mint'
 import { createWindowManager, type RestoreTarget } from './windows'
 import { focusSingleWindow } from './singleWindowFocus'
-import { createDockIconController, defaultDockIconPath, type DockIconController } from './dockIcon'
-import { installVaultLauncher, refreshOutdatedLaunchers, removeOrphanLauncher, removeVaultLauncher, vaultLauncherBinaryPath } from './vaultLauncher'
+import { createAppShimController, isAppShimHostLaunch, type AppShimController } from './appShims'
+import { appShimLoaderPath, hostBundlePathFromExecPath, installVaultLauncher, readLauncherPlist, refreshOutdatedLaunchers, removeOrphanLauncher, removeVaultLauncher } from './vaultLauncher'
 import { dropLanded } from './dragLanding'
 import { blockFileNavigation, createWindowOpenHandler } from './windowOpenPolicy'
 import { createUpdater, runFile, shortVersion, spawnDetached } from './updater'
@@ -86,8 +86,17 @@ app.on('second-instance', (_event, argv) => {
     for (const url of urls) links.push(url)
     return // routing focuses (or opens) the right window itself
   }
-  const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !previewPopups.has(w))
-  if (win === undefined) return
+  // An App Shim launching while the host is already running passes `--app-shim-host` and connects over the shim server.
+  if (isAppShimHostLaunch(argv)) return
+  const win = BrowserWindow.getAllWindows().find((w) => {
+    if (w.isDestroyed() || previewPopups.has(w)) return false
+    const id = manager.idFor(w.webContents)
+    return id === undefined || !(manager.isShimWindow?.(id) ?? false)
+  })
+  if (win === undefined) {
+    if (!quitting && !hiddenE2E) manager.openWindow({ root: null, file: null })
+    return
+  }
   if (win.isMinimized()) win.restore()
   win.focus()
 })
@@ -102,6 +111,7 @@ function parseFriendsInviteDeepLink(rawUrl: string): { kind: 'friend' | 'group';
 }
 
 let pendingInviteHandler: PendingInviteHandler | null = null
+const headlessShimHost = isAppShimHostLaunch(process.argv)
 
 /** A parsed link routes to the best window; a bad one gets the unobtrusive notice, never a dialog. */
 function handleLink(url: string): void {
@@ -124,6 +134,18 @@ function handleLink(url: string): void {
   }
   const wsId = parseWorkspaceLink(url)
   if (wsId !== null) {
+    if (process.platform === 'darwin' && !hiddenE2E && shims !== undefined) {
+      const route = shims.resolveShimForWorkspace(wsId)
+      if (route.mode === 'connected') {
+        const res = manager.openVaultSet(wsId, undefined, route.shimKey)
+        if (!res.opened) manager.linkNotice(`Can't open workspace: ${wsId}`)
+        return
+      }
+      if (route.mode === 'launch') {
+        void shims.launchApp(route.appPath)
+        return
+      }
+    }
     const res = manager.openVaultSet(wsId)
     if (!res.opened) manager.linkNotice(`Can't open workspace: ${wsId}`)
     return
@@ -132,6 +154,26 @@ function handleLink(url: string): void {
   if (parsed === null) {
     manager.linkNotice(`Can't open link: ${url}`)
     return
+  }
+  if (process.platform === 'darwin' && !hiddenE2E && shims !== undefined) {
+    const isDir = manager.isDir(parsed.path)
+    // Directory links match only exact vault shims so opening a subfolder does not hijack into an ancestor vault's shim.
+    const route = isDir ? shims.resolveShimForVault(parsed.path) : shims.resolveShimForPath(parsed.path, parsed.root)
+    if (route.mode === 'connected') {
+      if (parsed.open !== undefined) manager.routeToFile(parsed.path, parsed.root, parsed.open, route.shimKey)
+      else manager.routeToFile(parsed.path, parsed.root, undefined, route.shimKey)
+      return
+    }
+    if (route.mode === 'launch' && (isDir || existsSync(parsed.path))) {
+      shims.queuePendingOpen(
+        route.shimKey,
+        isDir
+          ? { ...(parsed.open !== undefined ? { openTarget: parsed.open } : {}) }
+          : { filePath: parsed.path, rootOverride: parsed.root, ...(parsed.open !== undefined ? { openTarget: parsed.open } : {}) },
+      )
+      void shims.launchApp(route.appPath)
+      return
+    }
   }
   if (parsed.open !== undefined) manager.routeToFile(parsed.path, parsed.root, parsed.open)
   else manager.routeToFile(parsed.path, parsed.root)
@@ -191,13 +233,17 @@ const previewByOwner = new Map<number, BrowserWindow>()
 const previewPopups = new WeakSet<BrowserWindow>()
 
 const manager = createWindowManager(store, {
-  create(entry: WindowEntry, opts?: { hidden?: true; inactive?: true }) {
+  create(entry: WindowEntry, opts?: { hidden?: true; inactive?: true; shimKey?: string }) {
     const hidden = opts?.hidden === true
     const inactive = opts?.inactive === true
-    // Under macOS Cmd+H, construct a newly requested window hidden so `focusWindow` can hide siblings before unhiding (YAZ-6595 D2).
-    const startHiddenForCmdH = !hiddenE2E && !hidden && !inactive && process.platform === 'darwin' && app.isHidden()
+    // Files windows MUST stay host-owned (`child.setParentWindow` throws on shim windows; YAZ-6625 D4).
+    const shimKey = entry.kind === 'files' ? undefined : opts?.shimKey
+    const appShim = shimKey !== undefined ? (shims?.getShim(shimKey) as Electron.AppShimHost | undefined) : undefined
+    // Under macOS Cmd+H, construct a newly requested host window hidden so `focusWindow` can hide siblings before unhiding (YAZ-6595 D2).
+    const startHiddenForCmdH = !hiddenE2E && !hidden && !inactive && appShim === undefined && process.platform === 'darwin' && app.isHidden()
     const win = new BrowserWindow({
       ...entry.bounds,
+      ...(appShim !== undefined ? { appShim } : {}),
       // A window the tab board made (YAZ-3343) is built HIDDEN; an inactive automation window (YAZ-6539) reveals via showInactive() on ready-to-show.
       ...((hiddenE2E || hidden || inactive || startHiddenForCmdH) && { show: false }),
       // The backing store matches the theme (K, GRO-2218): no white flash on dark launches.
@@ -234,7 +280,6 @@ const manager = createWindowManager(store, {
       const popup = previewByOwner.get(ownerId)
       previewByOwner.delete(ownerId)
       if (popup !== undefined && !popup.isDestroyed()) popup.destroy()
-      dockIcon?.sync()
     })
     // A file dropped where nothing takes it never opens in the window (YAZ-3253 S21). When it is the
     // drag out of another window, that window asks nothing (YAZ-3263): this drop fires no `drop` event.
@@ -263,7 +308,12 @@ const manager = createWindowManager(store, {
       if (dictionarySuggestions === null || win.isDestroyed()) return
       Menu.buildFromTemplate(buildContextMenuTemplate({ ...params, dictionarySuggestions }, {
         copyAs: (mode) => win.webContents.send(SPECIAL.menuCopyAs, mode),
-        pasteAs: (mode) => win.webContents.send(SPECIAL.menuPasteAs, { mode, text: clipboard.readText(), ...(mode === 'cells' ? { html: clipboard.readHTML() } : {}) } satisfies ClipboardPasteRequest),
+        pasteAs: (mode) => {
+          void Promise.all([clipboard.readText(), mode === 'cells' ? readClipboardHtml() : Promise.resolve(undefined)]).then(([text, html]) => {
+            if (win.isDestroyed()) return
+            win.webContents.send(SPECIAL.menuPasteAs, { mode, text, ...(html !== undefined ? { html } : {}) } satisfies ClipboardPasteRequest)
+          })
+        },
         replace: (s) => win.webContents.replaceMisspelling(s),
         addToDictionary: (w) => win.webContents.session.addWordToSpellCheckerDictionary(w),
         // Image rows (YAZ-1666): Chromium copies the decoded pixels at the click point; reveal
@@ -318,20 +368,48 @@ const manager = createWindowManager(store, {
     popup.setBounds(bounds)
     if (!hiddenE2E && !popup.isVisible()) popup.showInactive()
   },
+  onWindowOpened(id, shimKey) {
+    shims?.onWindowOpened(id, shimKey)
+  },
+  onWindowClosed(id, shimKey) {
+    shims?.onWindowClosed(id, shimKey)
+  },
+  isShimConnected(shimKey) {
+    return shims?.getShim(shimKey) !== undefined
+  },
+  keepAliveOnLastWindowClosed() {
+    return (shims?.connectedCount() ?? 0) > 0 || (shims?.isWaitingForFirstShim() ?? false)
+  },
   // Single-window focus (YAZ-6595 D1/D2): raises only the target window without activating unrelated windows.
+  // Shim windows live in their own macOS app process and bypass host `focusSingleWindow` (YAZ-6625 D6).
   focusWindow(win, hooks) {
     if (hiddenE2E) return
+    const id = manager.idFor(win.webContents)
+    if (id !== undefined && manager.isShimWindow?.(id)) {
+      if (win.isDestroyed()) return
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+      return
+    }
     focusSingleWindow(win as BrowserWindow, {
       isMac: process.platform === 'darwin',
       isAppHidden: () => app.isHidden(),
       showApp: () => app.show(),
       stealAppFocus: () => app.focus({ steal: true }),
-      siblingWindows: () => BrowserWindow.getAllWindows().filter((w) => !previewPopups.has(w)),
+      siblingWindows: () =>
+        BrowserWindow.getAllWindows().filter((w) => {
+          if (previewPopups.has(w)) return false
+          const wId = manager.idFor(w.webContents)
+          return wId === undefined || !(manager.isShimWindow?.(wId) ?? false)
+        }),
       onSiblingHidden: (sibling) => hooks?.onSiblingHidden?.(sibling as unknown as BrowserWindow),
       onTargetShown: (target) => hooks?.onTargetShown?.(target as unknown as BrowserWindow),
     })
   },
 })
+
+const HOST_BUNDLE_PATH = app.isPackaged ? join(app.getAppPath(), '..', '..', '..') : hostBundlePathFromExecPath(process.execPath)
 
 /** The updater (YAZ-2976 D2): one per app, so every window gets the same state (S20). `start()` runs on `ready`. */
 const updater = createUpdater(
@@ -340,8 +418,7 @@ const updater = createUpdater(
     run: runFile,
     spawnDetached,
     userData: app.getPath('userData'),
-    // `<bundle>/Contents/Resources/app.asar` in a packaged app; a dev run is `manual` before it matters.
-    bundle: join(app.getAppPath(), '..', '..', '..'),
+    bundle: HOST_BUNDLE_PATH,
     version: shortVersion(app.getVersion()),
     platform: process.platform,
     isPackaged: app.isPackaged,
@@ -352,13 +429,19 @@ const updater = createUpdater(
 )
 /** "Restart to update" (S21) sets this; a plain quit with an update staged swaps and stays closed (S22). */
 let reopenAfterQuit = false
+/** True when "Quit All Yaseen Docs" (⌘⌥Q) or "Restart to update" requests exiting host + all App Shims (YAZ-6640 Option B). */
+let forceQuitAll = false
+/** True when the app is exiting automatically (e.g. last window closed or updater restart), bypassing the Cmd+Q confirmation popup (YAZ-6641). */
+let skipQuitConfirm = false
 
 /**
- * The most recently focused window's `webContents.id` — pickMenuTargetWindow's fallback key
- * (GRO-2197). Never cleared on blur: macOS reporting "no focused window" (app not frontmost)
- * is exactly the state the fallback exists for, so the last id must survive it.
+ * The most recently focused window's `webContents.id` (all windows, for clipboard IPC)
+ * and the most recently focused host-owned window's `webContents.id` (for host menu bar).
+ * Never cleared on blur: macOS reporting "no focused window" (app not frontmost)
+ * is exactly the state the fallback exists for, so the last id must survive it (GRO-2197).
  */
 let lastFocusedWcId: number | undefined
+let lastFocusedHostWcId: number | undefined
 
 /** The per-vault GitHub sync manager (YAZ-1081), created with the rest of the IPC once `ready` fires. */
 let gitSync: GitSyncManager | undefined
@@ -374,18 +457,27 @@ let reloadWatch: ReloadWatch | undefined
 
 /** The menu's apply step, once `ready` made it: a focus change moves which window the board items ask about (YAZ-3037). */
 let rebuildMenuOnFocus: (() => void) | undefined
-/** Live macOS Dock icon switcher (YAZ-5967, YAZ-6374), created on `ready` when on macOS and not hiddenE2E. */
-let dockIcon: DockIconController | undefined
+/** macOS App Shim controller (YAZ-6625), created on `ready` when on macOS and not hiddenE2E. */
+let shims: AppShimController<Electron.Menu> | undefined
 
 app.on('browser-window-focus', (_event, win) => {
   lastFocusedWcId = win.webContents.id
+  const focusedId = manager.idFor(win.webContents)
+  if (focusedId === undefined || !(manager.isShimWindow?.(focusedId) ?? false)) lastFocusedHostWcId = win.webContents.id
   rebuildMenuOnFocus?.()
-  dockIcon?.sync()
   // YAZ-1081 D2: focusing a vault's window is a PULL trigger — alt-tabbing back from another
   // machine should converge without waiting out a timer. The manager's own cooldown throttles it.
   // Every vault the window shows (YAZ-2602 S43).
   // A folder of a vault (YAZ-4922 D3) pulls its vault.
-  for (const root of placeVaults(store.get().folders, store.get().windows.find((w) => w.id === manager.idFor(win.webContents))?.roots ?? [])) gitSync?.notifyFocus(root)
+  for (const root of placeVaults(store.get().folders, store.get().windows.find((w) => w.id === focusedId)?.roots ?? [])) gitSync?.notifyFocus(root)
+})
+
+// macOS activate (Finder/Spotlight/`open -a "Yaseen Docs"` while running headlessly with 0 regular windows; YAZ-6626).
+app.on('activate', () => {
+  if (!app.isReady() || quitting || hiddenE2E) return
+  if ((manager.regularWindowCount?.() ?? 0) === 0) {
+    manager.openWindow({ root: null, file: null })
+  }
 })
 
 /** The CLI's local connection (YAZ-4502). Quit closes it first, waiting at most 3 s for accepted work. */
@@ -395,7 +487,7 @@ app.whenReady().then(() => {
   if (!isPrimaryInstance) return
   // A dev run wears the app's own Dock icon instead of Electron's; a packaged build gets it from the bundle.
   if (!app.isPackaged) app.dock?.setIcon(join(__dirname, '../../build/icon.png'))
-  if (hiddenE2E) app.dock?.hide()
+  if (hiddenE2E || headlessShimHost) app.dock?.hide()
   // Appearance (K, GRO-2218): the setting IS the themeSource vocabulary. Applied from the loaded
   // store BEFORE any window is created (`restore` below), re-applied whenever it changes — so
   // `prefers-color-scheme` in every renderer and the OS chrome follow the setting.
@@ -450,38 +542,111 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString())
   })
   // Menu bar (B3, GRO-2161): the template is pure (menu.ts); only this apply layer touches Menu.
-  // `focusedWebContents` resolves through pickMenuTargetWindow (GRO-2197): macOS reports no
-  // focused window while the app is not frontmost, and a menu action must never silently no-op
-  // — so the last-focused live window (tracked below) is the documented fallback target.
-  const menuTarget = () => pickMenuTargetWindow(BrowserWindow.getFocusedWindow(), BrowserWindow.getAllWindows().filter((w) => !previewPopups.has(w)), lastFocusedWcId)?.webContents
+  // Split `clipboardTarget` (all windows, incl. shims) from `hostMenuTarget` (host-owned windows only, YAZ-6626).
+  const clipboardTarget = () => pickMenuTargetWindow(BrowserWindow.getFocusedWindow(), BrowserWindow.getAllWindows().filter((w) => !previewPopups.has(w)), lastFocusedWcId)?.webContents
+  const hostMenuTarget = () => {
+    const hostWindows = BrowserWindow.getAllWindows().filter((w) => {
+      if (w.isDestroyed() || previewPopups.has(w)) return false
+      const id = manager.idFor(w.webContents)
+      return id === undefined || !(manager.isShimWindow?.(id) ?? false)
+    })
+    const focused = BrowserWindow.getFocusedWindow()
+    const focusedHost = focused !== null && !focused.isDestroyed() && hostWindows.includes(focused) ? focused : null
+    return pickMenuTargetWindow(focusedHost, hostWindows, lastFocusedHostWcId)?.webContents
+  }
   registerSpellerIpc(speller)
   registerClipboardIpc(manager, {
-    target: menuTarget,
+    target: clipboardTarget,
     writeText: (text) => clipboard.writeText(text),
-    write: (data) => clipboard.write(data),
+    write: (data) => writeClipboardRich(data),
     readText: () => clipboard.readText(),
-    readHTML: () => clipboard.readHTML(),
+    readHTML: () => readClipboardHtml(),
     revealImage: (src) => revealVaultImage(src, (file) => revealItem({ path: file })),
     rendererUrl: process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html',
   })
-  const handlers = createMenuHandlers(manager, {
-    focusedWebContents: menuTarget,
+  const routeVaultToShim = (vaultPath: string): boolean => {
+    if (process.platform !== 'darwin' || hiddenE2E || shims === undefined) return false
+    if (!manager.isDir(vaultPath)) return false
+    const route = shims.resolveShimForVault(vaultPath)
+    if (route.mode === 'connected') {
+      manager.openAlone(vaultPath, undefined, route.shimKey)
+      return true
+    }
+    if (route.mode === 'launch') {
+      void shims.launchApp(route.appPath)
+      return true
+    }
+    return false
+  }
+  const routeWorkspaceToShim = (workspaceId: string) => {
+    if (process.platform !== 'darwin' || hiddenE2E || shims === undefined) return null
+    const route = shims.resolveShimForWorkspace(workspaceId)
+    if (route.mode === 'connected') {
+      return manager.openVaultSet(workspaceId, undefined, route.shimKey)
+    }
+    if (route.mode === 'launch') {
+      void shims.launchApp(route.appPath)
+      return { opened: true, missing: [] }
+    }
+    return null
+  }
+  const shouldConfirmQuit = (): boolean =>
+    !hiddenE2E && process.env.YASEEN_DOCS_E2E !== '1' && store.get().settings.confirmBeforeQuit
+  const showQuitConfirmDialog = async (opts: { message: string; detail: string; confirmLabel: string; windowId?: string }): Promise<boolean> => {
+    const parent =
+      opts.windowId !== undefined
+        ? BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !previewPopups.has(w) && manager.idFor(w.webContents) === opts.windowId)
+        : undefined
+    const boxOpts: Electron.MessageBoxOptions = {
+      type: 'question',
+      buttons: [opts.confirmLabel, 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      message: opts.message,
+      detail: opts.detail,
+    }
+    try {
+      const res = parent !== undefined ? await dialog.showMessageBox(parent, boxOpts) : await dialog.showMessageBox(boxOpts)
+      return res.response === 0
+    } catch {
+      const res = await dialog.showMessageBox(boxOpts)
+      return res.response === 0
+    }
+  }
+  let confirmingQuitAll = false
+  const confirmQuitAllIfNeeded = async (): Promise<boolean> => {
+    if (!shouldConfirmQuit()) return true
+    if (confirmingQuitAll) return false
+    confirmingQuitAll = true
+    try {
+      return await showQuitConfirmDialog({
+        message: 'Do you want to quit all Yaseen Docs apps?',
+        detail: 'This closes every open Vault App and Yaseen Docs window. Click Cancel to keep them open.',
+        confirmLabel: 'Quit All',
+        windowId: manager.lastFocused?.(),
+      })
+    } finally {
+      confirmingQuitAll = false
+    }
+  }
+  const createSharedMenuHost = (targetWc: () => Electron.WebContents | undefined, onWhatsNew: () => void) => ({
+    focusedWebContents: targetWc,
     readClipboardText: () => clipboard.readText(),
-    readClipboardHTML: () => clipboard.readHTML(),
-    openExternal: (url) => void shell.openExternal(url),
+    readClipboardHTML: () => readClipboardHtml(),
+    openExternal: (url: string) => void shell.openExternal(url),
     // S4–S6: the answer shows in the window in front, with or without a sidebar (the Welcome screen,
     // a collapsed one): a notice, or for a staged or manual update the "What's new" sheet and its button.
     checkForUpdates: () =>
       void updater.check().then(
         (s) => {
-          if (s.kind === 'ready' || s.kind === 'manual') handlers.whatsNew()
+          if (s.kind === 'ready' || s.kind === 'manual') onWhatsNew()
           else manager.linkNotice(s.kind === 'downloading' ? `Downloading Yaseen Docs ${s.version}…` : `Yaseen Docs ${shortVersion(app.getVersion())} is the newest version`)
         },
         () => manager.linkNotice("Can't check for updates. Try again later"),
       ),
     // Dev only (YAZ-3737 D9): into the temp folder, never the vault or the profile. Loaded on the first use, so the
     // packaged app never parses it at start.
-    saveHeapSnapshot: async (target, windowId) => {
+    saveHeapSnapshot: async (target: { id: number }, windowId: string) => {
       const wc = webContents.fromId(target.id)
       if (wc === undefined) return true
       const { saveHeapSnapshot } = await import('./heapSnapshot')
@@ -489,73 +654,182 @@ app.whenReady().then(() => {
       if (file !== null) shell.showItemInFolder(file)
       return file !== null
     },
+    quitAll: () => {
+      void confirmQuitAllIfNeeded().then((ok) => {
+        if (!ok) return
+        forceQuitAll = true
+        skipQuitConfirm = true
+        app.quit()
+      })
+    },
+    routeVaultToShim,
   })
+  const handlers = createMenuHandlers(manager, createSharedMenuHost(hostMenuTarget, () => handlers.whatsNew()))
   // The board items (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D10) are enabled only while the window a
   // menu action would target has a board of the right kind in front. Read at build time from the same
-  // window `menuTarget` names, so the answer and the send target can never disagree.
+  // window `hostMenuTarget` names, so the answer and the send target can never disagree.
   // What the keys follow (YAZ-3564 K9): a drawing open over the page is in front of it; the board items stay the tab's.
   // With no page on show (YAZ-5041: the Inbox tab, the blank tab), neither follows the tab stored under it.
-  const kindsInFront = () => {
-    const wc = menuTarget()
+  const kindsInFrontFor = (wc: Electron.WebContents | undefined) => {
     const id = wc === undefined ? undefined : manager.idFor(wc)
     const file = id === undefined ? null : (store.get().windows.find((w) => w.id === id)?.file ?? null)
     return menuKindsInFront(file, { drawingOver: wc !== undefined && drawingInFront.has(wc.id), noPage: wc !== undefined && noPageInFront.has(wc.id) })
   }
-  const activeFileKind = (): FileKind | null => kindsInFront().activeKind
-  const frontKind = (): FileKind | null => kindsInFront().frontKind
+  const activeFileKind = (): FileKind | null => kindsInFrontFor(hostMenuTarget()).activeKind
+  const frontKind = (): FileKind | null => kindsInFrontFor(hostMenuTarget()).frontKind
   // File › Open Today's Daily Page (YAZ-5491): shown while Daily pages are on for the window a menu action targets, by
   // its vaults' daily-pages.json (the one source), else the app value. A file that changes rebuilds the menu.
   let dailyMoved: () => void = () => undefined
   const dailyFiles = watchDailyPages(store, () => dailyMoved())
-  const dailyInFront = (): boolean => {
-    const wc = menuTarget()
+  const dailyInFrontFor = (wc: Electron.WebContents | undefined): boolean => {
     const id = wc === undefined ? undefined : manager.idFor(wc)
     const state = store.get()
     const win = id === undefined ? undefined : state.windows.find((w) => w.id === id)
     return win === undefined ? state.settings.dailyPages : dailyFiles.on(placeVaults(state.folders, win.roots), state.settings)
   }
-  const { apply: applyMenu, applyIfMoved } = gateOnBoardKind(activeFileKind, () =>
-    Menu.setApplicationMenu(
-      Menu.buildFromTemplate(
-        buildMenuTemplate(
-          // The user's keys (YAZ-3397 D2), and none at all while a key recorder listens (D6).
-          { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), frontKind: frontKind(), hotkeys: store.get().settings.hotkeys, hotkeysAside: store.get().settings.hotkeysAside, suspendKeys: hotkeyRecording.active(), dailyPages: dailyInFront() },
-          handlers,
-        ),
+  const dailyInFront = (): boolean => dailyInFrontFor(hostMenuTarget())
+  const buildMenuForTarget = (isShim: boolean, targetWc: () => Electron.WebContents | undefined, menuHandlers: ReturnType<typeof createMenuHandlers>): Electron.Menu => {
+    const wc = targetWc()
+    const kinds = kindsInFrontFor(wc)
+    const state = store.get()
+    return Menu.buildFromTemplate(
+      buildMenuTemplate(
+        // The user's keys (YAZ-3397 D2), and none at all while a key recorder listens (D6).
+        {
+          recents: state.recents,
+          keyedVaults: menuKeyedVaults(state),
+          isDev: !app.isPackaged,
+          activeKind: kinds.activeKind,
+          frontKind: kinds.frontKind,
+          hotkeys: state.settings.hotkeys,
+          hotkeysAside: state.settings.hotkeysAside,
+          suspendKeys: hotkeyRecording.active(),
+          dailyPages: dailyInFrontFor(wc),
+          isShim,
+          showQuitAll: !isShim && (shims?.connectedCount() ?? 0) > 0,
+        },
+        menuHandlers,
       ),
-    ),
+    )
+  }
+  const shimMenuTarget = (shimKey: string): Electron.WebContents | undefined => {
+    const shimIds = manager.windowsForShim?.(shimKey) ?? []
+    const shimIdSet = new Set(shimIds)
+    const shimWindows = BrowserWindow.getAllWindows().filter((w) => {
+      if (w.isDestroyed() || previewPopups.has(w)) return false
+      const wId = manager.idFor(w.webContents)
+      return wId !== undefined && shimIdSet.has(wId)
+    })
+    const focused = BrowserWindow.getFocusedWindow()
+    const focusedInShim = focused !== null && !focused.isDestroyed() && shimWindows.includes(focused) ? focused : null
+    const preferredId = shimIds[0]
+    const preferredWin = preferredId === undefined ? undefined : shimWindows.find((w) => manager.idFor(w.webContents) === preferredId)
+    return pickMenuTargetWindow(focusedInShim, shimWindows, preferredWin?.webContents.id)?.webContents
+  }
+  const shimMenuHandlers = new Map<string, ReturnType<typeof createMenuHandlers>>()
+  const shimMenuKeys = new Map<string, string>()
+  const shimMenuKey = (shimKey: string): string => {
+    const wc = shimMenuTarget(shimKey)
+    const kinds = kindsInFrontFor(wc)
+    return `${String(kinds.activeKind)}\0${String(kinds.frontKind)}\0${String(dailyInFrontFor(wc))}`
+  }
+  const buildMenuForShim = (shimKey: string): Electron.Menu => {
+    let shimHandlers = shimMenuHandlers.get(shimKey)
+    if (shimHandlers === undefined) {
+      const target = () => shimMenuTarget(shimKey)
+      shimHandlers = createMenuHandlers(manager, createSharedMenuHost(target, () => shimHandlers?.whatsNew()))
+      shimMenuHandlers.set(shimKey, shimHandlers)
+    }
+    shimMenuKeys.set(shimKey, shimMenuKey(shimKey))
+    return buildMenuForTarget(true, () => shimMenuTarget(shimKey), shimHandlers)
+  }
+  const refreshShimsIfMoved = (): void => {
+    if (shims === undefined) return
+    for (const [shimKey, prevKey] of shimMenuKeys) {
+      const shim = shims.getShim(shimKey)
+      if (shim === undefined) continue
+      const nextKey = shimMenuKey(shimKey)
+      if (nextKey === prevKey) continue
+      shim.setApplicationMenu(buildMenuForShim(shimKey))
+    }
+  }
+  const { apply: applyMenu, applyIfMoved } = gateOnBoardKind(
+    activeFileKind,
+    () => {
+      Menu.setApplicationMenu(buildMenuForTarget(false, hostMenuTarget, handlers))
+      shims?.refreshMenus()
+    },
     frontKind,
     () => String(dailyInFront()),
   )
+  const applyIfAnyMoved = (): void => {
+    applyIfMoved()
+    refreshShimsIfMoved()
+  }
   dailyMoved = applyMenu
   applyMenu()
   subscribeMenuRebuild(store, applyMenu)
   hotkeyRecording.onChange(applyMenu)
-  drawingInFront.onChange(() => applyIfMoved())
-  noPageInFront.onChange(() => applyIfMoved())
+  drawingInFront.onChange(applyIfAnyMoved)
+  noPageInFront.onChange(applyIfAnyMoved)
   // A tab switch changes which file is in front; a focus change changes which window is asked. Either
   // rebuilds only when the board items' answer moves (YAZ-3044 A32).
-  subscribeMenuRebuildOnActiveFile(store, applyIfMoved)
-  rebuildMenuOnFocus = applyIfMoved
-  if (process.platform === 'darwin' && !hiddenE2E && app.dock !== undefined) {
-    const defaultIconPath = defaultDockIconPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname })
-    const dock = app.dock
-    dockIcon = createDockIconController<Electron.NativeImage>({
+  subscribeMenuRebuildOnActiveFile(store, applyIfAnyMoved)
+  rebuildMenuOnFocus = applyIfAnyMoved
+  const shimServerName = process.env.YASEEN_DOCS_APP_SHIM_SERVER_NAME?.trim() || undefined
+  const hostBundlePath = HOST_BUNDLE_PATH
+  const hostBundleId = process.env.YASEEN_DOCS_APP_SHIM_HOST_BUNDLE_ID?.trim() || (app.isPackaged ? undefined : 'com.github.Electron')
+  if (process.platform === 'darwin' && !hiddenE2E) {
+    shims = createAppShimController<Electron.Menu>({
       store,
-      getFocusedWindowId: () => {
-        const focused = BrowserWindow.getFocusedWindow()
-        if (focused === null || focused.isDestroyed() || previewPopups.has(focused)) return null
-        return manager.idFor(focused.webContents) ?? null
-      },
-      defaultIconPath: existsSync(defaultIconPath) ? defaultIconPath : null,
-      setDockIcon: (img) => dock.setIcon(img),
-      loadImage: (p) => {
-        const img = nativeImage.createFromPath(p)
-        return img.isEmpty() ? null : img
-      },
+      windows: manager,
+      readPlist: readLauncherPlist,
+      buildMenuForShim: (shimKey) => buildMenuForShim(shimKey),
+      handleLink,
       exists: existsSync,
+      launchApp: async (appPath) => {
+        const err = await shell.openPath(appPath)
+        if (err !== '') console.warn(`[appShims] launch failed for "${appPath}": ${err}`)
+      },
+      showHostDock: () => {
+        void app.dock?.show()
+      },
+      hideHostDock: () => {
+        app.dock?.hide()
+      },
+      quitHost: () => {
+        skipQuitConfirm = true
+        app.quit()
+      },
+      headlessStart: headlessShimHost,
+      onShimsChanged: () => applyMenu(),
+      onShimDisconnected: (shimKey) => {
+        shimMenuHandlers.delete(shimKey)
+        shimMenuKeys.delete(shimKey)
+      },
+      confirmShimQuit: async ({ name, windowId }) => {
+        if (!shouldConfirmQuit()) return true
+        return showQuitConfirmDialog({
+          message: `Do you want to close ${name}?`,
+          detail: `Click Cancel to keep ${name} open. You can turn off this prompt in Settings › General.`,
+          confirmLabel: `Close ${name}`,
+          windowId,
+        })
+      },
     })
-    dockIcon.sync()
+    if (typeof app.startAppShimServer === 'function') {
+      try {
+        app.startAppShimServer(shimServerName ? { name: shimServerName } : undefined)
+      } catch (err) {
+        console.warn(`[appShims] startAppShimServer failed: ${String(err)}`)
+      }
+      app.on('app-shim-connected', (_event, shim) => {
+        void shims?.handleConnected(shim)
+      })
+      app.on('app-shim-version-mismatch', (_event, bundlePath) => {
+        shims?.handleVersionMismatch(bundlePath)
+      })
+    }
   }
   let friendsTokenChanged: (() => void) | undefined
   const { sync, githubAuth: auth, secrets, lsp } = registerIpc(store, manager, {
@@ -570,12 +844,13 @@ app.whenReady().then(() => {
     openExternal: (url) => shell.openExternal(url),
     openPath: (appPath) => shell.openPath(appPath),
     onGithubAuthChange: () => friendsTokenChanged?.(),
-    onVaultLauncherIconChanged: (iconPath) => dockIcon?.invalidate(iconPath),
+    onOpenVaultShim: routeVaultToShim,
+    onOpenWorkspaceShim: routeWorkspaceToShim,
     vaultLauncher: process.platform === 'darwin'
       ? {
           supported: true,
           install: async (params) => {
-            const binaryPath = vaultLauncherBinaryPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname })
+            const binaryPath = appShimLoaderPath(process.execPath)
             const res = await installVaultLauncher(
               {
                 name: params.name,
@@ -585,6 +860,9 @@ app.whenReady().then(() => {
                 openTarget: params.target === 'inbox' || params.target === 'today' ? params.target : undefined,
                 previousAppPath: params.previousAppPath,
                 binaryPath,
+                hostBundlePath,
+                hostBundleId,
+                serverName: shimServerName,
               },
               { trashItem: (p) => shell.trashItem(p) },
             )
@@ -637,11 +915,13 @@ app.whenReady().then(() => {
     openExternal: (url) => void shell.openExternal(url),
     restartToUpdate: () => {
       reopenAfterQuit = true
+      forceQuitAll = true
+      skipQuitConfirm = true
       app.quit()
     },
   })
   updater.start()
-  const navigation = registerAutomationIpc(store, manager)
+  const navigation = registerAutomationIpc(store, manager, (id) => manager.isShimWindow?.(id) ?? false)
   automationServer = startAutomationServer(app.getPath('userData'), (request) =>
     prepareAutomation({ profile: app.getPath('userData'), version: app.getVersion(), packaged: app.isPackaged, state: () => store.get(), navigation }, request))
   void automationServer.catch(() => console.error('[cli] Could not start the local connection. Check profile permissions.'))
@@ -688,17 +968,31 @@ app.whenReady().then(() => {
   // A launch that was asked for something opens only that (YAZ-2589 D1): the windows of the vault
   // each waiting link belongs to. A plain launch follows the setting (D2), and a request that cannot
   // open is not a request (A6): a link that cannot be read, or a path `rootFor` has no vault for.
-  const asked = links.pending().flatMap<RestoreTarget>((url) => {
+  const pendingLinks = links.pending()
+  let shimRoutedCount = 0
+  const asked = pendingLinks.flatMap<RestoreTarget>((url) => {
     const wsId = parseWorkspaceLink(url)
     if (wsId !== null) {
+      if (process.platform === 'darwin' && !hiddenE2E && shims !== undefined && shims.resolveShimForWorkspace(wsId).mode !== 'host') {
+        shimRoutedCount++
+        return []
+      }
       const set = store.get().vaultSets.find((s) => s.id === wsId)
       return set !== undefined ? [{ exact: set.roots }] : []
     }
     const link = parseFileLink(url)
     if (link === null) return []
+    const isDir = manager.isDir(link.path)
+    if (process.platform === 'darwin' && !hiddenE2E && shims !== undefined) {
+      const route = isDir ? shims.resolveShimForVault(link.path) : shims.resolveShimForPath(link.path, link.root)
+      if (route.mode !== 'host') {
+        shimRoutedCount++
+        return []
+      }
+    }
     const root = manager.rootFor(link.path, link.root)
     if (root === null) return []
-    return manager.isDir(link.path) ? [{ exact: [root] }] : [root]
+    return isDir ? [{ exact: [root] }] : [root]
   })
   // The card skill's copy in the profile (YAZ-5107): made before the first window, never while the app runs. A
   // checkout stamps its version with the shipped files' hash, so an edit of `skills/card-skill` reaches the copy.
@@ -712,27 +1006,70 @@ app.whenReady().then(() => {
   // The first window waits for the settings folder's first read (YAZ-3276 D4), so a theme that the other Mac
   // changed shows no flash. At most 500 ms: a slow or lost folder never holds up a launch. No folder: at once.
   void Promise.all([Promise.race([settingsFolder.ready, new Promise((done) => setTimeout(done, 500))]), cardSkillReady]).then(() => {
-    manager.restore(asked.length > 0 ? asked : store.get().settings.startupWindows)
+    const allLinksRoutedToShims = shimRoutedCount > 0 && asked.length === 0
+    if (!headlessShimHost && !allLinksRoutedToShims) {
+      manager.restore(asked.length > 0 ? asked : store.get().settings.startupWindows)
+    } else if (asked.length > 0) {
+      manager.restore(asked)
+    } else {
+      manager.pruneStaleWindows?.()
+    }
     links.flush()
     if (process.platform === 'darwin' && app.isPackaged && !hiddenE2E && process.env.YASEEN_DOCS_E2E !== '1') {
-      const binaryPath = vaultLauncherBinaryPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname })
-      void refreshOutdatedLaunchers(binaryPath).catch((err: unknown) => console.warn(`[vaultLauncher] refresh failed: ${String(err)}`))
+      const binaryPath = appShimLoaderPath(process.execPath)
+      void refreshOutdatedLaunchers(binaryPath, { hostBundlePath, hostBundleId, serverName: shimServerName }).catch((err: unknown) => console.warn(`[vaultLauncher] refresh failed: ${String(err)}`))
     }
   })
 })
 
 // Quit: `runQuitSequence` owns the order (renderers first, YAZ-1081 D2) and `windows[]` is kept, so
 // the next launch can bring them back (YAZ-2589); then exit for real — `app.exit` re-runs no quit events.
+// Option B (YAZ-6640): plain Cmd+Q on the host while Vault Apps are open closes only regular host windows
+// and hides the host Dock icon, leaving Vault Apps running. Cmd+Opt+Q ("Quit All") or updater sets `forceQuitAll`.
 let quitting = false
-app.on('before-quit', (event) => {
-  event.preventDefault()
+let closingHostOnly = false
+let confirmingHostQuit = false
+const readClipboardHtml = async (): Promise<string> => {
+  try {
+    const items = await clipboard.read()
+    for (const item of items) {
+      if (item.types.includes('text/html')) {
+        const blob = await item.getType('text/html')
+        return await blob.text()
+      }
+    }
+  } catch {
+    // Clipboard unavailable or no HTML payload.
+  }
+  return ''
+}
+
+const writeClipboardRich = async (data: { text: string; html: string }): Promise<void> => {
+  await clipboard.write([
+    new ClipboardItem({
+      'text/plain': data.text,
+      'text/html': data.html,
+    }),
+  ])
+}
+
+const runHostQuitSequence = (): void => {
   if (quitting) return
   quitting = true
-  dockIcon?.dispose()
+  const activeShimBundles = shims?.activeBundlePaths() ?? []
+  const hadRegularWindows = (manager.regularWindowCount?.() ?? 0) > 0
+  // Launch the host app first when regular windows were open so it boots normally before shims connect (YAZ-6626).
+  const reopenTargets = activeShimBundles.length > 0 ? [...(hadRegularWindows ? [HOST_BUNDLE_PATH] : []), ...activeShimBundles] : undefined
   void runQuitSequence({
     flushWindows: async () => {
       await automationServer?.then((server) => server.close(), () => undefined)
       await manager.flushAllForQuit()
+      shims?.quitAll()
+      try {
+        app.stopAppShimServer?.()
+      } catch {
+        // ignore stop errors during shutdown
+      }
     },
     // The settings folder's pending write (YAZ-3276 D4) goes with the state file's.
     flushStore: () => Promise.all([store.flush(), settingsFolder.flush()]).then(() => undefined),
@@ -746,11 +1083,78 @@ app.on('before-quit', (event) => {
     // The swap waits for this process to end (S21, S22): start it last, then exit.
     exit: () => {
       cleanupTreeWatcherProbes()
-      updater.installOnExit(reopenAfterQuit)
+      updater.installOnExit(reopenAfterQuit, reopenTargets)
       app.exit(0)
     },
   })
+}
+app.on('before-quit', (event) => {
+  event.preventDefault()
+  if (quitting) return
+  const needConfirm = !skipQuitConfirm && !hiddenE2E && process.env.YASEEN_DOCS_E2E !== '1' && store.get().settings.confirmBeforeQuit
+  if (!forceQuitAll && (shims?.connectedCount() ?? 0) > 0) {
+    if (closingHostOnly || confirmingHostQuit) return
+    const regularIds = manager.regularWindowIds?.() ?? []
+    const doCloseHost = () => {
+      closingHostOnly = true
+      void (regularIds.length > 0 ? manager.flushAndCloseWindows(regularIds) : Promise.resolve())
+        .catch(() => undefined)
+        .finally(() => {
+          closingHostOnly = false
+          if ((manager.regularWindowCount?.() ?? 0) === 0 && (shims?.connectedCount() ?? 0) > 0) {
+            app.dock?.hide()
+          }
+        })
+    }
+    if (!needConfirm || regularIds.length === 0) {
+      doCloseHost()
+      return
+    }
+    confirmingHostQuit = true
+    const parent = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !previewPopups.has(w) && manager.idFor(w.webContents) === regularIds[0])
+    const boxOpts: Electron.MessageBoxOptions = {
+      type: 'question',
+      buttons: ['Close Windows', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      message: 'Do you want to close Yaseen Docs windows?',
+      detail: 'Your open Vault Apps will stay running. Click Cancel to keep these windows open.',
+    }
+    void (parent !== undefined ? dialog.showMessageBox(parent, boxOpts) : dialog.showMessageBox(boxOpts))
+      .catch(() => ({ response: 1 }))
+      .then((res) => {
+        confirmingHostQuit = false
+        if (res.response === 0) doCloseHost()
+      })
+    return
+  }
+  if (needConfirm && !reopenAfterQuit) {
+    if (confirmingHostQuit) return
+    confirmingHostQuit = true
+    const hostWin = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !previewPopups.has(w))
+    const boxOpts: Electron.MessageBoxOptions = {
+      type: 'question',
+      buttons: ['Quit Yaseen Docs', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      message: 'Do you want to quit Yaseen Docs?',
+      detail: 'Click Cancel to keep Yaseen Docs open. You can turn off this prompt in Settings › General.',
+    }
+    void (hostWin !== undefined ? dialog.showMessageBox(hostWin, boxOpts) : dialog.showMessageBox(boxOpts))
+      .catch(() => ({ response: 1 }))
+      .then((res) => {
+        confirmingHostQuit = false
+        if (res.response === 0) runHostQuitSequence()
+      })
+    return
+  }
+  runHostQuitSequence()
 })
 
-// Obsidian quits when its last window closes (its main.js `window-all-closed` handler); so do we.
-app.on('window-all-closed', () => app.quit())
+// Obsidian quits when its last window closes (its main.js `window-all-closed` handler); so do we —
+// except while macOS App Shims are connected or a `--app-shim-host` launch awaits its initial shim (YAZ-6625 D2).
+app.on('window-all-closed', () => {
+  if ((shims?.connectedCount() ?? 0) > 0 || shims?.isWaitingForFirstShim()) return
+  skipQuitConfirm = true
+  app.quit()
+})

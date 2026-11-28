@@ -278,7 +278,6 @@ export async function cleanupWorkspaceLauncher(
   store: Store,
   backend: VaultLauncherBackend,
   workspaceId: string,
-  onIconChanged?: (iconPath: string) => void,
   onChanged: () => void = () => broadcastAll(CONTRACT.vaultLauncher.onChanged.channel),
 ): Promise<void> {
   const launcher = store.get().vaultSets.find((s) => s.id === workspaceId)?.launcher
@@ -287,7 +286,6 @@ export async function cleanupWorkspaceLauncher(
     await backend.remove(launcher.appPath, workspaceVaultPath(workspaceId)).catch(() => undefined)
   }
   await rm(launcher.iconPath, { force: true }).catch(() => undefined)
-  onIconChanged?.(launcher.iconPath)
   onChanged()
 }
 
@@ -295,14 +293,12 @@ export async function cleanupWorkspaceLauncher(
  * Registers `vault-launcher:*` IPC handlers (YAZ-5967, YAZ-6374, YAZ-6447).
  *
  * Persists `FolderState.launcher` in `store`, caches 512x512 PNGs under `<userData>/vault-icons/`,
- * invokes `onIconChanged(iconPath)` after create/remove so the Dock icon controller can evict its cache,
  * and broadcasts `vault-launcher:changed` to keep icons in sync across all windows.
  */
 export function registerVaultLauncherIpc(
   store: Store,
   userData: string,
   backend: VaultLauncherBackend,
-  onIconChanged?: (iconPath: string) => void,
   onChanged: () => void = () => broadcastAll(CONTRACT.vaultLauncher.onChanged.channel),
   isReadOnlyRoot: (root: string) => boolean = () => false,
 ): void {
@@ -376,7 +372,6 @@ export function registerVaultLauncherIpc(
       console.warn(`[vaultLauncher] failed to persist synced launcher preset in ${root}: ${String(err)}`)
     }
 
-    onIconChanged?.(iconPath)
     onChanged()
 
     return {
@@ -397,7 +392,6 @@ export function registerVaultLauncherIpc(
     }
     await rm(launcher.iconPath, { force: true }).catch(() => undefined)
     store.setFolder(root, { launcher: null })
-    onIconChanged?.(launcher.iconPath)
     onChanged()
   })
 
@@ -524,7 +518,6 @@ export function registerVaultLauncherIpc(
       }
     }
 
-    onIconChanged?.(iconPath)
     onChanged()
 
     return {
@@ -545,7 +538,6 @@ export function registerVaultLauncherIpc(
     }
     await rm(launcher.iconPath, { force: true }).catch(() => undefined)
     store.setVaultSetLauncher(workspaceId, null)
-    onIconChanged?.(launcher.iconPath)
     onChanged()
   })
 

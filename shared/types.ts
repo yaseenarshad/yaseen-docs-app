@@ -2411,6 +2411,8 @@ export interface SettingsState {
   highlightCustomColors: HighlightCustomColor[]
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
   startupWindows: StartupWindows
+  /** Show a confirmation popup before Cmd+Q / Alfred Quit All closes a Vault App or Yaseen Docs (YAZ-6641). Default true. */
+  confirmBeforeQuit: boolean
   /** What a vault opens on (YAZ-3487 D15): every vault open reads it — main's new windows, `openRoot`, `bootTabs`, the empty-window door. */
   vaultOpensOn: VaultOpensOn
   /** Section indent (YAZ-2709): the width of one step in px, 24 | 30 | 36. On or off is per page (the page cog), never here. View-only. */
@@ -3368,6 +3370,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   selectionToolbar: DEFAULT_TOOLBAR,
   highlightCustomColors: [],
   startupWindows: 'last',
+  confirmBeforeQuit: true,
   vaultOpensOn: 'blank',
   sectionStep: 30,
   sectionLines: 'always',
@@ -3810,6 +3813,8 @@ export interface FolderState {
    * so read-only vaults keep their own switches without writing to disk inside the vault. Absent = fall back to `settings.rowDates`.
    */
   rowDates?: RowDates
+  /** Last remembered window bounds for this vault (YAZ-6625 #3). Persisted per machine; clamped on restore. */
+  lastBounds?: WindowBounds
 }
 
 /** Optional view opened when launching a vault via its macOS `.app` launcher (YAZ-5967). */
@@ -3975,6 +3980,8 @@ export interface VaultSet {
   lastUsed: number
   /** Per-Mac macOS `.app` launcher metadata for this workspace. Absent = no launcher. */
   launcher?: VaultLauncherInfo
+  /** Last remembered window bounds for this workspace (YAZ-6625 #3). Persisted per machine; clamped on restore. */
+  lastBounds?: WindowBounds
 }
 
 /** What `window.openSet` answers (YAZ-2602 S66): `missing` is the set's vaults whose folder is gone, as absolute paths; `opened: false` = none is left, and no window opened. */
