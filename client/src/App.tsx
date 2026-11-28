@@ -9,7 +9,7 @@ import { spacingVars, type TextFormatting } from '@shared/textFormatting'
 import { GLOBAL_INHERITING_CHROME_KEYS, VAULT_OVERRIDE_KEYS, type VaultChromeKey, type WorkspaceChromeOverrides } from '@shared/vaultSettings'
 import { webLinkVars } from '@shared/webLinks'
 import { NO_PAGE_OVERRIDE_VARS, pageOverrideVars, patchWorkspaceChrome, resolvePageSettings, resolveWindowChrome, setVaultNewPageDrawing, setWindowSearchIncludeInline, splitChromeDiff } from './settings/effectiveSettings'
-import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type VaultAppSidebarStart, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -2810,6 +2810,51 @@ export function App() {
     openDailyPage(false, roots[at], false)
   }, [todayTarget, roots, vaults, openDailyPage])
 
+  // YAZ-6682 D5: per-app Start View pushed on fresh Vault App / Workspace App open or handoff.
+  // Queued in state until `roots` is populated so boot-race pushes survive initial mount cleanly.
+  const [pendingSidebarStart, setPendingSidebarStart] = useState<{ root?: string; sidebarStart: VaultAppSidebarStart } | null>(null)
+  const applySidebarStart = useCallback((req: { root?: string; sidebarStart: VaultAppSidebarStart }) => {
+    setPendingSidebarStart(req)
+  }, [])
+  useEffect(() => {
+    if (pendingSidebarStart === null || roots.length === 0) return
+    const { root: targetRoot, sidebarStart } = pendingSidebarStart
+    setPendingSidebarStart(null)
+    if (sidebarCollapsedRef.current) toggleSidebar()
+    changeLens(sidebarStart.tab)
+    const base = targetRoot !== undefined ? (roots.find((r) => stripSlash(r) === stripSlash(targetRoot)) ?? targetRoot) : roots[0]
+    const relPath = sidebarStart.folderPath?.replace(/^\/+|\/+$/g, '') ?? ''
+    const absPath = relPath.length > 0 && base !== undefined ? `${stripSlash(base)}/${relPath}` : null
+    if (sidebarStart.onlyFolder === true) {
+      if (sidebarStart.tab === 'favorites' || sidebarStart.tab === 'focus') {
+        setFilesOnly(null)
+        if (sidebarStart.folderKind === 'collection' && sidebarStart.folderId) {
+          setFocusOnly(sidebarStart.folderId)
+        } else if (sidebarStart.folderKind === 'disk' && absPath !== null) {
+          setFocusOnly(absPath)
+        } else {
+          setFocusOnly(null)
+        }
+      } else if (sidebarStart.tab === 'files') {
+        setFocusOnly(null)
+        if (sidebarStart.folderKind === 'disk' && absPath !== null) {
+          setFilesOnly(absPath)
+        } else {
+          setFilesOnly(null)
+        }
+      } else {
+        setFocusOnly(null)
+        setFilesOnly(null)
+      }
+    } else {
+      setFocusOnly(null)
+      setFilesOnly(null)
+      if (sidebarStart.tab === 'files' && sidebarStart.folderKind === 'disk' && absPath !== null) {
+        revealInFiles(absPath)
+      }
+    }
+  }, [pendingSidebarStart, roots, toggleSidebar, changeLens, setFocusOnly, setFilesOnly, revealInFiles])
+
   // CLI automation (YAZ-4502, YAZ-6539): navigate, inspect, and manage tabs; reply only once the window shows the result.
   useAutomationSurface('app', { ready: true, inspect: () => ({ path: pageOnShow, tab: activeTab, sidebar: sidebarLens, sidebarCollapsed }) })
   useAutomation(async (command) => (await import('./automation/windowCommands')).runWindowCommand(command, {
@@ -2817,7 +2862,7 @@ export function App() {
     toggleSidebar, changeLens, openPage, openBatch, activateTab: activate, titleOf: (p, n) => n ?? nameOf(p),
     leaveChrome: () => { setOverview(OVERVIEW_CLOSED); setInboxFront(false) }, closeTabs: (ids, moved) => (now.current.phase === 'open' ? closeUnderOverview(ids, moved) : closeTabs(ids, moved)),
   }))
-  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles, onTakeInbox: takeInbox, onOpenTarget: openTarget })
+  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles, onTakeInbox: takeInbox, onOpenTarget: openTarget, onSidebarStart: applySidebarStart })
   /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
   const moveBoardCardToSlot = useCallback((id: string, slot: number) => {
     const from = now.current.tabs.findIndex((t) => t.id === id)

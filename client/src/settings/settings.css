@@ -3883,3 +3883,44 @@ span.cards-wizard__pill {
 .setting__scope-jump:hover {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
+
+/* ---------- Vault App Start View controls (YAZ-6682) ---------- */
+
+.vault-launcher-modal__start-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-side);
+  border: 1px solid var(--border);
+}
+
+.vault-launcher-modal__start-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vault-launcher-modal__start-row--inline {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.vault-launcher-modal__sublabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+
+.vault-launcher-modal__select-wrap {
+  width: 100%;
+}
+
+.vault-launcher-modal__select-wrap .settings__select {
+  width: 100%;
+  min-width: 0;
+}

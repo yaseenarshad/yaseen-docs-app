@@ -23,7 +23,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { dailyPageName } from '@shared/dailyPage'
 import { IDS_FILE } from '@shared/pageId'
 import { VAULT_SETTINGS_FILE, workspaceSettingsKey } from '@shared/vaultSettings'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type FolderPagesSettings, type FocusFolder, type InboxCarry, type ListScope, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type FolderPagesSettings, type FocusFolder, type InboxCarry, type ListScope, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type VaultAppSidebarStart, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -50,9 +50,13 @@ interface SidebarStubProps {
   /** The Recents vault filter (YAZ-4450 D6): App's, for the window's session. */
   recentVault?: string | null
   onRecentVault?: (root: string | null) => void
+  /** "Hide all others" in Favorites/Focus (YAZ-6574, YAZ-6682). */
+  focusOnly?: string | null
+  onFocusOnly?: (id: string | null) => void
   /** "Hide all others" in Files (YAZ-5790): the folder shown alone, App's for the window's session. */
   filesOnly?: string | null
   onFilesOnly?: (dir: string | null) => void
+  collapsed?: boolean
   /** A Files window's header button (YAZ-3357 D8): Tabs Mission Control. */
   onShowAllTabs?: () => void
   onToNormalWindow?: () => void
@@ -339,6 +343,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const linkFromFiles = new Set<(action: FilesAction) => void>()
   const linkTakeInbox = new Set<(carry: InboxCarry) => void>()
   const linkOpenTarget = new Set<(req: { root: string; target: 'inbox' | 'today' }) => void>()
+  const linkSidebarStart = new Set<(req: { root?: string; sidebarStart: VaultAppSidebarStart }) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
   const fileDeleted = new Set<(ev: { path: string; kind: 'file' | 'dir' }) => void>()
   const dragLanded = new Set<(ev: { paths: string[] }) => void>()
@@ -570,6 +575,11 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         linkOpenTarget.add(l)
         return () => linkOpenTarget.delete(l)
       }),
+      // A Vault App or Workspace App Start View (YAZ-6682).
+      onSidebarStart: vi.fn((l: (req: { root?: string; sidebarStart: VaultAppSidebarStart }) => void) => {
+        linkSidebarStart.add(l)
+        return () => linkSidebarStart.delete(l)
+      }),
       ready: vi.fn(async () => undefined),
     },
     // In-app rename (Links E1, GRO-2194) + external repair (E1c, GRO-2242): App subscribes to
@@ -712,6 +722,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitFromFiles: (action: FilesAction) => linkFromFiles.forEach((l) => l(action)),
     emitTakeInbox: (carry: InboxCarry) => linkTakeInbox.forEach((l) => l(carry)),
     emitOpenTarget: (req: { root: string; target: 'inbox' | 'today' }) => linkOpenTarget.forEach((l) => l(req)),
+    emitSidebarStart: (req: { root?: string; sidebarStart: VaultAppSidebarStart }) => linkSidebarStart.forEach((l) => l(req)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
     emitDragLanded: (paths: string[]) => dragLanded.forEach((l) => l({ paths })),
     emitFileDeleted: (path: string, kind: 'file' | 'dir' = 'file') => fileDeleted.forEach((l) => l({ path, kind })),
@@ -9049,5 +9060,121 @@ describe('App: unified per-vault & multi-vault workspace settings (YAZ-6546, YAZ
     )
     const savedWs = ((bridge.state.setSettings.mock.calls as unknown[][]).at(-1)?.[0] as AppState['settings']).workspaceSettings
     expect(savedWs[wsKey]).toBeUndefined()
+  })
+})
+
+describe('Vault App Start View (YAZ-6682 link:sidebar-start)', () => {
+  it('switches to Favorites, opens a collapsed sidebar, and isolates a collection folder', async () => {
+    const { emitSidebarStart } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md'],
+      sidebarLens: 'files',
+      sidebarCollapsed: true,
+    })
+    await act(async () => {})
+    expect(captured.sidebar?.collapsed).toBe(true)
+    expect(captured.sidebar?.lens).toBe('files')
+
+    await act(async () => {
+      emitSidebarStart({
+        root: '/v',
+        sidebarStart: { tab: 'favorites', folderKind: 'collection', folderId: 'col-eng', onlyFolder: true },
+      })
+    })
+    expect(captured.sidebar?.collapsed).toBe(false)
+    expect(captured.sidebar?.lens).toBe('favorites')
+    expect(captured.sidebar?.focusOnly).toBe('col-eng')
+    expect(captured.sidebar?.filesOnly).toBeNull()
+  })
+
+  it('switches to Files and isolates a disk folder via filesOnly, then clears isolation when onlyFolder is false', async () => {
+    const { emitSidebarStart } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md'],
+      sidebarLens: 'favorites',
+    })
+    await act(async () => {})
+
+    await act(async () => {
+      emitSidebarStart({
+        root: '/v',
+        sidebarStart: { tab: 'files', folderKind: 'disk', folderPath: 'Clients/Acme', onlyFolder: true },
+      })
+    })
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.filesOnly).toBe('/v/Clients/Acme')
+    expect(captured.sidebar?.focusOnly).toBeNull()
+
+    await act(async () => {
+      emitSidebarStart({
+        root: '/v',
+        sidebarStart: { tab: 'files', folderKind: 'disk', folderPath: 'Clients/Acme', onlyFolder: false },
+      })
+    })
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.filesOnly).toBeNull()
+    expect(captured.sidebar?.focusOnly).toBeNull()
+    expect(captured.sidebar?.revealRequest?.path).toBe('/v/Clients/Acme')
+  })
+
+  it('isolates a disk folder in Focus and gracefully clears isolation when target folder is outside mounted roots', async () => {
+    const { emitSidebarStart } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: '/v',
+      file: '/v/a.md',
+      tabs: ['/v/a.md'],
+      sidebarLens: 'files',
+    })
+    await act(async () => {})
+
+    await act(async () => {
+      emitSidebarStart({
+        root: '/v',
+        sidebarStart: { tab: 'focus', folderKind: 'disk', folderPath: 'Projects', onlyFolder: true },
+      })
+    })
+    expect(captured.sidebar?.lens).toBe('focus')
+    expect(captured.sidebar?.focusOnly).toBe('/v/Projects')
+
+    // Missing/outside vault root is safely cleared by useOnlyFolderPair without throwing.
+    await act(async () => {
+      emitSidebarStart({
+        root: '/missing-vault',
+        sidebarStart: { tab: 'files', folderKind: 'disk', folderPath: 'Gone', onlyFolder: true },
+      })
+    })
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(captured.sidebar?.filesOnly).toBeNull()
+  })
+
+  it('queues link:sidebar-start received before roots mount (boot race) and applies once the vault loads', async () => {
+    const { emitSidebarStart, emitSetRoots } = await mount(defaultAppState(), {
+      id: 'w1',
+      root: null,
+      file: null,
+      tabs: [],
+    })
+    await act(async () => {})
+    expect(captured.sidebar).toBeNull()
+
+    await act(async () => {
+      emitSidebarStart({
+        root: '/v',
+        sidebarStart: { tab: 'favorites', folderKind: 'collection', folderId: 'boot-col', onlyFolder: true },
+      })
+    })
+
+    await act(async () => {
+      emitSetRoots(['/v'])
+    })
+    await act(async () => {})
+
+    expect(captured.sidebar?.lens).toBe('favorites')
+    expect(captured.sidebar?.focusOnly).toBe('boot-col')
+    expect(captured.sidebar?.collapsed).toBe(false)
   })
 })
