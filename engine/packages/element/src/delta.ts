@@ -43,6 +43,7 @@ import {
   updateBoundElements,
 } from "./binding";
 import { LinearElementEditor } from "./linearElementEditor";
+import { getSmartShapeMetadata } from "./smartShape";
 import { mutateElement, newElementWith } from "./mutateElement";
 import { getBoundTextElementId, redrawTextBoundingBox } from "./textElement";
 import { getFoldedLines } from "./textFolds";
@@ -668,13 +669,15 @@ export class AppStateDelta implements DeltaContainer<AppState> {
         deletedLockedMultiSelections,
       );
 
+      const restoredLinearElement = insertedSelectedLinearElement
+        ? nextElements.get(insertedSelectedLinearElement.elementId)
+        : undefined;
       const selectedLinearElement =
         insertedSelectedLinearElement &&
-        nextElements.has(insertedSelectedLinearElement.elementId)
+        restoredLinearElement &&
+        !getSmartShapeMetadata(restoredLinearElement)
           ? new LinearElementEditor(
-              nextElements.get(
-                insertedSelectedLinearElement.elementId,
-              ) as NonDeleted<ExcalidrawLinearElement>,
+              restoredLinearElement as NonDeleted<ExcalidrawLinearElement>,
               nextElements,
               insertedSelectedLinearElement.isEditing,
             )

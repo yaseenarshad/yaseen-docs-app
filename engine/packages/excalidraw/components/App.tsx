@@ -5397,6 +5397,7 @@ class App extends React.Component<AppProps, AppState> {
           this.state,
           this,
         ),
+        selectedLinearElement: null,
       },
       () => {
         if (opts.files) {
@@ -6801,7 +6802,10 @@ class App extends React.Component<AppProps, AppState> {
         if (selectedElements.length === 1) {
           const selectedElement = selectedElements[0];
           if (event[KEYS.CTRL_OR_CMD] || isLineElement(selectedElement)) {
-            if (isLinearElement(selectedElement)) {
+            if (
+              isLinearElement(selectedElement) &&
+              !getSmartShapeMetadata(selectedElement)
+            ) {
               if (
                 !this.state.selectedLinearElement?.isEditing ||
                 this.state.selectedLinearElement.elementId !==
@@ -8447,6 +8451,7 @@ class App extends React.Component<AppProps, AppState> {
       if (
         ((event[KEYS.CTRL_OR_CMD] && isSimpleArrow(selectedLinearElement)) ||
           isLineElement(selectedLinearElement)) &&
+        !getSmartShapeMetadata(selectedLinearElement) &&
         (!this.state.selectedLinearElement?.isEditing ||
           this.state.selectedLinearElement.elementId !==
             selectedLinearElement.id)
@@ -13581,7 +13586,8 @@ class App extends React.Component<AppProps, AppState> {
               // select linear element only when we haven't box-selected anything else
               selectedLinearElement:
                 elementsWithinSelection.length === 1 &&
-                isLinearElement(elementsWithinSelection[0])
+                isLinearElement(elementsWithinSelection[0]) &&
+                !getSmartShapeMetadata(elementsWithinSelection[0])
                   ? new LinearElementEditor(
                       elementsWithinSelection[0],
                       this.scene.getNonDeletedElementsMap(),
@@ -14252,7 +14258,8 @@ class App extends React.Component<AppProps, AppState> {
       const hitElement = pointerDownState.hit.element;
       if (
         this.state.selectedLinearElement?.elementId !== hitElement?.id &&
-        isLinearElement(hitElement)
+        isLinearElement(hitElement) &&
+        !getSmartShapeMetadata(hitElement)
       ) {
         const selectedElements = this.scene.getSelectedElements(this.state);
         // set selectedLinearElement when no other element selected except
@@ -14392,12 +14399,13 @@ class App extends React.Component<AppProps, AppState> {
                   // set selectedLinearElement only if thats the only element selected
                   selectedLinearElement:
                     newSelectedElements.length === 1 &&
-                    isLinearElement(newSelectedElements[0])
+                    isLinearElement(newSelectedElements[0]) &&
+                    !getSmartShapeMetadata(newSelectedElements[0])
                       ? new LinearElementEditor(
                           newSelectedElements[0],
                           this.scene.getNonDeletedElementsMap(),
                         )
-                      : prevState.selectedLinearElement,
+                      : null,
                 };
               });
             }
@@ -14467,14 +14475,14 @@ class App extends React.Component<AppProps, AppState> {
             ),
             selectedLinearElement:
               isLinearElement(hitElement) &&
-              // Don't set `selectedLinearElement` if its same as the hitElement, this is mainly to prevent resetting the `hoverPointIndex` to -1.
-              // Future we should update the API to take care of setting the correct `hoverPointIndex` when initialized
-              prevState.selectedLinearElement?.elementId !== hitElement.id
-                ? new LinearElementEditor(
-                    hitElement,
-                    this.scene.getNonDeletedElementsMap(),
-                  )
-                : prevState.selectedLinearElement,
+              !getSmartShapeMetadata(hitElement)
+                ? prevState.selectedLinearElement?.elementId !== hitElement.id
+                  ? new LinearElementEditor(
+                      hitElement,
+                      this.scene.getNonDeletedElementsMap(),
+                    )
+                  : prevState.selectedLinearElement
+                : null,
           }));
         }
       }
@@ -15622,12 +15630,13 @@ class App extends React.Component<AppProps, AppState> {
                 this.state,
                 this,
               ),
-              selectedLinearElement: isLinearElement(element)
-                ? new LinearElementEditor(
-                    element,
-                    this.scene.getNonDeletedElementsMap(),
-                  )
-                : null,
+              selectedLinearElement:
+                isLinearElement(element) && !getSmartShapeMetadata(element)
+                  ? new LinearElementEditor(
+                      element,
+                      this.scene.getNonDeletedElementsMap(),
+                    )
+                  : null,
             }
           : this.state),
         showHyperlinkPopup: false,
@@ -16015,6 +16024,8 @@ class App extends React.Component<AppProps, AppState> {
       pointFrom<GlobalPoint>(pointerCoords.x, pointerCoords.y),
     );
     this.scene.mutateElement(current, {
+      x: updated.x,
+      y: updated.y,
       points: updated.points,
       customData: updated.customData,
     });

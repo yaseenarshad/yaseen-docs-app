@@ -56,7 +56,7 @@ const rect = (id: string) => ({ id, type: 'rectangle' })
 
 const smart: SmartShapeApi = {
   SMART_SHAPE_DEFINITIONS: [
-    { id: 'arrow-right', title: 'Arrow right', kind: 'filled-arrow', width: 200, height: 100, closed: true, roundness: null, defaults: {}, handles: ['shaft'] },
+    { id: 'arrow-right', title: 'Arrow right', kind: 'filled-arrow', category: 'arrows', width: 200, height: 100, closed: true, roundness: null, defaults: {}, handles: ['shaft'] },
   ] as unknown as SmartShapeApi['SMART_SHAPE_DEFINITIONS'],
   generateSmartShapePoints: () =>
     [
@@ -285,7 +285,8 @@ describe('the empty field: Favorites, Recent, Components, Shapes (D7)', () => {
     const { host } = await mount()
     await click(section(host, 'Shapes')!.querySelector('.image-studio__show-all'))
     expect((await showOption(host, 'Shapes'))?.getAttribute('aria-checked')).toBe('true')
-    expect(tileNames(section(host, 'Shapes')).length).toBeGreaterThan(4)
+    expect(tileNames(section(host, 'Basic')).length).toBeGreaterThan(4)
+    expect(tileNames(section(host, 'Arrows'))).toEqual(['Arrow right'])
     await click(await showOption(host, 'All'))
     await click(section(host, 'Recent')!.querySelector('.image-studio__show-all'))
     expect(tileNames(section(host, 'Recent'))).toHaveLength(6)
@@ -323,9 +324,29 @@ describe('the empty field: Favorites, Recent, Components, Shapes (D7)', () => {
     loadElement.mockReturnValue(new Promise((resolve) => (land = resolve)))
     const { host } = await mount()
     await click(await showOption(host, 'Shapes'))
-    const before = tileNames(section(host, 'Shapes')).length
+    expect(tileNames(section(host, 'Basic'))).toHaveLength(7)
+    expect(section(host, 'Arrows')).toBeNull()
     await act(async () => land(elementPackage as never))
-    expect(tileNames(section(host, 'Shapes'))).toHaveLength(before + 1)
+    expect(tileNames(section(host, 'Arrows'))).toEqual(['Arrow right'])
+  })
+
+  it('groups Filter › Show › Shapes into the 5 labeled sections and draws sharp vs rounded rectangle previews', async () => {
+    const richSmart: SmartShapeApi = {
+      ...smart,
+      SMART_SHAPE_DEFINITIONS: [
+        { id: 'arrow-right', title: 'Arrow right', kind: 'filled-arrow', category: 'arrows', width: 200, height: 100, closed: true, roundness: null, defaults: {}, handles: ['shaft'] },
+        { id: 'brace-left', title: 'Brace left', kind: 'brace', category: 'brackets', width: 40, height: 200, closed: false, roundness: null, defaults: {}, handles: ['cusp'] },
+        { id: 'callout-rounded', title: 'Rounded callout', kind: 'callout', category: 'callouts', width: 200, height: 140, closed: true, roundness: null, defaults: {}, handles: ['tail'] },
+        { id: 'ribbon', title: 'Ribbon', kind: 'ribbon', category: 'banners', width: 220, height: 80, closed: true, roundness: null, defaults: {}, handles: [] },
+      ] as unknown as SmartShapeApi['SMART_SHAPE_DEFINITIONS'],
+    }
+    loadElement.mockResolvedValue({ ...elementPackage, ...richSmart } as unknown as Awaited<ReturnType<typeof loadExcalidrawElement>>)
+    const { host } = await mount()
+    await click(await showOption(host, 'Shapes'))
+    const headings = [...host.querySelectorAll('.image-studio__section-head h3')].map((h) => h.textContent)
+    expect(headings).toEqual(['Basic', 'Arrows', 'Brackets & Braces', 'Callouts', 'Banners & Flow'])
+    expect(byLabel(host, 'Add Rectangle')!.querySelector('rect')?.getAttribute('rx')).toBe('0')
+    expect(byLabel(host, 'Add Rounded rectangle')!.querySelector('rect')?.getAttribute('rx')).toBe('16')
   })
 })
 
@@ -865,12 +886,26 @@ describe('the tile menu (D10, demo 6B)', () => {
   it('says where the item comes from, and opens its page on the provider in the browser (demo 6H)', async () => {
     library = libraryOf({ favorites: [stored({ collectionName: 'Noto Emoji', sourceUrl: 'https://icon-sets.iconify.design/noto/money-bag/' })] })
     const { host } = await mount()
-    expect(byLabel(host, 'Add money bag')!.title).toBe('money bag — Iconify · Noto Emoji')
+    expect(byLabel(host, 'Add money bag')!.title).toBe('money bag — Iconify · Noto Emoji (recolorable)')
     await rightClick(host, 'money bag')
-    expect(host.querySelector('.image-studio__menu-source')?.textContent).toBe('From Iconify · Noto Emoji')
+    expect(host.querySelector('.image-studio__menu-source')?.textContent).toBe('From Iconify · Noto Emoji (recolorable)')
     await click(byText(host, 'Open on Iconify ↗'))
     expect(api.shell.openLink).toHaveBeenCalledWith({ href: 'https://icon-sets.iconify.design/noto/money-bag/' })
     expect(byLabel(host, 'Actions for money bag')).toBeNull()
+  })
+
+  it('marks fixed-color Pixabay rasters with an IMG badge and tooltip, leaving Iconify and shapes quiet (YAZ-6676 D7)', async () => {
+    const photo = item({ itemKey: 'pixabay:99', provider: 'pixabay', providerId: '99', kind: 'illustration', title: 'gold coin', creator: 'Jane' })
+    const vector = item({ itemKey: 'iconify:tabler:coin', provider: 'iconify', providerId: 'tabler:coin', kind: 'icon', title: 'coin icon', collectionName: 'Tabler' })
+    media.search.mockResolvedValue({ items: [photo, vector], nextCursor: null, pixabayAvailable: true, warnings: [] })
+    const { host } = await mount()
+    await search(host, 'coin')
+    const pixabayTile = byLabel(host, 'Add gold coin')!
+    const iconifyTile = byLabel(host, 'Add coin icon')!
+    expect(pixabayTile.title).toBe('gold coin — Pixabay · Jane (fixed colors)')
+    expect(pixabayTile.querySelector('.image-studio__raster-badge')?.textContent).toBe('IMG')
+    expect(iconifyTile.title).toBe('coin icon — Iconify · Tabler (recolorable)')
+    expect(iconifyTile.querySelector('.image-studio__raster-badge')).toBeNull()
   })
 
   it('Google Images opens the field`s text in the browser; with no text it is off (demo 6I)', async () => {
@@ -1132,6 +1167,17 @@ describe('every favorite keeps a copy (YAZ-4370)', () => {
     expect(host.querySelector('.image-studio__error')).toBeNull()
   })
 
+  it('a starred shape in the live catalog inserts from the live catalog instead of a stale disk copy (YAZ-6675 D3)', async () => {
+    const starredArrow = stored({ itemKey: 'shape:smart:arrow-right', provider: 'shape', providerId: 'smart:arrow-right', kind: 'shape', title: 'Arrow right' })
+    library = libraryOf({ favorites: [starredArrow] })
+    media.favoriteElements.mockResolvedValue(fragment('stale-disk-copy'))
+    const { host, canvas } = await mount()
+    await click(section(host, 'Favorites')!.querySelector('[aria-label="Add Arrow right"]'))
+    expect(canvas.updateScene).toHaveBeenCalledOnce()
+    expect(canvas.insertElements).not.toHaveBeenCalled()
+    expect(media.favoriteElements).not.toHaveBeenCalled()
+  })
+
   it('with no copy, an add works as before; a tile that is not a favorite never asks for one', async () => {
     library = libraryOf({ favorites: [stored({ itemKey: 'shape:rectangle', provider: 'shape', providerId: 'rectangle', kind: 'shape', title: 'Rectangle' })] })
     const { host, canvas } = await mount()
@@ -1250,7 +1296,8 @@ describe('the Filter button and menu (YAZ-4360)', () => {
     expect(option(host, 'Show', 'All').getAttribute('aria-checked')).toBe('true')
     await click(option(host, 'Show', 'Shapes'))
     expect(imageStudioSession.getState().chip).toBe('shapes')
-    expect(section(host, 'Shapes')).not.toBeNull()
+    expect(section(host, 'Basic')).not.toBeNull()
+    expect(section(host, 'Arrows')).not.toBeNull()
     expect(filterButton(host).getAttribute('aria-label')).toBe('Filter, 2 on')
     await click(byText(host, 'Clear filters'))
     expect(imageStudioSession.getState().chip).toBe('all')
