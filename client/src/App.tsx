@@ -9,7 +9,7 @@ import { spacingVars, type TextFormatting } from '@shared/textFormatting'
 import { GLOBAL_INHERITING_CHROME_KEYS, VAULT_OVERRIDE_KEYS, type VaultChromeKey, type WorkspaceChromeOverrides } from '@shared/vaultSettings'
 import { webLinkVars } from '@shared/webLinks'
 import { NO_PAGE_OVERRIDE_VARS, pageOverrideVars, patchWorkspaceChrome, resolvePageSettings, resolveWindowChrome, setVaultNewPageDrawing, setWindowSearchIncludeInline, splitChromeDiff } from './settings/effectiveSettings'
-import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type VaultAppSidebarStart, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarLens, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -18,6 +18,7 @@ import { keepOutsideChangesOfTabs } from './editor/external/outsideChangesMemory
 import { newPageBase } from './editor/wikilink/createFromLink'
 import { WikilinkIndexBridge } from './editor/wikilink/WikilinkIndexBridge'
 import { useVaultLauncherIcons } from './hooks/useVaultLauncherIcons'
+import { useVaultOpenTargets } from './hooks/useVaultOpenTargets'
 import { useLinkEvents } from './hooks/useLinkEvents'
 import { onKeySheetRequest, placeOverTab } from './keys/keySheetRequest'
 import { useMenuEvents } from './hooks/useMenuEvents'
@@ -2795,66 +2796,18 @@ export function App() {
     })
   }, [addVault, moveBoardTab])
   const { launcherIcons, workspaceIcons, vaultApps, refreshLauncherIcons } = useVaultLauncherIcons()
-  const [todayTarget, setTodayTarget] = useState<string | null>(null)
-  const openTarget = useCallback(({ root: targetRoot, target }: { root: string; target: 'inbox' | 'today' }) => {
-    if (target === 'inbox') takeInbox({ root: targetRoot })
-    else if (target === 'today') setTodayTarget(targetRoot)
-  }, [takeInbox])
-  useEffect(() => {
-    if (todayTarget === null) return
-    const at = roots.findIndex((r) => stripSlash(r) === stripSlash(todayTarget))
-    if (at === -1) return setTodayTarget(null)
-    if (vaults[at].wikilinks.resolve === null) return
-    setTodayTarget(null)
-    // YAZ-6503: a Vault App launcher `?open=today` focuses/opens today's page tab without forcing the sidebar open or revealing it in Files.
-    openDailyPage(false, roots[at], false)
-  }, [todayTarget, roots, vaults, openDailyPage])
-
-  // YAZ-6682 D5: per-app Start View pushed on fresh Vault App / Workspace App open or handoff.
-  // Queued in state until `roots` is populated so boot-race pushes survive initial mount cleanly.
-  const [pendingSidebarStart, setPendingSidebarStart] = useState<{ root?: string; sidebarStart: VaultAppSidebarStart } | null>(null)
-  const applySidebarStart = useCallback((req: { root?: string; sidebarStart: VaultAppSidebarStart }) => {
-    setPendingSidebarStart(req)
-  }, [])
-  useEffect(() => {
-    if (pendingSidebarStart === null || roots.length === 0) return
-    const { root: targetRoot, sidebarStart } = pendingSidebarStart
-    setPendingSidebarStart(null)
-    if (sidebarCollapsedRef.current) toggleSidebar()
-    changeLens(sidebarStart.tab)
-    const preferredRoot = sidebarStart.folderRoot ?? targetRoot
-    const base = preferredRoot !== undefined ? (roots.find((r) => stripSlash(r) === stripSlash(preferredRoot)) ?? preferredRoot) : roots[0]
-    const relPath = sidebarStart.folderPath?.replace(/^\/+|\/+$/g, '') ?? ''
-    const absPath = relPath.length > 0 && base !== undefined ? `${stripSlash(base)}/${relPath}` : null
-    if (sidebarStart.onlyFolder === true) {
-      if (sidebarStart.tab === 'favorites' || sidebarStart.tab === 'focus') {
-        setFilesOnly(null)
-        if (sidebarStart.folderKind === 'collection' && sidebarStart.folderId) {
-          setFocusOnly(sidebarStart.folderId)
-        } else if (sidebarStart.folderKind === 'disk' && absPath !== null) {
-          setFocusOnly(absPath)
-        } else {
-          setFocusOnly(null)
-        }
-      } else if (sidebarStart.tab === 'files') {
-        setFocusOnly(null)
-        if (sidebarStart.folderKind === 'disk' && absPath !== null) {
-          setFilesOnly(absPath)
-        } else {
-          setFilesOnly(null)
-        }
-      } else {
-        setFocusOnly(null)
-        setFilesOnly(null)
-      }
-    } else {
-      setFocusOnly(null)
-      setFilesOnly(null)
-      if (sidebarStart.tab === 'files' && sidebarStart.folderKind === 'disk' && absPath !== null) {
-        revealInFiles(absPath)
-      }
-    }
-  }, [pendingSidebarStart, roots, toggleSidebar, changeLens, setFocusOnly, setFilesOnly, revealInFiles])
+  const { openTarget, applySidebarStart } = useVaultOpenTargets({
+    roots,
+    vaults,
+    sidebarCollapsedRef,
+    toggleSidebar,
+    changeLens,
+    setFocusOnly,
+    setFilesOnly,
+    revealInFiles,
+    takeInbox,
+    openDailyPage,
+  })
 
   // CLI automation (YAZ-4502, YAZ-6539): navigate, inspect, and manage tabs; reply only once the window shows the result.
   useAutomationSurface('app', { ready: true, inspect: () => ({ path: pageOnShow, tab: activeTab, sidebar: sidebarLens, sidebarCollapsed }) })

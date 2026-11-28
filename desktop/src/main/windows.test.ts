@@ -3337,16 +3337,16 @@ describe('createWindowManager: App Shim ownership, bounds memory, handoff, and f
     expect(w3.minimized).toBe(true)
     expect(order).toEqual([`showInactive:${w1.webContents.id}`, `focus:${w2.webContents.id}`])
 
-    // All windows minimized -> returns true without un-minimizing any window (YAZ-6679 D1).
+    // All non-hidden windows minimized -> restores & focuses ONLY the most-recent one (w3), leaving w1 & w2 minimized (YAZ-6713 / D1).
     w1.minimized = true
     w2.minimized = true
     w3.minimized = true
     order.length = 0
     expect(manager.focusShimWindows('/v/a', true)).toBe(true)
+    expect(w3.minimized).toBe(false)
     expect(w1.minimized).toBe(true)
     expect(w2.minimized).toBe(true)
-    expect(w3.minimized).toBe(true)
-    expect(order).toEqual([])
+    expect(order).toEqual([`focus:${w3.webContents.id}`])
 
     // Unknown shimKey with 0 windows returns false.
     expect(manager.focusShimWindows('/v/none', true)).toBe(false)
