@@ -31,115 +31,214 @@ export interface SmartShapeApi {
   createSmartShapeMetadata: (id: SmartShapeId) => SmartShapeMetadata
 }
 
-/** The six hand-drawn tile pictures; a smart shape draws its own polygon instead. */
-export type BasicPreviewShape = 'rectangle' | 'ellipse' | 'diamond' | 'triangle' | 'hexagon' | 'star'
+/** The seven hand-drawn tile pictures; a smart shape draws its own polygon instead. */
+export type BasicPreviewShape = 'rectangle' | 'rounded-rectangle' | 'ellipse' | 'diamond' | 'triangle' | 'hexagon' | 'star'
 
-/** What a tile draws: one of the six stock outlines, or a smart shape's own generated path. */
+/** The five browser sections in the Add › Shapes view (YAZ-6676 D5). */
+export type ShapeCategory = 'basic' | 'arrows' | 'brackets' | 'callouts' | 'banners'
+
+export const SHAPE_CATEGORIES: readonly ShapeCategory[] = ['basic', 'arrows', 'brackets', 'callouts', 'banners']
+
+export const SHAPE_CATEGORY_LABELS: Record<ShapeCategory, string> = {
+  basic: 'Basic',
+  arrows: 'Arrows',
+  brackets: 'Brackets & Braces',
+  callouts: 'Callouts',
+  banners: 'Banners & Flow',
+}
+
+/** Board style and zoom scaling applied when a shape is inserted from the Add panel (YAZ-6675 D3). */
+export interface ShapeInsertStyle {
+  strokeColor?: string
+  backgroundColor?: string
+  fillStyle?: 'solid' | 'hachure' | 'cross-hatch' | 'zigzag'
+  strokeWidth?: number
+  roughness?: number
+  sizeScale?: number
+  styleScale?: number
+}
+
+/** What a tile draws: one of the seven stock outlines, or a smart shape's own generated path. */
 export type ShapePreview = { type: 'basic'; shape: BasicPreviewShape } | { type: 'smart'; closed: boolean; points: string; viewBox: string }
 
 export interface ShapeCatalogItem {
   id: string
   title: string
   preview: ShapePreview
+  category: ShapeCategory
   kind: string
+  width: number
+  height: number
   direction?: 'right' | 'left' | 'up' | 'down'
   aliases: readonly string[]
   /** The skeletons to insert, centred on a scene point. */
-  create: (x: number, y: number) => ExcalidrawElementSkeleton[]
+  create: (x: number, y: number, style?: ShapeInsertStyle) => ExcalidrawElementSkeleton[]
 }
 
 /** `pointFrom<LocalPoint>(x, y)` — the branded tuple, without importing the package for it. */
 const localPoint = (x: number, y: number): LocalPoint => [x, y] as unknown as LocalPoint
 
-/** Every shape is born with the same stroke: the web app's, so a board looks the same in both. */
+const validPositive = (value: number | undefined, fallback: number): number =>
+  value !== undefined && Number.isFinite(value) && value > 0 ? value : fallback
+
+const resolvedStyleScale = (value: number | undefined): number | undefined =>
+  value !== undefined && Number.isFinite(value) && value > 0 && value !== 1 ? value : undefined
+
+/** Default stroke when no board style is passed: Architect (`roughness: 0`, YAZ-6675 D3). */
 const common = {
   strokeColor: '#1b1b1f',
   backgroundColor: 'transparent',
   fillStyle: 'solid' as const,
   strokeWidth: 2 as const,
-  roughness: 1 as const,
+  roughness: 0 as const,
 }
 
-const box = (type: 'rectangle' | 'ellipse' | 'diamond', x: number, y: number): ExcalidrawElementSkeleton[] => [
-  { type, x: x - 80, y: y - 55, width: 160, height: 110, ...common },
-]
+function resolveBasicStyle(style?: ShapeInsertStyle) {
+  return {
+    strokeColor: style?.strokeColor ?? common.strokeColor,
+    backgroundColor: style?.backgroundColor ?? common.backgroundColor,
+    fillStyle: style?.fillStyle ?? common.fillStyle,
+    strokeWidth: style?.strokeWidth ?? common.strokeWidth,
+    roughness: style?.roughness ?? common.roughness,
+    sizeScale: validPositive(style?.sizeScale, 1),
+    styleScale: resolvedStyleScale(style?.styleScale),
+  }
+}
+
+const box = (type: 'rectangle' | 'ellipse' | 'diamond', x: number, y: number, style?: ShapeInsertStyle): ExcalidrawElementSkeleton[] => {
+  const { strokeColor, backgroundColor, fillStyle, strokeWidth, roughness, sizeScale, styleScale } = resolveBasicStyle(style)
+  const width = 160 * sizeScale
+  const height = 110 * sizeScale
+  return [
+    {
+      type,
+      x: x - width / 2,
+      y: y - height / 2,
+      width,
+      height,
+      strokeColor,
+      backgroundColor,
+      fillStyle,
+      strokeWidth,
+      roughness,
+      ...(styleScale !== undefined ? { customData: { styleScale } } : {}),
+    },
+  ]
+}
 
 /** A closed outline: the ring is shut HERE, so no caller has to repeat its first point as its last. */
-const polygon = (x: number, y: number, points: readonly (readonly [number, number])[]): ExcalidrawElementSkeleton[] => [
-  {
-    type: 'line',
-    x: x - 80,
-    y: y - 70,
-    width: 160,
-    height: 140,
-    points: [...points, points[0]].map(([pointX, pointY]) => localPoint(pointX, pointY)),
-    ...common,
-  },
-]
+const polygon = (x: number, y: number, points: readonly (readonly [number, number])[], style?: ShapeInsertStyle): ExcalidrawElementSkeleton[] => {
+  const { strokeColor, backgroundColor, fillStyle, strokeWidth, roughness, sizeScale, styleScale } = resolveBasicStyle(style)
+  const width = 160 * sizeScale
+  const height = 140 * sizeScale
+  return [
+    {
+      type: 'line',
+      x: x - width / 2,
+      y: y - height / 2,
+      width,
+      height,
+      points: [...points, points[0]].map(([pointX, pointY]) => localPoint(pointX * sizeScale, pointY * sizeScale)),
+      strokeColor,
+      backgroundColor,
+      fillStyle,
+      strokeWidth,
+      roughness,
+      ...(styleScale !== undefined ? { customData: { styleScale } } : {}),
+    },
+  ]
+}
 
 const basic = (shape: BasicPreviewShape): ShapePreview => ({ type: 'basic', shape })
 
 /** The seven the engine has no definition for; no package needed to draw or to insert them. */
 export const BASIC_SHAPES: readonly ShapeCatalogItem[] = [
-  { id: 'rectangle', title: 'Rectangle', preview: basic('rectangle'), kind: 'basic', aliases: ['box', 'square'], create: (x, y) => box('rectangle', x, y) },
+  { id: 'rectangle', title: 'Rectangle', preview: basic('rectangle'), category: 'basic', kind: 'basic', width: 160, height: 110, aliases: ['box', 'square'], create: (x, y, style) => box('rectangle', x, y, style) },
   {
     id: 'rounded-rectangle',
     title: 'Rounded rectangle',
-    preview: basic('rectangle'),
+    preview: basic('rounded-rectangle'),
+    category: 'basic',
     kind: 'basic',
+    width: 160,
+    height: 110,
     aliases: ['rounded box'],
-    create: (x, y) => [{ ...box('rectangle', x, y)[0], roundness: { type: 3 } } as ExcalidrawElementSkeleton],
+    create: (x, y, style) => [{ ...box('rectangle', x, y, style)[0], roundness: { type: 3 } } as ExcalidrawElementSkeleton],
   },
-  { id: 'circle', title: 'Circle', preview: basic('ellipse'), kind: 'basic', aliases: ['ellipse', 'oval'], create: (x, y) => box('ellipse', x, y) },
-  { id: 'diamond', title: 'Diamond', preview: basic('diamond'), kind: 'basic', aliases: ['rhombus', 'decision'], create: (x, y) => box('diamond', x, y) },
+  { id: 'circle', title: 'Circle', preview: basic('ellipse'), category: 'basic', kind: 'basic', width: 160, height: 110, aliases: ['ellipse', 'oval'], create: (x, y, style) => box('ellipse', x, y, style) },
+  { id: 'diamond', title: 'Diamond', preview: basic('diamond'), category: 'basic', kind: 'basic', width: 160, height: 110, aliases: ['rhombus', 'decision'], create: (x, y, style) => box('diamond', x, y, style) },
   {
     id: 'triangle',
     title: 'Triangle',
     preview: basic('triangle'),
+    category: 'basic',
     kind: 'polygon',
+    width: 160,
+    height: 140,
     aliases: ['three sided'],
-    create: (x, y) =>
-      polygon(x, y, [
-        [80, 0],
-        [160, 140],
-        [0, 140],
-      ]),
+    create: (x, y, style) =>
+      polygon(
+        x,
+        y,
+        [
+          [80, 0],
+          [160, 140],
+          [0, 140],
+        ],
+        style,
+      ),
   },
   {
     id: 'hexagon',
     title: 'Hexagon',
     preview: basic('hexagon'),
+    category: 'basic',
     kind: 'polygon',
+    width: 160,
+    height: 140,
     aliases: ['six sided'],
-    create: (x, y) =>
-      polygon(x, y, [
-        [40, 0],
-        [120, 0],
-        [160, 70],
-        [120, 140],
-        [40, 140],
-        [0, 70],
-      ]),
+    create: (x, y, style) =>
+      polygon(
+        x,
+        y,
+        [
+          [40, 0],
+          [120, 0],
+          [160, 70],
+          [120, 140],
+          [40, 140],
+          [0, 70],
+        ],
+        style,
+      ),
   },
   {
     id: 'star',
     title: 'Star',
     preview: basic('star'),
+    category: 'basic',
     kind: 'polygon',
+    width: 160,
+    height: 140,
     aliases: ['favorite'],
-    create: (x, y) =>
-      polygon(x, y, [
-        [80, 0],
-        [99, 52],
-        [156, 54],
-        [111, 88],
-        [127, 140],
-        [80, 109],
-        [33, 140],
-        [49, 88],
-        [4, 54],
-        [61, 52],
-      ]),
+    create: (x, y, style) =>
+      polygon(
+        x,
+        y,
+        [
+          [80, 0],
+          [99, 52],
+          [156, 54],
+          [111, 88],
+          [127, 140],
+          [80, 109],
+          [33, 140],
+          [49, 88],
+          [4, 54],
+          [61, 52],
+        ],
+        style,
+      ),
   },
 ]
 
@@ -149,8 +248,52 @@ export function shapeDirection(id: string): ShapeCatalogItem['direction'] {
   return direction === 'right' || direction === 'left' || direction === 'up' || direction === 'down' ? direction : undefined
 }
 
+/** Which Shapes browser section a smart kind belongs to when its engine definition does not declare `category`. */
+export function smartShapeCategory(kind: string): ShapeCategory {
+  switch (kind) {
+    case 'filled-arrow':
+    case 'curved-arrow':
+    case 'u-turn-arrow':
+    case 'double-arrow':
+    case 'circle-arrow':
+    case 'bent-arrow':
+    case 'pentagon-arrow':
+    case 'notched-arrow':
+    case 'chevron':
+      return 'arrows'
+    case 'brace':
+    case 'bracket':
+    case 'parenthesis':
+      return 'brackets'
+    case 'callout':
+    case 'cloud':
+    case 'note-fold':
+    case 'document':
+      return 'callouts'
+    case 'bookmark':
+    case 'tag':
+    case 'shield':
+    case 'ribbon':
+    case 'cylinder':
+      return 'banners'
+    case 'pill':
+    case 'right-triangle':
+    case 'pentagon':
+    case 'octagon':
+    case 'parallelogram':
+    case 'trapezoid':
+    case 'plus':
+    case 'star-4':
+    case 'starburst':
+    case 'heart':
+    case 'semicircle':
+    default:
+      return 'basic'
+  }
+}
+
 /** The words someone would search for that are not already in the title — one set per smart kind. */
-export function smartShapeAliases(kind: SmartShapeDefinition['kind']): readonly string[] {
+export function smartShapeAliases(kind: string): readonly string[] {
   switch (kind) {
     case 'filled-arrow':
       return ['arrow', 'pointer', 'filled']
@@ -162,16 +305,62 @@ export function smartShapeAliases(kind: SmartShapeDefinition['kind']): readonly 
       return ['arrow', 'two way', 'both ways', 'bidirectional']
     case 'circle-arrow':
       return ['arrow', 'circular', 'refresh', 'rotate', 'cycle', 'loop']
+    case 'bent-arrow':
+      return ['arrow', 'elbow', 'l arrow', 'turn', 'corner', 'right angle']
+    case 'pentagon-arrow':
+      return ['arrow', 'process', 'step', 'flow', 'block', 'banner']
+    case 'notched-arrow':
+      return ['arrow', 'chevron', 'process', 'step', 'flow', 'block']
     case 'chevron':
-      return ['arrowhead', 'direction']
+      return ['arrowhead', 'direction', 'angle']
     case 'brace':
-      return ['curly', 'curly bracket']
+      return ['curly', 'curly bracket', 'group']
     case 'bracket':
-      return ['square bracket']
+      return ['square bracket', 'group']
     case 'parenthesis':
       return ['paren', 'round bracket']
     case 'callout':
-      return ['speech', 'annotation', 'label']
+      return ['speech', 'bubble', 'annotation', 'label', 'comment']
+    case 'cloud':
+      return ['thought', 'bubble', 'weather', 'sky', 'callout']
+    case 'note-fold':
+      return ['sticky', 'page', 'memo', 'corner', 'paper', 'sheet']
+    case 'document':
+      return ['page', 'file', 'paper', 'sheet', 'wave', 'report']
+    case 'pill':
+      return ['capsule', 'stadium', 'lozenge', 'button', 'badge', 'rounded']
+    case 'right-triangle':
+      return ['triangle', 'corner', 'wedge', '90']
+    case 'pentagon':
+      return ['five sided', 'polygon', 'house']
+    case 'octagon':
+      return ['eight sided', 'polygon', 'stop', 'sign']
+    case 'parallelogram':
+      return ['slanted', 'skew', 'flowchart', 'input', 'output', 'data']
+    case 'trapezoid':
+      return ['trapezium', 'funnel', 'stage', 'polygon']
+    case 'plus':
+      return ['cross', 'add', 'medical', 'positive']
+    case 'star-4':
+      return ['sparkle', 'diamond star', 'four point', 'twinkle', 'glint']
+    case 'starburst':
+      return ['seal', 'badge', 'burst', 'explosion', 'sticker', 'sunburst']
+    case 'heart':
+      return ['love', 'like', 'favorite', 'card']
+    case 'semicircle':
+      return ['half circle', 'arch', 'dome', 'arc']
+    case 'bookmark':
+      return ['ribbon', 'flag', 'save', 'marker', 'banner']
+    case 'tag':
+      return ['label', 'price', 'badge', 'ticket']
+    case 'shield':
+      return ['security', 'badge', 'protect', 'crest', 'guard']
+    case 'ribbon':
+      return ['banner', 'flag', 'scroll', 'award', 'title']
+    case 'cylinder':
+      return ['database', 'drum', 'can', 'storage', 'flowchart', 'db']
+    default:
+      return []
   }
 }
 
@@ -200,22 +389,38 @@ export function smartShapePreview(smart: SmartShapeApi, definition: SmartShapeDe
  * ONE line element carrying the engine's `yasinSmartShape` metadata — which is what makes the
  * inserted shape a real smart shape with its own handles, rather than a frozen polygon.
  */
-function smartShapeSkeleton(smart: SmartShapeApi, definition: SmartShapeDefinition, x: number, y: number): ExcalidrawElementSkeleton[] {
+function smartShapeSkeleton(smart: SmartShapeApi, definition: SmartShapeDefinition, x: number, y: number, style?: ShapeInsertStyle): ExcalidrawElementSkeleton[] {
+  const strokeColor = style?.strokeColor ?? common.strokeColor
+  const backgroundColor = !definition.closed
+    ? 'transparent'
+    : style?.backgroundColor && style.backgroundColor !== 'transparent'
+      ? style.backgroundColor
+      : strokeColor
+  const fillStyle = style?.fillStyle ?? common.fillStyle
+  const strokeWidth = style?.strokeWidth ?? common.strokeWidth
+  const roughness = style?.roughness ?? common.roughness
+  const sizeScale = validPositive(style?.sizeScale, 1)
+  const styleScale = resolvedStyleScale(style?.styleScale)
+  const width = definition.width * sizeScale
+  const height = definition.height * sizeScale
   return [
     {
       type: 'line',
-      x: x - definition.width / 2,
-      y: y - definition.height / 2,
-      width: definition.width,
-      height: definition.height,
-      points: smart.generateSmartShapePoints(definition.id, definition.width, definition.height, definition.defaults),
-      strokeColor: '#1b1b1f',
-      backgroundColor: definition.closed ? '#1b1b1f' : 'transparent',
-      fillStyle: 'solid',
-      strokeWidth: 2,
-      roughness: 1,
+      x: x - width / 2,
+      y: y - height / 2,
+      width,
+      height,
+      points: smart.generateSmartShapePoints(definition.id, width, height, definition.defaults),
+      strokeColor,
+      backgroundColor,
+      fillStyle,
+      strokeWidth,
+      roughness,
       roundness: definition.roundness,
-      customData: { yasinSmartShape: smart.createSmartShapeMetadata(definition.id) },
+      customData: {
+        yasinSmartShape: smart.createSmartShapeMetadata(definition.id),
+        ...(styleScale !== undefined ? { styleScale } : {}),
+      },
     } as ExcalidrawElementSkeleton,
   ]
 }
@@ -226,10 +431,13 @@ export function smartShapeCatalog(smart: SmartShapeApi): ShapeCatalogItem[] {
     id: `smart:${definition.id}`,
     title: definition.title,
     preview: smartShapePreview(smart, definition),
+    category: (definition as { category?: ShapeCategory }).category ?? smartShapeCategory(definition.kind),
     kind: definition.kind,
+    width: definition.width,
+    height: definition.height,
     direction: shapeDirection(definition.id),
     aliases: smartShapeAliases(definition.kind),
-    create: (x: number, y: number) => smartShapeSkeleton(smart, definition, x, y),
+    create: (x: number, y: number, style?: ShapeInsertStyle) => smartShapeSkeleton(smart, definition, x, y, style),
   }))
 }
 

@@ -22,7 +22,7 @@ function fakeEngine(): InsertEngine & { calls: unknown[][] } {
 }
 
 /** The engine's imperative handle, reduced to what an insert touches, plus what it recorded. */
-function fakeApi(existing: unknown[] = []) {
+function fakeApi(existing: unknown[] = [], appStateOverrides: Record<string, unknown> = {}) {
   const scene: { elements: unknown[]; appState: Record<string, unknown>; files: Record<string, DrawingFileData> } = { elements: [...existing], appState: {}, files: {} }
   const updateScene = vi.fn((data: { elements?: unknown; appState?: unknown }) => {
     if (data.elements) scene.elements = data.elements as unknown[]
@@ -39,7 +39,7 @@ function fakeApi(existing: unknown[] = []) {
     return { options }
   })
   const api = {
-    getAppState: () => ({ width: 1000, height: 800, zoom: { value: 2 }, scrollX: 100, scrollY: 50 }),
+    getAppState: () => ({ width: 1000, height: 800, zoom: { value: 2 }, scrollX: 100, scrollY: 50, ...appStateOverrides }),
     getSceneElementsIncludingDeleted: () => scene.elements,
     updateScene,
     insertImages,
@@ -48,12 +48,66 @@ function fakeApi(existing: unknown[] = []) {
 }
 
 describe('inserting a shape', () => {
-  it('puts it at the middle of what the user can see, at the current zoom', () => {
+  it('puts it at the middle of what the user can see, scaled to the current zoom', () => {
     const engine = fakeEngine()
     const { api } = fakeApi()
     insertShape(engine, api, BASIC_SHAPES[0])
-    // 1000/2/2 - 100 = 150 ; 800/2/2 - 50 = 150 ; a 160x110 box is centred on that.
-    expect(engine.calls[0][0]).toMatchObject({ x: 150 - 80, y: 150 - 55 })
+    // 1000/2/2 - 100 = 150 ; 800/2/2 - 50 = 150 ; at zoom 2 a 160x110 box scales to 80x55 centred on (150, 150).
+    expect(engine.calls[0][0]).toMatchObject({ x: 150 - 40, y: 150 - 27.5, width: 80, height: 55, strokeWidth: 1, roughness: 0, customData: { styleScale: 2 } })
+  })
+
+  it('keeps sizeScale = 1 and omits styleScale at zoom 1 when viewport fits', () => {
+    const engine = fakeEngine()
+    const { api } = fakeApi([], { zoom: { value: 1 }, scrollX: 0, scrollY: 0 })
+    insertShape(engine, api, BASIC_SHAPES[0])
+    const [skeleton] = engine.calls[0] as [Record<string, unknown>]
+    expect(skeleton).toMatchObject({ x: 500 - 80, y: 400 - 55, width: 160, height: 110, strokeWidth: 2, roughness: 0 })
+    expect(skeleton.customData).toBeUndefined()
+  })
+
+  it('clamps sizeScale so the longest side never exceeds 55 % of a small viewport', () => {
+    const engine = fakeEngine()
+    // Small 300x200 viewport at zoom 1 → max side = 200 * 0.55 = 110; a 160x110 rectangle scales by 110/160.
+    const { api } = fakeApi([], { width: 300, height: 200, zoom: { value: 1 }, scrollX: 0, scrollY: 0 })
+    insertShape(engine, api, BASIC_SHAPES[0])
+    const [skeleton] = engine.calls[0] as [{ width: number; height: number }]
+    expect(skeleton.width).toBeCloseTo(110, 6)
+    expect(skeleton.height).toBeCloseTo((110 * 110) / 160, 6)
+  })
+
+  it('inherits active board colors, fillStyle, roughness, and vector stroke width', () => {
+    const engine = fakeEngine()
+    const { api } = fakeApi([], {
+      zoom: { value: 3 },
+      scrollX: 0,
+      scrollY: 0,
+      currentItemStrokeColor: '#2f9e44',
+      currentItemBackgroundColor: '#d3f9d8',
+      currentItemFillStyle: 'hachure',
+      currentItemVectorStrokeWidth: 4,
+      currentItemRoughness: 2,
+    })
+    insertShape(engine, api, BASIC_SHAPES[0])
+    expect(engine.calls[0][0]).toMatchObject({
+      strokeColor: '#2f9e44',
+      backgroundColor: '#d3f9d8',
+      fillStyle: 'hachure',
+      strokeWidth: Number((4 / 3).toPrecision(4)),
+      roughness: 2,
+      customData: { styleScale: 3 },
+    })
+  })
+
+  it('leaves strokeWidth unscaled and omits styleScale when scaleStylesWithZoom is off', () => {
+    const engine = fakeEngine()
+    const { api } = fakeApi([], {
+      zoom: { value: 2 },
+      currentItemVectorStrokeWidth: 4,
+    })
+    insertShape(engine, api, BASIC_SHAPES[0], { scaleStylesWithZoom: false })
+    const [skeleton] = engine.calls[0] as [Record<string, unknown>]
+    expect(skeleton.strokeWidth).toBe(4)
+    expect(skeleton.customData).toBeUndefined()
   })
 
   it('appends to the scene rather than replacing it, and selects only what it added', () => {
