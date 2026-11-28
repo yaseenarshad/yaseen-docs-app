@@ -1,10 +1,10 @@
 /**
- * macOS Vault App launcher builder and pure-TS `.icns` encoder (YAZ-5967, YAZ-6373).
+ * macOS Vault App shim builder and pure-TS `.icns` encoder (YAZ-5967, YAZ-6373, YAZ-6624).
  *
  * Each vault can install a lightweight `.app` bundle into `/Applications/<Name>.app` (or
- * `~/Applications/<Name>.app` when `/Applications` is not writable). The bundle wraps our
- * compiled Swift helper (`desktop/build/bin/vault-launcher`), an `Info.plist` with
- * `LSUIElement: true` and `YaseenDocsVaultURL`, and an `AppIcon.icns` generated directly
+ * `~/Applications/<Name>.app` when `/Applications` is not writable). The bundle wraps
+ * Electron's `app_shim_loader` helper, an `Info.plist` declaring the host bundle and
+ * `YaseenDocsVaultURL` / `YaseenDocsVaultPath`, and an `AppIcon.icns` generated directly
  * from a 512×512 PNG buffer with zero external dependencies.
  */
 import { execFile as nodeExecFile } from 'node:child_process'
@@ -22,8 +22,20 @@ const execFileAsync = promisify(nodeExecFile)
 /** Bundle identifier prefix owned by Yaseen Docs vault launchers (used by collision & remove guards). */
 export const LAUNCHER_BUNDLE_ID_PREFIX = 'com.yasinarshad.yaseendocs.launcher.'
 
-/** Current launcher bundle version written to `CFBundleVersion` (YAZ-6605). */
-export const LAUNCHER_BUNDLE_VERSION = 2
+/** Electron App Shim loader executable filename inside `Contents/MacOS/`. */
+export const APP_SHIM_EXECUTABLE = 'app_shim_loader'
+
+/** Default macOS host bundle identifier written to `ElectronAppShimHostBundleIdentifier`. */
+export const APP_SHIM_HOST_BUNDLE_ID = 'com.yasinarshad.yaseendocs'
+
+/** CLI flag passed by macOS App Shims when launching the host app headlessly. */
+export const APP_SHIM_HOST_ARG = '--app-shim-host'
+
+/** Default macOS host bundle path written to `ElectronAppShimHostPath`. */
+const DEFAULT_APP_SHIM_HOST_PATH = '/Applications/Yaseen Docs.app'
+
+/** Current launcher bundle version written to `CFBundleVersion` (YAZ-6605, YAZ-6624). */
+export const LAUNCHER_BUNDLE_VERSION = 3
 
 /** Path to macOS LaunchServices registration helper. */
 export const LSREGISTER_PATH = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
@@ -47,8 +59,14 @@ export interface InstallVaultLauncherOptions {
   openTarget?: LinkOpenTarget
   /** Previous `.app` path when updating or renaming an existing launcher for this vault. */
   previousAppPath?: string | null
-  /** Path to the compiled `vault-launcher` binary (`vaultLauncherBinaryPath(...)`). */
+  /** Path to Electron's `app_shim_loader` helper (`appShimLoaderPath(process.execPath)`). */
   binaryPath: string
+  /** Optional host `.app` bundle path for `ElectronAppShimHostPath` (defaults to `/Applications/Yaseen Docs.app`). */
+  hostBundlePath?: string
+  /** Optional host bundle ID for `ElectronAppShimHostBundleIdentifier` (defaults to `APP_SHIM_HOST_BUNDLE_ID`). */
+  hostBundleId?: string
+  /** Optional Electron App Shim server name for `ElectronAppShimServerName` (omitted when undefined/empty). */
+  serverName?: string
 }
 
 export interface InstallVaultLauncherResult {
@@ -59,7 +77,7 @@ export interface InstallVaultLauncherResult {
 }
 
 export interface VaultLauncherDeps {
-  /** Candidate Applications directories in preference order. Defaults to `['/Applications', '~/Applications']`. */
+  /** Candidate Applications directories in preference order. Defaults to `resolveLauncherAppDirs()`. */
   appDirs?: readonly string[]
   /** Move a bundle to the macOS Trash (in main, `shell.trashItem`). */
   trashItem: (path: string) => Promise<void>
@@ -69,6 +87,17 @@ export interface VaultLauncherDeps {
   isWritable?: (dir: string) => Promise<boolean>
   /** Platform override for case-insensitive path checks (defaults to `process.platform`). */
   platform?: NodeJS.Platform
+  /** Optional codesign identity passed to `codesign --force --sign <identity>`. Defaults to `'-'` (ad-hoc). */
+  signIdentity?: string
+}
+
+export interface RefreshOutdatedLaunchersDeps extends Pick<VaultLauncherDeps, 'appDirs' | 'execFile' | 'signIdentity'> {
+  /** Optional host `.app` bundle path to write as `ElectronAppShimHostPath` (also triggers refresh when host moved). */
+  hostBundlePath?: string
+  /** Optional host bundle ID for `ElectronAppShimHostBundleIdentifier`. */
+  hostBundleId?: string
+  /** Optional Electron App Shim server name for `ElectronAppShimServerName`. */
+  serverName?: string
 }
 
 export interface ScannedLauncher {
@@ -82,6 +111,10 @@ export interface LauncherPlistInfo {
   vaultPath: string | null
   vaultUrl: string | null
   bundleVersion: number | null
+  displayName?: string | null
+  hostPath?: string | null
+  hostBundleId?: string | null
+  serverName?: string | null
 }
 
 /**
@@ -105,9 +138,41 @@ export function encodeIcnsFromPng(png: Buffer): Buffer {
   return out
 }
 
-/** Where the helper binary lives: `Resources/bin` in the packaged app, `desktop/build/bin` in a checkout. */
-export function vaultLauncherBinaryPath({ isPackaged, resourcesPath, mainDir }: { isPackaged: boolean; resourcesPath: string; mainDir: string }): string {
-  return isPackaged ? join(resourcesPath, 'bin', 'vault-launcher') : resolve(mainDir, '..', '..', 'build', 'bin', 'vault-launcher')
+/**
+ * Path to Electron's `app_shim_loader` helper inside the running host `.app` bundle.
+ * On macOS, `execPath` is `<App>.app/Contents/MacOS/<Binary>` for both packaged `Yaseen Docs.app` and dev `Electron.app`.
+ */
+export function appShimLoaderPath(execPath: string): string {
+  return resolve(dirname(execPath), '..', 'Frameworks', 'Electron Framework.framework', 'Helpers', APP_SHIM_EXECUTABLE)
+}
+
+/** Root `.app` bundle path derived from `process.execPath` (`<App>.app/Contents/MacOS/<Binary>` -> `<App>.app`). */
+export function hostBundlePathFromExecPath(execPath: string): string {
+  return resolve(dirname(execPath), '..', '..')
+}
+
+/**
+ * Resolve candidate Applications directories for installing and scanning Vault App shims.
+ * Honors `YASEEN_DOCS_APP_SHIM_DIRS` (colon-separated) for isolated demo/test runs.
+ */
+export function resolveLauncherAppDirs(env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  const raw = env.YASEEN_DOCS_APP_SHIM_DIRS
+  if (typeof raw === 'string' && raw.trim().length > 0) {
+    const dirs = raw
+      .split(':')
+      .map((dir) => dir.trim())
+      .filter((dir) => dir.length > 0)
+    if (dirs.length > 0) return dirs
+  }
+  return ['/Applications', join(homedir(), 'Applications')]
+}
+
+/**
+ * Temporary thin wrapper so `desktop/src/main/index.ts` continues to typecheck before branch merge.
+ * Coordinator removes this on merge once `index.ts` calls `appShimLoaderPath(process.execPath)` directly.
+ */
+export function vaultLauncherBinaryPath(_opts: { isPackaged: boolean; resourcesPath: string; mainDir: string }): string {
+  return appShimLoaderPath(process.execPath)
 }
 
 /**
@@ -150,12 +215,26 @@ const escapeXml = (value: string): string =>
 const unescapeXml = (value: string): string =>
   value.replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&')
 
-/** Build XML `Contents/Info.plist` for a Vault App launcher bundle. */
-export function buildLauncherPlist(fields: { name: string; bundleId: string; vaultUrl: string; vaultPath: string }): string {
-  const entries: Array<[string, string | boolean]> = [
+export interface BuildLauncherPlistFields {
+  name: string
+  bundleId: string
+  vaultUrl: string
+  vaultPath: string
+  hostBundlePath?: string
+  hostBundleId?: string
+  serverName?: string
+}
+
+type PlistEntryValue = string | boolean | readonly string[]
+
+/** Build XML `Contents/Info.plist` for a v3 Electron App Shim Vault App bundle. */
+export function buildLauncherPlist(fields: BuildLauncherPlistFields): string {
+  const hostBundlePath = fields.hostBundlePath && fields.hostBundlePath.length > 0 ? fields.hostBundlePath : DEFAULT_APP_SHIM_HOST_PATH
+  const hostBundleId = fields.hostBundleId && fields.hostBundleId.length > 0 ? fields.hostBundleId : APP_SHIM_HOST_BUNDLE_ID
+  const entries: Array<[string, PlistEntryValue]> = [
     ['CFBundleDevelopmentRegion', 'en'],
     ['CFBundleDisplayName', fields.name],
-    ['CFBundleExecutable', 'vault-launcher'],
+    ['CFBundleExecutable', APP_SHIM_EXECUTABLE],
     ['CFBundleIconFile', 'AppIcon'],
     ['CFBundleIdentifier', fields.bundleId],
     ['CFBundleInfoDictionaryVersion', '6.0'],
@@ -164,16 +243,26 @@ export function buildLauncherPlist(fields: { name: string; bundleId: string; vau
     ['CFBundleShortVersionString', '1.0'],
     ['CFBundleVersion', String(LAUNCHER_BUNDLE_VERSION)],
     ['LSMinimumSystemVersion', '12.0'],
-    ['LSUIElement', true],
-    ['YaseenDocsVaultURL', fields.vaultUrl],
-    ['YaseenDocsVaultPath', fields.vaultPath],
+    ['NSHighResolutionCapable', true],
+    ['ElectronAppShimHostPath', hostBundlePath],
+    ['ElectronAppShimHostBundleIdentifier', hostBundleId],
+    ['ElectronAppShimHostArguments', [APP_SHIM_HOST_ARG]],
   ]
+  if (fields.serverName !== undefined && fields.serverName.length > 0) {
+    entries.push(['ElectronAppShimServerName', fields.serverName])
+  }
+  entries.push(['YaseenDocsVaultURL', fields.vaultUrl], ['YaseenDocsVaultPath', fields.vaultPath])
   const body = entries
-    .map(([key, value]) =>
-      typeof value === 'boolean'
-        ? `  <key>${escapeXml(key)}</key>\n  <${value ? 'true' : 'false'}/>`
-        : `  <key>${escapeXml(key)}</key>\n  <string>${escapeXml(value)}</string>`,
-    )
+    .map(([key, value]) => {
+      if (typeof value === 'boolean') {
+        return `  <key>${escapeXml(key)}</key>\n  <${value ? 'true' : 'false'}/>`
+      }
+      if (typeof value === 'string') {
+        return `  <key>${escapeXml(key)}</key>\n  <string>${escapeXml(value)}</string>`
+      }
+      const items = value.map((item) => `    <string>${escapeXml(item)}</string>`).join('\n')
+      return `  <key>${escapeXml(key)}</key>\n  <array>\n${items}\n  </array>`
+    })
     .join('\n')
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -194,8 +283,8 @@ function readPlistString(xml: string, key: string): string | null {
 }
 
 /**
- * Read `CFBundleIdentifier`, `YaseenDocsVaultPath`, `YaseenDocsVaultURL`, and `CFBundleVersion`
- * from an `.app`'s `Contents/Info.plist`. Returns `null` if the plist cannot be read (e.g. missing bundle).
+ * Read Yaseen Docs launcher & Electron App Shim metadata from an `.app`'s `Contents/Info.plist`.
+ * Returns `null` if the plist cannot be read (e.g. missing bundle).
  * Non-XML (binary) plists parse with `null` fields, so guards fail closed on third-party apps.
  */
 export async function readLauncherPlist(appPath: string): Promise<LauncherPlistInfo | null> {
@@ -207,6 +296,10 @@ export async function readLauncherPlist(appPath: string): Promise<LauncherPlistI
       vaultPath: readPlistString(xml, 'YaseenDocsVaultPath'),
       vaultUrl: readPlistString(xml, 'YaseenDocsVaultURL'),
       bundleVersion: rawVersion !== null && /^\d+$/.test(rawVersion) ? Number(rawVersion) : null,
+      displayName: readPlistString(xml, 'CFBundleDisplayName') ?? readPlistString(xml, 'CFBundleName'),
+      hostPath: readPlistString(xml, 'ElectronAppShimHostPath'),
+      hostBundleId: readPlistString(xml, 'ElectronAppShimHostBundleIdentifier'),
+      serverName: readPlistString(xml, 'ElectronAppShimServerName'),
     }
   } catch {
     return null
@@ -237,7 +330,7 @@ async function defaultExecFile(file: string, args: readonly string[]): Promise<v
 
 /** Pick the first writable Applications directory, creating `~/Applications` (or fallback dirs) if needed. */
 export async function pickApplicationsDir(
-  candidates: readonly string[] = ['/Applications', join(homedir(), 'Applications')],
+  candidates: readonly string[] = resolveLauncherAppDirs(),
   isWritable: (dir: string) => Promise<boolean> = defaultIsWritable,
 ): Promise<string> {
   for (const dir of candidates) {
@@ -291,6 +384,7 @@ export async function installVaultLauncher(opts: InstallVaultLauncherOptions, de
   const icns = encodeIcnsFromPng(opts.iconPng)
 
   const exec = deps.execFile ?? defaultExecFile
+  const identity = deps.signIdentity && deps.signIdentity.length > 0 ? deps.signIdentity : '-'
   const dir = await pickApplicationsDir(deps.appDirs, deps.isWritable)
   const target = join(dir, `${name}.app`)
   const previousResolved = opts.previousAppPath != null && opts.previousAppPath.length > 0 ? resolve(opts.previousAppPath) : null
@@ -316,16 +410,24 @@ export async function installVaultLauncher(opts: InstallVaultLauncherOptions, de
     await mkdir(macOsDir, { recursive: true })
     await mkdir(resourcesDir, { recursive: true })
 
-    const plistXml = buildLauncherPlist({ name, bundleId, vaultUrl, vaultPath: normalizedVaultPath })
+    const plistXml = buildLauncherPlist({
+      name,
+      bundleId,
+      vaultUrl,
+      vaultPath: normalizedVaultPath,
+      hostBundlePath: opts.hostBundlePath,
+      hostBundleId: opts.hostBundleId,
+      serverName: opts.serverName,
+    })
     await writeFile(join(contentsDir, 'Info.plist'), plistXml, 'utf8')
 
-    const destBinary = join(macOsDir, 'vault-launcher')
+    const destBinary = join(macOsDir, APP_SHIM_EXECUTABLE)
     await copyFile(opts.binaryPath, destBinary)
     await chmod(destBinary, 0o755)
 
     await writeFile(join(resourcesDir, 'AppIcon.icns'), icns)
 
-    await exec('codesign', ['--force', '--sign', '-', tmpApp])
+    await exec('codesign', ['--force', '--sign', identity, tmpApp])
     await atomicSwapBundle(tmpApp, target, dir)
   } catch (err) {
     await rm(tmpApp, { recursive: true, force: true }).catch(() => {})
@@ -359,7 +461,7 @@ export async function installVaultLauncher(opts: InstallVaultLauncherOptions, de
  * whose `CFBundleIdentifier` belongs to Yaseen Docs launchers (`LAUNCHER_BUNDLE_ID_PREFIX`).
  */
 export async function scanInstalledLaunchers(
-  appDirs: readonly string[] = ['/Applications', join(homedir(), 'Applications')],
+  appDirs: readonly string[] = resolveLauncherAppDirs(),
 ): Promise<ScannedLauncher[]> {
   const results: ScannedLauncher[] = []
   const seen = new Set<string>()
@@ -444,40 +546,52 @@ async function atomicSwapBundle(tmpApp: string, target: string, dir: string): Pr
   }
 }
 
-function updatePlistBundleVersion(xml: string, version: number): string {
-  const re = /(<key>CFBundleVersion<\/key>\s*<string>)[\s\S]*?(<\/string>)/
-  if (re.test(xml)) {
-    return xml.replace(re, `$1${version}$2`)
-  }
-  const closeIdx = xml.lastIndexOf('</dict>')
-  if (closeIdx === -1) {
-    throw new Error('Malformed Info.plist: missing </dict>')
-  }
-  const insertion = `  <key>CFBundleVersion</key>\n  <string>${version}</string>\n`
-  return `${xml.slice(0, closeIdx)}${insertion}${xml.slice(closeIdx)}`
-}
-
 /**
  * Scan installed Yaseen Docs `.app` launchers and atomically upgrade any bundle whose
- * `CFBundleVersion` is below `LAUNCHER_BUNDLE_VERSION` (YAZ-6605, YAZ-6606).
+ * `CFBundleVersion` is below `LAUNCHER_BUNDLE_VERSION` (v1/v2 -> v3 App Shim) or whose
+ * `ElectronAppShimHostPath` drifted from `deps.hostBundlePath` for the same server name
+ * (YAZ-6605, YAZ-6606, YAZ-6624).
  *
- * - Returns `[]` immediately if `binaryPath` does not exist (safe for dev runs without a built helper).
+ * - Returns `[]` immediately if `binaryPath` does not exist.
  * - Preserves each bundle's `AppIcon.icns`, display name, bundle identifier, vault URL, and vault path.
- * - Stages a full sibling temp `.app` bundle, ad-hoc signs it FIRST, then swaps atomically so the
- *   installed bundle is never left unsigned or partially upgraded on crash or `codesign` failure.
+ * - Skips bundles with missing/malformed `bundleId`, `vaultUrl`, or `vaultPath` with a warning.
+ * - Stages a full sibling temp `.app` bundle with `app_shim_loader` and fresh v3 `Info.plist`,
+ *   signs it FIRST, swaps atomically, touches mtime, and runs `lsregister -f` best-effort.
  */
 export async function refreshOutdatedLaunchers(
   binaryPath: string,
-  deps?: Pick<VaultLauncherDeps, 'appDirs' | 'execFile'>,
+  deps?: RefreshOutdatedLaunchersDeps,
 ): Promise<string[]> {
   if (!(await pathExists(binaryPath))) return []
   const installed = await scanInstalledLaunchers(deps?.appDirs)
   const exec = deps?.execFile ?? defaultExecFile
+  const identity = deps?.signIdentity && deps.signIdentity.length > 0 ? deps.signIdentity : '-'
+  const targetHostPath = deps?.hostBundlePath && deps.hostBundlePath.length > 0 ? deps.hostBundlePath : undefined
+  const targetServerName = deps?.serverName && deps.serverName.length > 0 ? deps.serverName : null
   const upgraded: string[] = []
 
   for (const item of installed) {
-    if ((item.info.bundleVersion ?? 0) >= LAUNCHER_BUNDLE_VERSION) continue
+    const isOutdatedVersion = (item.info.bundleVersion ?? 0) < LAUNCHER_BUNDLE_VERSION
+    const isStaleHostPath =
+      targetHostPath !== undefined &&
+      (item.info.serverName ?? null) === targetServerName &&
+      item.info.hostPath !== targetHostPath
+    if (!isOutdatedVersion && !isStaleHostPath) continue
 
+    const { bundleId, vaultUrl, vaultPath } = item.info
+    if (
+      bundleId === null ||
+      bundleId.length === 0 ||
+      vaultUrl === null ||
+      !/^yaseendocs:\/\//i.test(vaultUrl) ||
+      vaultPath === null ||
+      vaultPath.trim().length === 0
+    ) {
+      console.warn(`[vaultLauncher] skipping refresh for "${item.appPath}": missing or malformed Info.plist metadata`)
+      continue
+    }
+
+    const displayName = item.info.displayName && item.info.displayName.length > 0 ? item.info.displayName : item.name
     const dir = dirname(item.appPath)
     const tmpApp = join(dir, `.yaseen-launcher-upgrade-${randomUUID()}.app`)
     const tmpContents = join(tmpApp, 'Contents')
@@ -485,14 +599,21 @@ export async function refreshOutdatedLaunchers(
     const tmpResources = join(tmpContents, 'Resources')
 
     try {
-      const origPlist = await readFile(join(item.appPath, 'Contents', 'Info.plist'), 'utf8')
-      const nextPlist = updatePlistBundleVersion(origPlist, LAUNCHER_BUNDLE_VERSION)
+      const nextPlist = buildLauncherPlist({
+        name: displayName,
+        bundleId,
+        vaultUrl,
+        vaultPath,
+        hostBundlePath: targetHostPath ?? item.info.hostPath ?? undefined,
+        hostBundleId: deps?.hostBundleId ?? item.info.hostBundleId ?? undefined,
+        serverName: targetServerName ?? item.info.serverName ?? undefined,
+      })
 
       await mkdir(tmpMacOs, { recursive: true })
       await mkdir(tmpResources, { recursive: true })
       await writeFile(join(tmpContents, 'Info.plist'), nextPlist, 'utf8')
 
-      const destBin = join(tmpMacOs, 'vault-launcher')
+      const destBin = join(tmpMacOs, APP_SHIM_EXECUTABLE)
       await copyFile(binaryPath, destBin)
       await chmod(destBin, 0o755)
 
@@ -501,10 +622,11 @@ export async function refreshOutdatedLaunchers(
         await copyFile(origIcon, join(tmpResources, 'AppIcon.icns'))
       }
 
-      await exec('codesign', ['--force', '--sign', '-', tmpApp])
+      await exec('codesign', ['--force', '--sign', identity, tmpApp])
       await atomicSwapBundle(tmpApp, item.appPath, dir)
       const now = new Date()
       await utimes(item.appPath, now, now).catch(() => {})
+      await exec(LSREGISTER_PATH, ['-f', item.appPath]).catch(() => {})
       upgraded.push(item.appPath)
     } catch (err) {
       await rm(tmpApp, { recursive: true, force: true }).catch(() => {})
