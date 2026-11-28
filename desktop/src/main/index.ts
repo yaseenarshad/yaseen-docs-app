@@ -61,7 +61,7 @@ import { initMint, macId } from './vaultIndex/mint'
 import { createWindowManager, type RestoreTarget } from './windows'
 import { focusSingleWindow } from './singleWindowFocus'
 import { createAppShimController, isAppShimHostLaunch, type AppShimController } from './appShims'
-import { installVaultLauncher, readLauncherPlist, refreshOutdatedLaunchers, removeOrphanLauncher, removeVaultLauncher, vaultLauncherBinaryPath } from './vaultLauncher'
+import { appShimLoaderPath, hostBundlePathFromExecPath, installVaultLauncher, readLauncherPlist, refreshOutdatedLaunchers, removeOrphanLauncher, removeVaultLauncher } from './vaultLauncher'
 import { dropLanded } from './dragLanding'
 import { blockFileNavigation, createWindowOpenHandler } from './windowOpenPolicy'
 import { createUpdater, runFile, shortVersion, spawnDetached } from './updater'
@@ -662,6 +662,9 @@ app.whenReady().then(() => {
     applyIfMoved()
     shims?.refreshMenus()
   }
+  const shimServerName = process.env.YASEEN_DOCS_APP_SHIM_SERVER_NAME?.trim() || undefined
+  const hostBundlePath = hostBundlePathFromExecPath(process.execPath)
+  const hostBundleId = process.env.YASEEN_DOCS_APP_SHIM_HOST_BUNDLE_ID?.trim() || (app.isPackaged ? undefined : 'com.github.Electron')
   if (process.platform === 'darwin' && !hiddenE2E) {
     shims = createAppShimController<Electron.Menu>({
       store,
@@ -685,9 +688,8 @@ app.whenReady().then(() => {
       onShimsChanged: () => applyMenu(),
     })
     if (typeof app.startAppShimServer === 'function') {
-      const serverName = process.env.YASEEN_DOCS_APP_SHIM_SERVER_NAME?.trim()
       try {
-        app.startAppShimServer(serverName ? { name: serverName } : undefined)
+        app.startAppShimServer(shimServerName ? { name: shimServerName } : undefined)
       } catch (err) {
         console.warn(`[appShims] startAppShimServer failed: ${String(err)}`)
       }
@@ -716,7 +718,7 @@ app.whenReady().then(() => {
       ? {
           supported: true,
           install: async (params) => {
-            const binaryPath = vaultLauncherBinaryPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname })
+            const binaryPath = appShimLoaderPath(process.execPath)
             const res = await installVaultLauncher(
               {
                 name: params.name,
@@ -726,6 +728,9 @@ app.whenReady().then(() => {
                 openTarget: params.target === 'inbox' || params.target === 'today' ? params.target : undefined,
                 previousAppPath: params.previousAppPath,
                 binaryPath,
+                hostBundlePath,
+                hostBundleId,
+                serverName: shimServerName,
               },
               { trashItem: (p) => shell.trashItem(p) },
             )
@@ -858,8 +863,8 @@ app.whenReady().then(() => {
     }
     links.flush()
     if (process.platform === 'darwin' && app.isPackaged && !hiddenE2E && process.env.YASEEN_DOCS_E2E !== '1') {
-      const binaryPath = vaultLauncherBinaryPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname })
-      void refreshOutdatedLaunchers(binaryPath).catch((err: unknown) => console.warn(`[vaultLauncher] refresh failed: ${String(err)}`))
+      const binaryPath = appShimLoaderPath(process.execPath)
+      void refreshOutdatedLaunchers(binaryPath, { hostBundlePath, hostBundleId, serverName: shimServerName }).catch((err: unknown) => console.warn(`[vaultLauncher] refresh failed: ${String(err)}`))
     }
   })
 })

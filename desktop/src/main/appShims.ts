@@ -5,11 +5,10 @@
  * events, menu builder, `shell.openPath`, and Dock show/hide callbacks so every security check,
  * lifecycle transition, handoff, and shim-first routing rule unit-tests cleanly under vitest.
  */
-import { homedir } from 'node:os'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import { parseFileLink, type LinkOpenTarget } from '@shared/links'
 import { stripSlash } from '@shared/types'
-import { LAUNCHER_BUNDLE_ID_PREFIX, type LauncherPlistInfo } from './vaultLauncher'
+import { LAUNCHER_BUNDLE_ID_PREFIX, resolveLauncherAppDirs, type LauncherPlistInfo } from './vaultLauncher'
 import type { Store } from './store'
 import type { WindowManager } from './windows'
 
@@ -67,16 +66,7 @@ export function isAppShimHostLaunch(argv: readonly string[] = process.argv): boo
 
 /** Allowed parent directories for installed App Shim `.app` bundles (D5). */
 export function allowedShimDirs(env: NodeJS.ProcessEnv = process.env): string[] {
-  const override = env.YASEEN_DOCS_APP_SHIM_DIRS
-  if (typeof override === 'string' && override.trim().length > 0) {
-    const dirs = override
-      .split(':')
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0)
-      .map((entry) => resolve(entry))
-    if (dirs.length > 0) return dirs
-  }
-  return ['/Applications', join(homedir(), 'Applications')]
+  return resolveLauncherAppDirs(env).map((entry) => resolve(entry))
 }
 
 /** Canonical shim key for a single vault root path. */

@@ -168,14 +168,6 @@ export function resolveLauncherAppDirs(env: NodeJS.ProcessEnv = process.env): re
 }
 
 /**
- * Temporary thin wrapper so `desktop/src/main/index.ts` continues to typecheck before branch merge.
- * Coordinator removes this on merge once `index.ts` calls `appShimLoaderPath(process.execPath)` directly.
- */
-export function vaultLauncherBinaryPath(_opts: { isPackaged: boolean; resourcesPath: string; mainDir: string }): string {
-  return appShimLoaderPath(process.execPath)
-}
-
-/**
  * Sanitize a launcher `.app` bundle name: removes `/` and `:` and control characters,
  * strips trailing `.app` suffix, removes leading `.` characters, collapses whitespace,
  * enforces length `<= 80`, and rejects empty results.
