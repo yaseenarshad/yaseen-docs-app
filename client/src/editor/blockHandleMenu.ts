@@ -437,7 +437,7 @@ const lastTab = new Map<string, number>()
  * group is left out here, the one place (a caller hands its groups as they are). The page's right-click menu draws a
  * parent's `panel` with it too (YAZ-4899: "Subheader row style ›" is the six-dot menu's "Subheader row ›", one panel).
  */
-export function fillFlyout(sub: HTMLElement, row: MenuRow, close: () => void, refresh?: (run: () => void) => void): void {
+export function fillFlyout(sub: HTMLElement, row: MenuRow, close: () => void, refresh?: (run: () => void) => void, onResize?: () => void): void {
   /** A segment switch: its options as `fill-target__opt` buttons, the ✓ one pressed. */
   const segments = (options: MenuRow[], className: string): HTMLElement => {
     const seg = document.createElement('div')
@@ -509,6 +509,7 @@ export function fillFlyout(sub: HTMLElement, row: MenuRow, close: () => void, re
     } else {
       groups(body, tab.children, tab.headings)
     }
+    onResize?.()
   }
   tabs.forEach((tab, i) => {
     const b = document.createElement('button')
@@ -608,7 +609,13 @@ function renderParent(row: MenuRow, menu: HTMLElement, close: () => void, refres
       flyout = document.createElement('div')
       flyout.className = 'ctx-menu ctx-menu--editor ctx-menu__sub'
       flyout.setAttribute('role', 'menu')
-      fillFlyout(flyout, row, close, refresh)
+      const placeFlyout = () => {
+        if (flyout === null) return
+        const at = fitFlyout(flyout, button.getBoundingClientRect())
+        flyout.style.left = `${at.left}px`
+        flyout.style.top = `${at.top}px`
+      }
+      fillFlyout(flyout, row, close, refresh, placeFlyout)
       flyout.addEventListener('keydown', (event) => {
         if (event.key !== 'ArrowLeft') return
         event.preventDefault()
@@ -618,9 +625,7 @@ function renderParent(row: MenuRow, menu: HTMLElement, close: () => void, refres
       flyout.style.visibility = 'hidden'
       wrap.appendChild(flyout)
       // YAZ-4970: a flyout taller than the window fits it and scrolls, as the right-click menu's (`lib/fitMenu.ts`).
-      const at = fitFlyout(flyout, button.getBoundingClientRect())
-      flyout.style.left = `${at.left}px`
-      flyout.style.top = `${at.top}px`
+      placeFlyout()
       flyout.style.visibility = ''
       button.setAttribute('aria-expanded', 'true')
     }
