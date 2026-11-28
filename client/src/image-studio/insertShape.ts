@@ -24,7 +24,7 @@
 import type { ViewportInsertionRequest } from '@excalidraw/excalidraw/data/viewportInsertion'
 import type { MediaImportResponse, StudioItem } from '@shared/types'
 import type { ExcalidrawImperativeApi, ExcalidrawModule } from '../drawings/engine'
-import type { ShapeCatalogItem } from './shapes'
+import type { ShapeCatalogItem, ShapeInsertStyle } from './shapes'
 
 /**
  * How big an Image Studio insert lands: 320 px on its longest side at the current zoom, capped at
@@ -45,15 +45,73 @@ export type InsertTarget = Pick<ExcalidrawImperativeApi, 'getAppState' | 'getSce
 /** The engine values an insert needs; both are on `@excalidraw/excalidraw`'s own index. */
 export type InsertEngine = Pick<ExcalidrawModule, 'convertToExcalidrawElements' | 'CaptureUpdateAction'>
 
+export interface InsertShapeOptions {
+  /** Whether stroke width and style scale follow `appState.zoom.value` (Settings › Drawings › New shapes match the zoom). */
+  scaleStylesWithZoom?: boolean
+}
+
+const STROKE_WIDTH_BY_KEY: Record<string, number> = { thin: 1, medium: 2, bold: 4 }
+const VALID_FILL_STYLES = new Set<NonNullable<ShapeInsertStyle['fillStyle']>>(['solid', 'hachure', 'cross-hatch', 'zigzag'])
+
+/** Matches `engine/packages/element/src/screenScale.ts`'s `toBoardSize` without eagerly importing `@excalidraw/element`. */
+const toBoardSize = (screen: number, scale: number): number => (scale === 1 ? screen : Number((screen / scale).toPrecision(4)))
+
 /**
- * Place `shape` at the middle of what the user can see and select it. `CaptureUpdateAction
- * .IMMEDIATELY` is what puts the insert in the undo stack as one step.
+ * Place `shape` at the middle of what the user can see, styled from the board's active `currentItem*`
+ * properties and scaled to the current zoom, then select it. `CaptureUpdateAction.IMMEDIATELY` puts
+ * the insert in the undo stack as one step.
  */
-export function insertShape(engine: InsertEngine, api: InsertTarget, shape: ShapeCatalogItem): ReturnType<ExcalidrawModule['convertToExcalidrawElements']> {
+export function insertShape(
+  engine: InsertEngine,
+  api: InsertTarget,
+  shape: ShapeCatalogItem,
+  options?: InsertShapeOptions,
+): ReturnType<ExcalidrawModule['convertToExcalidrawElements']> {
   const appState = api.getAppState()
-  const centerX = appState.width / 2 / appState.zoom.value - appState.scrollX
-  const centerY = appState.height / 2 / appState.zoom.value - appState.scrollY
-  const elements = engine.convertToExcalidrawElements(shape.create(centerX, centerY))
+  const rawState = appState as unknown as {
+    currentItemStrokeWidth?: number
+    scaleStylesWithZoom?: boolean
+    newShapesMatchZoom?: boolean
+  }
+  const zoom = Number.isFinite(appState.zoom?.value) && appState.zoom.value > 0 ? appState.zoom.value : 1
+  const centerX = appState.width / 2 / zoom - appState.scrollX
+  const centerY = appState.height / 2 / zoom - appState.scrollY
+
+  // Size scale: default `1 / zoom` so shapes land at consistent screen size, clamped to 55 % of the visible viewport.
+  const baseScale = 1 / zoom
+  const longestSide = Math.max(shape.width ?? 200, shape.height ?? 200)
+  const minViewport = Math.min(appState.width, appState.height)
+  const maxBoardSide = Number.isFinite(minViewport) && minViewport > 0 ? (minViewport * IMAGE_STUDIO_INSERTION.viewportFraction) / zoom : Infinity
+  const sizeScale = longestSide > 0 && longestSide * baseScale > maxBoardSide ? maxBoardSide / longestSide : baseScale
+
+  const rawStrokeWidth =
+    typeof appState.currentItemVectorStrokeWidth === 'number' && Number.isFinite(appState.currentItemVectorStrokeWidth)
+      ? appState.currentItemVectorStrokeWidth
+      : typeof rawState.currentItemStrokeWidth === 'number' && Number.isFinite(rawState.currentItemStrokeWidth)
+        ? rawState.currentItemStrokeWidth
+        : typeof appState.currentItemStrokeWidthKey === 'string' && appState.currentItemStrokeWidthKey in STROKE_WIDTH_BY_KEY
+          ? STROKE_WIDTH_BY_KEY[appState.currentItemStrokeWidthKey]
+          : 2
+
+  const scaleStyles = options?.scaleStylesWithZoom ?? rawState.scaleStylesWithZoom ?? rawState.newShapesMatchZoom ?? true
+  const styleScale = scaleStyles && zoom !== 1 ? Number(zoom.toPrecision(4)) : undefined
+  const strokeWidth = scaleStyles && zoom !== 1 ? toBoardSize(rawStrokeWidth, zoom) : rawStrokeWidth
+
+  const fillStyle = VALID_FILL_STYLES.has(appState.currentItemFillStyle as NonNullable<ShapeInsertStyle['fillStyle']>)
+    ? (appState.currentItemFillStyle as ShapeInsertStyle['fillStyle'])
+    : undefined
+
+  const style: ShapeInsertStyle = {
+    strokeColor: typeof appState.currentItemStrokeColor === 'string' && appState.currentItemStrokeColor !== '' ? appState.currentItemStrokeColor : undefined,
+    backgroundColor: typeof appState.currentItemBackgroundColor === 'string' && appState.currentItemBackgroundColor !== '' ? appState.currentItemBackgroundColor : undefined,
+    fillStyle,
+    strokeWidth,
+    roughness: typeof appState.currentItemRoughness === 'number' && Number.isFinite(appState.currentItemRoughness) ? appState.currentItemRoughness : undefined,
+    sizeScale,
+    styleScale,
+  }
+
+  const elements = engine.convertToExcalidrawElements(shape.create(centerX, centerY, style))
   const selectedElementIds = Object.fromEntries(elements.map((element) => [element.id, true as const]))
   api.updateScene({
     elements: [...api.getSceneElementsIncludingDeleted(), ...elements],

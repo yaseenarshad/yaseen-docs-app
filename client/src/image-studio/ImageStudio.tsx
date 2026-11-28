@@ -29,7 +29,7 @@
  * in flight.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { DEFAULT_SETTINGS, MAX_COMPONENT_NAME_LENGTH, MAX_ITEM_WORD_LENGTH, PIXABAY_SECRET, type ComponentItem, type MediaBytesProvider, type MediaHoverZoomSize, type MediaLibraryFile, type StudioItem } from '@shared/types'
+import { DEFAULT_CANVAS_PREFS, DEFAULT_SETTINGS, MAX_COMPONENT_NAME_LENGTH, MAX_ITEM_WORD_LENGTH, PIXABAY_SECRET, type ComponentItem, type MediaBytesProvider, type MediaHoverZoomSize, type MediaLibraryFile, type StudioItem } from '@shared/types'
 import { DEFAULT_MEDIA_FILTERS, needsCredit, sanitizeMediaFilters, type IconPackInfo, type MediaFilters } from '@shared/iconPacks'
 import { parseComponentFragment } from '@shared/savedComponents'
 import { api } from '../api'
@@ -43,7 +43,7 @@ import { componentFragmentJson, insertComponent } from '../components-library/co
 import { captureImageFile, isTextPaste, nameFromFile, PASTE_IMAGE_TYPES, pastedImages } from '../components-library/pastedImage'
 import { componentItem, componentPreviews, useComponentLibrary } from '../components-library/useComponentLibrary'
 import { insertImage, insertShape, fileFromImport, type InsertEngine, type InsertTarget } from './insertShape'
-import { buildShapeCatalog, getShape, shapeAliases, type ShapeCatalogItem, type ShapePreview, type SmartShapeApi } from './shapes'
+import { buildShapeCatalog, getShape, SHAPE_CATEGORIES, SHAPE_CATEGORY_LABELS, shapeAliases, type ShapeCatalogItem, type ShapeCategory, type ShapePreview, type SmartShapeApi } from './shapes'
 import { groupResults } from './groupResults'
 import { FilterMenu } from './FilterMenu'
 import { attachTileHoverZoom, type ZoomLoader } from './tileHoverZoom'
@@ -218,6 +218,7 @@ const settingsPins = (): string[] => storage.getSettings()?.mediaPinnedPacks ?? 
 const settingsGroupSimilar = (): boolean => storage.getSettings()?.mediaGroupSimilar ?? DEFAULT_SETTINGS.mediaGroupSimilar
 const settingsHoverZoom = (): boolean => storage.getSettings()?.mediaHoverZoom ?? DEFAULT_SETTINGS.mediaHoverZoom
 const settingsHoverZoomSize = (): MediaHoverZoomSize => storage.getSettings()?.mediaHoverZoomSize ?? DEFAULT_SETTINGS.mediaHoverZoomSize
+const settingsNewShapesMatchZoom = (): boolean => storage.getSettings()?.canvas?.newShapesMatchZoom ?? DEFAULT_CANVAS_PREFS.newShapesMatchZoom
 /** The hover zoom's sharp picture of a Pixabay item (YAZ-4447 demo round 2): main fetches it, as every tile picture. */
 const loadZoomPicture: ZoomLoader = async (id, zoomWidth) => (await api.media.preview({ provider: 'pixabay', id, zoomWidth })).dataURL
 /** The pins as they are now, or the same array when they hold the same packs, so a settings broadcast renders nothing. */
@@ -257,10 +258,10 @@ function ShapeTile({ preview }: { preview: ShapePreview }) {
       </svg>
     )
   }
-  if (preview.shape === 'rectangle') {
+  if (preview.shape === 'rectangle' || preview.shape === 'rounded-rectangle') {
     return (
       <svg viewBox="0 0 100 100" aria-hidden="true">
-        <rect className="image-studio__shape-path--basic" x="10" y="20" width="80" height="60" rx="12" />
+        <rect className="image-studio__shape-path--basic" x="10" y="20" width="80" height="60" rx={preview.shape === 'rounded-rectangle' ? 16 : 0} />
       </svg>
     )
   }
@@ -385,8 +386,8 @@ type FocusPlan = { slot: string; section: Element | null; index: number; fromMen
 
 /** Where an item comes from, in words (demo 6H): the tile's tooltip and the first line of its menu. */
 export function sourceLabel(item: StudioItem): string {
-  if (item.provider === 'iconify') return item.collectionName ? `Iconify · ${item.collectionName}` : 'Iconify'
-  if (item.provider === 'pixabay') return item.creator ? `Pixabay · ${item.creator}` : 'Pixabay'
+  if (item.provider === 'iconify') return item.collectionName ? `Iconify · ${item.collectionName} (recolorable)` : 'Iconify (recolorable)'
+  if (item.provider === 'pixabay') return item.creator ? `Pixabay · ${item.creator} (fixed colors)` : 'Pixabay (fixed colors)'
   if (item.provider === 'excalidraw') return item.collectionName ? `Excalidraw library · ${item.collectionName}` : 'Excalidraw library'
   return item.provider === 'component' ? 'Your component' : 'Built-in shape'
 }
@@ -687,6 +688,12 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
 
   const catalog = useMemo(() => buildShapeCatalog(smart), [smart])
   const shapes = useMemo(() => catalog.map(shapeItem), [catalog])
+  const shapesByCategory = useMemo(() => {
+    const grouped = new Map<ShapeCategory, StudioItem[]>()
+    for (const category of SHAPE_CATEGORIES) grouped.set(category, [])
+    for (const shape of catalog) grouped.get(shape.category)?.push(shapeItem(shape))
+    return grouped
+  }, [catalog])
   const favoriteKeys = useMemo(() => new Set(favorites.map(({ itemKey }) => itemKey)), [favorites])
   const usedByKey = useMemo(() => new Map(used.map((row) => [row.itemKey, row])), [used])
   const componentsBySlug = useMemo(() => new Map(components.map((c) => [c.slug, c])), [components])
@@ -799,26 +806,31 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     setNotice(null)
     try {
       let recorded = item
-      // A favorite's own copy first (YAZ-4370): it adds offline, and after its library, shape or component is gone.
-      const copy = item.provider !== 'iconify' && item.provider !== 'pixabay' && favoriteKeys.has(item.itemKey) ? await api.media.favoriteElements(item.itemKey).catch(() => null) : null
-      if (copy !== null) {
-        insertComponent(engine, excalidrawAPI, copy)
-      } else if (item.provider === 'shape') {
-        const shape = getShape(catalog, item.providerId)
-        if (shape === undefined) throw new Error('That shape is not available yet.')
-        insertShape(engine, excalidrawAPI, shape)
-      } else if (item.provider === 'component') {
-        await library.insert(item.providerId)
-      } else if (item.provider === 'excalidraw') {
-        // A library item is elements, like a saved component: the same insert, so each copy is independent.
-        const { elements } = await api.media.drawing({ id: item.providerId })
-        insertComponent(engine, excalidrawAPI, componentFragmentJson({ elements, files: {} }))
+      // Live catalog beats disk favorite copies for built-in shapes (YAZ-6675 D3) so starred shapes inherit current board
+      // style, zoom, and live engine geometry; fall back to the saved copy only if a shape left the catalog.
+      const liveShape = item.provider === 'shape' ? getShape(catalog, item.providerId) : undefined
+      if (liveShape !== undefined) {
+        insertShape(engine, excalidrawAPI, liveShape, { scaleStylesWithZoom: settingsNewShapesMatchZoom() })
       } else {
-        const imported = await api.media.import({ provider: item.provider, id: item.providerId })
-        await insertImage(excalidrawAPI, fileFromImport(item, imported))
-        // Main's item is what the provider says NOW — a fresh size and attribution — layered over the caller's,
-        // which knows the pretty collection name a search gave it.
-        recorded = { ...item, ...imported.item }
+        // A favorite's own copy first (YAZ-4370): it adds offline, and after its library, shape or component is gone.
+        const copy = item.provider !== 'iconify' && item.provider !== 'pixabay' && favoriteKeys.has(item.itemKey) ? await api.media.favoriteElements(item.itemKey).catch(() => null) : null
+        if (copy !== null) {
+          insertComponent(engine, excalidrawAPI, copy)
+        } else if (item.provider === 'shape') {
+          throw new Error('That shape is not available yet.')
+        } else if (item.provider === 'component') {
+          await library.insert(item.providerId)
+        } else if (item.provider === 'excalidraw') {
+          // A library item is elements, like a saved component: the same insert, so each copy is independent.
+          const { elements } = await api.media.drawing({ id: item.providerId })
+          insertComponent(engine, excalidrawAPI, componentFragmentJson({ elements, files: {} }))
+        } else {
+          const imported = await api.media.import({ provider: item.provider, id: item.providerId })
+          await insertImage(excalidrawAPI, fileFromImport(item, imported))
+          // Main's item is what the provider says NOW — a fresh size and attribution — layered over the caller's,
+          // which knows the pretty collection name a search gave it.
+          recorded = { ...item, ...imported.item }
+        }
       }
       const wasFavorite = favoriteKeys.has(item.itemKey)
       const lib = await api.media.used({ op: 'record', item: recorded, query: query.trim() })
@@ -1040,6 +1052,11 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
               <drawingPreviews.Preview cacheKey={`${theme}|${item.providerId}`} placeholderClass="image-studio__placeholder" />
             ) : (
               <previews.Preview cacheKey={`${item.provider}:${item.providerId}`} placeholderClass="image-studio__placeholder" />
+            )}
+            {item.provider === 'pixabay' && (
+              <span className="image-studio__raster-badge" aria-hidden="true">
+                IMG
+              </span>
             )}
             {insertingKey === item.itemKey && <span className="image-studio__adding">Adding…</span>}
           </PictureTile>
@@ -1376,8 +1393,18 @@ export function ImageStudio({ engine, excalidrawAPI, hasSelection, searchFocusPe
     )
   } else if (chip === 'icons' || chip === 'photos') {
     body = <div className="image-studio__state">Type to search {chip}.</div>
+  } else if (chip === 'shapes') {
+    // Five scannable sections (YAZ-6676 D5); omit any category still empty while the lazy element chunk loads.
+    body = (
+      <>
+        {SHAPE_CATEGORIES.map((category) => {
+          const items = shapesByCategory.get(category) ?? []
+          return items.length > 0 ? section(SHAPE_CATEGORY_LABELS[category], items) : null
+        })}
+      </>
+    )
   } else {
-    const items = chip === 'favorites' ? favoriteItems : chip === 'components' ? componentItems : shapes
+    const items = chip === 'favorites' ? favoriteItems : componentItems
     body =
       items.length > 0 || chip === 'components' ? (
         <>

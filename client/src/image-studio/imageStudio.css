@@ -354,12 +354,30 @@
 }
 
 .image-studio__shape-path--open {
-  stroke-width: 8;
+  stroke-width: 2.5px;
+  vector-effect: non-scaling-stroke;
 }
 
 .image-studio__shape-path--closed {
   fill: currentColor;
   stroke: currentColor;
+}
+
+/* YAZ-6676 (D7): fixed-color Pixabay rasters get a quiet corner pill; recolorable SVGs and shapes stay clean.
+   Bottom-right keeps it clear of both the favorite star (top-right) and the +N variants pill (top-left). */
+.image-studio__raster-badge {
+  background: rgb(0 0 0 / 56%);
+  border-radius: 4px;
+  bottom: 4px;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 2px 4px;
+  pointer-events: none;
+  position: absolute;
+  right: 4px;
 }
 
 /* Drawn ON the picture while an insert is in flight, so it states its own colours. */
