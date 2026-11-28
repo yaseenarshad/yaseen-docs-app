@@ -2411,6 +2411,8 @@ export interface SettingsState {
   highlightCustomColors: HighlightCustomColor[]
   /** Which windows come back when the app starts with nothing asked of it (YAZ-2589 D2). */
   startupWindows: StartupWindows
+  /** Show a confirmation popup before Cmd+Q / Alfred Quit All closes a Vault App or Yaseen Docs (YAZ-6641). Default true. */
+  confirmBeforeQuit: boolean
   /** What a vault opens on (YAZ-3487 D15): every vault open reads it — main's new windows, `openRoot`, `bootTabs`, the empty-window door. */
   vaultOpensOn: VaultOpensOn
   /** Section indent (YAZ-2709): the width of one step in px, 24 | 30 | 36. On or off is per page (the page cog), never here. View-only. */
@@ -3368,6 +3370,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   selectionToolbar: DEFAULT_TOOLBAR,
   highlightCustomColors: [],
   startupWindows: 'last',
+  confirmBeforeQuit: true,
   vaultOpensOn: 'blank',
   sectionStep: 30,
   sectionLines: 'always',

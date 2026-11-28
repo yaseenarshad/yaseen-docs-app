@@ -205,6 +205,7 @@ describe('validateShimConnection (D5)', () => {
       vaultPath: VAULT,
       vaultUrl: fileLink(VAULT),
       workspaceId: null,
+      displayName: 'Work',
     })
     expect(shim.checkedRequirements).toEqual([`identifier "${BUNDLE_ID}"`])
 
@@ -220,6 +221,7 @@ describe('validateShimConnection (D5)', () => {
       vaultPath: 'workspace:ws-1',
       vaultUrl: workspaceLink('ws-1'),
       workspaceId: 'ws-1',
+      displayName: 'Suite',
     })
   })
 
@@ -522,5 +524,69 @@ describe('createAppShimController', () => {
     const shim = new FakeShim(BUNDLE_ID, '/applications/Work.app')
     const res = validateShimConnection(shim, validPlist(), ['/Applications'], 'darwin')
     expect(res.ok).toBe(true)
+  })
+
+  it('waits for confirmShimQuit on quit-requested and stays alive when cancelled (YAZ-6641)', async () => {
+    let resolveConfirm!: (ok: boolean) => void
+    const confirmShimQuit = vi.fn(
+      () =>
+        new Promise<boolean>((r) => {
+          resolveConfirm = r
+        }),
+    )
+    const state = defaultAppState()
+    const windows = {
+      openVaultSet: vi.fn(() => ({ opened: true, missing: [] })),
+      routeToFile: vi.fn(),
+      windowsForShim: vi.fn(() => ['win-1']),
+      regularWindowCount: vi.fn(() => 0),
+      focusWindowById: vi.fn(() => true),
+      findHostWindowForVault: vi.fn(() => undefined),
+      findHostWindowForWorkspace: vi.fn(() => undefined),
+      handoffWindowToShim: vi.fn(async () => null),
+      flushAndCloseWindows: vi.fn(async () => undefined),
+      linkNotice: vi.fn(),
+    }
+    const controller = createAppShimController({
+      store: { get: () => state },
+      windows,
+      readPlist: async () => validPlist(),
+      allowedDirs: () => ['/Applications'],
+      buildMenuForShim: () => ({}),
+      handleLink: vi.fn(),
+      exists: () => false,
+      launchApp: vi.fn(),
+      showHostDock: vi.fn(),
+      hideHostDock: vi.fn(),
+      quitHost: vi.fn(),
+      confirmShimQuit,
+    })
+    const shim = new FakeShim()
+    await controller.handleConnected(shim)
+
+    // First quit-requested prevents default synchronously and waits for user confirmation.
+    const ev1 = shim.emitEvent('quit-requested')
+    expect(ev1.preventDefault).toHaveBeenCalledOnce()
+    // Duplicate quit-requested while dialog is open does not stack another dialog.
+    const ev2 = shim.emitEvent('quit-requested')
+    expect(ev2.preventDefault).toHaveBeenCalledOnce()
+    expect(confirmShimQuit).toHaveBeenCalledTimes(1)
+    expect(shim.quitCount).toBe(0)
+
+    // User cancels -> shim stays alive!
+    resolveConfirm(false)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(windows.flushAndCloseWindows).not.toHaveBeenCalled()
+    expect(shim.quitCount).toBe(0)
+
+    // Next quit-requested -> user confirms -> flushes and quits!
+    shim.emitEvent('quit-requested')
+    expect(confirmShimQuit).toHaveBeenCalledTimes(2)
+    resolveConfirm(true)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(windows.flushAndCloseWindows).toHaveBeenCalledWith(['win-1'])
+    expect(shim.quitCount).toBe(1)
+    controller.dispose()
   })
 })

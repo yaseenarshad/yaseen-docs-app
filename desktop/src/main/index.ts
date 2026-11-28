@@ -2,7 +2,7 @@ import { rendererUrlFor } from './rendererUrl'
 import { startAutomationServer, type AutomationServer } from '../automation/server'
 import { prepareAutomation } from './automation'
 import { registerAutomationIpc } from './ipc/automation'
-import { app, BrowserWindow, clipboard, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, systemPreferences, webContents } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, Menu, nativeTheme, net, powerMonitor, protocol, screen, shell, systemPreferences, webContents } from 'electron'
 import { existsSync, statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { enableCompileCache } from 'node:module'
@@ -426,6 +426,8 @@ const updater = createUpdater(
 let reopenAfterQuit = false
 /** True when "Quit All Yaseen Docs" (⌘⌥Q) or "Restart to update" requests exiting host + all App Shims (YAZ-6640 Option B). */
 let forceQuitAll = false
+/** True when the app is exiting automatically (e.g. last window closed or updater restart), bypassing the Cmd+Q confirmation popup (YAZ-6641). */
+let skipQuitConfirm = false
 
 /**
  * The most recently focused window's `webContents.id` (all windows, for clipboard IPC)
@@ -583,6 +585,38 @@ app.whenReady().then(() => {
     }
     return null
   }
+  const shouldConfirmQuit = (): boolean =>
+    !hiddenE2E && process.env.YASEEN_DOCS_E2E !== '1' && store.get().settings.confirmBeforeQuit
+  const showQuitConfirmDialog = async (opts: { message: string; detail: string; confirmLabel: string; windowId?: string }): Promise<boolean> => {
+    const parent =
+      opts.windowId !== undefined
+        ? BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !previewPopups.has(w) && manager.idFor(w.webContents) === opts.windowId)
+        : undefined
+    const boxOpts: Electron.MessageBoxOptions = {
+      type: 'question',
+      buttons: [opts.confirmLabel, 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      message: opts.message,
+      detail: opts.detail,
+    }
+    try {
+      const res = parent !== undefined ? await dialog.showMessageBox(parent, boxOpts) : await dialog.showMessageBox(boxOpts)
+      return res.response === 0
+    } catch {
+      const res = await dialog.showMessageBox(boxOpts)
+      return res.response === 0
+    }
+  }
+  const confirmQuitAllIfNeeded = async (): Promise<boolean> => {
+    if (!shouldConfirmQuit()) return true
+    return showQuitConfirmDialog({
+      message: 'Do you want to quit all Yaseen Docs apps?',
+      detail: 'This closes every open Vault App and Yaseen Docs window. Click Cancel to keep them open.',
+      confirmLabel: 'Quit All',
+      windowId: manager.lastFocused?.(),
+    })
+  }
   const createSharedMenuHost = (targetWc: () => Electron.WebContents | undefined, onWhatsNew: () => void) => ({
     focusedWebContents: targetWc,
     readClipboardText: () => clipboard.readText(),
@@ -609,8 +643,12 @@ app.whenReady().then(() => {
       return file !== null
     },
     quitAll: () => {
-      forceQuitAll = true
-      app.quit()
+      void confirmQuitAllIfNeeded().then((ok) => {
+        if (!ok) return
+        forceQuitAll = true
+        skipQuitConfirm = true
+        app.quit()
+      })
     },
     routeVaultToShim,
   })
@@ -747,12 +785,24 @@ app.whenReady().then(() => {
       hideHostDock: () => {
         app.dock?.hide()
       },
-      quitHost: () => app.quit(),
+      quitHost: () => {
+        skipQuitConfirm = true
+        app.quit()
+      },
       headlessStart: headlessShimHost,
       onShimsChanged: () => applyMenu(),
       onShimDisconnected: (shimKey) => {
         shimMenuHandlers.delete(shimKey)
         shimMenuKeys.delete(shimKey)
+      },
+      confirmShimQuit: async ({ name, windowId }) => {
+        if (!shouldConfirmQuit()) return true
+        return showQuitConfirmDialog({
+          message: `Do you want to close ${name}?`,
+          detail: `Click Cancel to keep ${name} open. You can turn off this prompt in Settings › General.`,
+          confirmLabel: `Close ${name}`,
+          windowId,
+        })
       },
     })
     if (typeof app.startAppShimServer === 'function') {
@@ -854,6 +904,7 @@ app.whenReady().then(() => {
     restartToUpdate: () => {
       reopenAfterQuit = true
       forceQuitAll = true
+      skipQuitConfirm = true
       app.quit()
     },
   })
@@ -965,23 +1016,9 @@ app.whenReady().then(() => {
 // and hides the host Dock icon, leaving Vault Apps running. Cmd+Opt+Q ("Quit All") or updater sets `forceQuitAll`.
 let quitting = false
 let closingHostOnly = false
-app.on('before-quit', (event) => {
-  event.preventDefault()
+let confirmingHostQuit = false
+const runHostQuitSequence = (): void => {
   if (quitting) return
-  if (!forceQuitAll && (shims?.connectedCount() ?? 0) > 0) {
-    if (closingHostOnly) return
-    closingHostOnly = true
-    const regularIds = manager.regularWindowIds?.() ?? []
-    void (regularIds.length > 0 ? manager.flushAndCloseWindows(regularIds) : Promise.resolve())
-      .catch(() => undefined)
-      .finally(() => {
-        closingHostOnly = false
-        if ((manager.regularWindowCount?.() ?? 0) === 0 && (shims?.connectedCount() ?? 0) > 0) {
-          app.dock?.hide()
-        }
-      })
-    return
-  }
   quitting = true
   const activeShimBundles = shims?.activeBundlePaths() ?? []
   const hadRegularWindows = (manager.regularWindowCount?.() ?? 0) > 0
@@ -1014,11 +1051,74 @@ app.on('before-quit', (event) => {
       app.exit(0)
     },
   })
+}
+app.on('before-quit', (event) => {
+  event.preventDefault()
+  if (quitting) return
+  const needConfirm = !skipQuitConfirm && !hiddenE2E && process.env.YASEEN_DOCS_E2E !== '1' && store.get().settings.confirmBeforeQuit
+  if (!forceQuitAll && (shims?.connectedCount() ?? 0) > 0) {
+    if (closingHostOnly || confirmingHostQuit) return
+    const regularIds = manager.regularWindowIds?.() ?? []
+    const doCloseHost = () => {
+      closingHostOnly = true
+      void (regularIds.length > 0 ? manager.flushAndCloseWindows(regularIds) : Promise.resolve())
+        .catch(() => undefined)
+        .finally(() => {
+          closingHostOnly = false
+          if ((manager.regularWindowCount?.() ?? 0) === 0 && (shims?.connectedCount() ?? 0) > 0) {
+            app.dock?.hide()
+          }
+        })
+    }
+    if (!needConfirm || regularIds.length === 0) {
+      doCloseHost()
+      return
+    }
+    confirmingHostQuit = true
+    const parent = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !previewPopups.has(w) && manager.idFor(w.webContents) === regularIds[0])
+    const boxOpts: Electron.MessageBoxOptions = {
+      type: 'question',
+      buttons: ['Close Windows', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      message: 'Do you want to close Yaseen Docs windows?',
+      detail: 'Your open Vault Apps will stay running. Click Cancel to keep these windows open.',
+    }
+    void (parent !== undefined ? dialog.showMessageBox(parent, boxOpts) : dialog.showMessageBox(boxOpts))
+      .catch(() => ({ response: 1 }))
+      .then((res) => {
+        confirmingHostQuit = false
+        if (res.response === 0) doCloseHost()
+      })
+    return
+  }
+  if (needConfirm && !reopenAfterQuit) {
+    if (confirmingHostQuit) return
+    confirmingHostQuit = true
+    const hostWin = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !previewPopups.has(w))
+    const boxOpts: Electron.MessageBoxOptions = {
+      type: 'question',
+      buttons: ['Quit Yaseen Docs', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      message: 'Do you want to quit Yaseen Docs?',
+      detail: 'Click Cancel to keep Yaseen Docs open. You can turn off this prompt in Settings › General.',
+    }
+    void (hostWin !== undefined ? dialog.showMessageBox(hostWin, boxOpts) : dialog.showMessageBox(boxOpts))
+      .catch(() => ({ response: 1 }))
+      .then((res) => {
+        confirmingHostQuit = false
+        if (res.response === 0) runHostQuitSequence()
+      })
+    return
+  }
+  runHostQuitSequence()
 })
 
 // Obsidian quits when its last window closes (its main.js `window-all-closed` handler); so do we —
 // except while macOS App Shims are connected or a `--app-shim-host` launch awaits its initial shim (YAZ-6625 D2).
 app.on('window-all-closed', () => {
   if ((shims?.connectedCount() ?? 0) > 0 || shims?.isWaitingForFirstShim()) return
+  skipQuitConfirm = true
   app.quit()
 })

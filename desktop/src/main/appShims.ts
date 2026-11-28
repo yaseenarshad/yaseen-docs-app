@@ -46,7 +46,7 @@ export interface AppShimLike<MenuT = unknown> {
 }
 
 export type ShimValidationResult =
-  | { ok: true; shimKey: string; vaultPath: string; vaultUrl: string; workspaceId: string | null }
+  | { ok: true; shimKey: string; vaultPath: string; vaultUrl: string; workspaceId: string | null; displayName: string }
   | { ok: false; reason: string }
 
 export type ShimRouteDecision =
@@ -176,7 +176,8 @@ export function validateShimConnection(
   const workspaceId = parseWorkspaceShimKey(rawVaultPath)
   const shimKey = workspaceId !== null ? workspaceShimKey(workspaceId) : vaultShimKey(rawVaultPath)
   const vaultPath = workspaceId !== null ? rawVaultPath : stripSlash(rawVaultPath)
-  return { ok: true, shimKey, vaultPath, vaultUrl: rawVaultUrl, workspaceId }
+  const displayName = plist.displayName?.trim() || basename(normalizedBundlePath, '.app') || 'Vault App'
+  return { ok: true, shimKey, vaultPath, vaultUrl: rawVaultUrl, workspaceId, displayName }
 }
 
 const pathInRoot = (root: string, target: string): boolean => {
@@ -217,6 +218,8 @@ export interface AppShimControllerDeps<MenuT = unknown> {
   warn?: (message: string) => void
   onShimsChanged?: () => void
   onShimDisconnected?: (shimKey: string) => void
+  /** Optional confirmation prompt before honoring a shim `quit-requested` (Cmd+Q / Alfred Quit All; YAZ-6641). */
+  confirmShimQuit?: (opts: { shimKey: string; name: string; windowId: string | undefined }) => Promise<boolean> | boolean
 }
 
 export interface AppShimController<MenuT = unknown> {
@@ -259,10 +262,12 @@ interface ConnectedShimEntry<MenuT> {
   shim: AppShimLike<MenuT>
   bundleId: string
   bundlePath: string
+  displayName: string
   vaultPath: string
   vaultUrl: string
   workspaceId: string | null
   quitting: boolean
+  confirming: boolean
   opening: boolean
 }
 
@@ -415,10 +420,12 @@ export function createAppShimController<MenuT = unknown>(deps: AppShimController
         shim,
         bundleId: shim.bundleId,
         bundlePath: shim.bundlePath,
+        displayName: check.displayName,
         vaultPath: check.vaultPath,
         vaultUrl: check.vaultUrl,
         workspaceId: check.workspaceId,
         quitting: false,
+        confirming: false,
         opening: true,
       }
       const prior = connected.get(entry.shimKey)
@@ -444,16 +451,32 @@ export function createAppShimController<MenuT = unknown>(deps: AppShimController
       })
 
       shim.on('quit-requested', (event) => {
-        // Must be called synchronously so Electron does not skip window `close` / flush events (YAZ-6625 D4).
+        // Must be called synchronously so Electron does not skip window `close` / flush events (YAZ-6625 D4)
+        // and so Alfred Quit All / macOS does not force-terminate while a confirmation popup is open (YAZ-6641).
         event.preventDefault()
-        if (entry.quitting) return
-        entry.quitting = true
-        const ids = deps.windows.windowsForShim(entry.shimKey)
-        void deps.windows
-          .flushAndCloseWindows(ids)
-          .catch(() => undefined)
-          .finally(() => {
-            if (shim.isConnected()) shim.quit()
+        if (entry.quitting || entry.confirming) return
+        const finishQuit = () => {
+          if (entry.quitting || quittingAll || !shim.isConnected()) return
+          entry.quitting = true
+          const ids = deps.windows.windowsForShim(entry.shimKey)
+          void deps.windows
+            .flushAndCloseWindows(ids)
+            .catch(() => undefined)
+            .finally(() => {
+              if (shim.isConnected()) shim.quit()
+            })
+        }
+        if (deps.confirmShimQuit === undefined) {
+          finishQuit()
+          return
+        }
+        entry.confirming = true
+        const primaryWindowId = deps.windows.windowsForShim(entry.shimKey)[0]
+        void Promise.resolve(deps.confirmShimQuit({ shimKey: entry.shimKey, name: entry.displayName, windowId: primaryWindowId }))
+          .catch(() => false)
+          .then((confirmed) => {
+            entry.confirming = false
+            if (confirmed) finishQuit()
           })
       })
 

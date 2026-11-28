@@ -1106,6 +1106,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
+        // YAZ-6641: confirmation popup before Cmd+Q / Alfred Quit All closes a Vault App or Yaseen Docs (default ON).
+        title: 'When quitting',
+        items: [
+          {
+            id: 'confirmBeforeQuit',
+            label: 'Confirm before quitting',
+            hint: 'Show a confirmation popup before Cmd+Q or Alfred Quit All closes a Vault App or Yaseen Docs.',
+            keywords: ['quit', 'confirm', 'cmd+q', 'alfred', 'close', 'popup', 'dialog', 'prompt'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.confirmBeforeQuit} onChange={(confirmBeforeQuit) => onChange({ ...settings, confirmBeforeQuit })} ariaLabel="Confirm before quitting" />
+            ),
+          },
+        ],
+      },
+      {
         // YAZ-3487 D15: blank is the default (D7); the last page is the old way (YAZ-1767 D2).
         title: 'When a vault opens',
         items: [

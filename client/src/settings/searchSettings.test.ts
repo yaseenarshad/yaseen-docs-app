@@ -41,6 +41,7 @@ describe('settingCandidates', () => {
       'profile',
       'settingsFolder',
       'startupWindows',
+      'confirmBeforeQuit',
       'vaultOpensOn',
       'workspaceLauncher',
       'vaultLauncher',
