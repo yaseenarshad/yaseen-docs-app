@@ -253,7 +253,11 @@ export const GoogleDocsGrid = ({
   const [storedCustom, setStoredCustom] = useState<string[]>(() =>
     readStoredCustom(),
   );
-  const [removeTarget, setRemoveTarget] = useState<string | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{
+    label: string;
+    hex: string;
+    isCustom: boolean;
+  } | null>(null);
 
   const normalizedColor = color ? color.toLowerCase() : null;
   const isTransparent =
@@ -268,11 +272,13 @@ export const GoogleDocsGrid = ({
   const boardCustom =
     storedCustom.length > 0 || type === "canvasBackground" || !palette
       ? []
-      : getMostUsedCustomColors(elements, type, palette);
+      : getMostUsedCustomColors(elements, type, palette).filter(
+          (c) => !GDOCS_HEX_SET.has(c.toLowerCase()),
+        );
   const customColors = Array.from(
     new Set(
       [...storedCustom, ...boardCustom.map((c) => c.toLowerCase())].filter(
-        (c) => /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(c) && !GDOCS_HEX_SET.has(c),
+        (c) => /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(c),
       ),
     ),
   ).slice(0, MAX_RECENT_CUSTOM);
@@ -284,17 +290,27 @@ export const GoogleDocsGrid = ({
   }, [setEyeDropperState]);
 
   const handleCustomChange = (nextHex: string) => {
-    setRemoveTarget(null);
+    setCtxMenu(null);
     const norm = nextHex.toLowerCase();
-    if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(norm) && !GDOCS_HEX_SET.has(norm)) {
+    if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(norm)) {
       setStoredCustom(recordStoredCustom(norm));
     }
     onChange(nextHex);
   };
 
   const handleRemoveCustom = (hex: string) => {
-    setRemoveTarget(null);
+    setCtxMenu(null);
     setStoredCustom(removeStoredCustom(hex));
+  };
+
+  const handlePinCustom = (hex: string) => {
+    setCtxMenu(null);
+    setStoredCustom(recordStoredCustom(hex));
+  };
+
+  const handleCopyHex = (hex: string) => {
+    setCtxMenu(null);
+    void navigator.clipboard?.writeText(hex).catch(() => {});
   };
 
   const renderRow = (swatches: readonly GDocsSwatch[], rowKey: string) => (
@@ -311,10 +327,22 @@ export const GoogleDocsGrid = ({
               "is-light": light,
             })}
             style={{ "--swatch": swatch.hex } as React.CSSProperties}
-            title={swatch.label}
+            title={`${swatch.label} (${swatch.hex})`}
             aria-label={swatch.label}
             aria-pressed={active}
-            onClick={() => onChange(swatch.hex)}
+            onClick={() => {
+              setCtxMenu(null);
+              onChange(swatch.hex);
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setCtxMenu({
+                label: swatch.label,
+                hex: swatch.hex,
+                isCustom: false,
+              });
+            }}
           />
         );
       })}
@@ -384,14 +412,14 @@ export const GoogleDocsGrid = ({
                   "is-light": isLightSwatch(hex),
                 })}
                 style={{ "--swatch": hex } as React.CSSProperties}
-                title={`${hex} · Right-click to remove`}
+                title={`${hex} · Right-click for options`}
                 aria-label={`Custom colour ${hex}`}
                 aria-pressed={active}
                 onClick={() => handleCustomChange(hex)}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  setRemoveTarget((cur) => (cur === hex ? null : hex));
+                  setCtxMenu({ label: "Custom", hex, isCustom: true });
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Backspace" || e.key === "Delete") {
@@ -403,16 +431,43 @@ export const GoogleDocsGrid = ({
               />
             );
           })}
-          {removeTarget && (
+          {ctxMenu && (
             <div className="gdocs-grid__ctx" role="menu">
+              <div className="gdocs-grid__ctx-head">
+                <span
+                  className="gdocs-grid__ctx-swatch"
+                  style={{ background: ctxMenu.hex }}
+                />
+                <span className="gdocs-grid__ctx-name">{ctxMenu.label}</span>
+                <code className="gdocs-grid__ctx-hex">{ctxMenu.hex}</code>
+              </div>
               <button
                 type="button"
-                className="gdocs-grid__remove"
+                className="gdocs-grid__ctx-item"
                 role="menuitem"
-                onClick={() => handleRemoveCustom(removeTarget)}
+                onClick={() => handleCopyHex(ctxMenu.hex)}
               >
-                ✕ Remove {removeTarget}
+                Copy hex ({ctxMenu.hex})
               </button>
+              {ctxMenu.isCustom ? (
+                <button
+                  type="button"
+                  className="gdocs-grid__remove"
+                  role="menuitem"
+                  onClick={() => handleRemoveCustom(ctxMenu.hex)}
+                >
+                  ✕ Remove {ctxMenu.hex}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="gdocs-grid__ctx-item"
+                  role="menuitem"
+                  onClick={() => handlePinCustom(ctxMenu.hex)}
+                >
+                  ★ Pin to Custom
+                </button>
+              )}
             </div>
           )}
           <button

@@ -117,6 +117,10 @@ export class ColourGrid {
     }
 
     this.el = div('colour-grid')
+    this.el.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+    })
 
     // 1. Optional top reset row (Default / None / No fill).
     if (opts.noneLabel !== null) {
@@ -166,6 +170,11 @@ export class ColourGrid {
         const item = this.#makeDot(`hex:${s.hex}`, s.label, s.hex, isLightSwatch(s.hex), false, () =>
           opts.onPick(s.hex, false),
         )
+        item.el.addEventListener('contextmenu', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          this.#showSwatchMenu(s.label, s.hex, false, item.el)
+        })
         container.append(item.el)
         this.#paletteItems.push({ hex: s.hex, item })
       }
@@ -372,28 +381,78 @@ export class ColourGrid {
     }
   }
 
-  #showRemoveMenu(hex: Hex, anchor: HTMLElement): void {
+  #showSwatchMenu(label: string, hex: Hex, isCustom: boolean, anchor: HTMLElement): void {
     this.#hideRemoveMenu()
     const menu = this.doc.createElement('div')
     menu.className = 'colour-grid__ctx'
     menu.setAttribute('role', 'menu')
-    const btn = this.doc.createElement('button')
-    btn.type = 'button'
-    btn.className = 'colour-grid__remove'
-    btn.setAttribute('role', 'menuitem')
-    btn.textContent = `✕ Remove ${hex}`
-    btn.addEventListener('mousedown', (e) => e.preventDefault())
-    btn.addEventListener('click', (e) => {
+
+    const head = this.doc.createElement('div')
+    head.className = 'colour-grid__ctx-head'
+    const dot = this.doc.createElement('span')
+    dot.className = 'colour-grid__ctx-swatch'
+    dot.style.background = hex
+    const nameEl = this.doc.createElement('span')
+    nameEl.className = 'colour-grid__ctx-name'
+    nameEl.textContent = isCustom ? 'Custom' : label
+    const hexEl = this.doc.createElement('code')
+    hexEl.className = 'colour-grid__ctx-hex'
+    hexEl.textContent = hex
+    head.append(dot, nameEl, hexEl)
+    menu.append(head)
+
+    const copyBtn = this.doc.createElement('button')
+    copyBtn.type = 'button'
+    copyBtn.className = 'colour-grid__ctx-item'
+    copyBtn.setAttribute('role', 'menuitem')
+    copyBtn.textContent = `Copy hex (${hex})`
+    copyBtn.addEventListener('mousedown', (e) => e.preventDefault())
+    copyBtn.addEventListener('click', (e) => {
       e.stopPropagation()
+      void this.doc.defaultView?.navigator.clipboard?.writeText(hex).catch(() => {})
       this.#hideRemoveMenu()
-      removeHighlightColorUse(hex)
-      this.render(this.#lastSelected, this.#lastStartHex)
-      this.opts.onResize?.()
     })
-    menu.append(btn)
-    menu.style.left = `${Math.max(0, Math.min(anchor.offsetLeft, 108))}px`
-    menu.style.top = `${anchor.offsetTop + anchor.offsetHeight + 4}px`
-    this.#customRow.append(menu)
+    menu.append(copyBtn)
+
+    if (isCustom) {
+      const btn = this.doc.createElement('button')
+      btn.type = 'button'
+      btn.className = 'colour-grid__remove'
+      btn.setAttribute('role', 'menuitem')
+      btn.textContent = `✕ Remove ${hex}`
+      btn.addEventListener('mousedown', (e) => e.preventDefault())
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this.#hideRemoveMenu()
+        removeHighlightColorUse(hex)
+        this.render(this.#lastSelected, this.#lastStartHex)
+        this.opts.onResize?.()
+      })
+      menu.append(btn)
+    } else if (this.opts.recordCustom !== false) {
+      const pinBtn = this.doc.createElement('button')
+      pinBtn.type = 'button'
+      pinBtn.className = 'colour-grid__ctx-item'
+      pinBtn.setAttribute('role', 'menuitem')
+      pinBtn.textContent = '★ Pin to Custom'
+      pinBtn.addEventListener('mousedown', (e) => e.preventDefault())
+      pinBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this.#hideRemoveMenu()
+        recordHighlightColorUse(hex)
+        this.render(this.#lastSelected, this.#lastStartHex)
+        this.opts.onResize?.()
+      })
+      menu.append(pinBtn)
+    }
+
+    const hostRect = this.el.getBoundingClientRect()
+    const anchorRect = anchor.getBoundingClientRect()
+    const relLeft = anchorRect.left - hostRect.left
+    const relTop = anchorRect.bottom - hostRect.top + 4
+    menu.style.left = `${Math.max(0, Math.min(relLeft, 76))}px`
+    menu.style.top = `${Math.max(0, relTop)}px`
+    this.el.append(menu)
     this.#removeMenu = menu
     this.doc.addEventListener('mousedown', this.#outsideRemove, true)
     this.doc.addEventListener('keydown', this.#removeKey, true)
@@ -437,11 +496,10 @@ export class ColourGrid {
         item = this.#makeDot(`custom:${hex}`, hex, hex, isLightSwatch(hex), hex.length === 9, () =>
           this.#commitCustom(hex),
         )
-        item.el.title = `${hex} · Right-click to remove`
         item.el.addEventListener('contextmenu', (e) => {
           e.preventDefault()
           e.stopPropagation()
-          this.#showRemoveMenu(hex, item!.el)
+          this.#showSwatchMenu(hex, hex, true, item!.el)
         })
         this.#customDots.set(hex, item)
       }

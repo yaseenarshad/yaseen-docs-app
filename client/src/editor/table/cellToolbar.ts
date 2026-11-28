@@ -228,7 +228,7 @@ function selectedCellValues(state: EditorState, attr: 'fill' | 'color'): string[
   return [...found]
 }
 
-/** A colour group: the label, the quick swatches, and the ▾ with the shared Google Docs 10×8 `ColourGrid` (YAZ-6727). */
+/** A colour group: the label, the 3 per-page recent quick swatches, and the ▾ with the shared Google Docs 10×8 `ColourGrid` (YAZ-6727, YAZ-6737). */
 function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes): HTMLElement {
   const box = document.createElement('span')
   box.className = 'cell-toolbar__colours'
@@ -236,11 +236,52 @@ function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes)
   label.className = 'cell-toolbar__label'
   label.textContent = group.label
   box.appendChild(label)
-  for (const c of group.quick) {
-    const button = toolButton(group.name(c), group.quickIcon(c), 'toolbar-item cell-toolbar__quick')
-    button.addEventListener('click', () => setCells(view, group.attr, c))
+
+  // Per-page recent 3 slots (YAZ-6737): start fresh with group defaults on every page;
+  // picking a new colour from ▾ slides it into Slot 1 without shuffling on direct quick clicks.
+  const slots: string[] = [...group.quick]
+  const quickIconFor = (value: string): string => {
+    if (group.attr === 'fill') {
+      const bg = value.startsWith('#') ? value : group.swatch(value as TableColor)
+      return `<span class="cell-toolbar__swatch" style="background: ${bg}"></span>`
+    }
+    const fg = value.startsWith('#') ? value : group.swatch(value as TableColor)
+    const whiteBg = value.toLowerCase() === '#ffffff' ? ' style="background:#1e1e1e;border-radius:3px"' : ''
+    return `<span${whiteBg}>${SVG(`<text x="12" y="18" text-anchor="middle" font-size="17" font-weight="700" font-family="inherit" fill="${fg}">A</text>`)}</span>`
+  }
+  const quickNameFor = (value: string): string =>
+    value.startsWith('#')
+      ? group.attr === 'fill'
+        ? `Fill ${value}`
+        : `${value} text`
+      : group.name(value as TableColor)
+
+  const quickButtons: HTMLButtonElement[] = []
+  const syncQuick = () => {
+    slots.forEach((value, idx) => {
+      const btn = quickButtons[idx]
+      if (!btn) return
+      const name = quickNameFor(value)
+      btn.title = name
+      btn.setAttribute('aria-label', name)
+      btn.innerHTML = quickIconFor(value)
+    })
+  }
+  const recordRecent = (picked: string) => {
+    const norm = picked.startsWith('#') ? picked.toLowerCase() : picked
+    if (slots.includes(norm)) return
+    slots.splice(0, 3, norm, slots[0]!, slots[1]!)
+    syncQuick()
+  }
+
+  for (let idx = 0; idx < 3; idx++) {
+    const initial = slots[idx]!
+    const button = toolButton(quickNameFor(initial), quickIconFor(initial), 'toolbar-item cell-toolbar__quick')
+    button.addEventListener('click', () => setCells(view, group.attr, slots[idx]!))
+    quickButtons.push(button)
     box.appendChild(button)
   }
+
   const arrow = toolButton(group.menu, CARET, 'toolbar-item cell-toolbar__arrow')
   const palette = document.createElement('div')
   palette.className = 'cell-toolbar__palette'
@@ -259,6 +300,7 @@ function renderColours(view: EditorView, group: ColourGroup, palettes: Palettes)
     onPick: (value, isCustom) => {
       const cells = view.state.selection
       if (!(cells instanceof CellSelection)) return
+      recordRecent(value)
       if (isCustom) {
         setCustomColour(view, grid.el, cells, group.attr, value as `#${string}`)
         grid.render(selectedCellValues(view.state, group.attr), customStart(cells, group.attr))

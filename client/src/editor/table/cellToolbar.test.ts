@@ -139,9 +139,10 @@ describe('quick colours, the palette and custom colours (YAZ-3817)', () => {
     button(view, 'Blue text').click()
     expect(getMarkdownForSave(crepe)).toBe(`${before}\n<!-- table: fill A2:B3 green, color A2:B3 blue -->\n`)
     expect(view.state.selection).toBeInstanceOf(CellSelection)
-    // A palette pick changes no quick swatch: they stay in the same place every time.
+    // Per-page recent 3 (YAZ-6737): picking a colour from ▾ slides it into Slot 1 without shuffling on direct quick clicks.
     pick(view, 'Fill colours', 'Purple')
-    expect(toolbarOf(view)!.querySelector('button[aria-label="Fill purple"]')).toBeNull()
+    expect(toolbarOf(view)!.querySelector('button[aria-label="Fill #9900ff"]')).not.toBeNull()
+    expect(toolbarOf(view)!.querySelector('button[aria-label="Fill yellow"]')).not.toBeNull()
     for (let i = 0; i < 3; i++) undo(view.state, view.dispatch)
     expect(getMarkdownForSave(crepe)).toBe(before)
   })

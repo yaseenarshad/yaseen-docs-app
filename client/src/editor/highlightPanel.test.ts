@@ -333,21 +333,29 @@ describe('highlight buttons and the unified Google Docs 10×8 ColourGrid panel (
     ])
   })
 
-  it('right-clicking a CUSTOM circle shows Remove and deletes it from the global list (YAZ-6734)', async () => {
+  it('right-clicking any swatch shows instant Name + Hex, Copy hex, Pin to Custom / Remove (YAZ-6734, YAZ-6736)', async () => {
     setUsedHighlightColors([{ color: '#e11d48', uses: 3 }, { color: '#0284c7', uses: 1 }])
     const saved: unknown[] = []
     setUsedHighlightColorsSaver((next) => saved.push(next))
     const { view } = await mount('hello world\n')
     await select(view, 'world')
     await press('highlight-more')
+    // Right-click a palette dot -> shows instant name + hex + Copy hex + Pin to Custom
+    const grayDot = panel()!.querySelector<HTMLButtonElement>('button[aria-label="Dark grey 2"]')!
+    grayDot.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    expect(panel()!.querySelector('.colour-grid__ctx-name')!.textContent).toBe('Dark grey 2')
+    expect(panel()!.querySelector('.colour-grid__ctx-hex')!.textContent).toBe('#999999')
+    const pinBtn = [...panel()!.querySelectorAll<HTMLButtonElement>('.colour-grid__ctx-item')].find((b) => b.textContent?.includes('Pin to Custom'))!
+    pinBtn.click()
+    expect(panel()!.querySelector('button[aria-label="#999999"]')).not.toBeNull()
+    // Right-click a CUSTOM dot -> shows Remove and deletes it globally
     const dot = panel()!.querySelector<HTMLButtonElement>('button[aria-label="#e11d48"]')!
-    expect(dot.title).toContain('Right-click to remove')
     dot.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
     const removeBtn = panel()!.querySelector<HTMLButtonElement>('.colour-grid__remove')!
     expect(removeBtn.textContent).toContain('Remove #e11d48')
     removeBtn.click()
     expect(panel()!.querySelector('button[aria-label="#e11d48"]')).toBeNull()
     expect(panel()!.querySelector('button[aria-label="#0284c7"]')).not.toBeNull()
-    expect(saved.at(-1)).toEqual([{ color: '#0284c7', uses: 1 }])
+    expect(saved.at(-1)).toEqual([{ color: '#999999', uses: 1 }, { color: '#0284c7', uses: 1 }])
   })
 })
