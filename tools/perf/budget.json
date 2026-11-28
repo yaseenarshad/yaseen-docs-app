@@ -38,16 +38,16 @@
       "$comment": "Unbundled node_modules files inside app.asar (must stay 0)."
     },
     "rendererEagerJsBytes": {
-      "max": 3150000,
-      "$comment": "Renderer entry JS static import closure bytes (measured 3,132,400 B with YAZ-6687 unified text_color, font_size, shared ColourPanel, Opacity slider, multi-cell size, and Docs paste; raised from 3,115,000 B with Yasin's approval)."
+      "max": 3160000,
+      "$comment": "Renderer entry JS static import closure bytes (measured 3,146,119 B with YAZ-6687 unified Google Docs 10x8 ColourGrid, swatch context menu, per-page recents, auto-contrast highlights, and merged origin/main; raised from 3,150,000 B with Yasin's approval)."
     },
     "rendererEagerCssBytes": {
-      "max": 322000,
-      "$comment": "Renderer entry CSS static closure bytes (measured 316,192 B with YAZ-6687 text-color, font-size popover, and Opacity slider CSS; raised from 314,000 B with Yasin's approval)."
+      "max": 326000,
+      "$comment": "Renderer entry CSS static closure bytes (measured 322,251 B with YAZ-6687 unified Google Docs 10x8 ColourGrid, swatch context menu, and auto-contrast mark CSS; raised from 322,000 B with Yasin's approval)."
     },
     "rendererTotalBytes": {
-      "max": 32100000,
-      "$comment": "Renderer out/ total bytes excluding excalidraw-assets (measured 32.00 MB with YAZ-6567 MenuIconsControl lazy chunk; raised from 32,000,000 B with Yasin's OK)."
+      "max": 32200000,
+      "$comment": "Renderer out/ total bytes excluding excalidraw-assets (measured 32,127,421 B with YAZ-6687 + merged YAZ-6669/YAZ-6671; raised from 32,100,000 B with Yasin's approval)."
     },
     "rendererMapBytes": {
       "max": 0,
