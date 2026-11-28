@@ -1906,14 +1906,14 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
       })
       openPanel(el)
 
-      // 0 apps → "Make a vault app…" opens modal in create mode directly
+      // 0 apps → "Make a vault app…" fetches status (for synced preset prefill) and opens modal in create mode
       rightClick(rowOf(el, ARCHIVE))
       expect(menuLabels()).toContain('Make a vault app…')
       pick('Make a vault app…')
       await vi.waitFor(() => {
+        expect(status).toHaveBeenCalledWith(ARCHIVE)
         expect(document.body.querySelector('#vault-launcher-modal-title')?.textContent).toBe('Make a vault app')
       })
-      expect(status).not.toHaveBeenCalled()
 
       // 1 app → "Edit vault app…" (calls status with appId) + "Add another vault app…"
       act(() => void document.body.querySelector<HTMLButtonElement>('.vault-launcher-modal__close')?.click())

@@ -2822,7 +2822,8 @@ export function App() {
     setPendingSidebarStart(null)
     if (sidebarCollapsedRef.current) toggleSidebar()
     changeLens(sidebarStart.tab)
-    const base = targetRoot !== undefined ? (roots.find((r) => stripSlash(r) === stripSlash(targetRoot)) ?? targetRoot) : roots[0]
+    const preferredRoot = sidebarStart.folderRoot ?? targetRoot
+    const base = preferredRoot !== undefined ? (roots.find((r) => stripSlash(r) === stripSlash(preferredRoot)) ?? preferredRoot) : roots[0]
     const relPath = sidebarStart.folderPath?.replace(/^\/+|\/+$/g, '') ?? ''
     const absPath = relPath.length > 0 && base !== undefined ? `${stripSlash(base)}/${relPath}` : null
     if (sidebarStart.onlyFolder === true) {

@@ -2793,13 +2793,22 @@ span.cards-wizard__pill {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.vault-launcher__card--synced {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
+}
+
+.vault-launcher__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .vault-launcher__summary {

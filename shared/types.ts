@@ -3834,6 +3834,10 @@ export interface VaultAppSidebarStart {
   folderKind?: 'collection' | 'disk'
   folderId?: string
   folderPath?: string
+  /** Optional display name for collection or workspace-qualified folders in settings badges. */
+  folderName?: string
+  /** Optional vault root for multi-root Workspace App disk folders. */
+  folderRoot?: string
   onlyFolder?: boolean
 }
 
@@ -3862,6 +3866,18 @@ export function cleanVaultAppSidebarStart(raw: unknown): VaultAppSidebarStart | 
       !fp.split(/[\\/]/).includes('..')
     ) {
       out.folderPath = fp
+    }
+  }
+  if (typeof r.folderName === 'string') {
+    const fn = r.folderName.trim()
+    if (fn.length > 0 && fn.length <= 200 && !fn.includes('\0')) {
+      out.folderName = fn
+    }
+  }
+  if (typeof r.folderRoot === 'string') {
+    const fr = stripSlash(r.folderRoot.trim())
+    if (fr.length > 0 && fr.length <= 1024 && !fr.includes('\0')) {
+      out.folderRoot = fr
     }
   }
   if (typeof r.onlyFolder === 'boolean') {

@@ -218,6 +218,7 @@ describe('VaultLauncherModal — Start View, appId & "app" copy (YAZ-6682)', () 
         tab: 'favorites',
         folderKind: 'collection',
         folderId: 'col-eng',
+        folderName: 'Engineering',
         onlyFolder: true,
       },
     })
@@ -311,6 +312,7 @@ describe('VaultLauncherModal — Start View, appId & "app" copy (YAZ-6682)', () 
         tab: 'focus',
         folderKind: 'collection',
         folderId: 'ws-f1',
+        folderName: 'Sprint',
         onlyFolder: true,
       },
     })

@@ -517,11 +517,16 @@ export function registerVaultLauncherIpc(
     }
     await Promise.all(
       [...knownRoots].map(async (root) => {
-        const launcher = findVaultLauncher(state.folders[root])
-        if (launcher !== null) {
-          if (!backend.exists(launcher.appPath)) return
-          const dataUrl = await readIconDataUrl(launcher.iconPath)
-          if (dataUrl !== null) out[root] = dataUrl
+        const launchers = vaultLaunchersOf(state.folders[root])
+        if (launchers.length > 0) {
+          for (const launcher of launchers) {
+            if (!backend.exists(launcher.appPath)) continue
+            const dataUrl = await readIconDataUrl(launcher.iconPath)
+            if (dataUrl !== null) {
+              out[root] = dataUrl
+              return
+            }
+          }
           return
         }
         // Fallback to synced vault icon (badge SVG or `.yaseendocs/vault-icon.png`) when no local `.app` is installed.

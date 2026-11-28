@@ -1600,19 +1600,17 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
         (id) => windowShims.get(id) === shimKey && liveWindow(id) !== undefined,
       )
       if (ids.length === 0) return false
+      // Never un-minimize minimized windows or surface hidden tab-board windows (YAZ-6679 D1).
+      const visibleIds = ids.filter((id) => !hiddenWins.has(id) && !liveWindow(id)!.isMinimized())
+      if (visibleIds.length === 0) return true
       if (allWindows) {
-        for (let i = ids.length - 1; i >= 1; i--) {
-          const id = ids[i]
-          if (hiddenWins.has(id)) continue
-          const win = liveWindow(id)
-          if (win === undefined || win.isMinimized()) continue
+        for (let i = visibleIds.length - 1; i >= 1; i--) {
+          const win = liveWindow(visibleIds[i])!
           if (typeof win.showInactive === 'function') win.showInactive()
           else win.moveTop()
         }
       }
-      const primary = liveWindow(ids[0])
-      if (primary === undefined) return false
-      focusWindow(primary)
+      focusWindow(liveWindow(visibleIds[0])!)
       return true
     },
 

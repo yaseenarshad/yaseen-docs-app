@@ -6,21 +6,14 @@
  * `api.vaultLauncher.onChanged` so creations, edits, and removals stay live.
  */
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import type { LauncherListItem, SidebarLens, VaultAppSidebarStart, VaultLauncherStatus, VaultLauncherTarget } from '@shared/types'
+import type { LauncherListItem, VaultLauncherStatus, VaultLauncherTarget } from '@shared/types'
 import { api } from '../api'
+import { sidebarStartBadgeLabel } from './vaultAppStartLabel'
 
 const VaultLauncherModal = lazy(() => import('./VaultLauncherModal').then((m) => ({ default: m.VaultLauncherModal })))
 
 export interface AllLaunchersListProps {
   onChanged?: () => void
-}
-
-const SIDEBAR_TAB_LABELS: Record<SidebarLens, string> = {
-  files: 'Files',
-  focus: 'Focus',
-  favorites: 'Favorites',
-  sessions: 'Sessions',
-  recents: 'Recents',
 }
 
 function kindLabel(kind: LauncherListItem['kind']): string {
@@ -33,18 +26,6 @@ function targetBadgeLabel(target?: VaultLauncherTarget): string | null {
   if (target === 'today') return 'Today'
   if (target === 'inbox') return 'Cards Inbox'
   return null
-}
-
-function sidebarStartBadgeLabel(sidebarStart?: VaultAppSidebarStart): string | null {
-  if (sidebarStart === undefined) return null
-  const parts: string[] = [SIDEBAR_TAB_LABELS[sidebarStart.tab] ?? sidebarStart.tab]
-  if (sidebarStart.folderPath !== undefined && sidebarStart.folderPath.length > 0) {
-    parts.push(sidebarStart.folderPath)
-  }
-  if (sidebarStart.onlyFolder === true) {
-    parts.push('Only')
-  }
-  return parts.join(' · ')
 }
 
 function targetSummary(item: LauncherListItem): string {
@@ -298,6 +279,7 @@ export function AllLaunchersList({ onChanged }: AllLaunchersListProps) {
           <VaultLauncherModal
             root={editing.item.kind === 'vault' ? editing.item.id : undefined}
             workspaceId={editing.item.kind === 'workspace' ? editing.item.id : undefined}
+            appId={editing.item.kind === 'vault' ? (editing.item.appId ?? 'default') : undefined}
             defaultName={editing.item.targetName || editing.item.name}
             initial={editing.status.launcher}
             initialIconDataUrl={editing.status.iconDataUrl}

@@ -11,8 +11,10 @@ import { mergeFolders } from '@shared/collectionFolders'
 import { stripSlash, type FocusFolder, type ListScope, type SidebarLens, type TreeNode, type VaultAppSidebarStart, type VaultLauncherBadge, type VaultLauncherInfo, type VaultLauncherPreset, type VaultLauncherStatus, type VaultLauncherTarget } from '@shared/types'
 import { sanitizeBadgeSvgPaths, sanitizeBadgeSvgViewBox, shadeHex, vaultInitials } from '@shared/vaultIcon'
 import { api } from '../api'
+import { basename } from '../lib/paths'
 import { iconUrl, loadMaterialIcons, pickableIcons, useMaterialIcons } from '../sidebar/materialIcons'
 import { Segmented } from './controls'
+import { SIDEBAR_TAB_LABELS } from './vaultAppStartLabel'
 
 export { vaultInitials }
 
@@ -62,14 +64,6 @@ const BASE_SIDEBAR_TAB_OPTIONS: readonly { label: string; value: SidebarTabChoic
   { label: 'Recents', value: 'recents' },
 ]
 
-const SIDEBAR_TAB_LABELS: Record<SidebarLens, string> = {
-  files: 'Files',
-  favorites: 'Favorites',
-  focus: 'Focus',
-  recents: 'Recents',
-  sessions: 'Sessions',
-}
-
 const ONLY_FOLDER_OPTIONS: readonly { label: string; value: boolean }[] = [
   { label: 'On', value: true },
   { label: 'Off', value: false },
@@ -81,13 +75,26 @@ interface FolderChoice {
   folderKind: 'collection' | 'disk'
   folderId?: string
   folderPath?: string
+  folderRoot?: string
+}
+
+function encodeDiskChoiceValue(rel: string, folderRoot?: string): string {
+  return folderRoot !== undefined && folderRoot.length > 0 ? `disk:${stripSlash(folderRoot)}::${rel}` : `disk:${rel}`
 }
 
 function encodeInitialFolder(start: VaultAppSidebarStart | undefined): string {
   if (start === undefined) return ''
   if (start.folderKind === 'collection' && start.folderId) return `collection:${start.folderId}`
-  if (start.folderKind === 'disk' && start.folderPath) return `disk:${start.folderPath}`
+  if (start.folderKind === 'disk' && start.folderPath) return encodeDiskChoiceValue(start.folderPath, start.folderRoot)
   return ''
+}
+
+function decodeDiskChoiceValue(raw: string): { folderPath: string; folderRoot?: string } {
+  const sep = raw.indexOf('::')
+  if (sep > 0) {
+    return { folderRoot: raw.slice(0, sep), folderPath: raw.slice(sep + 2) }
+  }
+  return { folderPath: raw }
 }
 
 function collectDiskDirsBfs(nodes: readonly TreeNode[], vaultRoot: string, limit: number): string[] {
@@ -124,33 +131,46 @@ async function loadStartViewFolders(
 ): Promise<FolderChoice[]> {
   const bridge = window.yaseenDocs as unknown as Record<string, Record<string, unknown> | ((...a: unknown[]) => unknown) | undefined> | undefined
   let targetRoots: string[] = []
+  let workspaceScopeOn = opts.isWorkspace
+  const hasStateGet = typeof (bridge?.state as Record<string, unknown> | undefined)?.get === 'function'
   if (!opts.isWorkspace && opts.root !== undefined) {
     targetRoots = [opts.root]
-  } else if (opts.isWorkspace && opts.workspaceId !== undefined && typeof (bridge?.state as Record<string, unknown> | undefined)?.get === 'function') {
+  } else if (opts.isWorkspace && opts.workspaceId !== undefined && hasStateGet) {
     try {
       const state = await api.state.get()
       targetRoots = state.vaultSets.find((s) => s.id === opts.workspaceId)?.roots ?? []
+      if (tab === 'favorites' || tab === 'focus') {
+        workspaceScopeOn = state.settings?.workspaceLists?.[tab] ?? true
+      }
     } catch {
       targetRoots = []
     }
   }
-  const primaryRoot = targetRoots[0]
+  const multiRoot = opts.isWorkspace && targetRoots.length > 1
   if (tab === 'files') {
-    if (primaryRoot === undefined || typeof bridge?.tree !== 'function') return []
-    try {
-      const res = await api.tree(primaryRoot)
-      return collectDiskDirsBfs(res.tree, primaryRoot, MAX_FOLDER_CHOICES).map((rel) => ({
-        value: `disk:${rel}`,
-        label: rel,
-        folderKind: 'disk',
-        folderPath: rel,
-      }))
-    } catch {
-      return []
+    if (targetRoots.length === 0 || typeof bridge?.tree !== 'function') return []
+    const choices: FolderChoice[] = []
+    const treeResults = await Promise.allSettled(targetRoots.map((r) => api.tree(r)))
+    for (let idx = 0; idx < targetRoots.length && choices.length < MAX_FOLDER_CHOICES; idx++) {
+      const res = treeResults[idx]
+      if (res.status !== 'fulfilled') continue
+      const r = stripSlash(targetRoots[idx])
+      const vaultPrefix = multiRoot ? `${basename(r)} / ` : ''
+      const remaining = MAX_FOLDER_CHOICES - choices.length
+      for (const rel of collectDiskDirsBfs(res.value.tree, r, remaining)) {
+        choices.push({
+          value: encodeDiskChoiceValue(rel, multiRoot ? r : undefined),
+          label: `${vaultPrefix}${rel}`,
+          folderKind: 'disk',
+          folderPath: rel,
+          ...(multiRoot ? { folderRoot: r } : {}),
+        })
+      }
     }
+    return choices
   }
 
-  const scope: ListScope = opts.isWorkspace ? 'workspace' : 'vault'
+  const scope: ListScope = opts.isWorkspace && workspaceScopeOn ? 'workspace' : 'vault'
   const choices: FolderChoice[] = []
 
   const hasFoldersApi =
@@ -179,27 +199,37 @@ async function loadStartViewFolders(
     tab === 'favorites'
       ? typeof (bridge?.favorites as Record<string, unknown> | undefined)?.get === 'function'
       : typeof (bridge?.focus as Record<string, unknown> | undefined)?.get === 'function'
-  if (primaryRoot !== undefined && hasListApi && typeof bridge?.tree === 'function') {
-    const [listRes, treeRes] = await Promise.allSettled([
-      tab === 'favorites' ? api.favorites.get(primaryRoot, scope) : api.focus.get(primaryRoot, scope),
-      api.tree(primaryRoot),
-    ])
-    if (listRes.status === 'fulfilled' && treeRes.status === 'fulfilled') {
+  if (targetRoots.length > 0 && hasListApi && typeof bridge?.tree === 'function') {
+    const seen = new Set<string>()
+    const rootResults = await Promise.allSettled(
+      targetRoots.map(async (r) => {
+        const [list, treeRes] = await Promise.all([
+          tab === 'favorites' ? api.favorites.get(r, scope) : api.focus.get(r, scope),
+          api.tree(r),
+        ])
+        return { root: stripSlash(r), list, treeRes }
+      }),
+    )
+    for (const res of rootResults) {
+      if (res.status !== 'fulfilled' || seen.size >= MAX_FOLDER_CHOICES) continue
+      const { root: r, list, treeRes } = res.value
       const dirPaths = new Set<string>()
-      collectAllDirPaths(treeRes.value.tree, dirPaths)
-      const prefix = `${stripSlash(primaryRoot)}/`
-      const seen = new Set<string>()
-      for (const p of listRes.value) {
+      collectAllDirPaths(treeRes.tree, dirPaths)
+      const prefix = `${r}/`
+      const vaultPrefix = multiRoot ? `${basename(r)} / ` : ''
+      for (const p of list) {
         const norm = stripSlash(p)
         if (!dirPaths.has(norm) || !norm.startsWith(prefix)) continue
         const rel = norm.slice(prefix.length)
-        if (rel.length === 0 || seen.has(rel) || seen.size >= MAX_FOLDER_CHOICES) continue
-        seen.add(rel)
+        const val = encodeDiskChoiceValue(rel, multiRoot ? r : undefined)
+        if (rel.length === 0 || seen.has(val) || seen.size >= MAX_FOLDER_CHOICES) continue
+        seen.add(val)
         choices.push({
-          value: `disk:${rel}`,
-          label: rel,
+          value: val,
+          label: `${vaultPrefix}${rel}`,
           folderKind: 'disk',
           folderPath: rel,
+          ...(multiRoot ? { folderRoot: r } : {}),
         })
       }
     }
@@ -404,7 +434,7 @@ export interface VaultLauncherModalProps {
 export function VaultLauncherModal({ root, workspaceId, appId, defaultName, initial, preset, initialIconDataUrl, recreating = false, onSaved, onClose }: VaultLauncherModalProps) {
   const isWorkspace = workspaceId !== undefined
   const editing = initial !== null && initial !== undefined
-  const resolvedAppId = appId ?? initial?.id
+  const resolvedAppId = appId ?? (editing ? (initial.id ?? 'default') : undefined)
   const seed = initial ?? preset ?? null
   const initialBadge = seed?.badge
   const initialStart = initial?.sidebarStart
@@ -478,14 +508,16 @@ export function VaultLauncherModal({ root, workspaceId, appId, defaultName, init
     if (folderValue === '' || folderChoices.some((c) => c.value === folderValue)) return folderChoices
     if (folderValue.startsWith('collection:')) {
       const id = folderValue.slice('collection:'.length)
-      return [...folderChoices, { value: folderValue, label: `Saved folder (${id})`, folderKind: 'collection' as const, folderId: id }]
+      const fallbackLabel = initialStart?.folderId === id && initialStart.folderName ? initialStart.folderName : `Saved folder (${id})`
+      return [...folderChoices, { value: folderValue, label: fallbackLabel, folderKind: 'collection' as const, folderId: id }]
     }
     if (folderValue.startsWith('disk:')) {
-      const rel = folderValue.slice('disk:'.length)
-      return [...folderChoices, { value: folderValue, label: rel, folderKind: 'disk' as const, folderPath: rel }]
+      const { folderPath: rel, folderRoot } = decodeDiskChoiceValue(folderValue.slice('disk:'.length))
+      const fallbackLabel = folderRoot ? `${basename(folderRoot)} / ${rel}` : rel
+      return [...folderChoices, { value: folderValue, label: fallbackLabel, folderKind: 'disk' as const, folderPath: rel, ...(folderRoot ? { folderRoot } : {}) }]
     }
     return folderChoices
-  }, [folderChoices, folderValue])
+  }, [folderChoices, folderValue, initialStart])
 
   const collectionChoices = useMemo(
     () => visibleFolderChoices.filter((c) => c.folderKind === 'collection'),
@@ -500,18 +532,27 @@ export function VaultLauncherModal({ root, workspaceId, appId, defaultName, init
     if (sidebarTab === 'default') return undefined
     const next: VaultAppSidebarStart = { tab: sidebarTab }
     if (supportsFolderPicker && folderValue !== '') {
+      const matched = visibleFolderChoices.find((c) => c.value === folderValue)
       if (folderValue.startsWith('collection:')) {
         next.folderKind = 'collection'
         next.folderId = folderValue.slice('collection:'.length)
+        if (matched !== undefined && matched.label !== `Saved folder (${next.folderId})`) {
+          next.folderName = matched.label
+        }
         next.onlyFolder = onlyFolder
       } else if (folderValue.startsWith('disk:')) {
+        const { folderPath: rel, folderRoot } = decodeDiskChoiceValue(folderValue.slice('disk:'.length))
         next.folderKind = 'disk'
-        next.folderPath = folderValue.slice('disk:'.length)
+        next.folderPath = rel
+        if (folderRoot !== undefined) {
+          next.folderRoot = folderRoot
+          if (matched !== undefined) next.folderName = matched.label
+        }
         next.onlyFolder = onlyFolder
       }
     }
     return next
-  }, [sidebarTab, supportsFolderPicker, folderValue, onlyFolder])
+  }, [sidebarTab, supportsFolderPicker, folderValue, onlyFolder, visibleFolderChoices])
 
   const selectedFolderLabel = useMemo(() => {
     if (!supportsFolderPicker || folderValue === '') return null

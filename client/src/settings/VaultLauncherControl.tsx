@@ -9,8 +9,9 @@
  * - Removed in Finder: clear notice with Recreate and Clear buttons.
  */
 import { lazy, Suspense, useEffect, useState } from 'react'
-import type { SidebarLens, VaultAppSidebarStart, VaultLauncherInfo, VaultLauncherStatus, VaultLauncherTarget } from '@shared/types'
+import type { VaultLauncherInfo, VaultLauncherStatus, VaultLauncherTarget } from '@shared/types'
 import { api } from '../api'
+import { sidebarStartBadgeLabel } from './vaultAppStartLabel'
 
 const VaultLauncherModal = lazy(() => import('./VaultLauncherModal').then((m) => ({ default: m.VaultLauncherModal })))
 
@@ -31,30 +32,10 @@ type ModalState =
   | { mode: 'create'; useSyncedPreset: boolean }
   | { mode: 'edit'; item: VaultAppItem; recreating: boolean }
 
-const SIDEBAR_TAB_LABELS: Record<SidebarLens, string> = {
-  files: 'Files',
-  focus: 'Focus',
-  favorites: 'Favorites',
-  sessions: 'Sessions',
-  recents: 'Recents',
-}
-
 function targetBadgeLabel(target?: VaultLauncherTarget): string | null {
   if (target === 'inbox') return 'Opens on Cards Inbox'
   if (target === 'today') return "Opens on Today's Daily Page"
   return null
-}
-
-function sidebarStartBadgeLabel(sidebarStart?: VaultAppSidebarStart): string | null {
-  if (sidebarStart === undefined) return null
-  const parts: string[] = [SIDEBAR_TAB_LABELS[sidebarStart.tab] ?? sidebarStart.tab]
-  if (sidebarStart.folderPath !== undefined && sidebarStart.folderPath.length > 0) {
-    parts.push(sidebarStart.folderPath)
-  }
-  if (sidebarStart.onlyFolder === true) {
-    parts.push('Only')
-  }
-  return parts.join(' · ')
 }
 
 function resolveAppItems(status: VaultLauncherStatus, isWorkspace: boolean): VaultAppItem[] {
@@ -122,7 +103,14 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
       setStatus((prev) => {
         if (prev === null) return null
         if (!isWorkspace && prev.launchers !== undefined) {
-          const remaining = prev.launchers.filter((entry) => (appId !== undefined ? entry.launcher.id !== appId : false))
+          let remaining: VaultAppItem[]
+          if (appId !== undefined) {
+            remaining = prev.launchers.filter((entry) => entry.launcher.id !== appId)
+          } else {
+            const defaultIdx = prev.launchers.findIndex((entry) => entry.launcher.id === 'default')
+            const dropIdx = defaultIdx >= 0 ? defaultIdx : 0
+            remaining = prev.launchers.filter((_, idx) => idx !== dropIdx)
+          }
           const first = remaining[0] ?? null
           return {
             ...prev,
@@ -208,7 +196,7 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
       const fresh = await (isWorkspace ? api.vaultLauncher.workspaceStatus(workspaceId) : api.vaultLauncher.status(root!))
       const freshItems = resolveAppItems(fresh, isWorkspace)
       const matched = appId !== undefined ? freshItems.find((entry) => entry.launcher.id === appId) : freshItems[0]
-      if (!fresh.exists || (matched !== undefined && !matched.exists)) {
+      if (matched !== undefined ? !matched.exists : !fresh.exists) {
         setStatus(fresh)
         return
       }
@@ -300,7 +288,7 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
                   <div className="vault-launcher__meta">
                     <div className="vault-launcher__name-line">
                       <span className="vault-launcher__name">{item.launcher.name}.app</span>
-                      {isPrimary && <span className="all-launchers__badge all-launchers__badge--vault">Primary</span>}
+                      {isPrimary && <span className="vault-launcher__badge">Primary</span>}
                       {targetLabel !== null && <span className="vault-launcher__target">{targetLabel}</span>}
                       {sidebarStartLabel !== null && <span className="vault-launcher__target">{sidebarStartLabel}</span>}
                     </div>
@@ -327,7 +315,7 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
                 {items.length >= 2 && (
                   <div className="vault-launcher__name-line">
                     <span className="vault-launcher__name">{item.launcher.name}.app</span>
-                    {isPrimary && <span className="all-launchers__badge all-launchers__badge--vault">Primary</span>}
+                    {isPrimary && <span className="vault-launcher__badge">Primary</span>}
                   </div>
                 )}
                 <p className="vault-launcher__missing-text" role="status">
@@ -365,6 +353,7 @@ export function VaultLauncherControl({ root, workspaceId, defaultName, onChanged
           <VaultLauncherModal
             root={root}
             workspaceId={workspaceId}
+            appId={!isWorkspace && modal.mode === 'edit' ? (modal.item.launcher.id ?? 'default') : undefined}
             defaultName={defaultName}
             initial={modal.mode === 'edit' ? modal.item.launcher : null}
             preset={modal.mode === 'create' && modal.useSyncedPreset ? synced : null}

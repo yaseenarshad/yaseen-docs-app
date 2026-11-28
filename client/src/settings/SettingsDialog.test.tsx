@@ -144,7 +144,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 
 /** The rows of each page with no vault open, in registry order (registry.tsx). */
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
-const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'confirmBeforeQuit', ...(/Mac/i.test(navigator.platform) ? ['vaultAppActivateAllWindows'] : []), 'vaultOpensOn']
+const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'confirmBeforeQuit', 'vaultOpensOn', ...(/Mac/i.test(navigator.platform) ? ['vaultAppActivateAllWindows'] : [])]
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
 const APPEARANCE_ROWS = ['theme', 'contentWidth', 'contentPosition', 'tabWidth', 'inactiveTabWidth', 'menuIcons', 'exploreWidth', 'explorePageZoom', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
@@ -1488,7 +1488,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(row(el, 'startupWindows')?.closest('[data-section]')?.id).toBe('settings-general')
     expect(row(el, 'startupWindows')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('When the app starts')
     expect(row(el, 'startupWindows')?.querySelector('.setting__label')?.textContent).toBe('Reopen')
-    expect(row(el, 'startupWindows')?.querySelector('.setting__hint')?.textContent).toBe('A vault that you open from a link or a launcher always opens alone.')
+    expect(row(el, 'startupWindows')?.querySelector('.setting__hint')?.textContent).toBe('A vault that you open from a link or a vault app always opens alone.')
     expect(rowButtons(el, 'startupWindows').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['All vaults', 'false'], ['Last vault', 'true'], ['None', 'false']])
     act(() => rowButtons(el, 'startupWindows')[2].click())
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, startupWindows: 'none' })

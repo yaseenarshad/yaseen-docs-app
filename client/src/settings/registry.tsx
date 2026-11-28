@@ -1097,7 +1097,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'startupWindows',
             label: 'Reopen',
-            hint: 'A vault that you open from a link or a launcher always opens alone.',
+            hint: 'A vault that you open from a link or a vault app always opens alone.',
             keywords: ['startup', 'launch', 'restore', 'windows', 'quit'],
             render: ({ settings, onChange }) => (
               <Segmented options={STARTUP_WINDOWS_OPTIONS} value={settings.startupWindows} onChange={(startupWindows) => onChange({ ...settings, startupWindows })} ariaLabel="Windows to reopen when the app starts" />
@@ -1107,7 +1107,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         // YAZ-6641: confirmation popup before Cmd+Q / Alfred Quit All closes a Vault App or Yaseen Docs (default ON).
-        // YAZ-6683: macOS Vault App activation behavior (Global-only).
         title: 'When quitting',
         items: [
           {
@@ -1117,6 +1116,22 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['quit', 'confirm', 'cmd+q', 'alfred', 'close', 'popup', 'dialog', 'prompt'],
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.confirmBeforeQuit} onChange={(confirmBeforeQuit) => onChange({ ...settings, confirmBeforeQuit })} ariaLabel="Confirm before quitting" />
+            ),
+          },
+        ],
+      },
+      {
+        // YAZ-3487 D15: blank is the default (D7); the last page is the old way (YAZ-1767 D2).
+        // YAZ-6679 / YAZ-6683: macOS Vault App activation behavior (Global-only).
+        title: 'When a vault opens',
+        items: [
+          {
+            id: 'vaultOpensOn',
+            label: 'Open on',
+            hint: 'A link to a page still opens that page.',
+            keywords: ['vault', 'open', 'blank', 'last page', 'new tab', 'start'],
+            render: (ctx) => (
+              <Segmented options={vaultOpensOnOptions((text) => unit(ctx, text))} value={ctx.settings.vaultOpensOn} onChange={(vaultOpensOn) => ctx.onChange({ ...ctx.settings, vaultOpensOn })} ariaLabel="What a vault opens on" />
             ),
           },
           {
@@ -1132,21 +1147,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                 onChange={(vaultAppActivateAllWindows) => onChange({ ...settings, vaultAppActivateAllWindows })}
                 ariaLabel="Reveal all windows when opening a Vault App"
               />
-            ),
-          },
-        ],
-      },
-      {
-        // YAZ-3487 D15: blank is the default (D7); the last page is the old way (YAZ-1767 D2).
-        title: 'When a vault opens',
-        items: [
-          {
-            id: 'vaultOpensOn',
-            label: 'Open on',
-            hint: 'A link to a page still opens that page.',
-            keywords: ['vault', 'open', 'blank', 'last page', 'new tab', 'start'],
-            render: (ctx) => (
-              <Segmented options={vaultOpensOnOptions((text) => unit(ctx, text))} value={ctx.settings.vaultOpensOn} onChange={(vaultOpensOn) => ctx.onChange({ ...ctx.settings, vaultOpensOn })} ariaLabel="What a vault opens on" />
             ),
           },
         ],

@@ -81,7 +81,7 @@ export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, 
   const [menu, setMenu] = useState<(RowRef & { x: number; y: number }) | null>(null)
   const [renaming, setRenaming] = useState<RowRef | null>(null)
   const [launcherModal, setLauncherModal] = useState<
-    | { kind: 'vault'; root: string; defaultName: string; status: VaultLauncherStatus | null }
+    | { kind: 'vault'; root: string; appId?: string; defaultName: string; status: VaultLauncherStatus | null }
     | { kind: 'workspace'; workspaceId: string; defaultName: string; status: VaultLauncherStatus | null }
     | null
   >(null)
@@ -133,12 +133,20 @@ export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, 
   const openEditVaultApp = (path: string, appId: string): void => {
     const defaultName = storage.vaultName(path)
     void api.vaultLauncher.status(path, appId).then(
-      (status) => setLauncherModal({ kind: 'vault', root: path, defaultName, status }),
-      () => setLauncherModal({ kind: 'vault', root: path, defaultName, status: null }),
+      (status) => setLauncherModal({ kind: 'vault', root: path, appId, defaultName, status }),
+      () => setLauncherModal({ kind: 'vault', root: path, appId, defaultName, status: null }),
     )
   }
   const openAddVaultApp = (path: string): void => {
     const defaultName = storage.vaultName(path)
+    // For a vault with 0 local apps, fetch status so a synced cross-Mac preset prefills the modal.
+    if ((vaultApps?.[path]?.length ?? 0) === 0) {
+      void api.vaultLauncher.status(path).then(
+        (status) => setLauncherModal({ kind: 'vault', root: path, defaultName, status }),
+        () => setLauncherModal({ kind: 'vault', root: path, defaultName, status: null }),
+      )
+      return
+    }
     setLauncherModal({ kind: 'vault', root: path, defaultName, status: null })
   }
   const openWorkspaceLauncher = (id: string): void => {
@@ -260,7 +268,7 @@ export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, 
                 onSetKey: (path, key) => storage.setVaultKey(path, key),
                 ...(canVaultLauncher
                   ? {
-                      vaultApps: vaultApps?.[menu.key],
+                      vaultApps: vaultApps !== undefined ? (vaultApps[menu.key] ?? []) : undefined,
                       onEditVaultApp: openEditVaultApp,
                       onAddVaultApp: openAddVaultApp,
                       hasLauncher: vaultIcons?.[menu.key] !== undefined,
@@ -297,6 +305,7 @@ export function Welcome({ recents, sets, onOpenRecent, onOpenSet, onPickFolder, 
             <VaultLauncherModal
               root={launcherModal.kind === 'vault' ? launcherModal.root : undefined}
               workspaceId={launcherModal.kind === 'workspace' ? launcherModal.workspaceId : undefined}
+              appId={launcherModal.kind === 'vault' ? launcherModal.appId : undefined}
               defaultName={launcherModal.defaultName}
               initial={launcherModal.status?.launcher}
               preset={launcherModal.status?.launcher == null ? launcherModal.status?.synced : null}
